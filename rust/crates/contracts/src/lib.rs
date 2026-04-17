@@ -95,6 +95,42 @@ pub enum ProviderStrategy {
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct MinimalContextView {
+    pub continuity_tail: Vec<String>,
+    pub summary: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct InferenceOperationPayload {
+    pub input: String,
+    pub role: RoleProfileRef,
+    pub provider_path: ProviderPath,
+    pub provider_strategy: ProviderStrategy,
+    pub protocol_version: String,
+    pub stream: bool,
+    pub context: MinimalContextView,
+}
+
+impl InferenceOperationPayload {
+    pub fn validate(&self) -> Result<(), fin_shared::SharedError> {
+        require_non_empty("input", &self.input)?;
+        require_non_empty("protocol_version", &self.protocol_version)?;
+        Ok(())
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ProviderEventPayload {
+    pub provider_name: String,
+    pub model: String,
+    pub endpoint: String,
+    pub output_text: Option<String>,
+    pub response_id: Option<String>,
+    pub stop_reason: Option<String>,
+    pub status: Option<u16>,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct EntityRefs {
     pub session_id: Option<String>,
     pub task_id: Option<String>,
@@ -317,6 +353,29 @@ mod tests {
 
         assert_eq!(path.primary_target(), &target);
         assert!(ProviderPath::new(vec![]).is_err());
+    }
+
+    #[test]
+    fn inference_operation_payload_requires_input_and_protocol_version() {
+        let payload = InferenceOperationPayload {
+            input: "hello".into(),
+            role: RoleProfileRef::new("coder").expect("role"),
+            provider_path: ProviderPath::new(vec![
+                ProviderTarget::new("ali-coding-plan", "qwen3.6-plus").expect("target"),
+            ])
+            .expect("path"),
+            provider_strategy: ProviderStrategy::Priority,
+            protocol_version: "fin.m1".into(),
+            stream: false,
+            context: MinimalContextView::default(),
+        };
+        assert!(payload.validate().is_ok());
+
+        let invalid = InferenceOperationPayload {
+            input: "".into(),
+            ..payload
+        };
+        assert!(invalid.validate().is_err());
     }
 
     #[test]

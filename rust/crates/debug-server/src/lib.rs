@@ -78,7 +78,11 @@ impl InMemoryProjector {
         self.current.topic_thread_id = event.refs.topic_thread_id.clone();
 
         match event.event_type.as_str() {
-            "provider.request_started" | "provider.response_received" => {
+            "provider.operation_accepted"
+            | "provider.gateway_request_sent"
+            | "provider.gateway_response_received"
+            | "provider.response_normalized"
+            | "provider.completed" => {
                 self.current.latest_provider_activity = Some(event.event_type.clone());
             }
             "progress.updated" => {
@@ -360,7 +364,7 @@ mod tests {
 
         for (idx, (kind, payload)) in [
             (
-                "provider.request_started",
+                "provider.gateway_request_sent",
                 serde_json::json!({"provider":"openai"}),
             ),
             ("progress.updated", serde_json::to_value(progress).unwrap()),
@@ -403,7 +407,7 @@ mod tests {
         );
         assert_eq!(
             projector.current.latest_provider_activity.as_deref(),
-            Some("provider.request_started")
+            Some("provider.gateway_request_sent")
         );
         assert_eq!(projector.current.task_id.as_deref(), Some("task-1"));
     }
@@ -419,7 +423,7 @@ mod tests {
         ));
         let event = EventEnvelope::new(
             "evt-1",
-            "provider.response_received",
+            "provider.gateway_response_received",
             "2026-04-17T00:00:00Z",
             "runtime",
             "trace-1",

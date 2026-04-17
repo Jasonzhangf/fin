@@ -891,3 +891,26 @@ This direction keeps:
 - 正常 `~/.fin/config/user.toml` 与测试 `user.toml` 默认首选 provider 统一为 `ali-coding-plan`，默认模型为 `qwen3.6-plus`。
 - 凭证优先通过 `api_key_env = "ALI_CODINGPLAN_KEY"` 引用，不把真实 key 写入 `user.toml`。
 - provider 连通性必须先通过真实 anthropic 协议探测（`POST {base_url}/v1/messages` + `x-api-key` + `anthropic-version`），确认可用后再继续后续开发。
+
+## 2026-04-17 implementation note: provider real closure diagnosis
+
+### M1 real inference closure current finding
+- `fin` 的真实 anthropic-wire provider 已经完成 builder -> provider -> event -> projection 的主链实现。
+- workspace unit / contract / runtime tests 已全部通过。
+- 真机 provider 闭环在第一次运行时失败，错误为 HTTP 405：`Coding Plan is currently only available for Coding Agents`。
+
+### Verified root cause
+- 同一个 endpoint、同一个 model、同一个 payload：
+  - Python `urllib` -> 200
+  - `curl` 默认 UA -> 200
+  - `curl` 清空 `User-Agent` -> 405
+  - Rust `reqwest` 默认请求 -> 405
+  - Rust `reqwest` 显式加 `User-Agent: fin-coding-agent/0.1` -> 200
+- 结论：阿里 Coding Plan anthropic endpoint 会把“无 User-Agent 请求”判为非 Coding Agent 请求。
+
+### Implementation decision
+- 在 `fin-provider` 的 anthropic real execution 路径中显式发送 `User-Agent: fin-coding-agent/0.1`。
+- 该修复属于 transport / provider owning layer，不进入 runtime / projection / web 层补逻辑。
+
+### Additional maintenance
+- 为满足非白名单文件 `<500` 行门禁，`fin-runtime` 测试已从 `src/lib.rs` 拆到 `src/tests.rs`。

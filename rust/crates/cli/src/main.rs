@@ -1,8 +1,10 @@
 use fin_config::{ConfigMapper, SystemConfig, parse_user_toml, system_to_toml};
-use fin_contracts::OperationEnvelope;
+use fin_contracts::{EntityRefs, MinimalContextView};
 use fin_debug_server::{build_projection, persist_snapshot, serve_debug_mvp};
-use fin_provider::{ProviderDescriptor, ProviderRegistry};
-use fin_runtime::M1Runtime;
+#[cfg(test)]
+use fin_provider::StaticProviderClient;
+use fin_provider::{InferenceProvider, ProviderFacade, ProviderRegistry};
+use fin_runtime::{InferenceOperationBuilder, InferenceRequest, M1Runtime, WorkerRuntime};
 use fin_shared::expand_home_path;
 use serde_json::json;
 use std::{
@@ -139,8 +141,8 @@ fn run_with_runtime_home(
         Command::RuntimeDemo { path, input } => {
             let user_toml = read_file(Path::new(&path))?;
             let system = map_system_config(&user_toml)?;
-            let provider = default_provider_descriptor(&system)?;
-            let run = run_demo(&provider, &input)?;
+            let provider = default_provider_facade(&system)?;
+            let run = run_demo(&system, &provider, &input)?;
             let artifacts =
                 persist_runtime_demo(&user_toml, &system, &run, runtime_home_override.as_deref())?;
             println!(
@@ -155,8 +157,8 @@ fn run_with_runtime_home(
         Command::DebugProjection { path, input } => {
             let user_toml = read_file(Path::new(&path))?;
             let system = map_system_config(&user_toml)?;
-            let provider = default_provider_descriptor(&system)?;
-            let run = run_demo(&provider, &input)?;
+            let provider = default_provider_facade(&system)?;
+            let run = run_demo(&system, &provider, &input)?;
             persist_runtime_demo(&user_toml, &system, &run, runtime_home_override.as_deref())?;
             let projection = build_projection(&run.events);
             println!("{}", serde_json::to_string_pretty(&projection)?);
@@ -253,34 +255,42 @@ fn load_system_config(path: &Path) -> Result<SystemConfig, CliError> {
     map_system_config(&content)
 }
 
-fn default_provider_descriptor(system: &SystemConfig) -> Result<ProviderDescriptor, CliError> {
+fn default_provider_facade(system: &SystemConfig) -> Result<ProviderFacade, CliError> {
     let mut registry = ProviderRegistry::default();
     for provider in system.providers.values() {
         registry.register_resolved(provider)?;
     }
     let provider = system.default_provider_config()?;
-    Ok(registry
+    let _ = registry
         .get(&provider.name)
-        .expect("default provider should be registered")
-        .clone())
+        .expect("default provider should be registered");
+    Ok(ProviderFacade::from_resolved(provider))
 }
 
 fn run_demo(
-    provider: &ProviderDescriptor,
+    system: &SystemConfig,
+    provider: &impl InferenceProvider,
     input: &str,
 ) -> Result<fin_runtime::ClosureRun, CliError> {
     let mut runtime = M1Runtime::default();
+    let worker =
+        WorkerRuntime::from_system(system, "agent-cli-demo", "worker-cli-demo", "cli", None)?;
     let demo_ids = demo_identity(demo_namespace_from_env().as_deref());
-    let mut operation = OperationEnvelope::new(
-        demo_ids.operation_id,
-        "start_inference",
-        "2026-04-17T00:00:00Z",
-        "cli",
-        demo_ids.trace_id,
-        json!({"input": input}),
-    );
-    operation.refs.session_id = Some(demo_ids.session_id);
-    operation.refs.task_id = Some(demo_ids.task_id);
+    let operation = InferenceOperationBuilder.build(
+        &worker,
+        InferenceRequest {
+            operation_id: demo_ids.operation_id,
+            trace_id: demo_ids.trace_id,
+            submitted_at: "2026-04-17T00:00:00Z".into(),
+            refs: EntityRefs {
+                session_id: Some(demo_ids.session_id),
+                task_id: Some(demo_ids.task_id),
+                ..EntityRefs::default()
+            },
+            input: input.to_string(),
+            context: MinimalContextView::default(),
+        },
+    )?;
     Ok(runtime.run_closure(operation, provider)?)
 }
 
@@ -960,6 +970,7 @@ fn persist_runtime_demo(
             "digest_id": run.digest.digest_id,
             "provider": run.prepared_request.provider_name,
             "model": run.prepared_request.model,
+            "answer": run.provider_response.output_text,
         }))?
         .as_slice(),
     )?;
@@ -1010,6 +1021,10 @@ model = "gpt-5"
 api_key_env = "OPENAI_API_KEY"
 "#
         .into()
+    }
+
+    fn sample_system_config() -> SystemConfig {
+        map_system_config(&sample_user_toml()).expect("system config should map")
     }
 
     fn write_temp_user_config() -> String {
@@ -1066,13 +1081,15 @@ api_key_env = "OPENAI_API_KEY"
 
     #[test]
     fn runtime_demo_persists_home_artifacts() {
-        let path = write_temp_user_config();
+        let user_toml = sample_user_toml();
+        let system = sample_system_config();
         let home = temp_runtime_home();
-        run_with_runtime_home(
-            vec!["runtime-demo".into(), path, "hello".into()],
-            Some(home.clone()),
-        )
-        .expect("runtime demo should run");
+        let provider = StaticProviderClient::new(fin_provider::ProviderDescriptor::from_resolved(
+            system.default_provider_config().expect("default provider"),
+        ));
+        let run = run_demo(&system, &provider, "hello").expect("runtime demo should run");
+        persist_runtime_demo(&user_toml, &system, &run, Some(home.as_path()))
+            .expect("artifacts should persist");
 
         assert!(home.join("config/user.toml").exists());
         assert!(
@@ -1103,13 +1120,15 @@ api_key_env = "OPENAI_API_KEY"
 
     #[test]
     fn debug_projection_command_runs() {
-        let path = write_temp_user_config();
+        let user_toml = sample_user_toml();
+        let system = sample_system_config();
         let home = temp_runtime_home();
-        run_with_runtime_home(
-            vec!["debug-projection".into(), path, "hello".into()],
-            Some(home.clone()),
-        )
-        .expect("debug projection should run");
+        let provider = StaticProviderClient::new(fin_provider::ProviderDescriptor::from_resolved(
+            system.default_provider_config().expect("default provider"),
+        ));
+        let run = run_demo(&system, &provider, "hello").expect("debug projection should run");
+        persist_runtime_demo(&user_toml, &system, &run, Some(home.as_path()))
+            .expect("artifacts should persist");
         assert!(
             home.join("runtime/projections/current_snapshot.json")
                 .exists()
