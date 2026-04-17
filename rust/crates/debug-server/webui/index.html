@@ -10,7 +10,7 @@
     <header class="page-header">
       <div>
         <h1>fin Debug Console</h1>
-        <p class="muted">Rust runtime is truth. Web only observes project/session-scoped projection, context, and events.</p>
+        <p class="muted">Rust runtime is truth. Web only observes request focus, context, provider facts, and event timelines.</p>
       </div>
       <div class="page-meta">
         <span id="status-pill" class="pill">loading</span>
@@ -51,22 +51,13 @@
       <section class="inspector-shell">
         <div class="inspector-header">
           <div>
-            <h2>Debug Inspector</h2>
-            <p class="muted">Structured rendering only. No raw JSON dump.</p>
+            <h2>Debug Dashboard</h2>
+            <p class="muted">Selected request summary + dashboard cards. Structured rendering only.</p>
           </div>
           <button id="refresh-btn" class="control-btn">Refresh</button>
         </div>
 
-        <div class="tab-bar" id="tab-bar">
-          <button class="tab-btn active" data-tab="overview">Overview</button>
-          <button class="tab-btn" data-tab="provider">Provider</button>
-          <button class="tab-btn" data-tab="context">Current Context</button>
-          <button class="tab-btn" data-tab="history">Context History</button>
-          <button class="tab-btn" data-tab="events">Events</button>
-          <button class="tab-btn" data-tab="last-run">Last Run</button>
-          <button class="tab-btn" data-tab="alerts">Alerts</button>
-        </div>
-
+        <div id="focus-pane" class="focus-pane"></div>
         <div id="inspector-content" class="inspector-content"></div>
       </section>
     </main>

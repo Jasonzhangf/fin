@@ -4,6 +4,7 @@ use crate::{
         DemoRequest, demo_identity, demo_namespace_from_env, run_demo_request, sanitize_id_fragment,
     },
     fs_utils::read_file,
+    time::{local_time_base, local_timestamp_for_turn},
 };
 use fin_config::SystemConfig;
 use fin_contracts::{DigestRecord, MinimalContextView};
@@ -45,6 +46,7 @@ pub(crate) fn run_transcript_demo(
 ) -> Result<TranscriptRun, CliError> {
     let normalized = normalize_scenario(scenario.clone());
     let ids = transcript_ids(&normalized);
+    let time_base = local_time_base();
     let mut runs: Vec<ClosureRun> = Vec::with_capacity(normalized.turns.len());
 
     for (index, turn) in normalized.turns.iter().enumerate() {
@@ -56,7 +58,7 @@ pub(crate) fn run_transcript_demo(
             task_id: ids.task_id.clone(),
             input: turn.input.clone(),
             context: rebuild_context_from_digests(&digests),
-            submitted_at: submitted_at_for_turn(index),
+            submitted_at: local_timestamp_for_turn(time_base, index),
         };
         runs.push(run_demo_request(system, provider, request)?);
     }
@@ -107,12 +109,6 @@ pub(crate) fn rebuild_context_from_digests(history: &[DigestRecord]) -> MinimalC
         continuity_tail,
         summary,
     }
-}
-
-pub(crate) fn submitted_at_for_turn(index: usize) -> String {
-    let minute = index / 60;
-    let second = index % 60;
-    format!("2026-04-17T00:{minute:02}:{second:02}Z")
 }
 
 pub(crate) fn scope_from_session_id(session_id: &str) -> String {

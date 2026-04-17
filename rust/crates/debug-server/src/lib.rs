@@ -8,10 +8,13 @@ use std::{
     io::Write,
     net::{TcpListener, TcpStream},
     path::{Path, PathBuf},
+    thread,
 };
 use thiserror::Error;
 
+mod event_stream;
 mod http;
+mod session_view;
 mod web_app;
 mod web_assets;
 mod web_styles;
@@ -31,8 +34,11 @@ const API_EVENTS_PATH: &str = "/api/latest_events.jsonl";
 const API_LAST_RUN_PATH: &str = "/api/last_run.json";
 const API_CURRENT_CONTEXT_PATH: &str = "/api/current_context.json";
 const API_RECENT_CONTEXTS_PATH: &str = "/api/recent_contexts.json";
+const API_RECENT_DIGESTS_PATH: &str = "/api/recent_digests.json";
 const API_SESSION_MESSAGES_PATH: &str = "/api/session_messages.json";
+const API_SESSION_EVENTS_PATH: &str = "/api/session_events.json";
 const API_CHAT_SEND_PATH: &str = "/api/chat/send";
+const API_WATCH_PATH: &str = "/api/watch";
 
 #[derive(Debug, Error)]
 pub enum DebugDataError {
@@ -263,30 +269,38 @@ pub fn serve_debug_mvp(runtime_home: &Path, bind_addr: &str) -> Result<(), Debug
 pub fn serve_debug_mvp_with_handler(
     runtime_home: &Path,
     bind_addr: &str,
-    handler: &impl DebugActionHandler,
+    handler: &(impl DebugActionHandler + Sync),
 ) -> Result<(), DebugDataError> {
     let listener = TcpListener::bind(bind_addr).map_err(|source| DebugDataError::Io {
         path: bind_addr.to_string(),
         source,
     })?;
 
-    for stream in listener.incoming() {
-        let mut stream = stream.map_err(|source| DebugDataError::Io {
-            path: bind_addr.to_string(),
-            source,
-        })?;
-        handle_connection(&mut stream, runtime_home, handler)?;
-    }
+    thread::scope(|scope| {
+        for stream in listener.incoming() {
+            let mut stream = stream.map_err(|source| DebugDataError::Io {
+                path: bind_addr.to_string(),
+                source,
+            })?;
+            let runtime_home = runtime_home.to_path_buf();
+            scope.spawn(move || {
+                let _ = handle_connection(&mut stream, &runtime_home, handler);
+            });
+        }
 
-    Ok(())
+        Ok(())
+    })
 }
 
 fn handle_connection(
     stream: &mut TcpStream,
     runtime_home: &Path,
-    handler: &impl DebugActionHandler,
+    handler: &(impl DebugActionHandler + Sync),
 ) -> Result<(), DebugDataError> {
     let request = read_http_request(stream)?;
+    if request.method == "GET" && request.path == API_WATCH_PATH {
+        return event_stream::stream_runtime_updates(stream, runtime_home);
+    }
     let response = response_for_request(&request, runtime_home, handler);
     write_http_response(stream, &response)
 }
@@ -294,7 +308,7 @@ fn handle_connection(
 fn response_for_request(
     request: &HttpRequest,
     runtime_home: &Path,
-    handler: &impl DebugActionHandler,
+    handler: &(impl DebugActionHandler + Sync),
 ) -> HttpResponse {
     match (request.method.as_str(), request.path.as_str()) {
         ("GET", INDEX_HTML_PATH) => html_response(web_assets::INDEX_HTML),
@@ -331,11 +345,17 @@ fn response_for_request(
             "session_recent_contexts_path",
             "application/json; charset=utf-8",
         ),
+        ("GET", API_RECENT_DIGESTS_PATH) => last_run_artifact_response(
+            runtime_home,
+            "session_recent_digests_path",
+            "application/json; charset=utf-8",
+        ),
         ("GET", API_SESSION_MESSAGES_PATH) => last_run_artifact_response(
             runtime_home,
             "session_messages_path",
             "application/json; charset=utf-8",
         ),
+        ("GET", API_SESSION_EVENTS_PATH) => session_events_response(runtime_home),
         ("POST", API_CHAT_SEND_PATH) => chat_send_response(runtime_home, request, handler),
         _ => not_found_response(&request.path),
     }
@@ -344,7 +364,7 @@ fn response_for_request(
 fn chat_send_response(
     runtime_home: &Path,
     request: &HttpRequest,
-    handler: &impl DebugActionHandler,
+    handler: &(impl DebugActionHandler + Sync),
 ) -> HttpResponse {
     let payload: ChatSendRequest = match serde_json::from_slice(&request.body) {
         Ok(value) => value,
@@ -364,29 +384,34 @@ fn last_run_artifact_response(
     field: &str,
     content_type: &'static str,
 ) -> HttpResponse {
-    let last_run_path = runtime_home.join("runtime/current/last_run.json");
-    let last_run = match fs::read_to_string(&last_run_path) {
-        Ok(content) => content,
-        Err(err) if err.kind() == std::io::ErrorKind::NotFound => {
-            return not_found_response("last_run.json");
-        }
-        Err(err) => {
-            return internal_error_response(&format!(
-                "failed to read {}: {err}",
-                last_run_path.display()
-            ));
-        }
-    };
-    let parsed: Value = match serde_json::from_str(&last_run) {
+    let Some(path) = (match session_view::last_run_artifact_path(runtime_home, field) {
         Ok(value) => value,
-        Err(err) => {
-            return internal_error_response(&format!("failed to parse last_run.json: {err}"));
-        }
-    };
-    let Some(relative_path) = parsed.get(field).and_then(Value::as_str) else {
+        Err(DebugDataError::Io { .. }) => return not_found_response(field),
+        Err(err) => return internal_error_response(&err.to_string()),
+    }) else {
         return not_found_response(field);
     };
-    file_response(&runtime_home.join(relative_path), content_type)
+    file_response(&path, content_type)
+}
+
+fn session_events_response(runtime_home: &Path) -> HttpResponse {
+    let Some(path) = (match session_view::sibling_artifact_path(
+        runtime_home,
+        "session_messages_path",
+        "conversation/messages.json",
+        "events/stream.jsonl",
+    ) {
+        Ok(value) => value,
+        Err(DebugDataError::Io { .. }) => return not_found_response("session_events_path"),
+        Err(err) => return internal_error_response(&err.to_string()),
+    }) else {
+        return not_found_response("session_events_path");
+    };
+
+    match session_view::read_json_lines(&path) {
+        Ok(events) => json_response(200, &events),
+        Err(err) => internal_error_response(&err.to_string()),
+    }
 }
 
 #[cfg(test)]

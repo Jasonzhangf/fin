@@ -8,6 +8,7 @@ mod install_flow;
 mod install_smoke;
 mod process_utils;
 mod runtime_home;
+mod time;
 mod transcript;
 mod versioning;
 mod web_debug;

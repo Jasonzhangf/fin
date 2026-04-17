@@ -178,7 +178,7 @@ fn response_for_root_serves_html_shell() {
     let body = String::from_utf8(response.body).expect("html should be utf8");
     assert_eq!(response.status_code, 200);
     assert!(body.contains("Conversation"));
-    assert!(body.contains("Debug Inspector"));
+    assert!(body.contains("Debug Dashboard"));
 }
 
 #[test]

@@ -11,6 +11,7 @@ fin-contracts = { path = "../contracts" }
 fin-provider = { path = "../provider" }
 fin-runtime = { path = "../runtime" }
 fin-shared = { path = "../shared" }
+chrono.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true

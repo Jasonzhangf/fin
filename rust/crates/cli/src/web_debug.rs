@@ -5,7 +5,8 @@ use crate::{
     runtime_home::{
         read_last_run_value, read_recent_digests, resolved_runtime_home, persist_runtime_demo,
     },
-    transcript::{rebuild_context_from_digests, scope_from_session_id, submitted_at_for_turn},
+    time::local_timestamp_now,
+    transcript::{rebuild_context_from_digests, scope_from_session_id},
 };
 use fin_config::SystemConfig;
 use fin_debug_server::{
@@ -97,7 +98,7 @@ impl CliDebugActionHandler {
                 task_id,
                 input: message.to_string(),
                 context: rebuild_context_from_digests(&digests),
-                submitted_at: submitted_at_for_turn(turn_index),
+                submitted_at: local_timestamp_now(),
             },
         )?;
         persist_runtime_demo(&self.user_toml, &self.system, &run, Some(runtime_home))?;

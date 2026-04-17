@@ -35,6 +35,12 @@ pub(crate) struct SessionMessageRecord {
     pub(crate) created_at: String,
     pub(crate) session_id: String,
     pub(crate) task_id: Option<String>,
+    #[serde(default)]
+    pub(crate) operation_id: Option<String>,
+    #[serde(default)]
+    pub(crate) trace_id: Option<String>,
+    #[serde(default)]
+    pub(crate) closure_id: Option<String>,
 }
 
 pub(crate) fn resolved_runtime_home(
@@ -245,6 +251,9 @@ fn persist_session_messages(session_dir: &Path, run: &ClosureRun) -> Result<(), 
         created_at: run.context_snapshot.captured_at.clone(),
         session_id: session_id.clone(),
         task_id: task_id.clone(),
+        operation_id: Some(run.context_snapshot.operation_id.clone()),
+        trace_id: Some(run.context_snapshot.trace_id.clone()),
+        closure_id: Some(run.digest.closure_id.clone()),
     });
     messages.push(SessionMessageRecord {
         message_id: format!("assistant-{}", run.digest.closure_id),
@@ -253,6 +262,9 @@ fn persist_session_messages(session_dir: &Path, run: &ClosureRun) -> Result<(), 
         created_at: run.note.created_at.clone(),
         session_id,
         task_id,
+        operation_id: Some(run.context_snapshot.operation_id.clone()),
+        trace_id: Some(run.context_snapshot.trace_id.clone()),
+        closure_id: Some(run.digest.closure_id.clone()),
     });
     trim_head(&mut messages, SESSION_MESSAGE_LIMIT);
     write_file(&path, serde_json::to_vec_pretty(&messages)?.as_slice())

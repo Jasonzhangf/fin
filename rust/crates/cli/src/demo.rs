@@ -1,4 +1,5 @@
 use crate::CliError;
+use crate::time::local_timestamp_now;
 use fin_config::SystemConfig;
 use fin_contracts::{EntityRefs, MinimalContextView};
 use fin_provider::InferenceProvider;
@@ -42,7 +43,7 @@ pub(crate) fn run_demo(
             task_id: demo_ids.task_id,
             input: input.to_string(),
             context: MinimalContextView::default(),
-            submitted_at: "2026-04-17T00:00:00Z".into(),
+            submitted_at: local_timestamp_now(),
         },
     )
 }
