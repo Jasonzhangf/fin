@@ -24,6 +24,7 @@ description: Testing and harness workflow for fin. Use for replay design, fault 
 4. 测试必须使用隔离的 test `user.toml`、test runtime home、test session namespace，禁止污染正常 `~/.fin/sessions/*`
 5. 若跨 runtime / transport 边界，必须补 harness 场景
 6. 若修复可复现故障，优先沉淀 replay 场景
+7. 正式 build 的回归必须能被统一 build flow 自动调用，不能依赖人工拼接命令
 
 
 ## 3.1) Module test baseline（路由到全局 skill）
@@ -40,6 +41,7 @@ description: Testing and harness workflow for fin. Use for replay design, fault 
 - 回归报告进入 `~/.fin/harness/reports/`
 - 回归日志进入 `~/.fin/logs/regression/`
 - 影响 runtime / provider / debug 链路的改动，优先补 replay / harness smoke
+- 多轮上下文闭环优先用 `transcript-demo` 场景固定复现；不要只看单轮 `runtime-demo` 就宣称 context 生效
 - provider 真实/半真实测试默认使用 `~/.rcc/provider/ali-coding-plan/config.v2.json` 生成 test `user.toml`
 - 默认 provider/model 冻结为 `ali-coding-plan` / `qwen3.6-plus`，协议为 `anthropic-wire`
 - 测试 session 必须带 `test-` 命名空间，并写入 `~/.fin/harness/runs/<run-id>/...` 的隔离目录

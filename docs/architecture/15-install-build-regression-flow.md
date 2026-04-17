@@ -63,6 +63,37 @@ PATH 包含 ~/.fin/bin
 ~/.fin/install/versions/<build-id>/
 ```
 
+## 2.1 Cargo semver 与 fin build version 必须分层
+
+Cargo crate version 必须满足 Rust/Cargo 的 semver 约束。
+
+因此：
+
+- `0.1.0001` 不能直接写进 `Cargo.toml` 作为 crate version
+- `0.1.0001` 应定义为 `fin` 的 build version / install version / display version
+- Cargo crate version 与 fin build version 不是同一层语义
+
+当前建议：
+
+- Cargo crate semver：保持合法 semver，例如 `0.1.1`
+- fin build version：从 `0.1.0001` 开始，按统一 build flow 自动递增
+
+## 2.2 自动回归必须挂在统一 build flow
+
+规则：
+
+- 正式 build 不等于裸 `cargo build`
+- 正式 build / install / promote 必须走统一入口
+- 自动回归、自动 version bump、report/receipt 生成都挂在统一入口，而不是散落到人工命令
+
+这也是未来支持：
+
+- core 稳定后独立编译/发布
+- feature/module 逐模块升级
+- targeted rollback
+
+的前置条件。
+
 ## 3. 标准闭环阶段
 
 ## Phase A：源码校验
@@ -148,6 +179,7 @@ checksums.txt
 - provider 默认 smoke 输入来自 `~/.rcc/provider/ali-coding-plan/config.v2.json` 生成的 test `user.toml`
 - 默认模型固定为 `qwen3.6-plus`
 - 真实协议连通性通过 `scripts/probe-anthropic-provider.py` 做最小网络探测
+- 对网络抖动允许显式 bounded retry，但每次 retry 必须写入回归日志，不能静默掩盖失败
 
 #### R3 Installed-binary smoke
 - 通过 `~/.fin/bin/fin` 或 staged binary 完成最小启动
@@ -256,8 +288,30 @@ M1 阶段，标准闭环至少要能证明：
 
 以下留到模块实现阶段再定：
 
-- 最终命令名与子命令接口
+- 更细的 channel（stable/nightly/dev）分支策略
 - 是否额外产出系统包（pkg/homebrew/formula）
 - 各类回归报告的最终 schema
 - channel（stable/nightly/dev）细节
 - 自动清理旧版本策略
+
+
+## 2.3 future modular version topology（预留）
+
+当前阶段不实现复杂模块版本系统，但设计上先冻结三层：
+
+1. build version
+   - 表示一次完整构建/安装结果
+2. core version
+   - 表示稳定 runtime/core binary
+3. module version map
+   - 表示 provider / feature / projection / web 等模块版本
+
+未来目标：
+
+- 不必每次整体升级全部模块
+- 某些模块可独立构建和替换
+- rollback 可以按 build version，也可以进一步按模块粒度
+
+当前要求只有一个：
+
+- 今天的 build/versioning 设计不能堵死这条演进路径

@@ -1,5 +1,6 @@
 use fin_shared::require_non_empty;
 use serde::{Deserialize, Serialize};
+use std::collections::BTreeMap;
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(transparent)]
@@ -128,6 +129,14 @@ pub struct ProviderEventPayload {
     pub response_id: Option<String>,
     pub stop_reason: Option<String>,
     pub status: Option<u16>,
+    pub debug: Option<SanitizedProviderDebug>,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SanitizedProviderDebug {
+    pub user_agent: Option<String>,
+    #[serde(default)]
+    pub request_headers: BTreeMap<String, String>,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -307,6 +316,22 @@ pub struct DigestRecord {
     pub created_at: String,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ContextSnapshotRecord {
+    pub operation_id: String,
+    pub trace_id: String,
+    #[serde(flatten)]
+    pub refs: EntityRefs,
+    pub input: String,
+    pub context: MinimalContextView,
+    pub role: RoleProfileRef,
+    pub provider_path: ProviderPath,
+    pub provider_strategy: ProviderStrategy,
+    pub protocol_version: String,
+    pub stream: bool,
+    pub captured_at: String,
+}
+
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ProjectionView {
     pub session_id: Option<String>,
@@ -317,6 +342,9 @@ pub struct ProjectionView {
     pub latest_note_id: Option<String>,
     pub latest_digest_id: Option<String>,
     pub latest_provider_activity: Option<String>,
+    pub latest_provider_user_agent: Option<String>,
+    #[serde(default)]
+    pub latest_provider_header_names: Vec<String>,
     pub warnings: Vec<String>,
 }
 
@@ -424,6 +452,8 @@ mod tests {
             latest_note_id: Some("note-1".into()),
             latest_digest_id: Some("digest-1".into()),
             latest_provider_activity: Some("provider.request_started".into()),
+            latest_provider_user_agent: Some("opencode/1.2.27".into()),
+            latest_provider_header_names: vec!["user-agent".into(), "x-api-key".into()],
             warnings: vec!["timeout_near".into()],
         };
 

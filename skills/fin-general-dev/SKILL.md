@@ -60,6 +60,9 @@ description: Project-local default development workflow for fin. Use for feature
 - 模块设计要兼容 session / workdir / runtime home 的分层
 - Web 只能做观察层，不能补 runtime 真相
 - 若模块影响多 agent / runtime / debug 链路，必须补 replay 或等价回放证据
+- context / debug snapshot 默认采用 bounded-write；禁止无界散写与每轮碎片化落盘
+- 生命周期设计默认前台可控；未获批准不引入 detached daemon / orphan process
+- 正式 build / install / promote 统一走 build-versioning flow；不要把裸 `cargo build` 当成交付闭环
 - 非白名单代码文件必须遵守 500 行上限；门禁脚本真源为 `scripts/check-code-line-limit.py`
 
 ## 4) Minimal validation matrix

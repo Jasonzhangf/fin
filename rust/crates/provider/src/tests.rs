@@ -52,6 +52,7 @@ fn client_prepares_request_from_descriptor() {
     let client = StaticProviderClient::new(descriptor);
     let prepared = client.prepare_request(&ProviderRequest {
         input: "hello".into(),
+        rendered_input: None,
         override_model: None,
     });
 
@@ -62,6 +63,9 @@ fn client_prepares_request_from_descriptor() {
         prepared.endpoint,
         "https://api.example.com/v1/chat/completions"
     );
+    assert_eq!(prepared.user_agent, None);
+    assert_eq!(prepared.rendered_input, "hello");
+    assert!(prepared.sanitized_headers.is_empty());
 }
 
 #[test]
@@ -80,11 +84,27 @@ fn anthropic_descriptor_prepares_messages_endpoint() {
     let facade = ProviderFacade::from_resolved(&config);
     let prepared = facade.prepare_request(&ProviderRequest {
         input: "hello".into(),
+        rendered_input: None,
         override_model: None,
     });
     assert_eq!(
         prepared.endpoint,
         "https://coding.dashscope.aliyuncs.com/apps/anthropic/v1/messages"
+    );
+    assert_eq!(prepared.user_agent.as_deref(), Some("opencode/1.2.27"));
+    assert_eq!(
+        prepared
+            .sanitized_headers
+            .get("X-Trace-Source")
+            .map(String::as_str),
+        Some("fin-test")
+    );
+    assert_eq!(
+        prepared
+            .sanitized_headers
+            .get("x-api-key")
+            .map(String::as_str),
+        Some("<redacted>")
     );
 }
 

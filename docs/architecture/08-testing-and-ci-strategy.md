@@ -86,3 +86,15 @@
 - test provider config 生成脚本：`scripts/generate-test-user-toml.py`
 - 真实 anthropic provider probe：`scripts/probe-anthropic-provider.py`
 - code line-limit gate：`scripts/check-code-line-limit.py`
+
+
+## 本轮新增观测回归点
+
+在 provider / runtime / web debug 相关改动后，最少补以下检查：
+
+1. `current_projection.json` 是否包含最新 provider 活动、UA、header names
+2. `current_context.json` 是否包含本轮真实 input/context/provider path
+3. `recent_contexts.json` 是否保持 bounded window，而不是无界增长
+4. 真实 provider 回归必须走隔离 runtime home + test session namespace
+5. 若需要开 Web debug，只允许前台启动并在测试结束后自然退出；不依赖后台悬挂进程
+6. 多轮 `transcript-demo` 场景要验证 recent context continuity，并至少有一条真实 provider 闭环证据

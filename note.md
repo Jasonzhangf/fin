@@ -932,3 +932,57 @@ This direction keeps:
 ### Runtime rule
 - provider transport 允许附加自定义 headers。
 - 但 `x-api-key` / `anthropic-version` / `content-type` / `accept` / `user-agent` 这类运行必需头由框架最终兜底写回，避免用户 header 配置破坏真实链路。
+
+
+## 2026-04-17 M1 observability slice accepted and verified
+
+### Provider debug visibility
+- provider 事件现在携带 `debug` 字段：
+  - `user_agent`
+  - `request_headers`（sanitized / redacted）
+- projection 现在暴露：
+  - `latest_provider_user_agent`
+  - `latest_provider_header_names`
+- Web debug 读取 projection + `current_context.json`，可以直接观察：
+  - 当前 provider 活动
+  - 当前 UA
+  - 当前 header names
+  - 当前 context 结构
+
+### Snapshot bounded-write rule
+- context snapshot 不做无界散写。
+- 当前冻结实现：
+  - `~/.fin/runtime/current/current_context.json`：只保留最新一份，覆盖写
+  - `~/.fin/sessions/YYYY/MM/<session-id>/context/recent_contexts.json`：bounded recent window（当前 8 条）
+- 不做每轮/每事件一个 context 文件的无限增长策略。
+
+### Lifecycle / resource rule
+- M1 `web-debug` 仍是前台阻塞型命令，不启动 detached daemon。
+- 本轮没有引入后台子进程，因此不会制造孤儿进程。
+- Web 前端轮询做了最小节流：
+  - 单次刷新互斥
+  - 页面 hidden 时不主动刷
+  - 3s 轮询
+
+### Verified evidence
+- `cargo test --workspace`：通过
+- 真实 provider 隔离回归：通过
+  - `FIN_RUNTIME_HOME_OVERRIDE=/tmp/fin-runtime-verify.*`
+  - `FIN_SESSION_NAMESPACE=test-context-bounded`
+  - `cargo run -p fin-cli -- runtime-demo ~/.fin/config/user.toml '请只回复 OK'`
+  - 返回 `OK`
+- 隔离 runtime home 已验证生成：
+  - `runtime/current/current_context.json`
+  - `sessions/2026/04/session-test-context-bounded/context/recent_contexts.json`
+  - `runtime/projections/current_projection.json`
+
+### 69) fin-cli build/versioning slice was modularized and main.rs left whitelist
+- `fin-cli` 的 build/versioning/install/smoke 逻辑已从单一 `main.rs` 拆成 `cli / install_flow / install_smoke / runtime_home / versioning / demo / config / process_utils / fs_utils`，保持原命令行为不变。
+- `main.rs` 现仅保留二进制入口，已从 `scripts/line-limit-whitelist.txt` 移除；当前 whitelist 只剩 `rust/crates/config/src/lib.rs`。
+- 这次拆分的验证证据为：`python3 scripts/check-code-line-limit.py`、`cargo test -p fin-cli`、`cargo test --workspace` 全通过。
+
+### 70) transcript-demo now forms a real multi-turn provider closure
+- `transcript-demo` 已落地为最小多轮闭环：同一 `session/task` 下按 turn 顺序重建 `MinimalContextView`，并把 recent digest continuity/summary 真正编入 provider request。
+- Web debug 新增 `Recent Context History`，通过 `/api/recent_contexts.json` 读取 `last_run.json -> session_recent_contexts_path`，可以直观看每轮请求时的 context 结构。
+- 真实 provider 隔离验证已通过：三轮 transcript 中第三轮成功仅回复 `BANANA-42`，证明 context 不只是记录，而是已经真正进入模型请求。
+

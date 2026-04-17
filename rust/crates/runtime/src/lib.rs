@@ -1,7 +1,8 @@
 use fin_contracts::{
-    AgentId, DigestRecord, EntityRefs, EventEnvelope, ExecutionNote, InferenceOperationPayload,
-    MinimalContextView, OperationEnvelope, ProgressBlock, ProviderEventPayload, ProviderPath,
-    ProviderStrategy, RoleProfileRef, ToolSnapshot,
+    AgentId, ContextSnapshotRecord, DigestRecord, EntityRefs, EventEnvelope, ExecutionNote,
+    InferenceOperationPayload, MinimalContextView, OperationEnvelope, ProgressBlock,
+    ProviderEventPayload, ProviderPath, ProviderStrategy, RoleProfileRef, SanitizedProviderDebug,
+    ToolSnapshot,
 };
 use fin_provider::{InferenceProvider, PreparedRequest, ProviderRequest, ProviderResponse};
 use serde::{Deserialize, Serialize};
@@ -129,6 +130,7 @@ pub struct ClosureRun {
     pub operation: OperationEnvelope<InferenceOperationPayload>,
     pub prepared_request: PreparedRequest,
     pub provider_response: ProviderResponse,
+    pub context_snapshot: ContextSnapshotRecord,
     pub progress: ProgressBlock,
     pub note: ExecutionNote,
     pub digest: DigestRecord,
@@ -145,6 +147,34 @@ impl Default for M1Runtime {
     fn default() -> Self {
         Self::new("runtime")
     }
+}
+
+fn render_provider_input(input: &str, context: &MinimalContextView) -> String {
+    let has_summary = context
+        .summary
+        .as_deref()
+        .map(|value| !value.trim().is_empty())
+        .unwrap_or(false);
+    if !has_summary && context.continuity_tail.is_empty() {
+        return input.to_string();
+    }
+
+    let mut sections = Vec::new();
+    if let Some(summary) = context
+        .summary
+        .as_deref()
+        .filter(|value| !value.trim().is_empty())
+    {
+        sections.push(format!("Context summary:\n{summary}"));
+    }
+    if !context.continuity_tail.is_empty() {
+        sections.push(format!(
+            "Continuity tail:\n- {}",
+            context.continuity_tail.join("\n- ")
+        ));
+    }
+    sections.push(format!("Current user input:\n{input}"));
+    sections.join("\n\n")
 }
 
 impl M1Runtime {
@@ -165,6 +195,10 @@ impl M1Runtime {
         let refs = operation.refs.clone();
         let prepared_request = provider.prepare_request(&ProviderRequest {
             input: operation.payload.input.clone(),
+            rendered_input: Some(render_provider_input(
+                &operation.payload.input,
+                &operation.payload.context,
+            )),
             override_model: Some(
                 operation
                     .payload
@@ -175,6 +209,23 @@ impl M1Runtime {
             ),
         });
         let provider_response = provider.execute_prepared(&prepared_request)?;
+        let provider_debug = SanitizedProviderDebug {
+            user_agent: prepared_request.user_agent.clone(),
+            request_headers: prepared_request.sanitized_headers.clone(),
+        };
+        let context_snapshot = ContextSnapshotRecord {
+            operation_id: operation.operation_id.clone(),
+            trace_id: operation.trace_id.clone(),
+            refs: refs.clone(),
+            input: operation.payload.input.clone(),
+            context: operation.payload.context.clone(),
+            role: operation.payload.role.clone(),
+            provider_path: operation.payload.provider_path.clone(),
+            provider_strategy: operation.payload.provider_strategy,
+            protocol_version: operation.payload.protocol_version.clone(),
+            stream: operation.payload.stream,
+            captured_at: operation.submitted_at.clone(),
+        };
 
         let progress = ProgressBlock {
             progress_id: format!("progress-{}", operation.operation_id),
@@ -239,7 +290,7 @@ impl M1Runtime {
             &operation.submitted_at,
             &refs,
             Some(operation.operation_id.clone()),
-            serde_json::json!({"operation_type": operation.operation_type}),
+            serde_json::json!({"operation_type": operation.operation_type.clone()}),
         )?);
         events.push(self.event(
             "inference.started",
@@ -248,11 +299,27 @@ impl M1Runtime {
             &refs,
             Some(operation.operation_id.clone()),
             serde_json::json!({
-                "provider": prepared_request.provider_name,
-                "model": prepared_request.model,
-                "input": operation.payload.input,
+                "provider": prepared_request.provider_name.clone(),
+                "model": prepared_request.model.clone(),
+                "input": operation.payload.input.clone(),
+                "context": operation.payload.context.clone(),
+                "role": operation.payload.role.clone(),
+                "provider_path": operation.payload.provider_path.clone(),
+                "provider_strategy": operation.payload.provider_strategy,
+                "protocol_version": operation.payload.protocol_version.clone(),
+                "stream": operation.payload.stream,
             }),
         )?);
+        let provider_started_payload = ProviderEventPayload {
+            provider_name: prepared_request.provider_name.clone(),
+            model: prepared_request.model.clone(),
+            endpoint: prepared_request.endpoint.clone(),
+            output_text: None,
+            response_id: None,
+            stop_reason: None,
+            status: None,
+            debug: Some(provider_debug.clone()),
+        };
         let provider_payload = ProviderEventPayload {
             provider_name: prepared_request.provider_name.clone(),
             model: prepared_request.model.clone(),
@@ -261,6 +328,7 @@ impl M1Runtime {
             response_id: provider_response.response_id.clone(),
             stop_reason: provider_response.stop_reason.clone(),
             status: Some(provider_response.status),
+            debug: Some(provider_debug),
         };
         events.push(self.event(
             "provider.operation_accepted",
@@ -268,7 +336,7 @@ impl M1Runtime {
             &operation.submitted_at,
             &refs,
             Some(operation.operation_id.clone()),
-            serde_json::to_value(&prepared_request)?,
+            serde_json::to_value(&provider_started_payload)?,
         )?);
         events.push(self.event(
             "provider.gateway_request_sent",
@@ -277,9 +345,9 @@ impl M1Runtime {
             &refs,
             Some(operation.operation_id.clone()),
             serde_json::json!({
-                "provider_name": prepared_request.provider_name,
-                "model": prepared_request.model,
-                "endpoint": prepared_request.endpoint,
+                "provider_name": prepared_request.provider_name.clone(),
+                "model": prepared_request.model.clone(),
+                "endpoint": prepared_request.endpoint.clone(),
             }),
         )?);
         events.push(self.event(
@@ -338,7 +406,7 @@ impl M1Runtime {
             Some(operation.operation_id.clone()),
             serde_json::json!({
                 "status": "ok",
-                "answer": provider_response.output_text,
+                "answer": provider_response.output_text.clone(),
             }),
         )?);
 
@@ -346,6 +414,7 @@ impl M1Runtime {
             operation,
             prepared_request,
             provider_response,
+            context_snapshot,
             progress,
             note,
             digest,

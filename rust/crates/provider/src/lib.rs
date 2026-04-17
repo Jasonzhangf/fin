@@ -44,6 +44,7 @@ pub struct ProviderDescriptor {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ProviderRequest {
     pub input: String,
+    pub rendered_input: Option<String>,
     pub override_model: Option<String>,
 }
 
@@ -54,6 +55,9 @@ pub struct PreparedRequest {
     pub endpoint: String,
     pub model: String,
     pub input: String,
+    pub rendered_input: String,
+    pub user_agent: Option<String>,
+    pub sanitized_headers: BTreeMap<String, String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -87,6 +91,12 @@ impl ProviderDescriptor {
                 .clone()
                 .unwrap_or_else(|| self.default_model.clone()),
             input: request.input.clone(),
+            rendered_input: request
+                .rendered_input
+                .clone()
+                .unwrap_or_else(|| request.input.clone()),
+            user_agent: None,
+            sanitized_headers: BTreeMap::new(),
         }
     }
 }
@@ -238,7 +248,7 @@ impl ProviderFacade {
             "messages": [
                 {
                     "role": "user",
-                    "content": request.input,
+                    "content": request.rendered_input,
                 }
             ]
         });
@@ -340,14 +350,73 @@ impl ProviderFacade {
         Ok(headers)
     }
 
+    fn build_sanitized_request_headers(&self) -> BTreeMap<String, String> {
+        let mut headers = BTreeMap::new();
+        for (name, value) in &self.headers {
+            if is_reserved_runtime_header(name) {
+                continue;
+            }
+            headers.insert(name.clone(), sanitize_header_value(name, value));
+        }
+        headers.insert("user-agent".into(), self.effective_user_agent().into());
+        if self.descriptor.protocol == ProviderProtocol::AnthropicWire {
+            headers.insert("accept".into(), "application/json".into());
+            headers.insert("content-type".into(), "application/json".into());
+            headers.insert("anthropic-version".into(), "2023-06-01".into());
+            headers.insert("x-api-key".into(), "<redacted>".into());
+        }
+        headers
+    }
+
     fn effective_user_agent(&self) -> &str {
         self.user_agent.as_deref().unwrap_or(DEFAULT_USER_AGENT)
+    }
+}
+
+fn is_reserved_runtime_header(name: &str) -> bool {
+    matches!(
+        name.trim().to_ascii_lowercase().as_str(),
+        "x-api-key" | "anthropic-version" | "content-type" | "accept" | "user-agent"
+    )
+}
+
+fn sanitize_header_value(name: &str, value: &str) -> String {
+    let name = name.trim().to_ascii_lowercase();
+    if ["authorization", "x-api-key", "cookie"]
+        .iter()
+        .any(|candidate| name == *candidate)
+        || ["token", "secret", "apikey", "api-key", "auth"]
+            .iter()
+            .any(|needle| name.contains(needle))
+    {
+        "<redacted>".into()
+    } else {
+        value.into()
     }
 }
 
 impl InferenceProvider for ProviderFacade {
     fn descriptor(&self) -> &ProviderDescriptor {
         &self.descriptor
+    }
+
+    fn prepare_request(&self, request: &ProviderRequest) -> PreparedRequest {
+        PreparedRequest {
+            provider_name: self.descriptor.name.clone(),
+            protocol: self.descriptor.protocol,
+            endpoint: endpoint_for_protocol(&self.descriptor.base_url, self.descriptor.protocol),
+            model: request
+                .override_model
+                .clone()
+                .unwrap_or_else(|| self.descriptor.default_model.clone()),
+            input: request.input.clone(),
+            rendered_input: request
+                .rendered_input
+                .clone()
+                .unwrap_or_else(|| request.input.clone()),
+            user_agent: Some(self.effective_user_agent().into()),
+            sanitized_headers: self.build_sanitized_request_headers(),
+        }
     }
 
     fn execute_prepared(
