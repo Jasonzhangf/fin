@@ -914,3 +914,21 @@ This direction keeps:
 
 ### Additional maintenance
 - 为满足非白名单文件 `<500` 行门禁，`fin-runtime` 测试已从 `src/lib.rs` 拆到 `src/tests.rs`。
+
+
+## 2026-04-17 implementation note: provider custom user-agent and headers
+
+### Feature
+- `user.toml` 的 provider 现在支持两个额外字段：
+  - `user_agent = "..."`
+  - `[providers.<name>.headers]`
+- user config -> system config 仍然是单向映射，不做 merge。
+
+### OpenCode reference used
+- 本机 OpenCode CLI 版本：`1.2.27`
+- 静态字符串证据显示 OpenCode 使用 `User-Agent: opencode/${Installation.VERSION}` 风格。
+- 因此默认 normal/test `user.toml` 生成时写入 `user_agent = "opencode/1.2.27"`。
+
+### Runtime rule
+- provider transport 允许附加自定义 headers。
+- 但 `x-api-key` / `anthropic-version` / `content-type` / `accept` / `user-agent` 这类运行必需头由框架最终兜底写回，避免用户 header 配置破坏真实链路。

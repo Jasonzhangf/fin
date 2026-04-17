@@ -12,6 +12,7 @@ import urllib.request
 
 
 ANTHROPIC_VERSION = "2023-06-01"
+DEFAULT_USER_AGENT = "fin-coding-agent/0.1"
 
 
 def parse_args() -> argparse.Namespace:
@@ -80,6 +81,8 @@ def main() -> int:
     base_url = provider["base_url"].rstrip("/")
     model = provider["model"]
     key_source, api_key = resolve_api_key(provider)
+    custom_headers = provider.get("headers", {})
+    user_agent = provider.get("user_agent") or DEFAULT_USER_AGENT
 
     if protocol != "anthropic-wire":
         raise SystemExit(f"default provider protocol must be anthropic-wire, got {protocol}")
@@ -88,12 +91,12 @@ def main() -> int:
 
     endpoint = f"{base_url}/v1/messages"
     payload = build_payload(model)
-    headers = {
-        "content-type": "application/json",
-        "accept": "application/json",
-        "x-api-key": api_key,
-        "anthropic-version": ANTHROPIC_VERSION,
-    }
+    headers = dict(custom_headers)
+    headers["content-type"] = "application/json"
+    headers["accept"] = "application/json"
+    headers["x-api-key"] = api_key
+    headers["anthropic-version"] = ANTHROPIC_VERSION
+    headers["user-agent"] = user_agent
 
     request = urllib.request.Request(endpoint, data=payload, headers=headers, method="POST")
 
@@ -104,6 +107,8 @@ def main() -> int:
         "endpoint": endpoint,
         "anthropic_version": ANTHROPIC_VERSION,
         "api_key_source": key_source,
+        "user_agent": user_agent,
+        "custom_header_names": sorted(custom_headers.keys()),
     }
 
     try:

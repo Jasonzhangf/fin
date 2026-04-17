@@ -16,6 +16,8 @@ fn provider() -> StaticProviderClient {
         credential: ProviderCredential::ApiKeyEnv {
             env_var: "OPENAI_API_KEY".into(),
         },
+        user_agent: None,
+        headers: BTreeMap::new(),
     }))
 }
 
@@ -30,6 +32,8 @@ fn worker_runtime() -> WorkerRuntime {
                 model: "gpt-5".into(),
                 api_key: None,
                 api_key_env: Some("OPENAI_API_KEY".into()),
+                user_agent: None,
+                headers: BTreeMap::new(),
             },
         )]),
     };
@@ -129,6 +133,8 @@ fn runtime_policy_snapshot_builds_from_default_role() {
                 model: "gpt-5".into(),
                 api_key: None,
                 api_key_env: Some("OPENAI_API_KEY".into()),
+                user_agent: None,
+                headers: BTreeMap::new(),
             },
         )]),
     };
@@ -162,6 +168,8 @@ fn worker_runtime_inherits_policy_snapshot() {
                 model: "gpt-5".into(),
                 api_key: None,
                 api_key_env: Some("OPENAI_API_KEY".into()),
+                user_agent: None,
+                headers: BTreeMap::new(),
             },
         )]),
     };

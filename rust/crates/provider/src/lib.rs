@@ -1,5 +1,6 @@
 use fin_config::{ProviderCredential, ProviderProtocol, ResolvedProviderConfig};
 use reqwest::blocking::Client;
+use reqwest::header::{ACCEPT, CONTENT_TYPE, HeaderMap, HeaderName, HeaderValue, USER_AGENT};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::BTreeMap;
@@ -15,6 +16,8 @@ pub enum ProviderError {
     UnsupportedProtocol { protocol: ProviderProtocol },
     #[error("missing provider credential env '{env_var}'")]
     MissingCredentialEnv { env_var: String },
+    #[error("invalid header '{name}': {message}")]
+    InvalidHeader { name: String, message: String },
     #[error("http status {status}: {body}")]
     HttpStatus { status: u16, body: String },
     #[error("request failed: {message}")]
@@ -198,6 +201,8 @@ impl InferenceProvider for StaticProviderClient {
 pub struct ProviderFacade {
     descriptor: ProviderDescriptor,
     credential: ProviderCredential,
+    user_agent: Option<String>,
+    headers: BTreeMap<String, String>,
 }
 
 impl ProviderFacade {
@@ -205,6 +210,8 @@ impl ProviderFacade {
         Self {
             descriptor: ProviderDescriptor::from_resolved(config),
             credential: config.credential.clone(),
+            user_agent: config.user_agent.clone(),
+            headers: config.headers.clone(),
         }
     }
 
@@ -224,6 +231,7 @@ impl ProviderFacade {
         request: &PreparedRequest,
     ) -> Result<ProviderResponse, ProviderError> {
         let client = Client::new();
+        let api_key = self.resolve_api_key()?;
         let payload = serde_json::json!({
             "model": request.model,
             "max_tokens": 256,
@@ -236,11 +244,7 @@ impl ProviderFacade {
         });
         let response = client
             .post(&request.endpoint)
-            .header("content-type", "application/json")
-            .header("accept", "application/json")
-            .header("x-api-key", self.resolve_api_key()?)
-            .header("anthropic-version", "2023-06-01")
-            .header("user-agent", DEFAULT_USER_AGENT)
+            .headers(self.build_anthropic_headers(&api_key)?)
             .json(&payload)
             .send()
             .map_err(|err| ProviderError::Request {
@@ -289,6 +293,56 @@ impl ProviderFacade {
             status,
         })
     }
+
+    fn build_anthropic_headers(&self, api_key: &str) -> Result<HeaderMap, ProviderError> {
+        let mut headers = self.build_custom_headers()?;
+        headers.insert(CONTENT_TYPE, HeaderValue::from_static("application/json"));
+        headers.insert(ACCEPT, HeaderValue::from_static("application/json"));
+        headers.insert(
+            HeaderName::from_static("x-api-key"),
+            HeaderValue::from_str(api_key).map_err(|err| ProviderError::InvalidHeader {
+                name: "x-api-key".into(),
+                message: err.to_string(),
+            })?,
+        );
+        headers.insert(
+            HeaderName::from_static("anthropic-version"),
+            HeaderValue::from_static("2023-06-01"),
+        );
+        headers.insert(
+            USER_AGENT,
+            HeaderValue::from_str(self.effective_user_agent()).map_err(|err| {
+                ProviderError::InvalidHeader {
+                    name: "user-agent".into(),
+                    message: err.to_string(),
+                }
+            })?,
+        );
+        Ok(headers)
+    }
+
+    fn build_custom_headers(&self) -> Result<HeaderMap, ProviderError> {
+        let mut headers = HeaderMap::new();
+        for (name, value) in &self.headers {
+            let header_name = HeaderName::from_bytes(name.as_bytes()).map_err(|err| {
+                ProviderError::InvalidHeader {
+                    name: name.clone(),
+                    message: err.to_string(),
+                }
+            })?;
+            let header_value =
+                HeaderValue::from_str(value).map_err(|err| ProviderError::InvalidHeader {
+                    name: name.clone(),
+                    message: err.to_string(),
+                })?;
+            headers.insert(header_name, header_value);
+        }
+        Ok(headers)
+    }
+
+    fn effective_user_agent(&self) -> &str {
+        self.user_agent.as_deref().unwrap_or(DEFAULT_USER_AGENT)
+    }
 }
 
 impl InferenceProvider for ProviderFacade {
@@ -308,89 +362,4 @@ impl InferenceProvider for ProviderFacade {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use fin_config::{ProviderCredential, ResolvedProviderConfig};
-
-    fn openai_config() -> ResolvedProviderConfig {
-        ResolvedProviderConfig {
-            name: "openai".into(),
-            protocol: ProviderProtocol::OpenAiCompatible,
-            base_url: "https://api.example.com/v1".into(),
-            model: "gpt-5".into(),
-            credential: ProviderCredential::ApiKeyEnv {
-                env_var: "OPENAI_API_KEY".into(),
-            },
-        }
-    }
-
-    #[test]
-    fn registry_registers_resolved_provider() {
-        let mut registry = ProviderRegistry::default();
-        registry
-            .register_resolved(&openai_config())
-            .expect("register should succeed");
-
-        let descriptor = registry.get("openai").expect("provider should exist");
-        assert_eq!(descriptor.default_model, "gpt-5");
-        assert!(descriptor.capabilities.supports_tool_calls);
-    }
-
-    #[test]
-    fn duplicate_provider_is_rejected() {
-        let mut registry = ProviderRegistry::default();
-        let config = openai_config();
-        registry
-            .register_resolved(&config)
-            .expect("first register should succeed");
-        let err = registry
-            .register_resolved(&config)
-            .expect_err("duplicate must fail");
-        assert_eq!(
-            err,
-            ProviderError::DuplicateProvider {
-                name: "openai".into()
-            }
-        );
-    }
-
-    #[test]
-    fn client_prepares_request_from_descriptor() {
-        let descriptor = ProviderDescriptor::from_resolved(&openai_config());
-        let client = StaticProviderClient::new(descriptor);
-        let prepared = client.prepare_request(&ProviderRequest {
-            input: "hello".into(),
-            override_model: None,
-        });
-
-        assert_eq!(client.protocol(), ProviderProtocol::OpenAiCompatible);
-        assert_eq!(prepared.model, "gpt-5");
-        assert_eq!(prepared.provider_name, "openai");
-        assert_eq!(
-            prepared.endpoint,
-            "https://api.example.com/v1/chat/completions"
-        );
-    }
-
-    #[test]
-    fn anthropic_descriptor_prepares_messages_endpoint() {
-        let config = ResolvedProviderConfig {
-            name: "ali-coding-plan".into(),
-            protocol: ProviderProtocol::AnthropicWire,
-            base_url: "https://coding.dashscope.aliyuncs.com/apps/anthropic".into(),
-            model: "qwen3.6-plus".into(),
-            credential: ProviderCredential::ApiKeyEnv {
-                env_var: "ALI_CODINGPLAN_KEY".into(),
-            },
-        };
-        let facade = ProviderFacade::from_resolved(&config);
-        let prepared = facade.prepare_request(&ProviderRequest {
-            input: "hello".into(),
-            override_model: None,
-        });
-        assert_eq!(
-            prepared.endpoint,
-            "https://coding.dashscope.aliyuncs.com/apps/anthropic/v1/messages"
-        );
-    }
-}
+mod tests;
