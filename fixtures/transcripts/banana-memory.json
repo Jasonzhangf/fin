@@ -1,0 +1,15 @@
+{
+  "session_id": "session-test-real-transcript",
+  "task_id": "task-test-real-transcript",
+  "turns": [
+    {
+      "input": "请记住代号 BANANA-42，并且只回复 记住了"
+    },
+    {
+      "input": "请保持简短，只回复 继续"
+    },
+    {
+      "input": "只回复你记住的代号，不要输出别的内容。"
+    }
+  ]
+}

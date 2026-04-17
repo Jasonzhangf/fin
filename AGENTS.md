@@ -1,0 +1,72 @@
+# AGENTS.md（fin 路由版）
+
+## 索引概要
+- L1-L8 `purpose`：本文件只保留入口、护栏、路由。
+- L10-L19 `priority-principle`：docs / skills / AGENTS 的职责边界。
+- L21-L31 `hard-guards`：项目级硬规则。
+- L33-L44 `route-map`：任务路由到 docs 与 skills。
+- L46-L52 `mandatory-flow`：执行顺序。
+- L54-L58 `evidence-report`：回报要求。
+
+## purpose
+`AGENTS.md` 只负责项目入口、硬护栏、路径索引；不承载长流程设计与协议细节。
+
+## priority-principle
+1. 架构、协议、状态机、测试分层写入 `docs/`，它们是设计真源。
+2. `skills/` 只保留执行适配：归属判断、唯一真源定位、最小验证矩阵、常见反模式。
+3. `AGENTS.md` 只做路由，不复制 docs 与 skills 的正文。
+4. Rust runtime 是执行真源，Web 是观察与调试层，不得双真源。
+5. 先最小框架，再扩展能力；禁止先堆复杂自治再补可观测性。
+
+## hard-guards
+1. 先验证，后结论；无证据不宣称完成。
+2. 禁止静默失败；错误必须结构化返回并记录事件。
+3. 非授权不做破坏性操作（删除、回滚、迁移、发布）。
+4. 禁止 broad kill：`pkill` / `killall` / `kill $(...)` / `xargs kill`。
+5. 真实 payload 不可裁剪或改写语义；只允许裁剪内部调试快照。
+6. 所有关键状态推进都必须产出结构化事件，供 Web / harness / CI 消费。
+7. 所有实现遵循 owning layer，禁止跨层复制业务语义。
+
+## route-map
+1. 通用开发流程：`skills/fin-general-dev/SKILL.md`
+2. 架构归属与 crate 边界：`skills/fin-architecture/SKILL.md`
+3. 测试、harness、回放与故障注入：`skills/fin-testing-harness/SKILL.md`
+4. 构建、版本、安装、提升与回滚：`skills/fin-build-versioning/SKILL.md`
+5. runtime 调试与事件定位：`skills/fin-runtime-debug/SKILL.md`
+6. 系统总览：`docs/architecture/01-system-overview.md`
+7. 分层边界：`docs/architecture/02-layer-boundaries.md`
+8. runtime 模型：`docs/architecture/03-rust-runtime-model.md`
+9. 控制面与事件面：`docs/architecture/04-control-plane-http-ws.md`
+10. 可观测性与 Web 调试后台：`docs/architecture/05-event-model-and-observability.md`、`docs/architecture/06-web-debug-console.md`
+11. harness / replay / CI：`docs/architecture/07-harness-replay-fault-injection.md`、`docs/architecture/08-testing-and-ci-strategy.md`
+12. workspace 与 crate 规划：`docs/architecture/09-workspace-and-crate-map.md`
+13. 运行时对象与 session/task/topic 架构：`docs/architecture/10-runtime-session-task-architecture.md`
+14. M1 最小可用脚手架与迭代顺序：`docs/architecture/11-m1-scaffolding-and-iteration.md`
+15. Tentative session 与 formal task 的路由状态机：`docs/architecture/12-tentative-session-routing-state-machine.md`
+16. Config 与 AI Provider 基础模块：`docs/architecture/13-config-and-provider-foundation.md`
+17. `~/.fin` 运行时家目录与 session/workdir 布局：`docs/architecture/14-runtime-home-layout.md`
+18. 全局安装、编译、回归、提升流程：`docs/architecture/15-install-build-regression-flow.md`
+19. operation / event / projection 运行事实模型：`docs/architecture/16-operation-and-event-model.md`
+20. debug 五层法与可观测工作流：`docs/architecture/17-debug-method-and-observability-workflow.md`
+21. LiteLLM provider gateway 与 event pub/sub 架构：`docs/architecture/18-provider-gateway-with-litellm.md`
+22. 最小 subscription registry 与 consumer 框架：`docs/architecture/19-subscription-registry-minimal-framework.md`
+23. 外部 agent 消息通道、eventbus 与 mailbox 边界：`docs/architecture/20-external-agent-message-channel-eventbus-mailbox.md`
+24. 外部消息 envelope 与最小握手状态机：`docs/architecture/21-message-envelope-and-handshake-state-machine.md`
+25. M1 最小 agent core 模块切分：`docs/architecture/22-m1-minimal-agent-core-module-cut.md`
+26. M1 第一批实现顺序与 crate/file 落点：`docs/architecture/23-m1-first-implementation-order-and-crate-landing.md`
+27. M1 contract 索引与最小 schema：`docs/contracts/00-m1-contracts-index.md`
+28. provider operation / event contract：`docs/contracts/provider-operation-contract.md`、`docs/contracts/provider-event-contract.md`
+
+## mandatory-flow
+1. 先读本文件。
+2. 再读相关 `docs/` 真源文档。
+3. 再读对应 `skills/` 执行适配。
+4. 先确定唯一真源与最小验证，再实现。
+5. 新规律优先沉淀到 `docs/` 或 `skills/`，不要反灌长文到 `AGENTS.md`。
+
+## evidence-report
+每次交付至少回报：
+- 变更内容
+- 验证结果
+- 未完成项 / 风险
+- 下一步

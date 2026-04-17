@@ -1,0 +1,11 @@
+[package]
+name = "fin-debug-server"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+fin-contracts = { path = "../contracts" }
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true

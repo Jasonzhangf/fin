@@ -1,0 +1,3 @@
+# Temporary whitelist for legacy oversized code files.
+# The default rule remains: all non-whitelisted code files must stay <= 500 lines.
+rust/crates/config/src/lib.rs

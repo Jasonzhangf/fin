@@ -1,0 +1,407 @@
+use fin_contracts::{
+    EventEnvelope, ExecutionNote, ProgressBlock, ProjectionView, ProviderEventPayload,
+};
+use serde::{Deserialize, Serialize};
+use serde_json::Value;
+use std::{
+    fs,
+    io::Write,
+    net::{TcpListener, TcpStream},
+    path::{Path, PathBuf},
+};
+use thiserror::Error;
+
+mod http;
+mod web_app;
+mod web_assets;
+mod web_styles;
+
+use http::{
+    HttpRequest, HttpResponse, bad_request_response, css_response, file_response, html_response,
+    internal_error_response, javascript_response, json_response, not_found_response,
+    read_http_request, write_http_response,
+};
+
+const INDEX_HTML_PATH: &str = "/";
+const STYLES_CSS_PATH: &str = "/styles.css";
+const API_BINDING_PATH: &str = "/api/binding.json";
+const API_PROJECTION_PATH: &str = "/api/current_projection.json";
+const API_SNAPSHOT_PATH: &str = "/api/current_snapshot.json";
+const API_EVENTS_PATH: &str = "/api/latest_events.jsonl";
+const API_LAST_RUN_PATH: &str = "/api/last_run.json";
+const API_CURRENT_CONTEXT_PATH: &str = "/api/current_context.json";
+const API_RECENT_CONTEXTS_PATH: &str = "/api/recent_contexts.json";
+const API_SESSION_MESSAGES_PATH: &str = "/api/session_messages.json";
+const API_CHAT_SEND_PATH: &str = "/api/chat/send";
+
+#[derive(Debug, Error)]
+pub enum DebugDataError {
+    #[error("io error at '{path}': {source}")]
+    Io {
+        path: String,
+        #[source]
+        source: std::io::Error,
+    },
+    #[error("failed to serialize debug artifact: {0}")]
+    Serialize(#[from] serde_json::Error),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DebugBinding {
+    pub project_id: String,
+    pub project_label: String,
+    pub runtime_home: String,
+    pub session_id: Option<String>,
+    pub task_id: Option<String>,
+    pub session_messages_path: Option<String>,
+    pub recent_contexts_path: Option<String>,
+    pub recent_digests_path: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ChatSendRequest {
+    pub message: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ChatSendResponse {
+    pub binding: DebugBinding,
+    pub answer: String,
+    pub digest_id: String,
+    pub events_count: usize,
+}
+
+pub trait DebugActionHandler {
+    fn read_binding(&self, runtime_home: &Path) -> Result<DebugBinding, String>;
+    fn send_chat_message(
+        &self,
+        runtime_home: &Path,
+        request: ChatSendRequest,
+    ) -> Result<ChatSendResponse, String>;
+}
+
+#[derive(Debug, Default, Clone, PartialEq, Eq)]
+pub struct NoopDebugActionHandler;
+
+impl DebugActionHandler for NoopDebugActionHandler {
+    fn read_binding(&self, runtime_home: &Path) -> Result<DebugBinding, String> {
+        let project_label = runtime_home
+            .file_name()
+            .and_then(|value| value.to_str())
+            .filter(|value| !value.trim().is_empty())
+            .unwrap_or("fin")
+            .to_string();
+        Ok(DebugBinding {
+            project_id: project_label.clone(),
+            project_label,
+            runtime_home: runtime_home.display().to_string(),
+            session_id: None,
+            task_id: None,
+            session_messages_path: None,
+            recent_contexts_path: None,
+            recent_digests_path: None,
+        })
+    }
+
+    fn send_chat_message(
+        &self,
+        _runtime_home: &Path,
+        _request: ChatSendRequest,
+    ) -> Result<ChatSendResponse, String> {
+        Err("chat send handler not configured".into())
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DebugProjectionConfig {
+    pub retain_raw_events: bool,
+    pub retain_timeline_rows: usize,
+}
+
+impl Default for DebugProjectionConfig {
+    fn default() -> Self {
+        Self {
+            retain_raw_events: true,
+            retain_timeline_rows: 10_000,
+        }
+    }
+}
+
+#[derive(Debug, Default, Clone, PartialEq)]
+pub struct InMemoryProjector {
+    pub current: ProjectionView,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct DebugSnapshot {
+    pub projection: ProjectionView,
+    pub events: Vec<EventEnvelope<Value>>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DebugSnapshotPaths {
+    pub projection_json: PathBuf,
+    pub events_jsonl: PathBuf,
+    pub snapshot_json: PathBuf,
+}
+
+impl InMemoryProjector {
+    pub fn apply(&mut self, event: &EventEnvelope<Value>) {
+        self.current.session_id = event.refs.session_id.clone();
+        self.current.task_id = event.refs.task_id.clone();
+        self.current.topic_thread_id = event.refs.topic_thread_id.clone();
+
+        match event.event_type.as_str() {
+            "provider.operation_accepted"
+            | "provider.gateway_request_sent"
+            | "provider.gateway_response_received"
+            | "provider.response_normalized"
+            | "provider.completed" => {
+                self.current.latest_provider_activity = Some(event.event_type.clone());
+                if let Ok(payload) =
+                    serde_json::from_value::<ProviderEventPayload>(event.payload.clone())
+                {
+                    if let Some(debug) = payload.debug {
+                        self.current.latest_provider_user_agent = debug.user_agent;
+                        self.current.latest_provider_header_names =
+                            debug.request_headers.keys().cloned().collect();
+                    }
+                }
+            }
+            "progress.updated" => {
+                if let Ok(progress) = serde_json::from_value::<ProgressBlock>(event.payload.clone())
+                {
+                    self.current.current_phase = Some(progress.phase);
+                    self.current.latest_progress_id = Some(progress.progress_id);
+                }
+            }
+            "execution_note.appended" => {
+                if let Ok(note) = serde_json::from_value::<ExecutionNote>(event.payload.clone()) {
+                    self.current.latest_note_id = Some(note.note_id);
+                }
+            }
+            "digest.finalized" => {
+                if let Some(digest_id) = event.payload.get("digest_id").and_then(Value::as_str) {
+                    self.current.latest_digest_id = Some(digest_id.to_string());
+                }
+            }
+            "operation.completed" => {
+                self.current.warnings.retain(|warning| warning != "runtime_busy");
+            }
+            _ => {}
+        }
+    }
+}
+
+pub fn build_projection(events: &[EventEnvelope<Value>]) -> ProjectionView {
+    let mut projector = InMemoryProjector::default();
+    for event in events {
+        projector.apply(event);
+    }
+    projector.current
+}
+
+pub fn persist_snapshot(
+    projection_dir: &Path,
+    events: &[EventEnvelope<Value>],
+) -> Result<DebugSnapshotPaths, DebugDataError> {
+    fs::create_dir_all(projection_dir).map_err(|source| DebugDataError::Io {
+        path: projection_dir.display().to_string(),
+        source,
+    })?;
+
+    let projection = build_projection(events);
+    let snapshot = DebugSnapshot {
+        projection,
+        events: events.to_vec(),
+    };
+
+    let projection_json = projection_dir.join("current_projection.json");
+    let events_jsonl = projection_dir.join("latest_events.jsonl");
+    let snapshot_json = projection_dir.join("current_snapshot.json");
+
+    fs::write(
+        &projection_json,
+        serde_json::to_vec_pretty(&snapshot.projection)?,
+    )
+    .map_err(|source| DebugDataError::Io {
+        path: projection_json.display().to_string(),
+        source,
+    })?;
+
+    let mut events_file = fs::File::create(&events_jsonl).map_err(|source| DebugDataError::Io {
+        path: events_jsonl.display().to_string(),
+        source,
+    })?;
+    for event in events {
+        let line = serde_json::to_string(event)?;
+        writeln!(events_file, "{line}").map_err(|source| DebugDataError::Io {
+            path: events_jsonl.display().to_string(),
+            source,
+        })?;
+    }
+
+    fs::write(&snapshot_json, serde_json::to_vec_pretty(&snapshot)?).map_err(|source| {
+        DebugDataError::Io {
+            path: snapshot_json.display().to_string(),
+            source,
+        }
+    })?;
+
+    Ok(DebugSnapshotPaths {
+        projection_json,
+        events_jsonl,
+        snapshot_json,
+    })
+}
+
+pub fn serve_debug_mvp(runtime_home: &Path, bind_addr: &str) -> Result<(), DebugDataError> {
+    let handler = NoopDebugActionHandler;
+    serve_debug_mvp_with_handler(runtime_home, bind_addr, &handler)
+}
+
+pub fn serve_debug_mvp_with_handler(
+    runtime_home: &Path,
+    bind_addr: &str,
+    handler: &impl DebugActionHandler,
+) -> Result<(), DebugDataError> {
+    let listener = TcpListener::bind(bind_addr).map_err(|source| DebugDataError::Io {
+        path: bind_addr.to_string(),
+        source,
+    })?;
+
+    for stream in listener.incoming() {
+        let mut stream = stream.map_err(|source| DebugDataError::Io {
+            path: bind_addr.to_string(),
+            source,
+        })?;
+        handle_connection(&mut stream, runtime_home, handler)?;
+    }
+
+    Ok(())
+}
+
+fn handle_connection(
+    stream: &mut TcpStream,
+    runtime_home: &Path,
+    handler: &impl DebugActionHandler,
+) -> Result<(), DebugDataError> {
+    let request = read_http_request(stream)?;
+    let response = response_for_request(&request, runtime_home, handler);
+    write_http_response(stream, &response)
+}
+
+fn response_for_request(
+    request: &HttpRequest,
+    runtime_home: &Path,
+    handler: &impl DebugActionHandler,
+) -> HttpResponse {
+    match (request.method.as_str(), request.path.as_str()) {
+        ("GET", INDEX_HTML_PATH) => html_response(web_assets::INDEX_HTML),
+        ("GET", path) if web_app::javascript_for_path(path).is_some() => {
+            javascript_response(web_app::javascript_for_path(request.path.as_str()).unwrap_or(""))
+        }
+        ("GET", STYLES_CSS_PATH) => css_response(web_styles::STYLES_CSS),
+        ("GET", API_BINDING_PATH) => match handler.read_binding(runtime_home) {
+            Ok(binding) => json_response(200, &binding),
+            Err(message) => internal_error_response(&message),
+        },
+        ("GET", API_PROJECTION_PATH) => file_response(
+            &runtime_home.join("runtime/projections/current_projection.json"),
+            "application/json; charset=utf-8",
+        ),
+        ("GET", API_SNAPSHOT_PATH) => file_response(
+            &runtime_home.join("runtime/projections/current_snapshot.json"),
+            "application/json; charset=utf-8",
+        ),
+        ("GET", API_EVENTS_PATH) => file_response(
+            &runtime_home.join("runtime/projections/latest_events.jsonl"),
+            "application/x-ndjson; charset=utf-8",
+        ),
+        ("GET", API_LAST_RUN_PATH) => file_response(
+            &runtime_home.join("runtime/current/last_run.json"),
+            "application/json; charset=utf-8",
+        ),
+        ("GET", API_CURRENT_CONTEXT_PATH) => file_response(
+            &runtime_home.join("runtime/current/current_context.json"),
+            "application/json; charset=utf-8",
+        ),
+        ("GET", API_RECENT_CONTEXTS_PATH) => last_run_artifact_response(
+            runtime_home,
+            "session_recent_contexts_path",
+            "application/json; charset=utf-8",
+        ),
+        ("GET", API_SESSION_MESSAGES_PATH) => last_run_artifact_response(
+            runtime_home,
+            "session_messages_path",
+            "application/json; charset=utf-8",
+        ),
+        ("POST", API_CHAT_SEND_PATH) => chat_send_response(runtime_home, request, handler),
+        _ => not_found_response(&request.path),
+    }
+}
+
+fn chat_send_response(
+    runtime_home: &Path,
+    request: &HttpRequest,
+    handler: &impl DebugActionHandler,
+) -> HttpResponse {
+    let payload: ChatSendRequest = match serde_json::from_slice(&request.body) {
+        Ok(value) => value,
+        Err(error) => return bad_request_response(&format!("invalid chat body: {error}")),
+    };
+    if payload.message.trim().is_empty() {
+        return bad_request_response("message is required");
+    }
+    match handler.send_chat_message(runtime_home, payload) {
+        Ok(response) => json_response(200, &response),
+        Err(message) => internal_error_response(&message),
+    }
+}
+
+fn last_run_artifact_response(
+    runtime_home: &Path,
+    field: &str,
+    content_type: &'static str,
+) -> HttpResponse {
+    let last_run_path = runtime_home.join("runtime/current/last_run.json");
+    let last_run = match fs::read_to_string(&last_run_path) {
+        Ok(content) => content,
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => {
+            return not_found_response("last_run.json");
+        }
+        Err(err) => {
+            return internal_error_response(&format!(
+                "failed to read {}: {err}",
+                last_run_path.display()
+            ));
+        }
+    };
+    let parsed: Value = match serde_json::from_str(&last_run) {
+        Ok(value) => value,
+        Err(err) => {
+            return internal_error_response(&format!("failed to parse last_run.json: {err}"));
+        }
+    };
+    let Some(relative_path) = parsed.get(field).and_then(Value::as_str) else {
+        return not_found_response(field);
+    };
+    file_response(&runtime_home.join(relative_path), content_type)
+}
+
+#[cfg(test)]
+fn response_for_path(path: &str, runtime_home: &Path) -> HttpResponse {
+    let handler = NoopDebugActionHandler;
+    response_for_request(
+        &HttpRequest {
+            method: "GET".into(),
+            path: path.into(),
+            body: Vec::new(),
+        },
+        runtime_home,
+        &handler,
+    )
+}
+
+#[cfg(test)]
+mod tests;

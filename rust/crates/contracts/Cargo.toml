@@ -1,0 +1,11 @@
+[package]
+name = "fin-contracts"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+serde.workspace = true
+serde_json.workspace = true
+
+fin-shared = { path = "../shared" }
