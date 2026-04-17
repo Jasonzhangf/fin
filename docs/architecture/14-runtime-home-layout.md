@@ -204,7 +204,7 @@
 - `leases/`：dispatch / task ownership lease
 - `heartbeats/`：worker / node / project 心跳快照
 - `projections/`：当前投影视图缓存
-- `current/`：当前激活运行的简要元数据（latest-only，不做无界累积）
+- `current/`：当前激活运行的简要元数据
 
 原则：
 
@@ -237,7 +237,7 @@
         closures/
           closure-<closure-id>.json
         context/
-          recent_contexts.json
+          snapshots/
           rebuilds/
         collab/
           inbound.jsonl
@@ -515,21 +515,3 @@ workdir 级共享不是共享全部历史，而是共享被框架晋升后的内
 - 索引格式与压缩格式
 - 加密/脱敏策略
 - 多机同步时目录复制协议
-
-
-## 13. latest-only context snapshot 规则（M1 冻结）
-
-为了控制 CPU / 内存 / IO，本项目当前冻结如下写法：
-
-- `~/.fin/runtime/current/current_context.json`
-  - 仅保留最新一次 context snapshot
-  - 覆盖写
-- `~/.fin/sessions/YYYY/MM/<session-id>/context/recent_contexts.json`
-  - 仅保留最近窗口
-  - 当前默认窗口：8
-
-禁止的写法：
-
-- 每轮一个 context 文件无限增长
-- 每个事件附带单独大 snapshot 文件
-- 为了 debug 把完整上下文碎片化散落到多个目录

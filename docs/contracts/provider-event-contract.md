@@ -102,18 +102,6 @@ provider event payload 建议包含：
 
 ---
 
-
-### 4.1 Sanitized provider debug payload（当前 M1 已落地）
-
-当前 provider event payload 允许携带一个 `debug` 子块，但必须满足：
-
-- 只包含便于调试和 Web 观测的安全字段
-- 当前冻结字段：
-  - `user_agent`
-  - `request_headers`（已脱敏）
-- `x-api-key` / `authorization` / `cookie` / token 类 header 必须 redacted
-- debug 字段服务于 projection / Web / harness，不得反向影响真实请求语义
-
 ## 5. producer / consumer 语义
 
 provider event 默认采用 producer / consumer 设计。

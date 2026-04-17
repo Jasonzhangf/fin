@@ -8,7 +8,6 @@ import sys
 
 
 DEFAULT_PROVIDER_JSON = "~/.rcc/provider/ali-coding-plan/config.v2.json"
-DEFAULT_USER_AGENT = "opencode/1.2.27"
 MODEL_PREFERENCE = [
     "qwen3.6-plus",
     "qwen3-coder-plus",
@@ -41,11 +40,6 @@ def parse_args() -> argparse.Namespace:
         "--scope-label",
         default="user",
         help="Comment label for generated file, e.g. user/test",
-    )
-    parser.add_argument(
-        "--user-agent",
-        default=DEFAULT_USER_AGENT,
-        help="User-Agent written into user.toml",
     )
     return parser.parse_args()
 
@@ -91,7 +85,6 @@ def render_user_toml(
     api_key_kind: str,
     api_key_value: str,
     scope_label: str,
-    user_agent: str,
 ) -> str:
     credential_line = (
         f'api_key_env = "{api_key_value}"'
@@ -108,7 +101,6 @@ default_provider = "{provider_name}"
 protocol = "{protocol}"
 base_url = "{base_url}"
 model = "{model}"
-user_agent = "{user_agent}"
 {credential_line}
 '''
 
@@ -148,7 +140,6 @@ def main() -> int:
             api_key_kind,
             api_key_value,
             args.scope_label,
-            args.user_agent,
         )
     )
     print(output)

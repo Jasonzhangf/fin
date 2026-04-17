@@ -1,38 +1,23 @@
-use fin_contracts::{
-    EventEnvelope, ExecutionNote, ProgressBlock, ProjectionView, ProviderEventPayload,
-};
+use fin_contracts::{EventEnvelope, ExecutionNote, ProgressBlock, ProjectionView};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::{
     fs,
-    io::Write,
+    io::{Read, Write},
     net::{TcpListener, TcpStream},
     path::{Path, PathBuf},
 };
 use thiserror::Error;
 
-mod http;
-mod web_app;
 mod web_assets;
-mod web_styles;
-
-use http::{
-    HttpRequest, HttpResponse, bad_request_response, css_response, file_response, html_response,
-    internal_error_response, javascript_response, json_response, not_found_response,
-    read_http_request, write_http_response,
-};
 
 const INDEX_HTML_PATH: &str = "/";
+const APP_JS_PATH: &str = "/app.js";
 const STYLES_CSS_PATH: &str = "/styles.css";
-const API_BINDING_PATH: &str = "/api/binding.json";
 const API_PROJECTION_PATH: &str = "/api/current_projection.json";
 const API_SNAPSHOT_PATH: &str = "/api/current_snapshot.json";
 const API_EVENTS_PATH: &str = "/api/latest_events.jsonl";
 const API_LAST_RUN_PATH: &str = "/api/last_run.json";
-const API_CURRENT_CONTEXT_PATH: &str = "/api/current_context.json";
-const API_RECENT_CONTEXTS_PATH: &str = "/api/recent_contexts.json";
-const API_SESSION_MESSAGES_PATH: &str = "/api/session_messages.json";
-const API_CHAT_SEND_PATH: &str = "/api/chat/send";
 
 #[derive(Debug, Error)]
 pub enum DebugDataError {
@@ -44,72 +29,6 @@ pub enum DebugDataError {
     },
     #[error("failed to serialize debug artifact: {0}")]
     Serialize(#[from] serde_json::Error),
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct DebugBinding {
-    pub project_id: String,
-    pub project_label: String,
-    pub runtime_home: String,
-    pub session_id: Option<String>,
-    pub task_id: Option<String>,
-    pub session_messages_path: Option<String>,
-    pub recent_contexts_path: Option<String>,
-    pub recent_digests_path: Option<String>,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct ChatSendRequest {
-    pub message: String,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct ChatSendResponse {
-    pub binding: DebugBinding,
-    pub answer: String,
-    pub digest_id: String,
-    pub events_count: usize,
-}
-
-pub trait DebugActionHandler {
-    fn read_binding(&self, runtime_home: &Path) -> Result<DebugBinding, String>;
-    fn send_chat_message(
-        &self,
-        runtime_home: &Path,
-        request: ChatSendRequest,
-    ) -> Result<ChatSendResponse, String>;
-}
-
-#[derive(Debug, Default, Clone, PartialEq, Eq)]
-pub struct NoopDebugActionHandler;
-
-impl DebugActionHandler for NoopDebugActionHandler {
-    fn read_binding(&self, runtime_home: &Path) -> Result<DebugBinding, String> {
-        let project_label = runtime_home
-            .file_name()
-            .and_then(|value| value.to_str())
-            .filter(|value| !value.trim().is_empty())
-            .unwrap_or("fin")
-            .to_string();
-        Ok(DebugBinding {
-            project_id: project_label.clone(),
-            project_label,
-            runtime_home: runtime_home.display().to_string(),
-            session_id: None,
-            task_id: None,
-            session_messages_path: None,
-            recent_contexts_path: None,
-            recent_digests_path: None,
-        })
-    }
-
-    fn send_chat_message(
-        &self,
-        _runtime_home: &Path,
-        _request: ChatSendRequest,
-    ) -> Result<ChatSendResponse, String> {
-        Err("chat send handler not configured".into())
-    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -145,6 +64,13 @@ pub struct DebugSnapshotPaths {
     pub snapshot_json: PathBuf,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct HttpResponse {
+    status_code: u16,
+    content_type: &'static str,
+    body: Vec<u8>,
+}
+
 impl InMemoryProjector {
     pub fn apply(&mut self, event: &EventEnvelope<Value>) {
         self.current.session_id = event.refs.session_id.clone();
@@ -152,21 +78,8 @@ impl InMemoryProjector {
         self.current.topic_thread_id = event.refs.topic_thread_id.clone();
 
         match event.event_type.as_str() {
-            "provider.operation_accepted"
-            | "provider.gateway_request_sent"
-            | "provider.gateway_response_received"
-            | "provider.response_normalized"
-            | "provider.completed" => {
+            "provider.request_started" | "provider.response_received" => {
                 self.current.latest_provider_activity = Some(event.event_type.clone());
-                if let Ok(payload) =
-                    serde_json::from_value::<ProviderEventPayload>(event.payload.clone())
-                {
-                    if let Some(debug) = payload.debug {
-                        self.current.latest_provider_user_agent = debug.user_agent;
-                        self.current.latest_provider_header_names =
-                            debug.request_headers.keys().cloned().collect();
-                    }
-                }
             }
             "progress.updated" => {
                 if let Ok(progress) = serde_json::from_value::<ProgressBlock>(event.payload.clone())
@@ -186,7 +99,7 @@ impl InMemoryProjector {
                 }
             }
             "operation.completed" => {
-                self.current.warnings.retain(|warning| warning != "runtime_busy");
+                self.current.warnings.retain(|w| w != "runtime_busy");
             }
             _ => {}
         }
@@ -256,15 +169,6 @@ pub fn persist_snapshot(
 }
 
 pub fn serve_debug_mvp(runtime_home: &Path, bind_addr: &str) -> Result<(), DebugDataError> {
-    let handler = NoopDebugActionHandler;
-    serve_debug_mvp_with_handler(runtime_home, bind_addr, &handler)
-}
-
-pub fn serve_debug_mvp_with_handler(
-    runtime_home: &Path,
-    bind_addr: &str,
-    handler: &impl DebugActionHandler,
-) -> Result<(), DebugDataError> {
     let listener = TcpListener::bind(bind_addr).map_err(|source| DebugDataError::Io {
         path: bind_addr.to_string(),
         source,
@@ -275,133 +179,309 @@ pub fn serve_debug_mvp_with_handler(
             path: bind_addr.to_string(),
             source,
         })?;
-        handle_connection(&mut stream, runtime_home, handler)?;
+        handle_connection(&mut stream, runtime_home)?;
     }
 
     Ok(())
 }
 
-fn handle_connection(
-    stream: &mut TcpStream,
-    runtime_home: &Path,
-    handler: &impl DebugActionHandler,
-) -> Result<(), DebugDataError> {
-    let request = read_http_request(stream)?;
-    let response = response_for_request(&request, runtime_home, handler);
+fn handle_connection(stream: &mut TcpStream, runtime_home: &Path) -> Result<(), DebugDataError> {
+    let mut buffer = [0_u8; 8192];
+    let bytes_read = stream
+        .read(&mut buffer)
+        .map_err(|source| DebugDataError::Io {
+            path: "tcp-stream-read".into(),
+            source,
+        })?;
+    let request = String::from_utf8_lossy(&buffer[..bytes_read]);
+    let path = parse_request_path(&request);
+    let response = response_for_path(path, runtime_home);
     write_http_response(stream, &response)
 }
 
-fn response_for_request(
-    request: &HttpRequest,
-    runtime_home: &Path,
-    handler: &impl DebugActionHandler,
-) -> HttpResponse {
-    match (request.method.as_str(), request.path.as_str()) {
-        ("GET", INDEX_HTML_PATH) => html_response(web_assets::INDEX_HTML),
-        ("GET", path) if web_app::javascript_for_path(path).is_some() => {
-            javascript_response(web_app::javascript_for_path(request.path.as_str()).unwrap_or(""))
-        }
-        ("GET", STYLES_CSS_PATH) => css_response(web_styles::STYLES_CSS),
-        ("GET", API_BINDING_PATH) => match handler.read_binding(runtime_home) {
-            Ok(binding) => json_response(200, &binding),
-            Err(message) => internal_error_response(&message),
-        },
-        ("GET", API_PROJECTION_PATH) => file_response(
+fn parse_request_path(request: &str) -> &str {
+    request
+        .lines()
+        .next()
+        .and_then(|line| {
+            let mut parts = line.split_whitespace();
+            let method = parts.next()?;
+            let path = parts.next()?;
+            if method == "GET" { Some(path) } else { None }
+        })
+        .unwrap_or("/")
+}
+
+fn response_for_path(path: &str, runtime_home: &Path) -> HttpResponse {
+    match path {
+        INDEX_HTML_PATH => html_response(web_assets::INDEX_HTML),
+        APP_JS_PATH => javascript_response(web_assets::APP_JS),
+        STYLES_CSS_PATH => css_response(web_assets::STYLES_CSS),
+        API_PROJECTION_PATH => file_response(
             &runtime_home.join("runtime/projections/current_projection.json"),
             "application/json; charset=utf-8",
         ),
-        ("GET", API_SNAPSHOT_PATH) => file_response(
+        API_SNAPSHOT_PATH => file_response(
             &runtime_home.join("runtime/projections/current_snapshot.json"),
             "application/json; charset=utf-8",
         ),
-        ("GET", API_EVENTS_PATH) => file_response(
+        API_EVENTS_PATH => file_response(
             &runtime_home.join("runtime/projections/latest_events.jsonl"),
             "application/x-ndjson; charset=utf-8",
         ),
-        ("GET", API_LAST_RUN_PATH) => file_response(
+        API_LAST_RUN_PATH => file_response(
             &runtime_home.join("runtime/current/last_run.json"),
             "application/json; charset=utf-8",
         ),
-        ("GET", API_CURRENT_CONTEXT_PATH) => file_response(
-            &runtime_home.join("runtime/current/current_context.json"),
-            "application/json; charset=utf-8",
-        ),
-        ("GET", API_RECENT_CONTEXTS_PATH) => last_run_artifact_response(
-            runtime_home,
-            "session_recent_contexts_path",
-            "application/json; charset=utf-8",
-        ),
-        ("GET", API_SESSION_MESSAGES_PATH) => last_run_artifact_response(
-            runtime_home,
-            "session_messages_path",
-            "application/json; charset=utf-8",
-        ),
-        ("POST", API_CHAT_SEND_PATH) => chat_send_response(runtime_home, request, handler),
-        _ => not_found_response(&request.path),
+        _ => not_found_response(path),
     }
 }
 
-fn chat_send_response(
-    runtime_home: &Path,
-    request: &HttpRequest,
-    handler: &impl DebugActionHandler,
-) -> HttpResponse {
-    let payload: ChatSendRequest = match serde_json::from_slice(&request.body) {
-        Ok(value) => value,
-        Err(error) => return bad_request_response(&format!("invalid chat body: {error}")),
-    };
-    if payload.message.trim().is_empty() {
-        return bad_request_response("message is required");
-    }
-    match handler.send_chat_message(runtime_home, payload) {
-        Ok(response) => json_response(200, &response),
-        Err(message) => internal_error_response(&message),
+fn html_response(body: &str) -> HttpResponse {
+    HttpResponse {
+        status_code: 200,
+        content_type: "text/html; charset=utf-8",
+        body: body.as_bytes().to_vec(),
     }
 }
 
-fn last_run_artifact_response(
-    runtime_home: &Path,
-    field: &str,
-    content_type: &'static str,
-) -> HttpResponse {
-    let last_run_path = runtime_home.join("runtime/current/last_run.json");
-    let last_run = match fs::read_to_string(&last_run_path) {
-        Ok(content) => content,
-        Err(err) if err.kind() == std::io::ErrorKind::NotFound => {
-            return not_found_response("last_run.json");
-        }
-        Err(err) => {
-            return internal_error_response(&format!(
-                "failed to read {}: {err}",
-                last_run_path.display()
-            ));
-        }
-    };
-    let parsed: Value = match serde_json::from_str(&last_run) {
-        Ok(value) => value,
-        Err(err) => {
-            return internal_error_response(&format!("failed to parse last_run.json: {err}"));
-        }
-    };
-    let Some(relative_path) = parsed.get(field).and_then(Value::as_str) else {
-        return not_found_response(field);
-    };
-    file_response(&runtime_home.join(relative_path), content_type)
+fn javascript_response(body: &str) -> HttpResponse {
+    HttpResponse {
+        status_code: 200,
+        content_type: "application/javascript; charset=utf-8",
+        body: body.as_bytes().to_vec(),
+    }
 }
 
-#[cfg(test)]
-fn response_for_path(path: &str, runtime_home: &Path) -> HttpResponse {
-    let handler = NoopDebugActionHandler;
-    response_for_request(
-        &HttpRequest {
-            method: "GET".into(),
-            path: path.into(),
-            body: Vec::new(),
+fn css_response(body: &str) -> HttpResponse {
+    HttpResponse {
+        status_code: 200,
+        content_type: "text/css; charset=utf-8",
+        body: body.as_bytes().to_vec(),
+    }
+}
+
+fn file_response(path: &Path, content_type: &'static str) -> HttpResponse {
+    match fs::read(path) {
+        Ok(body) => HttpResponse {
+            status_code: 200,
+            content_type,
+            body,
         },
-        runtime_home,
-        &handler,
-    )
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => not_found_response(
+            path.file_name()
+                .and_then(|name| name.to_str())
+                .unwrap_or("artifact"),
+        ),
+        Err(err) => internal_error_response(&format!("failed to read {}: {err}", path.display())),
+    }
+}
+
+fn not_found_response(path: &str) -> HttpResponse {
+    HttpResponse {
+        status_code: 404,
+        content_type: "text/plain; charset=utf-8",
+        body: format!("not found: {path}\n").into_bytes(),
+    }
+}
+
+fn internal_error_response(message: &str) -> HttpResponse {
+    HttpResponse {
+        status_code: 500,
+        content_type: "text/plain; charset=utf-8",
+        body: format!("internal error: {message}\n").into_bytes(),
+    }
+}
+
+fn write_http_response(
+    stream: &mut TcpStream,
+    response: &HttpResponse,
+) -> Result<(), DebugDataError> {
+    let status_text = match response.status_code {
+        200 => "OK",
+        404 => "Not Found",
+        500 => "Internal Server Error",
+        _ => "OK",
+    };
+    let header = format!(
+        "HTTP/1.1 {} {}\r\nContent-Type: {}\r\nContent-Length: {}\r\nCache-Control: no-store\r\nConnection: close\r\n\r\n",
+        response.status_code,
+        status_text,
+        response.content_type,
+        response.body.len()
+    );
+    stream
+        .write_all(header.as_bytes())
+        .and_then(|_| stream.write_all(&response.body))
+        .and_then(|_| stream.flush())
+        .map_err(|source| DebugDataError::Io {
+            path: "tcp-stream-write".into(),
+            source,
+        })
 }
 
 #[cfg(test)]
-mod tests;
+mod tests {
+    use super::*;
+    use fin_contracts::{
+        DebugVisibility, EntityRefs, EventEnvelope, ExecutionNote, ProgressBlock, Severity,
+    };
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    #[test]
+    fn projector_tracks_latest_progress_note_digest_and_provider_activity() {
+        let refs = EntityRefs {
+            session_id: Some("session-1".into()),
+            task_id: Some("task-1".into()),
+            topic_thread_id: Some("topic-1".into()),
+            dispatch_id: None,
+            worker_id: None,
+        };
+        let progress = ProgressBlock {
+            progress_id: "progress-1".into(),
+            refs: refs.clone(),
+            phase: "running".into(),
+            blocker: None,
+            next_step: None,
+            health_hint: None,
+            tool_snapshots: vec![],
+        };
+        let note = ExecutionNote {
+            note_id: "note-1".into(),
+            refs: refs.clone(),
+            summary: "progress made".into(),
+            decision: None,
+            lesson: None,
+            blocker: None,
+            next_step: None,
+            created_at: "2026-04-17T00:00:00Z".into(),
+        };
+        let mut projector = InMemoryProjector::default();
+
+        for (idx, (kind, payload)) in [
+            (
+                "provider.request_started",
+                serde_json::json!({"provider":"openai"}),
+            ),
+            ("progress.updated", serde_json::to_value(progress).unwrap()),
+            (
+                "execution_note.appended",
+                serde_json::to_value(note).unwrap(),
+            ),
+            (
+                "digest.finalized",
+                serde_json::json!({"digest_id": "digest-1"}),
+            ),
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            let mut event = EventEnvelope::new(
+                format!("evt-{}", idx + 1),
+                kind,
+                "2026-04-17T00:00:00Z",
+                "runtime",
+                "trace-1",
+                (idx + 1) as u64,
+                payload,
+            );
+            event.refs = refs.clone();
+            event.severity = Severity::Info;
+            event.debug_visibility = DebugVisibility::Normal;
+            projector.apply(&event);
+        }
+
+        assert_eq!(projector.current.current_phase.as_deref(), Some("running"));
+        assert_eq!(
+            projector.current.latest_progress_id.as_deref(),
+            Some("progress-1")
+        );
+        assert_eq!(projector.current.latest_note_id.as_deref(), Some("note-1"));
+        assert_eq!(
+            projector.current.latest_digest_id.as_deref(),
+            Some("digest-1")
+        );
+        assert_eq!(
+            projector.current.latest_provider_activity.as_deref(),
+            Some("provider.request_started")
+        );
+        assert_eq!(projector.current.task_id.as_deref(), Some("task-1"));
+    }
+
+    #[test]
+    fn persist_snapshot_writes_projection_and_event_files() {
+        let tmp = std::env::temp_dir().join(format!(
+            "fin-debug-server-{}",
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .expect("time should work")
+                .as_nanos()
+        ));
+        let event = EventEnvelope::new(
+            "evt-1",
+            "provider.response_received",
+            "2026-04-17T00:00:00Z",
+            "runtime",
+            "trace-1",
+            1,
+            serde_json::json!({"status": "ok"}),
+        );
+        let paths = persist_snapshot(&tmp, &[event]).expect("snapshot should persist");
+        assert!(paths.projection_json.exists());
+        assert!(paths.events_jsonl.exists());
+        assert!(paths.snapshot_json.exists());
+    }
+
+    #[test]
+    fn response_for_root_serves_html_shell() {
+        let response = response_for_path("/", Path::new("/tmp/unused"));
+        let body = String::from_utf8(response.body).expect("html should be utf8");
+        assert_eq!(response.status_code, 200);
+        assert!(body.contains("fin Debug MVP"));
+        assert!(body.contains("Current Projection"));
+    }
+
+    #[test]
+    fn response_for_api_projection_reads_runtime_artifact() {
+        let runtime_home = std::env::temp_dir().join(format!(
+            "fin-debug-runtime-home-{}",
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .expect("time should work")
+                .as_nanos()
+        ));
+        let projection_dir = runtime_home.join("runtime/projections");
+        fs::create_dir_all(&projection_dir).expect("projection dir should exist");
+        fs::write(
+            projection_dir.join("current_projection.json"),
+            br#"{"task_id":"task-1"}"#,
+        )
+        .expect("projection should write");
+
+        let response = response_for_path(API_PROJECTION_PATH, &runtime_home);
+        assert_eq!(response.status_code, 200);
+        assert_eq!(response.content_type, "application/json; charset=utf-8");
+        assert_eq!(
+            String::from_utf8(response.body).unwrap(),
+            r#"{"task_id":"task-1"}"#
+        );
+    }
+
+    #[test]
+    fn response_for_missing_artifact_returns_404() {
+        let runtime_home = std::env::temp_dir().join(format!(
+            "fin-debug-runtime-home-missing-{}",
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .expect("time should work")
+                .as_nanos()
+        ));
+        let response = response_for_path(API_SNAPSHOT_PATH, &runtime_home);
+        assert_eq!(response.status_code, 404);
+        assert!(
+            String::from_utf8(response.body)
+                .unwrap()
+                .contains("current_snapshot.json")
+        );
+    }
+}

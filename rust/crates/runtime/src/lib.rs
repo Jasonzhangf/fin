@@ -1,10 +1,8 @@
 use fin_contracts::{
-    AgentId, ContextSnapshotRecord, DigestRecord, EntityRefs, EventEnvelope, ExecutionNote,
-    InferenceOperationPayload, MinimalContextView, OperationEnvelope, ProgressBlock,
-    ProviderEventPayload, ProviderPath, ProviderStrategy, RoleProfileRef, SanitizedProviderDebug,
-    ToolSnapshot,
+    AgentId, DigestRecord, EntityRefs, EventEnvelope, ExecutionNote, OperationEnvelope,
+    ProgressBlock, ProviderPath, ProviderStrategy, RoleProfileRef, ToolSnapshot,
 };
-use fin_provider::{InferenceProvider, PreparedRequest, ProviderRequest, ProviderResponse};
+use fin_provider::{PreparedRequest, ProviderDescriptor, ProviderRequest};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use thiserror::Error;
@@ -15,8 +13,6 @@ pub enum RuntimeError {
     Config(#[from] fin_config::ConfigError),
     #[error(transparent)]
     InvalidOperation(#[from] fin_shared::SharedError),
-    #[error(transparent)]
-    Provider(#[from] fin_provider::ProviderError),
     #[error("failed to serialize runtime payload: {0}")]
     Serialize(#[from] serde_json::Error),
 }
@@ -80,57 +76,9 @@ impl WorkerRuntime {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct InferenceRequest {
-    pub operation_id: String,
-    pub trace_id: String,
-    pub submitted_at: String,
-    pub refs: EntityRefs,
-    pub input: String,
-    pub context: MinimalContextView,
-}
-
-#[derive(Debug, Clone, Default)]
-pub struct InferenceOperationBuilder;
-
-impl InferenceOperationBuilder {
-    pub fn build(
-        &self,
-        worker: &WorkerRuntime,
-        request: InferenceRequest,
-    ) -> Result<OperationEnvelope<InferenceOperationPayload>, RuntimeError> {
-        fin_shared::require_non_empty("submitted_at", &request.submitted_at)?;
-        let payload = InferenceOperationPayload {
-            input: request.input,
-            role: worker.policy.role.clone(),
-            provider_path: worker.policy.provider_path.clone(),
-            provider_strategy: worker.policy.provider_strategy,
-            protocol_version: worker.policy.protocol_version.clone(),
-            stream: worker.policy.stream,
-            context: request.context,
-        };
-        payload.validate()?;
-
-        let mut operation = OperationEnvelope::new(
-            request.operation_id,
-            "start_inference",
-            request.submitted_at,
-            worker.source.clone(),
-            request.trace_id,
-            payload,
-        );
-        operation.refs = request.refs;
-        operation.timeout_ms = Some(worker.policy.timeout_ms);
-        Ok(operation)
-    }
-}
-
 #[derive(Debug, Clone, PartialEq)]
 pub struct ClosureRun {
-    pub operation: OperationEnvelope<InferenceOperationPayload>,
     pub prepared_request: PreparedRequest,
-    pub provider_response: ProviderResponse,
-    pub context_snapshot: ContextSnapshotRecord,
     pub progress: ProgressBlock,
     pub note: ExecutionNote,
     pub digest: DigestRecord,
@@ -149,34 +97,6 @@ impl Default for M1Runtime {
     }
 }
 
-fn render_provider_input(input: &str, context: &MinimalContextView) -> String {
-    let has_summary = context
-        .summary
-        .as_deref()
-        .map(|value| !value.trim().is_empty())
-        .unwrap_or(false);
-    if !has_summary && context.continuity_tail.is_empty() {
-        return input.to_string();
-    }
-
-    let mut sections = Vec::new();
-    if let Some(summary) = context
-        .summary
-        .as_deref()
-        .filter(|value| !value.trim().is_empty())
-    {
-        sections.push(format!("Context summary:\n{summary}"));
-    }
-    if !context.continuity_tail.is_empty() {
-        sections.push(format!(
-            "Continuity tail:\n- {}",
-            context.continuity_tail.join("\n- ")
-        ));
-    }
-    sections.push(format!("Current user input:\n{input}"));
-    sections.join("\n\n")
-}
-
 impl M1Runtime {
     pub fn new(source: impl Into<String>) -> Self {
         Self {
@@ -187,62 +107,31 @@ impl M1Runtime {
 
     pub fn run_closure(
         &mut self,
-        operation: OperationEnvelope<InferenceOperationPayload>,
-        provider: &impl InferenceProvider,
+        operation: OperationEnvelope<Value>,
+        provider: &ProviderDescriptor,
     ) -> Result<ClosureRun, RuntimeError> {
         operation.validate()?;
-        operation.payload.validate()?;
         let refs = operation.refs.clone();
         let prepared_request = provider.prepare_request(&ProviderRequest {
-            input: operation.payload.input.clone(),
-            rendered_input: Some(render_provider_input(
-                &operation.payload.input,
-                &operation.payload.context,
-            )),
-            override_model: Some(
-                operation
-                    .payload
-                    .provider_path
-                    .primary_target()
-                    .model
-                    .clone(),
-            ),
+            input: extract_input(&operation.payload),
+            override_model: None,
         });
-        let provider_response = provider.execute_prepared(&prepared_request)?;
-        let provider_debug = SanitizedProviderDebug {
-            user_agent: prepared_request.user_agent.clone(),
-            request_headers: prepared_request.sanitized_headers.clone(),
-        };
-        let context_snapshot = ContextSnapshotRecord {
-            operation_id: operation.operation_id.clone(),
-            trace_id: operation.trace_id.clone(),
-            refs: refs.clone(),
-            input: operation.payload.input.clone(),
-            context: operation.payload.context.clone(),
-            role: operation.payload.role.clone(),
-            provider_path: operation.payload.provider_path.clone(),
-            provider_strategy: operation.payload.provider_strategy,
-            protocol_version: operation.payload.protocol_version.clone(),
-            stream: operation.payload.stream,
-            captured_at: operation.submitted_at.clone(),
-        };
 
         let progress = ProgressBlock {
             progress_id: format!("progress-{}", operation.operation_id),
             refs: refs.clone(),
-            phase: "inference_completed".into(),
+            phase: "inference_running".into(),
             blocker: None,
-            next_step: Some("render_projection".into()),
+            next_step: Some("finalize_digest".into()),
             health_hint: Some("healthy".into()),
             tool_snapshots: vec![ToolSnapshot {
                 tool_name: "provider.call".into(),
                 status: "completed".into(),
                 summary: format!(
-                    "{} -> {} @ {} => {}",
+                    "{} -> {} @ {}",
                     prepared_request.provider_name,
                     prepared_request.model,
-                    prepared_request.endpoint,
-                    provider_response.output_text
+                    prepared_request.endpoint
                 ),
             }],
         };
@@ -251,10 +140,10 @@ impl M1Runtime {
             note_id: format!("note-{}", operation.operation_id),
             refs: refs.clone(),
             summary: format!(
-                "provider {} returned: {}",
-                prepared_request.provider_name, provider_response.output_text
+                "single runtime closure executed with provider {}",
+                prepared_request.provider_name
             ),
-            decision: Some("real_inference_closure_verified".into()),
+            decision: Some("continue_m1_vertical_slice".into()),
             lesson: None,
             blocker: None,
             next_step: Some("render_projection".into()),
@@ -266,19 +155,14 @@ impl M1Runtime {
             closure_id: format!("closure-{}", operation.operation_id),
             refs: refs.clone(),
             summary: format!(
-                "closure finished with model {} and answer {}",
-                prepared_request.model, provider_response.output_text
+                "closure finished with model {} and provider {}",
+                prepared_request.model, prepared_request.provider_name
             ),
-            continuity_tail: vec![
-                operation.payload.input.clone(),
-                provider_response.output_text.clone(),
-            ],
+            continuity_tail: vec![operation.operation_type.clone()],
             note_refs: vec![note.note_id.clone()],
             artifact_candidates: vec![format!(
-                "provider:{}:{}:{}",
-                prepared_request.provider_name,
-                prepared_request.model,
-                provider_response.output_text
+                "provider:{}:{}",
+                prepared_request.provider_name, prepared_request.model
             )],
             created_at: operation.submitted_at.clone(),
         };
@@ -287,97 +171,38 @@ impl M1Runtime {
         events.push(self.event(
             "operation.accepted",
             &operation.trace_id,
-            &operation.submitted_at,
             &refs,
             Some(operation.operation_id.clone()),
-            serde_json::json!({"operation_type": operation.operation_type.clone()}),
+            serde_json::json!({"operation_type": operation.operation_type}),
         )?);
         events.push(self.event(
             "inference.started",
             &operation.trace_id,
-            &operation.submitted_at,
+            &refs,
+            Some(operation.operation_id.clone()),
+            serde_json::json!({"provider": prepared_request.provider_name, "model": prepared_request.model}),
+        )?);
+        events.push(self.event(
+            "provider.request_started",
+            &operation.trace_id,
+            &refs,
+            Some(operation.operation_id.clone()),
+            serde_json::to_value(&prepared_request)?,
+        )?);
+        events.push(self.event(
+            "provider.response_received",
+            &operation.trace_id,
             &refs,
             Some(operation.operation_id.clone()),
             serde_json::json!({
-                "provider": prepared_request.provider_name.clone(),
-                "model": prepared_request.model.clone(),
-                "input": operation.payload.input.clone(),
-                "context": operation.payload.context.clone(),
-                "role": operation.payload.role.clone(),
-                "provider_path": operation.payload.provider_path.clone(),
-                "provider_strategy": operation.payload.provider_strategy,
-                "protocol_version": operation.payload.protocol_version.clone(),
-                "stream": operation.payload.stream,
+                "provider": prepared_request.provider_name,
+                "model": prepared_request.model,
+                "status": "simulated_ok"
             }),
-        )?);
-        let provider_started_payload = ProviderEventPayload {
-            provider_name: prepared_request.provider_name.clone(),
-            model: prepared_request.model.clone(),
-            endpoint: prepared_request.endpoint.clone(),
-            output_text: None,
-            response_id: None,
-            stop_reason: None,
-            status: None,
-            debug: Some(provider_debug.clone()),
-        };
-        let provider_payload = ProviderEventPayload {
-            provider_name: prepared_request.provider_name.clone(),
-            model: prepared_request.model.clone(),
-            endpoint: prepared_request.endpoint.clone(),
-            output_text: Some(provider_response.output_text.clone()),
-            response_id: provider_response.response_id.clone(),
-            stop_reason: provider_response.stop_reason.clone(),
-            status: Some(provider_response.status),
-            debug: Some(provider_debug),
-        };
-        events.push(self.event(
-            "provider.operation_accepted",
-            &operation.trace_id,
-            &operation.submitted_at,
-            &refs,
-            Some(operation.operation_id.clone()),
-            serde_json::to_value(&provider_started_payload)?,
-        )?);
-        events.push(self.event(
-            "provider.gateway_request_sent",
-            &operation.trace_id,
-            &operation.submitted_at,
-            &refs,
-            Some(operation.operation_id.clone()),
-            serde_json::json!({
-                "provider_name": prepared_request.provider_name.clone(),
-                "model": prepared_request.model.clone(),
-                "endpoint": prepared_request.endpoint.clone(),
-            }),
-        )?);
-        events.push(self.event(
-            "provider.gateway_response_received",
-            &operation.trace_id,
-            &operation.submitted_at,
-            &refs,
-            Some(operation.operation_id.clone()),
-            serde_json::to_value(&provider_payload)?,
-        )?);
-        events.push(self.event(
-            "provider.response_normalized",
-            &operation.trace_id,
-            &operation.submitted_at,
-            &refs,
-            Some(operation.operation_id.clone()),
-            serde_json::to_value(&provider_payload)?,
-        )?);
-        events.push(self.event(
-            "provider.completed",
-            &operation.trace_id,
-            &operation.submitted_at,
-            &refs,
-            Some(operation.operation_id.clone()),
-            serde_json::to_value(&provider_payload)?,
         )?);
         events.push(self.event(
             "progress.updated",
             &operation.trace_id,
-            &operation.submitted_at,
             &refs,
             Some(operation.operation_id.clone()),
             serde_json::to_value(&progress)?,
@@ -385,7 +210,6 @@ impl M1Runtime {
         events.push(self.event(
             "execution_note.appended",
             &operation.trace_id,
-            &operation.submitted_at,
             &refs,
             Some(operation.operation_id.clone()),
             serde_json::to_value(&note)?,
@@ -393,7 +217,6 @@ impl M1Runtime {
         events.push(self.event(
             "digest.finalized",
             &operation.trace_id,
-            &operation.submitted_at,
             &refs,
             Some(operation.operation_id.clone()),
             serde_json::to_value(&digest)?,
@@ -401,20 +224,13 @@ impl M1Runtime {
         events.push(self.event(
             "operation.completed",
             &operation.trace_id,
-            &operation.submitted_at,
             &refs,
-            Some(operation.operation_id.clone()),
-            serde_json::json!({
-                "status": "ok",
-                "answer": provider_response.output_text.clone(),
-            }),
+            Some(operation.operation_id),
+            serde_json::json!({"status": "ok"}),
         )?);
 
         Ok(ClosureRun {
-            operation,
             prepared_request,
-            provider_response,
-            context_snapshot,
             progress,
             note,
             digest,
@@ -426,7 +242,6 @@ impl M1Runtime {
         &mut self,
         event_type: &str,
         trace_id: &str,
-        occurred_at: &str,
         refs: &EntityRefs,
         operation_id: Option<String>,
         payload: Value,
@@ -435,7 +250,7 @@ impl M1Runtime {
         let mut event = EventEnvelope::new(
             format!("evt-{}", self.sequence),
             event_type,
-            occurred_at.to_string(),
+            format!("seq-{}", self.sequence),
             self.source.clone(),
             trace_id.to_string(),
             self.sequence,
@@ -448,5 +263,141 @@ impl M1Runtime {
     }
 }
 
+fn extract_input(payload: &Value) -> String {
+    payload
+        .get("input")
+        .and_then(Value::as_str)
+        .unwrap_or("<empty-input>")
+        .to_string()
+}
+
 #[cfg(test)]
-mod tests;
+mod tests {
+    use super::*;
+    use fin_config::{
+        ConfigMapper, ProviderCredential, ProviderProtocol, ResolvedProviderConfig, UserConfig,
+        UserProviderConfig,
+    };
+    use fin_contracts::OperationEnvelope;
+    use fin_provider::ProviderDescriptor;
+    use std::collections::BTreeMap;
+
+    fn provider() -> ProviderDescriptor {
+        ProviderDescriptor::from_resolved(&ResolvedProviderConfig {
+            name: "openai".into(),
+            protocol: ProviderProtocol::OpenAiCompatible,
+            base_url: "https://api.example.com/v1".into(),
+            model: "gpt-5".into(),
+            credential: ProviderCredential::ApiKeyEnv {
+                env_var: "OPENAI_API_KEY".into(),
+            },
+        })
+    }
+
+    #[test]
+    fn run_closure_emits_expected_event_chain() {
+        let mut runtime = M1Runtime::default();
+        let mut op = OperationEnvelope::new(
+            "op-1",
+            "start_inference",
+            "2026-04-17T00:00:00Z",
+            "runtime",
+            "trace-1",
+            serde_json::json!({"input":"hello"}),
+        );
+        op.refs.task_id = Some("task-1".into());
+        op.refs.session_id = Some("session-1".into());
+
+        let run = runtime
+            .run_closure(op, &provider())
+            .expect("closure should run");
+        let kinds: Vec<_> = run.events.iter().map(|e| e.event_type.as_str()).collect();
+        assert_eq!(
+            kinds,
+            vec![
+                "operation.accepted",
+                "inference.started",
+                "provider.request_started",
+                "provider.response_received",
+                "progress.updated",
+                "execution_note.appended",
+                "digest.finalized",
+                "operation.completed",
+            ]
+        );
+        assert_eq!(run.prepared_request.model, "gpt-5");
+        assert!(
+            run.progress
+                .tool_snapshots
+                .first()
+                .expect("tool snapshot")
+                .summary
+                .contains("openai")
+        );
+        assert!(run.events.iter().all(|event| event.trace_id == "trace-1"));
+    }
+
+    #[test]
+    fn runtime_policy_snapshot_builds_from_default_role() {
+        let user = UserConfig {
+            default_provider: "openai".into(),
+            providers: BTreeMap::from([(
+                "openai".into(),
+                UserProviderConfig {
+                    protocol: ProviderProtocol::OpenAiCompatible,
+                    base_url: "https://api.example.com/v1".into(),
+                    model: "gpt-5".into(),
+                    api_key: None,
+                    api_key_env: Some("OPENAI_API_KEY".into()),
+                },
+            )]),
+        };
+        let system = ConfigMapper::map_user_to_system(&user).expect("mapping should succeed");
+
+        let snapshot =
+            RuntimePolicySnapshot::from_system(&system, None).expect("snapshot should build");
+        assert_eq!(snapshot.role.role_id.as_str(), "default");
+        assert_eq!(snapshot.protocol_version, "fin.m1");
+        assert_eq!(snapshot.provider_strategy, ProviderStrategy::Priority);
+        assert_eq!(
+            snapshot.provider_path.primary_target().provider_name,
+            "openai"
+        );
+
+        let encoded = serde_json::to_string(&snapshot).expect("snapshot should serialize");
+        let decoded: RuntimePolicySnapshot =
+            serde_json::from_str(&encoded).expect("snapshot should deserialize");
+        assert_eq!(decoded, snapshot);
+    }
+
+    #[test]
+    fn worker_runtime_inherits_policy_snapshot() {
+        let user = UserConfig {
+            default_provider: "openai".into(),
+            providers: BTreeMap::from([(
+                "openai".into(),
+                UserProviderConfig {
+                    protocol: ProviderProtocol::OpenAiCompatible,
+                    base_url: "https://api.example.com/v1".into(),
+                    model: "gpt-5".into(),
+                    api_key: None,
+                    api_key_env: Some("OPENAI_API_KEY".into()),
+                },
+            )]),
+        };
+        let system = ConfigMapper::map_user_to_system(&user).expect("mapping should succeed");
+
+        let runtime = WorkerRuntime::from_system(
+            &system,
+            "agent-project-leader",
+            "worker-1",
+            "runtime",
+            None,
+        )
+        .expect("worker runtime should build");
+
+        assert_eq!(runtime.agent_id.as_str(), "agent-project-leader");
+        assert_eq!(runtime.worker_id, "worker-1");
+        assert_eq!(runtime.policy.provider_path.primary_target().model, "gpt-5");
+    }
+}

@@ -32,10 +32,6 @@ pub struct UserProviderConfig {
     pub model: String,
     pub api_key: Option<String>,
     pub api_key_env: Option<String>,
-    #[serde(default)]
-    pub user_agent: Option<String>,
-    #[serde(default)]
-    pub headers: BTreeMap<String, String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -52,9 +48,6 @@ pub struct ResolvedProviderConfig {
     pub base_url: String,
     pub model: String,
     pub credential: ProviderCredential,
-    pub user_agent: Option<String>,
-    #[serde(default)]
-    pub headers: BTreeMap<String, String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -292,13 +285,6 @@ impl ConfigMapper {
             require_non_empty("provider.name", name)?;
             require_non_empty("provider.base_url", &provider.base_url)?;
             require_non_empty("provider.model", &provider.model)?;
-            if let Some(user_agent) = &provider.user_agent {
-                require_non_empty("provider.user_agent", user_agent)?;
-            }
-            for (header_name, header_value) in &provider.headers {
-                require_non_empty("provider.headers.name", header_name)?;
-                require_non_empty("provider.headers.value", header_value)?;
-            }
 
             let credential = match (&provider.api_key, &provider.api_key_env) {
                 (Some(key), None) => {
@@ -336,8 +322,6 @@ impl ConfigMapper {
                     base_url: provider.base_url.clone(),
                     model: provider.model.clone(),
                     credential,
-                    user_agent: provider.user_agent.clone(),
-                    headers: provider.headers.clone(),
                 },
             );
         }
@@ -416,10 +400,6 @@ protocol = "open-ai-compatible"
 base_url = "https://api.example.com/v1"
 model = "gpt-5"
 api_key_env = "OPENAI_API_KEY"
-user_agent = "opencode/1.2.27"
-
-[providers.openai.headers]
-X-Client = "fin"
 "#;
 
         let user = parse_user_toml(input).expect("user config should parse");
@@ -430,11 +410,6 @@ X-Client = "fin"
             system.providers["openai"].protocol,
             ProviderProtocol::OpenAiCompatible
         );
-        assert_eq!(
-            system.providers["openai"].user_agent.as_deref(),
-            Some("opencode/1.2.27")
-        );
-        assert_eq!(system.providers["openai"].headers["X-Client"], "fin");
         assert_eq!(system.runtime.runtime_home, "~/.fin");
         assert_eq!(system.policy.default_role, "default");
         assert_eq!(
@@ -455,8 +430,6 @@ X-Client = "fin"
                     model: "claude-sonnet".into(),
                     api_key: Some("x".into()),
                     api_key_env: Some("ANTHROPIC_API_KEY".into()),
-                    user_agent: None,
-                    headers: BTreeMap::new(),
                 },
             )]),
         };
@@ -483,8 +456,6 @@ X-Client = "fin"
                     credential: ProviderCredential::ApiKeyEnv {
                         env_var: "OPENAI_API_KEY".into(),
                     },
-                    user_agent: Some("opencode/1.2.27".into()),
-                    headers: BTreeMap::from([("X-Client".into(), "fin".into())]),
                 },
             )]),
             policy: RuntimePolicyConfig {
@@ -513,11 +484,6 @@ X-Client = "fin"
         let reparsed = parse_system_toml(&toml).expect("system config should parse");
         assert_eq!(reparsed.default_provider, "openai");
         assert_eq!(reparsed.providers["openai"].model, "gpt-5");
-        assert_eq!(
-            reparsed.providers["openai"].user_agent.as_deref(),
-            Some("opencode/1.2.27")
-        );
-        assert_eq!(reparsed.providers["openai"].headers["X-Client"], "fin");
         assert_eq!(reparsed.policy.protocol_version, "fin.m1");
     }
 

@@ -47,8 +47,6 @@ description: Runtime/event debugging workflow for fin. Use for multi-agent, cros
 - 先定位 `~/.fin` 下的 owning 证据目录
 - 优先检查 session / workdir / runtime 三层证据是否一致
 - 修复 runtime 问题默认要补 replay 或等价回放
-- 先检查 snapshot 写入是否 bounded（latest overwrite + recent window），避免 debug 本身制造资源问题
-- debug 服务默认以前台命令运行；定位问题时不要通过后台悬挂进程维持状态
 
 ## 4) Minimal validation
 

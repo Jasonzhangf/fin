@@ -6,8 +6,3 @@
 node_modules/
 dist/
 coverage/
-*.log
-*.tmp
-.tmp/
-.fin/
-rust/crates/debug-server/webui/dist/
