@@ -34,9 +34,13 @@ pub(crate) fn sibling_artifact_path(
     let Some(source_path) = last_run_artifact_path(runtime_home, source_field)? else {
         return Ok(None);
     };
-    let source_text = source_path.strip_prefix(runtime_home).ok().and_then(|path| path.to_str());
+    let source_text = source_path
+        .strip_prefix(runtime_home)
+        .ok()
+        .and_then(|path| path.to_str());
     Ok(source_text.and_then(|value| {
-        value.strip_suffix(source_suffix)
+        value
+            .strip_suffix(source_suffix)
             .map(|prefix| runtime_home.join(format!("{prefix}{target_suffix}")))
     }))
 }

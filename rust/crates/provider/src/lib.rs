@@ -1,12 +1,14 @@
 use fin_config::{ProviderCredential, ProviderProtocol, ResolvedProviderConfig};
-use reqwest::blocking::Client;
 use reqwest::header::{ACCEPT, CONTENT_TYPE, HeaderMap, HeaderName, HeaderValue, USER_AGENT};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::BTreeMap;
 use thiserror::Error;
 
+mod http_client;
+
 const DEFAULT_USER_AGENT: &str = "fin-coding-agent/0.1";
+const MAX_REQUEST_ATTEMPTS: usize = 3;
 
 #[derive(Debug, Error, PartialEq, Eq)]
 pub enum ProviderError {
@@ -240,8 +242,9 @@ impl ProviderFacade {
         &self,
         request: &PreparedRequest,
     ) -> Result<ProviderResponse, ProviderError> {
-        let client = Client::new();
+        let client = http_client::build_client()?;
         let api_key = self.resolve_api_key()?;
+        let headers = self.build_anthropic_headers(&api_key)?;
         let payload = serde_json::json!({
             "model": request.model,
             "max_tokens": 256,
@@ -252,55 +255,69 @@ impl ProviderFacade {
                 }
             ]
         });
-        let response = client
-            .post(&request.endpoint)
-            .headers(self.build_anthropic_headers(&api_key)?)
-            .json(&payload)
-            .send()
-            .map_err(|err| ProviderError::Request {
-                message: err.to_string(),
-            })?;
+        let mut last_retryable_error = None;
 
-        let status = response.status().as_u16();
-        let body = response.text().map_err(|err| ProviderError::Request {
-            message: err.to_string(),
-        })?;
+        for attempt in 1..=MAX_REQUEST_ATTEMPTS {
+            let response = match client
+                .post(&request.endpoint)
+                .headers(headers.clone())
+                .json(&payload)
+                .send()
+            {
+                Ok(response) => response,
+                Err(err) => {
+                    let failure = http_client::classify_reqwest_error(
+                        err,
+                        "send",
+                        &request.endpoint,
+                        attempt,
+                        MAX_REQUEST_ATTEMPTS,
+                    );
+                    if failure.retryable && attempt < MAX_REQUEST_ATTEMPTS {
+                        last_retryable_error = Some(failure.message);
+                        continue;
+                    }
+                    return Err(ProviderError::Request {
+                        message: failure.message,
+                    });
+                }
+            };
 
-        if status >= 400 {
-            return Err(ProviderError::HttpStatus { status, body });
+            let status = response.status().as_u16();
+            let body = match response.text() {
+                Ok(body) => body,
+                Err(err) => {
+                    let failure = http_client::classify_reqwest_error(
+                        err,
+                        "read_body",
+                        &request.endpoint,
+                        attempt,
+                        MAX_REQUEST_ATTEMPTS,
+                    );
+                    if failure.retryable && attempt < MAX_REQUEST_ATTEMPTS {
+                        last_retryable_error = Some(failure.message);
+                        continue;
+                    }
+                    return Err(ProviderError::Request {
+                        message: failure.message,
+                    });
+                }
+            };
+
+            if status >= 400 {
+                return Err(ProviderError::HttpStatus { status, body });
+            }
+
+            return parse_anthropic_response(request, status, &body);
         }
 
-        let parsed: Value =
-            serde_json::from_str(&body).map_err(|err| ProviderError::ParseResponse {
-                message: err.to_string(),
-            })?;
-        let output_text = parsed
-            .get("content")
-            .and_then(Value::as_array)
-            .map(|items| {
-                items
-                    .iter()
-                    .filter_map(|item| {
-                        item.get("type")
-                            .and_then(Value::as_str)
-                            .filter(|kind| *kind == "text")
-                            .and_then(|_| item.get("text"))
-                            .and_then(Value::as_str)
-                    })
-                    .collect::<String>()
-            })
-            .unwrap_or_default();
-
-        Ok(ProviderResponse {
-            provider_name: request.provider_name.clone(),
-            model: request.model.clone(),
-            output_text,
-            response_id: parsed.get("id").and_then(Value::as_str).map(str::to_string),
-            stop_reason: parsed
-                .get("stop_reason")
-                .and_then(Value::as_str)
-                .map(str::to_string),
-            status,
+        Err(ProviderError::Request {
+            message: last_retryable_error.unwrap_or_else(|| {
+                format!(
+                    "request failed after {MAX_REQUEST_ATTEMPTS} attempts; endpoint={}",
+                    request.endpoint
+                )
+            }),
         })
     }
 
@@ -428,6 +445,44 @@ impl InferenceProvider for ProviderFacade {
             protocol => Err(ProviderError::UnsupportedProtocol { protocol }),
         }
     }
+}
+
+fn parse_anthropic_response(
+    request: &PreparedRequest,
+    status: u16,
+    body: &str,
+) -> Result<ProviderResponse, ProviderError> {
+    let parsed: Value = serde_json::from_str(body).map_err(|err| ProviderError::ParseResponse {
+        message: err.to_string(),
+    })?;
+    let output_text = parsed
+        .get("content")
+        .and_then(Value::as_array)
+        .map(|items| {
+            items
+                .iter()
+                .filter_map(|item| {
+                    item.get("type")
+                        .and_then(Value::as_str)
+                        .filter(|kind| *kind == "text")
+                        .and_then(|_| item.get("text"))
+                        .and_then(Value::as_str)
+                })
+                .collect::<String>()
+        })
+        .unwrap_or_default();
+
+    Ok(ProviderResponse {
+        provider_name: request.provider_name.clone(),
+        model: request.model.clone(),
+        output_text,
+        response_id: parsed.get("id").and_then(Value::as_str).map(str::to_string),
+        stop_reason: parsed
+            .get("stop_reason")
+            .and_then(Value::as_str)
+            .map(str::to_string),
+        status,
+    })
 }
 
 #[cfg(test)]

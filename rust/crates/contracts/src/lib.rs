@@ -2,6 +2,18 @@ use fin_shared::require_non_empty;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
+mod context;
+mod feedback;
+mod records;
+
+pub use context::{
+    ContextControlBlock, CurrentInputBlock, HistoryBlock, KnowledgeArtifactBlock,
+    MinimalContextView, ProjectContextBlock, ProjectRef, PromptLayerSummary, PromptModuleEntry,
+    RolePromptBlock, ToolCatalogBlock, ToolCatalogEntry,
+};
+pub use feedback::ControlFeedback;
+pub use records::{ClosureTraceRecord, ReasoningViewRecord, ToolExecutionRecord};
+
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(transparent)]
 pub struct AgentId(pub String);
@@ -93,12 +105,6 @@ impl ProviderPath {
 #[serde(rename_all = "snake_case")]
 pub enum ProviderStrategy {
     Priority,
-}
-
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
-pub struct MinimalContextView {
-    pub continuity_tail: Vec<String>,
-    pub summary: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -300,6 +306,8 @@ pub struct ExecutionNote {
     pub lesson: Option<String>,
     pub blocker: Option<String>,
     pub next_step: Option<String>,
+    #[serde(default)]
+    pub control_feedback: Option<ControlFeedback>,
     pub created_at: String,
 }
 
@@ -313,6 +321,8 @@ pub struct DigestRecord {
     pub continuity_tail: Vec<String>,
     pub note_refs: Vec<String>,
     pub artifact_candidates: Vec<String>,
+    #[serde(default)]
+    pub control_feedback: Option<ControlFeedback>,
     pub created_at: String,
 }
 
@@ -345,6 +355,10 @@ pub struct ProjectionView {
     pub latest_provider_user_agent: Option<String>,
     #[serde(default)]
     pub latest_provider_header_names: Vec<String>,
+    pub latest_control_origin: Option<String>,
+    pub latest_continuity_confidence: Option<u8>,
+    pub latest_topic_shift_confidence: Option<u8>,
+    pub latest_simple_query_confidence: Option<u8>,
     pub warnings: Vec<String>,
 }
 
@@ -454,6 +468,10 @@ mod tests {
             latest_provider_activity: Some("provider.request_started".into()),
             latest_provider_user_agent: Some("opencode/1.2.27".into()),
             latest_provider_header_names: vec!["user-agent".into(), "x-api-key".into()],
+            latest_control_origin: Some("runtime_heuristic".into()),
+            latest_continuity_confidence: Some(92),
+            latest_topic_shift_confidence: Some(8),
+            latest_simple_query_confidence: Some(15),
             warnings: vec!["timeout_near".into()],
         };
 

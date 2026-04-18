@@ -7,13 +7,10 @@ use crate::{
     time::{local_time_base, local_timestamp_for_turn},
 };
 use fin_config::SystemConfig;
-use fin_contracts::{DigestRecord, MinimalContextView};
 use fin_provider::InferenceProvider;
 use fin_runtime::ClosureRun;
 use serde::{Deserialize, Serialize};
 use std::path::Path;
-
-const RECENT_CLOSURE_WINDOW: usize = 3;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub(crate) struct TranscriptScenario {
@@ -50,14 +47,27 @@ pub(crate) fn run_transcript_demo(
     let mut runs: Vec<ClosureRun> = Vec::with_capacity(normalized.turns.len());
 
     for (index, turn) in normalized.turns.iter().enumerate() {
-        let digests = runs.iter().map(|run| run.digest.clone()).collect::<Vec<_>>();
+        let digests = runs
+            .iter()
+            .map(|run| run.digest.clone())
+            .collect::<Vec<_>>();
         let request = DemoRequest {
             operation_id: format!("op-{}-{:04}", ids.scope, index + 1),
             trace_id: format!("trace-{}-{:04}", ids.scope, index + 1),
             session_id: ids.session_id.clone(),
             task_id: ids.task_id.clone(),
             input: turn.input.clone(),
-            context: rebuild_context_from_digests(&digests),
+            recent_messages: transcript_history_messages(&runs),
+            recent_digests: digests,
+            recent_reasoning_views: runs.iter().map(|run| run.reasoning_view.clone()).collect(),
+            recent_tool_records: runs
+                .iter()
+                .flat_map(|run| run.tool_records.iter().cloned())
+                .collect(),
+            project_label: Some("transcript-demo".into()),
+            runtime_home: None,
+            cwd: None,
+            selected_paths: Vec::new(),
             submitted_at: local_timestamp_for_turn(time_base, index),
         };
         runs.push(run_demo_request(system, provider, request)?);
@@ -68,6 +78,17 @@ pub(crate) fn run_transcript_demo(
         task_id: ids.task_id,
         runs,
     })
+}
+
+fn transcript_history_messages(runs: &[ClosureRun]) -> Vec<String> {
+    runs.iter()
+        .flat_map(|run| {
+            [
+                format!("user: {}", run.context_snapshot.input),
+                format!("assistant: {}", run.assistant_response_text),
+            ]
+        })
+        .collect()
 }
 
 fn normalize_scenario(mut scenario: TranscriptScenario) -> TranscriptScenario {
@@ -91,23 +112,6 @@ fn sanitize_identifier(raw: &str, prefix: &str) -> String {
         cleaned
     } else {
         format!("{prefix}-{cleaned}")
-    }
-}
-
-pub(crate) fn rebuild_context_from_digests(history: &[DigestRecord]) -> MinimalContextView {
-    let recent = history
-        .iter()
-        .rev()
-        .take(RECENT_CLOSURE_WINDOW)
-        .collect::<Vec<_>>();
-    let mut continuity_tail = Vec::new();
-    for digest in recent.into_iter().rev() {
-        continuity_tail.extend(digest.continuity_tail.iter().cloned());
-    }
-    let summary = history.last().map(|digest| digest.summary.clone());
-    MinimalContextView {
-        continuity_tail,
-        summary,
     }
 }
 

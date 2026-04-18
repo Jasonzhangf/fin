@@ -1,5 +1,6 @@
 export type ProjectionView = Record<string, unknown>;
 export type JsonRecord = Record<string, unknown>;
+export type ConversationRichness = 'minimal' | 'rich' | 'full_trace';
 
 export interface DebugBinding {
   project_id: string;
@@ -56,6 +57,38 @@ export interface DigestRecord extends JsonRecord {
   created_at?: string;
 }
 
+export interface ReasoningViewRecord extends JsonRecord {
+  reasoning_id?: string;
+  operation_id?: string;
+  trace_id?: string;
+  created_at?: string;
+  summary?: string;
+}
+
+export interface ToolExecutionRecord extends JsonRecord {
+  tool_call_id?: string;
+  operation_id?: string;
+  trace_id?: string;
+  tool_name?: string;
+  status?: string;
+  title?: string;
+  purpose?: string;
+  target_kind?: string;
+  target_ref?: string;
+  input_summary?: string;
+  output_summary?: string;
+  side_effects?: string[];
+}
+
+export interface ClosureTraceRecord extends JsonRecord {
+  closure_id?: string;
+  digest_id?: string;
+  operation_id?: string;
+  trace_id?: string;
+  created_at?: string;
+  assistant_response?: string;
+}
+
 export interface FocusTurn {
   operationId: string;
   traceId?: string | null;
@@ -63,6 +96,9 @@ export interface FocusTurn {
   assistantMessage?: SessionMessage;
   contextSnapshot?: ContextSnapshotRecord;
   digest?: DigestRecord;
+  reasoningView?: ReasoningViewRecord;
+  toolRecords: ToolExecutionRecord[];
+  closureTrace?: ClosureTraceRecord;
   events: RuntimeEvent[];
 }
 
@@ -77,8 +113,13 @@ export interface RefreshState {
   currentContext: JsonRecord | null;
   recentContexts: ContextSnapshotRecord[];
   recentDigests: DigestRecord[];
+  recentReasoningViews: ReasoningViewRecord[];
+  recentToolRecords: ToolExecutionRecord[];
+  recentClosures: ClosureTraceRecord[];
   messages: SessionMessage[];
   focusTurns: FocusTurn[];
   selectedOperationId: string | null;
+  conversationRichness: ConversationRichness;
   openedCard: DashboardCardId | null;
+  openedSectionKey: string | null;
 }

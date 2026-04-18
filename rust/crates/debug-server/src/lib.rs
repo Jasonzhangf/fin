@@ -1,5 +1,6 @@
 use fin_contracts::{
-    EventEnvelope, ExecutionNote, ProgressBlock, ProjectionView, ProviderEventPayload,
+    ControlFeedback, EventEnvelope, ExecutionNote, ProgressBlock, ProjectionView,
+    ProviderEventPayload,
 };
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -12,12 +13,15 @@ use std::{
 };
 use thiserror::Error;
 
+mod chat_api;
 mod event_stream;
 mod http;
 mod session_view;
 mod web_app;
 mod web_assets;
 mod web_styles;
+
+pub use chat_api::{ChatSendRequest, ChatSendResponse, DebugBinding};
 
 use http::{
     HttpRequest, HttpResponse, bad_request_response, css_response, file_response, html_response,
@@ -35,6 +39,9 @@ const API_LAST_RUN_PATH: &str = "/api/last_run.json";
 const API_CURRENT_CONTEXT_PATH: &str = "/api/current_context.json";
 const API_RECENT_CONTEXTS_PATH: &str = "/api/recent_contexts.json";
 const API_RECENT_DIGESTS_PATH: &str = "/api/recent_digests.json";
+const API_RECENT_REASONING_VIEWS_PATH: &str = "/api/recent_reasoning_views.json";
+const API_RECENT_TOOL_RECORDS_PATH: &str = "/api/recent_tool_records.json";
+const API_RECENT_CLOSURES_PATH: &str = "/api/recent_closures.json";
 const API_SESSION_MESSAGES_PATH: &str = "/api/session_messages.json";
 const API_SESSION_EVENTS_PATH: &str = "/api/session_events.json";
 const API_CHAT_SEND_PATH: &str = "/api/chat/send";
@@ -50,31 +57,6 @@ pub enum DebugDataError {
     },
     #[error("failed to serialize debug artifact: {0}")]
     Serialize(#[from] serde_json::Error),
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct DebugBinding {
-    pub project_id: String,
-    pub project_label: String,
-    pub runtime_home: String,
-    pub session_id: Option<String>,
-    pub task_id: Option<String>,
-    pub session_messages_path: Option<String>,
-    pub recent_contexts_path: Option<String>,
-    pub recent_digests_path: Option<String>,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct ChatSendRequest {
-    pub message: String,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct ChatSendResponse {
-    pub binding: DebugBinding,
-    pub answer: String,
-    pub digest_id: String,
-    pub events_count: usize,
 }
 
 pub trait DebugActionHandler {
@@ -181,6 +163,19 @@ impl InMemoryProjector {
                     self.current.latest_progress_id = Some(progress.progress_id);
                 }
             }
+            "control.feedback_recorded" => {
+                if let Ok(feedback) =
+                    serde_json::from_value::<ControlFeedback>(event.payload.clone())
+                {
+                    self.current.latest_control_origin = Some(feedback.origin);
+                    self.current.latest_continuity_confidence =
+                        Some(feedback.continuity_confidence);
+                    self.current.latest_topic_shift_confidence =
+                        Some(feedback.topic_shift_confidence);
+                    self.current.latest_simple_query_confidence =
+                        Some(feedback.simple_query_confidence);
+                }
+            }
             "execution_note.appended" => {
                 if let Ok(note) = serde_json::from_value::<ExecutionNote>(event.payload.clone()) {
                     self.current.latest_note_id = Some(note.note_id);
@@ -192,7 +187,9 @@ impl InMemoryProjector {
                 }
             }
             "operation.completed" => {
-                self.current.warnings.retain(|warning| warning != "runtime_busy");
+                self.current
+                    .warnings
+                    .retain(|warning| warning != "runtime_busy");
             }
             _ => {}
         }
@@ -348,6 +345,21 @@ fn response_for_request(
         ("GET", API_RECENT_DIGESTS_PATH) => last_run_artifact_response(
             runtime_home,
             "session_recent_digests_path",
+            "application/json; charset=utf-8",
+        ),
+        ("GET", API_RECENT_REASONING_VIEWS_PATH) => last_run_artifact_response(
+            runtime_home,
+            "session_recent_reasoning_path",
+            "application/json; charset=utf-8",
+        ),
+        ("GET", API_RECENT_TOOL_RECORDS_PATH) => last_run_artifact_response(
+            runtime_home,
+            "session_recent_tool_records_path",
+            "application/json; charset=utf-8",
+        ),
+        ("GET", API_RECENT_CLOSURES_PATH) => last_run_artifact_response(
+            runtime_home,
+            "session_recent_closures_path",
             "application/json; charset=utf-8",
         ),
         ("GET", API_SESSION_MESSAGES_PATH) => last_run_artifact_response(

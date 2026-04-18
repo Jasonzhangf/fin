@@ -20,15 +20,3 @@ pub(crate) fn write_file(path: &Path, bytes: &[u8]) -> Result<(), CliError> {
         source,
     })
 }
-
-pub(crate) fn write_json_lines<T: serde::Serialize>(
-    path: &Path,
-    values: &[T],
-) -> Result<(), CliError> {
-    let mut content = String::new();
-    for value in values {
-        content.push_str(&serde_json::to_string(value)?);
-        content.push('\n');
-    }
-    write_file(path, content.as_bytes())
-}

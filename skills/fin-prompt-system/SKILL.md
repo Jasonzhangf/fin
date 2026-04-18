@@ -1,0 +1,105 @@
+---
+name: fin-prompt-system
+description: Prompt system routing and execution skill for fin. Use when changing prompt layers, role modules, tool prompt specs, or prompt-related observability.
+---
+
+# fin Prompt System Skill
+
+## 1) Intent
+
+用于处理：
+
+1. prompt system 的分层设计
+2. prompt source ownership
+3. role family / role baseline content
+4. model family overlay
+5. tool prompt spec
+6. prompt 相关的 Web 可观测与验证
+
+## 2) Canonical sources
+
+1. `docs/architecture/25-prompt-system.md`
+2. `docs/architecture/26-role-prompt-family-and-model-overlays.md`
+3. `docs/architecture/27-stable-core-prompt.md`
+4. `docs/prompts/01-stable-core-prompt-v1.md`
+5. `docs/prompts/02-role-baselines-v1.md`
+6. `docs/prompts/03-gpt-codex-overlay-v1.md`
+7. `docs/architecture/24-session-render-truth-and-reasoning-input-assembly.md`
+8. `docs/contracts/prompt-module-contract.md`
+9. `docs/contracts/00-m1-contracts-index.md`
+10. `AGENTS.md`
+
+## 3) Routing rules
+
+### A. 改 prompt 设计时
+
+先改：
+
+- `docs/architecture/25-prompt-system.md`
+
+### B. 改 role prompt content / model overlay 时
+
+先改：
+
+- `docs/architecture/26-role-prompt-family-and-model-overlays.md`
+- `docs/prompts/02-role-baselines-v1.md`
+- `docs/prompts/03-gpt-codex-overlay-v1.md`
+
+### C. 改 stable core prompt design / text 时
+
+先改：
+
+- `docs/architecture/27-stable-core-prompt.md`
+- `docs/prompts/01-stable-core-prompt-v1.md`
+
+### D. 改 prompt schema / structure 时
+
+先改：
+
+- `docs/contracts/prompt-module-contract.md`
+
+### E. 改 prompt build / context block / Web 可见字段时
+
+再改：
+
+- Rust contracts / runtime
+- Web debug 展示
+
+## 4) Execution rules
+
+1. 不把 prompt system 做成单一大字符串真源
+2. 必须区分：
+   - stable core
+   - role modules
+   - session overlay
+   - turn envelope
+3. 必须区分：
+   - model tools
+   - framework capabilities
+4. stable core 只写跨角色稳定规则，不得混入当前 project/task/turn 动态内容
+5. role baseline 只写稳定角色职责，project/task/turn 语义必须下沉到 overlay
+6. project agent 与 system agent 的 project scope 不得混写成单 project 语义
+7. schema 演进必须兼容旧 session artifacts；新增字段默认 `serde(default)`，改名字段保留 alias
+8. 真实 provider 若出现“语义正确但 schema 不精确”的 drift，优先把 exact output contract 与禁用样式（如 `0.98/1.0`、字符串布尔值、extra keys）重复暴露到推理末尾，而不是先放宽 runtime truth 判定
+
+## 5) Minimal validation
+
+prompt 相关改动至少做：
+
+1. `cargo test -p fin-runtime -p fin-cli`
+2. `npx tsc -p rust/crates/debug-server/webui/tsconfig.json`
+3. `python3 scripts/check-code-line-limit.py`
+4. 至少验证一种 role/module 变化能反映到 `current_context.json` / Web debug
+5. 至少一轮真实 `web-debug` 闭环，确认：
+   - `current_context.json`
+   - `recent_contexts.json`
+   - Web Context 卡 / modal
+
+## 6) Anti-patterns
+
+- 把所有 prompt 内容直接硬编码成一坨系统提示词
+- 把 role baseline、project policy、tool schema 混写成不可解释的大段文本
+- 改了 prompt schema 却不兼容旧 session 数据
+- 在 Web 层显示 prompt 真相，但 runtime 没有同字段
+- 把 framework internal capability 冒充 model tool
+- 先写 prompt 文本细节，后补 role/source/layer 边界

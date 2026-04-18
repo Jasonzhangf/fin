@@ -33,29 +33,41 @@
 3. 测试、harness、回放与故障注入：`skills/fin-testing-harness/SKILL.md`
 4. 构建、版本、安装、提升与回滚：`skills/fin-build-versioning/SKILL.md`
 5. runtime 调试与事件定位：`skills/fin-runtime-debug/SKILL.md`
-6. 系统总览：`docs/architecture/01-system-overview.md`
-7. 分层边界：`docs/architecture/02-layer-boundaries.md`
-8. runtime 模型：`docs/architecture/03-rust-runtime-model.md`
-9. 控制面与事件面：`docs/architecture/04-control-plane-http-ws.md`
-10. 可观测性与 Web 调试后台：`docs/architecture/05-event-model-and-observability.md`、`docs/architecture/06-web-debug-console.md`
-11. harness / replay / CI：`docs/architecture/07-harness-replay-fault-injection.md`、`docs/architecture/08-testing-and-ci-strategy.md`
-12. workspace 与 crate 规划：`docs/architecture/09-workspace-and-crate-map.md`
-13. 运行时对象与 session/task/topic 架构：`docs/architecture/10-runtime-session-task-architecture.md`
-14. M1 最小可用脚手架与迭代顺序：`docs/architecture/11-m1-scaffolding-and-iteration.md`
-15. Tentative session 与 formal task 的路由状态机：`docs/architecture/12-tentative-session-routing-state-machine.md`
-16. Config 与 AI Provider 基础模块：`docs/architecture/13-config-and-provider-foundation.md`
-17. `~/.fin` 运行时家目录与 session/workdir 布局：`docs/architecture/14-runtime-home-layout.md`
-18. 全局安装、编译、回归、提升流程：`docs/architecture/15-install-build-regression-flow.md`
-19. operation / event / projection 运行事实模型：`docs/architecture/16-operation-and-event-model.md`
-20. debug 五层法与可观测工作流：`docs/architecture/17-debug-method-and-observability-workflow.md`
-21. LiteLLM provider gateway 与 event pub/sub 架构：`docs/architecture/18-provider-gateway-with-litellm.md`
-22. 最小 subscription registry 与 consumer 框架：`docs/architecture/19-subscription-registry-minimal-framework.md`
-23. 外部 agent 消息通道、eventbus 与 mailbox 边界：`docs/architecture/20-external-agent-message-channel-eventbus-mailbox.md`
-24. 外部消息 envelope 与最小握手状态机：`docs/architecture/21-message-envelope-and-handshake-state-machine.md`
-25. M1 最小 agent core 模块切分：`docs/architecture/22-m1-minimal-agent-core-module-cut.md`
-26. M1 第一批实现顺序与 crate/file 落点：`docs/architecture/23-m1-first-implementation-order-and-crate-landing.md`
-27. M1 contract 索引与最小 schema：`docs/contracts/00-m1-contracts-index.md`
-28. provider operation / event contract：`docs/contracts/provider-operation-contract.md`、`docs/contracts/provider-event-contract.md`
+6. prompt system 分层、role family、model overlays、tool prompt spec：`skills/fin-prompt-system/SKILL.md`
+7. 系统总览：`docs/architecture/01-system-overview.md`
+8. 分层边界：`docs/architecture/02-layer-boundaries.md`
+9. runtime 模型：`docs/architecture/03-rust-runtime-model.md`
+10. 控制面与事件面：`docs/architecture/04-control-plane-http-ws.md`
+11. 可观测性与 Web 调试后台：`docs/architecture/05-event-model-and-observability.md`、`docs/architecture/06-web-debug-console.md`
+12. harness / replay / CI：`docs/architecture/07-harness-replay-fault-injection.md`、`docs/architecture/08-testing-and-ci-strategy.md`
+13. workspace 与 crate 规划：`docs/architecture/09-workspace-and-crate-map.md`
+14. 运行时对象与 session/task/topic 架构：`docs/architecture/10-runtime-session-task-architecture.md`
+15. M1 最小可用脚手架与迭代顺序：`docs/architecture/11-m1-scaffolding-and-iteration.md`
+16. Tentative session 与 formal task 的路由状态机：`docs/architecture/12-tentative-session-routing-state-machine.md`
+17. Config 与 AI Provider 基础模块：`docs/architecture/13-config-and-provider-foundation.md`
+18. `~/.fin` 运行时家目录与 session/workdir 布局：`docs/architecture/14-runtime-home-layout.md`
+19. 全局安装、编译、回归、提升流程：`docs/architecture/15-install-build-regression-flow.md`
+20. operation / event / projection 运行事实模型：`docs/architecture/16-operation-and-event-model.md`
+21. debug 五层法与可观测工作流：`docs/architecture/17-debug-method-and-observability-workflow.md`
+22. LiteLLM provider gateway 与 event pub/sub 架构：`docs/architecture/18-provider-gateway-with-litellm.md`
+23. 最小 subscription registry 与 consumer 框架：`docs/architecture/19-subscription-registry-minimal-framework.md`
+24. 外部 agent 消息通道、eventbus 与 mailbox 边界：`docs/architecture/20-external-agent-message-channel-eventbus-mailbox.md`
+25. 外部消息 envelope 与最小握手状态机：`docs/architecture/21-message-envelope-and-handshake-state-machine.md`
+26. M1 最小 agent core 模块切分：`docs/architecture/22-m1-minimal-agent-core-module-cut.md`
+27. M1 第一批实现顺序与 crate/file 落点：`docs/architecture/23-m1-first-implementation-order-and-crate-landing.md`
+28. session render 真源与 reasoning input assembly：`docs/architecture/24-session-render-truth-and-reasoning-input-assembly.md`
+29. prompt system 分层、source ownership、role/model overlays：`docs/architecture/25-prompt-system.md`
+30. role family baseline、prompt content writing style、model overlays：`docs/architecture/26-role-prompt-family-and-model-overlays.md`
+31. stable core prompt 的归属、边界、装配顺序：`docs/architecture/27-stable-core-prompt.md`
+32. stable core prompt 第一版文本草案：`docs/prompts/01-stable-core-prompt-v1.md`
+33. 四类 role baseline 第一版文本：`docs/prompts/02-role-baselines-v1.md`
+34. GPT / Codex overlay 第一版文本：`docs/prompts/03-gpt-codex-overlay-v1.md`
+35. M1 contract 索引与最小 schema：`docs/contracts/00-m1-contracts-index.md`
+36. prompt module / tool prompt / role prompt contract：`docs/contracts/prompt-module-contract.md`
+37. provider operation / event contract：`docs/contracts/provider-operation-contract.md`、`docs/contracts/provider-event-contract.md`
+38. conversation richness、reasoning/tool 渲染、interrupt / parallel 边界：`docs/architecture/28-conversation-richness-and-interrupt-model.md`
+39. reasoning view contract：`docs/contracts/reasoning-view-contract.md`
+40. tool execution semantic render contract：`docs/contracts/tool-execution-record-contract.md`
 
 ## mandatory-flow
 1. 先读本文件。

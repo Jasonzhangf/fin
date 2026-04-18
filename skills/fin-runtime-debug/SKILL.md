@@ -49,6 +49,9 @@ description: Runtime/event debugging workflow for fin. Use for multi-agent, cros
 - 修复 runtime 问题默认要补 replay 或等价回放
 - 先检查 snapshot 写入是否 bounded（latest overwrite + recent window），避免 debug 本身制造资源问题
 - debug 服务默认以前台命令运行；定位问题时不要通过后台悬挂进程维持状态
+- live `4040` 若行为与源码不一致，先判 stale binary / stale process；重编译后精确重启当前 PID，再继续怀疑 HTTP/provider 路径
+- provider 请求失败时，先看结构化 reqwest 诊断字段（stage/attempt/endpoint/timeout/connect/request/body/decode/source-chain），不要只凭一句 `request failed` 下结论
+- WebUI 新字段若“后端有文件但页面没显示”，先查 `/app.js` 是否已经包含对应消费路径关键字，再判前端逻辑问题；include_str/bundled JS 不刷新时，页面会继续跑旧 bundle
 
 ## 4) Minimal validation
 

@@ -1,13 +1,16 @@
 import { formatLocalTimestamp } from './time.js';
 import { StructuredTreeRenderer } from './tree.js';
 import type {
+  ClosureTraceRecord,
   ContextSnapshotRecord,
   DigestRecord,
   FocusTurn,
   JsonRecord,
   RefreshState,
+  ReasoningViewRecord,
   RuntimeEvent,
   SessionMessage,
+  ToolExecutionRecord,
 } from './types.js';
 
 export class FocusPane {
@@ -103,6 +106,9 @@ export function buildFocusTurns(
   messages: SessionMessage[],
   recentContexts: ContextSnapshotRecord[],
   recentDigests: DigestRecord[],
+  recentReasoningViews: ReasoningViewRecord[],
+  recentToolRecords: ToolExecutionRecord[],
+  recentClosures: ClosureTraceRecord[],
   sessionEvents: RuntimeEvent[],
 ): FocusTurn[] {
   const turns = new Map<string, FocusTurn>();
@@ -111,6 +117,16 @@ export function buildFocusTurns(
     .map((item): [string, DigestRecord] => [digestOperationId(item), item])
     .filter(([operationId]) => operationId.length > 0);
   const digestsByOperation = new Map<string, DigestRecord>(digestEntries);
+  const reasoningByOperation = new Map<string, ReasoningViewRecord>(
+    recentReasoningViews
+      .map((item): [string, ReasoningViewRecord] => [String(item.operation_id ?? ''), item])
+      .filter(([operationId]) => operationId.length > 0),
+  );
+  const closuresByOperation = new Map<string, ClosureTraceRecord>(
+    recentClosures
+      .map((item): [string, ClosureTraceRecord] => [String(item.operation_id ?? ''), item])
+      .filter(([operationId]) => operationId.length > 0),
+  );
 
   for (const event of sessionEvents) {
     const operationId = event.operation_id ?? '';
@@ -135,6 +151,9 @@ export function buildFocusTurns(
   for (const [operationId, turn] of turns) {
     turn.contextSnapshot = contextsByOperation.get(operationId);
     turn.digest = digestsByOperation.get(operationId);
+    turn.reasoningView = reasoningByOperation.get(operationId);
+    turn.closureTrace = closuresByOperation.get(operationId);
+    turn.toolRecords = recentToolRecords.filter((item) => item.operation_id === operationId);
     turn.events.sort((left, right) => (left.sequence ?? 0) - (right.sequence ?? 0));
   }
 
@@ -155,6 +174,7 @@ function ensureTurn(turns: Map<string, FocusTurn>, operationId: string): FocusTu
 
   const created: FocusTurn = {
     operationId,
+    toolRecords: [],
     events: [],
   };
   turns.set(operationId, created);

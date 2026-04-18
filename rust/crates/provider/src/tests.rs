@@ -1,6 +1,11 @@
 use super::*;
 
 use fin_config::{ProviderCredential, ResolvedProviderConfig};
+use std::io::{Read, Write};
+use std::net::TcpListener;
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::Arc;
+use std::thread;
 
 fn openai_config() -> ResolvedProviderConfig {
     ResolvedProviderConfig {
@@ -157,4 +162,105 @@ fn anthropic_headers_preserve_custom_headers_and_override_reserved_ones() {
             .unwrap(),
         "2023-06-01"
     );
+}
+
+#[test]
+fn anthropic_execute_retries_retryable_request_failures() {
+    let listener = TcpListener::bind("127.0.0.1:0").expect("listener");
+    let address = listener.local_addr().expect("local addr");
+    let attempts = Arc::new(AtomicUsize::new(0));
+    let attempts_for_thread = Arc::clone(&attempts);
+    let server = thread::spawn(move || {
+        for current in 1..=3 {
+            let (mut stream, _) = listener.accept().expect("accept");
+            attempts_for_thread.fetch_add(1, Ordering::SeqCst);
+            let mut buffer = [0_u8; 2048];
+            let _ = stream.read(&mut buffer);
+            if current < 3 {
+                continue;
+            }
+            let body = r#"{"id":"msg-1","content":[{"type":"text","text":"OK"}],"stop_reason":"end_turn"}"#;
+            let response = format!(
+                "HTTP/1.1 200 OK\r\ncontent-type: application/json\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{}",
+                body.len(),
+                body
+            );
+            stream.write_all(response.as_bytes()).expect("write response");
+        }
+    });
+
+    let facade = ProviderFacade::from_resolved(&ResolvedProviderConfig {
+        name: "local-anthropic".into(),
+        protocol: ProviderProtocol::AnthropicWire,
+        base_url: format!("http://{}", address),
+        model: "qwen3.6-plus".into(),
+        credential: ProviderCredential::DirectApiKey {
+            api_key: "test-key".into(),
+        },
+        user_agent: Some("opencode/1.2.27".into()),
+        headers: BTreeMap::new(),
+    });
+    let prepared = facade.prepare_request(&ProviderRequest {
+        input: "hello".into(),
+        rendered_input: Some("hello".into()),
+        override_model: None,
+    });
+
+    let response = facade
+        .execute_prepared(&prepared)
+        .expect("third attempt should succeed");
+    assert_eq!(response.output_text, "OK");
+    assert_eq!(attempts.load(Ordering::SeqCst), 3);
+    server.join().expect("server thread");
+}
+
+#[test]
+fn anthropic_execute_does_not_retry_http_status_errors() {
+    let listener = TcpListener::bind("127.0.0.1:0").expect("listener");
+    let address = listener.local_addr().expect("local addr");
+    let attempts = Arc::new(AtomicUsize::new(0));
+    let attempts_for_thread = Arc::clone(&attempts);
+    let server = thread::spawn(move || {
+        let (mut stream, _) = listener.accept().expect("accept");
+        attempts_for_thread.fetch_add(1, Ordering::SeqCst);
+        let mut buffer = [0_u8; 2048];
+        let _ = stream.read(&mut buffer);
+        let body = r#"{"error":"bad request"}"#;
+        let response = format!(
+            "HTTP/1.1 400 Bad Request\r\ncontent-type: application/json\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{}",
+            body.len(),
+            body
+        );
+        stream.write_all(response.as_bytes()).expect("write response");
+    });
+
+    let facade = ProviderFacade::from_resolved(&ResolvedProviderConfig {
+        name: "local-anthropic".into(),
+        protocol: ProviderProtocol::AnthropicWire,
+        base_url: format!("http://{}", address),
+        model: "qwen3.6-plus".into(),
+        credential: ProviderCredential::DirectApiKey {
+            api_key: "test-key".into(),
+        },
+        user_agent: Some("opencode/1.2.27".into()),
+        headers: BTreeMap::new(),
+    });
+    let prepared = facade.prepare_request(&ProviderRequest {
+        input: "hello".into(),
+        rendered_input: Some("hello".into()),
+        override_model: None,
+    });
+
+    let err = facade
+        .execute_prepared(&prepared)
+        .expect_err("http 400 must fail without retry");
+    match err {
+        ProviderError::HttpStatus { status, body } => {
+            assert_eq!(status, 400);
+            assert!(body.contains("bad request"));
+        }
+        other => panic!("unexpected error: {other:?}"),
+    }
+    assert_eq!(attempts.load(Ordering::SeqCst), 1);
+    server.join().expect("server thread");
 }

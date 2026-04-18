@@ -1,7 +1,7 @@
 use super::*;
 use fin_contracts::{
-    DebugVisibility, EntityRefs, EventEnvelope, ExecutionNote, ProgressBlock, ProviderEventPayload,
-    SanitizedProviderDebug, Severity,
+    ControlFeedback, DebugVisibility, EntityRefs, EventEnvelope, ExecutionNote, ProgressBlock,
+    ProviderEventPayload, SanitizedProviderDebug, Severity,
 };
 use std::collections::BTreeMap;
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -40,6 +40,19 @@ impl DebugActionHandler for TestHandler {
             answer: format!("echo:{}", request.message),
             digest_id: "digest-1".into(),
             events_count: 3,
+            response_kind: if request.is_status_probe() {
+                "status_probe".into()
+            } else {
+                "assistant_message".into()
+            },
+            freshness: if request.is_status_probe() {
+                Some("recent".into())
+            } else {
+                None
+            },
+            control_feedback: None,
+            progress: None,
+            note: None,
         })
     }
 }
@@ -70,7 +83,15 @@ fn projector_tracks_latest_progress_note_digest_and_provider_activity() {
         lesson: None,
         blocker: None,
         next_step: None,
+        control_feedback: None,
         created_at: "2026-04-17T00:00:00Z".into(),
+    };
+    let feedback = ControlFeedback {
+        origin: "runtime_heuristic".into(),
+        continuity_confidence: 92,
+        topic_shift_confidence: 8,
+        simple_query_confidence: 20,
+        ..ControlFeedback::default()
     };
     let provider_payload = ProviderEventPayload {
         provider_name: "ali-coding-plan".into(),
@@ -99,6 +120,10 @@ fn projector_tracks_latest_progress_note_digest_and_provider_activity() {
         (
             "execution_note.appended",
             serde_json::to_value(note).unwrap(),
+        ),
+        (
+            "control.feedback_recorded",
+            serde_json::to_value(feedback).unwrap(),
         ),
         (
             "digest.finalized",
@@ -145,6 +170,10 @@ fn projector_tracks_latest_progress_note_digest_and_provider_activity() {
         projector.current.latest_provider_header_names,
         vec!["user-agent".to_string(), "x-api-key".to_string()]
     );
+    assert_eq!(projector.current.latest_control_origin.as_deref(), Some("runtime_heuristic"));
+    assert_eq!(projector.current.latest_continuity_confidence, Some(92));
+    assert_eq!(projector.current.latest_topic_shift_confidence, Some(8));
+    assert_eq!(projector.current.latest_simple_query_confidence, Some(20));
     assert_eq!(projector.current.task_id.as_deref(), Some("task-1"));
 }
 
@@ -190,6 +219,14 @@ fn response_for_chat_js_serves_compiled_module() {
 }
 
 #[test]
+fn response_for_section_renderers_js_serves_compiled_module() {
+    let response = response_for_path("/section_renderers.js", Path::new("/tmp/unused"));
+    let body = String::from_utf8(response.body).expect("js should be utf8");
+    assert_eq!(response.status_code, 200);
+    assert!(body.contains("renderInspectorSection"));
+}
+
+#[test]
 fn response_for_binding_uses_handler() {
     let handler = TestHandler;
     let runtime_home = Path::new("/tmp/fin-binding");
@@ -228,33 +265,79 @@ fn response_for_chat_send_uses_handler() {
 }
 
 #[test]
+fn response_for_chat_send_status_probe_round_trips_kind_and_freshness() {
+    let handler = TestHandler;
+    let runtime_home = Path::new("/tmp/fin-chat-send-status");
+    let response = response_for_request(
+        &HttpRequest {
+            method: "POST".into(),
+            path: API_CHAT_SEND_PATH.into(),
+            body: br#"{"message":"/status current","input_kind":"status_probe"}"#.to_vec(),
+        },
+        runtime_home,
+        &handler,
+    );
+    assert_eq!(response.status_code, 200);
+    let body: ChatSendResponse = serde_json::from_slice(&response.body).unwrap();
+    assert_eq!(body.response_kind, "status_probe");
+    assert_eq!(body.freshness.as_deref(), Some("recent"));
+}
+
+#[test]
 fn response_for_session_messages_reads_runtime_artifact_via_last_run() {
+    assert_runtime_artifact_response(
+        "messages",
+        API_SESSION_MESSAGES_PATH,
+        "session_messages_path",
+        "sessions/2026/04/session-1/conversation/messages.json",
+        br#"[{"role":"user","content":"hello"}]"#,
+        "hello",
+    );
+}
+
+#[test]
+fn response_for_recent_closures_reads_runtime_artifact_via_last_run() {
+    assert_runtime_artifact_response(
+        "closures",
+        API_RECENT_CLOSURES_PATH,
+        "session_recent_closures_path",
+        "sessions/2026/04/session-1/closures/recent_closures.json",
+        br#"[{"operation_id":"op-1","assistant_response":"TRACE"}]"#,
+        "TRACE",
+    );
+}
+
+fn assert_runtime_artifact_response(
+    label: &str,
+    api_path: &str,
+    last_run_field: &str,
+    relative_path: &str,
+    artifact_body: &[u8],
+    expected_fragment: &str,
+) {
     let runtime_home = std::env::temp_dir().join(format!(
-        "fin-debug-messages-{}",
+        "fin-debug-{label}-{}",
         SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .expect("time should work")
             .as_nanos()
     ));
     let current_dir = runtime_home.join("runtime/current");
-    let session_dir = runtime_home.join("sessions/2026/04/session-1/conversation");
+    let artifact_path = runtime_home.join(relative_path);
+    let session_dir = artifact_path.parent().expect("artifact parent").to_path_buf();
     fs::create_dir_all(&current_dir).expect("current dir should exist");
     fs::create_dir_all(&session_dir).expect("session dir should exist");
     fs::write(
         current_dir.join("last_run.json"),
-        br#"{"session_messages_path":"sessions/2026/04/session-1/conversation/messages.json"}"#,
+        format!(r#"{{"{last_run_field}":"{relative_path}"}}"#),
     )
     .expect("last run should write");
-    fs::write(
-        session_dir.join("messages.json"),
-        br#"[{"role":"user","content":"hello"}]"#,
-    )
-    .expect("messages should write");
+    fs::write(&artifact_path, artifact_body).expect("artifact should write");
 
     let response = response_for_request(
         &HttpRequest {
             method: "GET".into(),
-            path: API_SESSION_MESSAGES_PATH.into(),
+            path: api_path.into(),
             body: Vec::new(),
         },
         &runtime_home,
@@ -262,5 +345,5 @@ fn response_for_session_messages_reads_runtime_artifact_via_last_run() {
     );
     assert_eq!(response.status_code, 200);
     assert_eq!(response.content_type, "application/json; charset=utf-8");
-    assert!(String::from_utf8(response.body).unwrap().contains("hello"));
+    assert!(String::from_utf8(response.body).unwrap().contains(expected_fragment));
 }

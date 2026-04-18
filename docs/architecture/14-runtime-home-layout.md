@@ -63,6 +63,7 @@
 ```text
 ~/.fin/
   config/
+  skills/
   bin/
   install/
   runtime/
@@ -78,6 +79,7 @@
 各目录职责：
 
 - `config/`：配置真源
+- `skills/`：全局可复用 skills 真源
 - `bin/`：全局入口命令
 - `install/`：版本化安装物与安装回执
 - `runtime/`：活跃进程、锁、租约、心跳、当前投影
@@ -115,13 +117,18 @@
 - test session 必须带 `test-` 命名空间
 - 正常运行继续使用 `~/.fin/` 顶层；测试运行只允许写入 `~/.fin/harness/runs/<run-id>/runtime-home/`
 
-## 3. `config/`：配置目录
+## 3. `config/` 与 `skills/`：配置与全局 skills 目录
 
 ```text
 ~/.fin/config/
   user.toml
   system.toml
   system.template.toml
+
+~/.fin/skills/
+  <skill-id>/
+    SKILL.md
+    _meta.json (optional)
 ```
 
 说明：
@@ -533,3 +540,10 @@ workdir 级共享不是共享全部历史，而是共享被框架晋升后的内
 - 每轮一个 context 文件无限增长
 - 每个事件附带单独大 snapshot 文件
 - 为了 debug 把完整上下文碎片化散落到多个目录
+
+
+补充规则：
+
+- `~/.fin/skills` 是全局 skills 的运行时真源目录
+- 运行时 prompt build 可从这里装载全局 skill index
+- repo 内 `skills/` 仍是项目本地技能真源，两者职责不同

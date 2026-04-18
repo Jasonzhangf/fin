@@ -1,4 +1,5 @@
 import { formatLocalTimestamp } from './time.js';
+import { renderInspectorSection } from './section_renderers.js';
 import { StructuredTreeRenderer } from './tree.js';
 import type { DashboardCardId, FocusTurn, JsonRecord, RefreshState, RuntimeEvent } from './types.js';
 
@@ -22,6 +23,9 @@ export class InspectorPane {
     const selected = state.focusTurns.find((turn) => turn.operationId === state.selectedOperationId);
     const cards = this.buildCards(selected, state);
     const opened = state.openedCard ? cards.find((item) => item.id === state.openedCard) ?? null : null;
+    const openedSection = opened && state.openedSectionKey
+      ? opened.sections.find(([label]) => this.sectionKey(opened.id, label) === state.openedSectionKey) ?? null
+      : null;
 
     this.rootEl.innerHTML = `
       <section class="dashboard-shell">
@@ -29,6 +33,7 @@ export class InspectorPane {
           ${cards.map((card) => this.renderDigestCard(card)).join('')}
         </div>
         ${opened ? this.renderModal(opened) : ''}
+        ${opened && openedSection ? this.renderSectionModal(opened, openedSection[0], openedSection[1]) : ''}
       </section>
     `;
   }
@@ -41,12 +46,90 @@ export class InspectorPane {
     );
     const providerDebug = asRecord(providerResponse.debug ?? providerAccepted.debug);
     const context = selected?.contextSnapshot;
-    const request = asRecord(findEvent(selected?.events ?? [], 'inference.started')?.payload);
-    const latestEventNames = (selected?.events ?? []).slice(-4).map((event) => String(event.event_type ?? '-')).join(' → ');
-    const currentContext = asRecord(context?.context);
-    const continuityTail = Array.isArray(currentContext.continuity_tail)
-      ? currentContext.continuity_tail.map((item) => String(item)).join(' | ')
+    const contextView = asRecord(context?.context);
+    const controlBlock = asRecord(contextView.control);
+    const rolePromptBlock = asRecord(contextView.role_prompt);
+    const toolBlock = asRecord(contextView.tools);
+    const promptModules = Array.isArray(rolePromptBlock.prompt_modules)
+      ? rolePromptBlock.prompt_modules.map((item) => asRecord(item))
+      : [];
+    const promptLayers = Array.isArray(rolePromptBlock.prompt_layers)
+      ? rolePromptBlock.prompt_layers.map((item) => asRecord(item))
+      : [];
+    const stableCoreLayer = promptLayerById(promptLayers, 'stable_core');
+    const roleBaselineLayer = promptLayerById(promptLayers, 'role_baseline');
+    const modelOverlayLayer = promptLayerById(promptLayers, 'model_overlay');
+    const promptLayerDigest = promptLayers.length
+      ? promptLayers
+          .map((layer) => `${scalar(layer.layer_id)}:${arrayCount(layer.module_ids)}`)
+          .join(' · ')
       : '-';
+    const historyBlock = asRecord(contextView.history);
+    const knowledgeBlock = asRecord(contextView.knowledge);
+    const projectBlock = asRecord(contextView.project);
+    const currentInputBlock = asRecord(contextView.current_input);
+    const reasoningView = asRecord(selected?.reasoningView);
+    const closureTrace = asRecord(selected?.closureTrace);
+    const toolRecords = selected?.toolRecords ?? [];
+    const request = asRecord(findEvent(selected?.events ?? [], 'inference.started')?.payload);
+    const notePayload = asRecord(findEvent(selected?.events ?? [], 'execution_note.appended')?.payload);
+    const controlFeedback = asRecord(
+      findEvent(selected?.events ?? [], 'control.feedback_recorded')?.payload
+      ?? notePayload.control_feedback
+      ?? asRecord(selected?.digest).control_feedback,
+    );
+    const latestEventNames = (selected?.events ?? []).slice(-4).map((event) => String(event.event_type ?? '-')).join(' → ');
+    const continuityTail = Array.isArray(contextView.continuity_tail)
+      ? contextView.continuity_tail.map((item) => String(item)).join(' | ')
+      : '-';
+    const stableCoreModules = modulesForLayer(promptModules, stableCoreLayer);
+    const roleBaselineModules = modulesForLayer(promptModules, roleBaselineLayer);
+    const modelOverlayModules = modulesForLayer(promptModules, modelOverlayLayer);
+    const sessionTaskOverlay = {
+      current_prompt_summary: rolePromptBlock.current_prompt_summary ?? '-',
+      role_id: rolePromptBlock.role_id ?? '-',
+      prompt_lineage: rolePromptBlock.prompt_lineage ?? [],
+      prompt_history: rolePromptBlock.prompt_history ?? [],
+      behavior_rules: rolePromptBlock.behavior_rules ?? [],
+      output_contract: rolePromptBlock.output_contract ?? [],
+      primary_project: projectBlock.primary_project ?? null,
+      active_projects: projectBlock.active_projects ?? [],
+      projects: projectBlock.projects ?? [],
+    };
+    const turnContextEnvelope = {
+      control: controlBlock,
+      tools: toolBlock,
+      project_focus: {
+        project_label: projectBlock.project_label ?? '-',
+        project_root: projectBlock.project_root ?? '-',
+        runtime_home: projectBlock.runtime_home ?? '-',
+        cwd: projectBlock.cwd ?? '-',
+        selected_paths: projectBlock.selected_paths ?? [],
+        relative_selected_paths: projectBlock.relative_selected_paths ?? [],
+        scope_summary: projectBlock.scope_summary ?? '-',
+        focus_summary: projectBlock.focus_summary ?? '-',
+      },
+      current_input: currentInputBlock,
+      summary: contextView.summary ?? '-',
+      continuity_tail: contextView.continuity_tail ?? [],
+      provider_meta: {
+        role: context?.role ?? '-',
+        provider_path: context?.provider_path ?? '-',
+        provider_strategy: context?.provider_strategy ?? '-',
+        protocol_version: context?.protocol_version ?? '-',
+        stream: context?.stream ?? '-',
+        captured_at: context?.captured_at ?? '-',
+      },
+    };
+    const growingConversationContext = {
+      recent_messages: historyBlock.recent_messages ?? [],
+      recent_digests: historyBlock.recent_digests ?? [],
+      recent_reasoning: historyBlock.recent_reasoning ?? [],
+      recent_tool_activity: historyBlock.recent_tool_activity ?? [],
+      knowledge_digest_summaries: knowledgeBlock.digest_summaries ?? [],
+      knowledge_artifact_candidates: knowledgeBlock.artifact_candidates ?? [],
+      current_input: currentInputBlock.input ?? '-',
+    };
 
     return [
       {
@@ -63,6 +146,11 @@ export class InspectorPane {
           ['Request', providerAccepted],
           ['Response', providerResponse],
           ['Sanitized Debug', providerDebug],
+          ['Provider Raw Output', {
+            provider_raw_output: closureTrace.provider_raw_output ?? providerResponse.output_text ?? '-',
+            provider_endpoint: closureTrace.provider_endpoint ?? providerAccepted.endpoint ?? providerResponse.endpoint ?? '-',
+            response_id: providerResponse.response_id ?? '-',
+          }],
           ['Projection Summary', {
             selected_operation_id: selected?.operationId ?? '-',
             trace_id: selected?.traceId ?? '-',
@@ -74,23 +162,39 @@ export class InspectorPane {
       {
         id: 'context',
         title: 'Context',
-        subtitle: '当前请求上下文摘要',
+        subtitle: '按真实 prompt 装配顺序显示：静态在上，增长上下文在最下',
         digestLines: [
-          ['input', shortText(scalar(context?.input ?? selected?.userMessage?.content ?? '-'), 160)],
-          ['continuity', shortText(continuityTail, 180)],
+          ['assembly', shortText(promptLayerDigest, 180)],
+          ['stable core', shortText(layerDigest(stableCoreLayer, stableCoreModules), 180)],
+          ['role modules', shortText(layerDigest(roleBaselineLayer, roleBaselineModules), 180)],
+          ['model overlay', shortText(layerDigest(modelOverlayLayer, modelOverlayModules), 180)],
+          ['session/task', `lineage=${arrayCount(rolePromptBlock.prompt_lineage)} · prompt-history=${arrayCount(rolePromptBlock.prompt_history)} · projects=${arrayCount(projectBlock.projects)}`],
+          ['turn envelope', `tools=${toolCount(toolBlock)} · focus=${shortText(scalar(projectBlock.focus_summary ?? projectBlock.scope_summary), 80)} · input=${shortText(scalar(context?.input ?? selected?.userMessage?.content ?? '-'), 60)}`],
+          ['growing context', `messages=${arrayCount(historyBlock.recent_messages)} · digests=${arrayCount(historyBlock.recent_digests)} · reasoning=${arrayCount(historyBlock.recent_reasoning)} · tools=${arrayCount(historyBlock.recent_tool_activity)}`],
           ['profile', `role=${shortText(scalar(context?.role), 48)} · protocol=${scalar(context?.protocol_version)} · stream=${scalar(context?.stream)}`],
+          ['contract', shortText(scalar(firstArrayItem(rolePromptBlock.output_contract) ?? rolePromptBlock.current_prompt_summary), 120)],
         ],
-        focusAreas: ['Context View', 'Context Meta'],
+        focusAreas: ['Stable Core Prompt', 'Role Prompt Modules', 'Model Overlay', 'Session / Task Overlay', 'Turn Context Envelope', 'Growing Conversation Context', 'Rendered Prompt Trace'],
         sections: [
-          ['Context View', currentContext],
-          ['Context Meta', {
-            input: context?.input ?? '-',
-            role: context?.role ?? '-',
-            provider_path: context?.provider_path ?? '-',
-            provider_strategy: context?.provider_strategy ?? '-',
-            protocol_version: context?.protocol_version ?? '-',
-            stream: context?.stream ?? '-',
-            captured_at: context?.captured_at ?? '-',
+          ['Stable Core Prompt', {
+            layer: stableCoreLayer,
+            modules: stableCoreModules,
+          }],
+          ['Role Prompt Modules', {
+            layer: roleBaselineLayer,
+            modules: roleBaselineModules,
+          }],
+          ['Model Overlay', {
+            layer: modelOverlayLayer,
+            modules: modelOverlayModules,
+          }],
+          ['Session / Task Overlay', sessionTaskOverlay],
+          ['Turn Context Envelope', turnContextEnvelope],
+          ['Growing Conversation Context', growingConversationContext],
+          ['Rendered Prompt Trace', {
+            rendered_input: closureTrace.rendered_input ?? request.rendered_input ?? '-',
+            user_input: closureTrace.user_input ?? currentInputBlock.input ?? selected?.userMessage?.content ?? '-',
+            assistant_response: closureTrace.assistant_response ?? selected?.assistantMessage?.content ?? '-',
           }],
         ],
       },
@@ -101,12 +205,15 @@ export class InspectorPane {
         digestLines: [
           ['scope', `${state.binding?.project_label ?? 'fin'} · session=${state.binding?.session_id ?? '-'} · task=${state.binding?.task_id ?? state.projection.task_id ?? '-'}`],
           ['runtime', shortText(state.binding?.runtime_home ?? '-', 120)],
+          ['project', shortText(scalar(projectBlock.project_root ?? projectBlock.cwd ?? '-'), 120)],
+          ['projects', `primary=${shortText(scalar(asRecord(projectBlock.primary_project).label), 40)} · active=${arrayCount(projectBlock.active_projects)} · all=${arrayCount(projectBlock.projects)}`],
           ['artifacts', `messages=${shortPath(state.binding?.session_messages_path)} · context=${shortPath(state.binding?.recent_contexts_path)} · digest=${shortPath(state.binding?.recent_digests_path)}`],
+          ['trace stores', `reasoning=${state.recentReasoningViews.length} · tools=${state.recentToolRecords.length} · closures=${state.recentClosures.length}`],
         ],
         focusAreas: ['Binding', 'Projection', 'Paths', 'Selected Refs'],
         sections: [
           ['Binding', state.binding ?? {}],
-          ['Projection', { note: 'UI render now consumes session artifacts as truth.', recent_contexts_count: state.recentContexts.length, recent_digests_count: state.recentDigests.length, recent_events_count: state.sessionEvents.length, recent_messages_count: state.messages.length }],
+          ['Projection', { note: 'UI render now consumes session artifacts as truth.', recent_contexts_count: state.recentContexts.length, recent_digests_count: state.recentDigests.length, recent_events_count: state.sessionEvents.length, recent_messages_count: state.messages.length, recent_reasoning_count: state.recentReasoningViews.length, recent_tool_record_count: state.recentToolRecords.length, recent_closure_count: state.recentClosures.length }],
           ['Paths', {
             runtime_home: state.binding?.runtime_home ?? '-',
             session_messages_path: state.binding?.session_messages_path ?? '-',
@@ -128,12 +235,20 @@ export class InspectorPane {
         digestLines: [
           ['operation', `${selected?.operationId ?? '-'} · trace=${selected?.traceId ?? '-'}`],
           ['timeline', shortText(latestEventNames || '-', 180)],
+          ['control', `continuity=${scalar(controlFeedback.continuity_confidence)} · shift=${scalar(controlFeedback.topic_shift_confidence)} · simple=${scalar(controlFeedback.simple_query_confidence)}`],
+          ['reasoning', shortText(scalar(reasoningView.summary ?? notePayload.summary), 120)],
+          ['tools', `records=${toolRecords.length} · ${shortText(toolRecords.map((record) => `${scalar(record.tool_name)}:${scalar(record.status)}`).join(' | '), 120)}`],
           ['closure', shortText(scalar(selected?.digest?.summary ?? selected?.assistantMessage?.content ?? '-'), 180)],
         ],
-        focusAreas: ['Turn Messages', 'Request Structure', 'Selected Timeline', 'Recent Session Timeline', 'Digest'],
+        focusAreas: ['Turn Messages', 'Request Structure', 'Control Feedback', 'Reasoning View', 'Tool Activity', 'Execution Note', 'Closure Trace', 'Selected Timeline', 'Recent Session Timeline', 'Digest'],
         sections: [
           ['Turn Messages', { user: selected?.userMessage ?? {}, assistant: selected?.assistantMessage ?? {} }],
           ['Request Structure', request],
+          ['Control Feedback', controlFeedback],
+          ['Reasoning View', reasoningView],
+          ['Tool Activity', toolRecords],
+          ['Execution Note', notePayload],
+          ['Closure Trace', closureTrace],
           ['Selected Timeline', { events: selected?.events ?? [] }],
           ['Recent Session Timeline', { events: state.sessionEvents.slice(-8) }],
           ['Digest', selected?.digest ?? {}],
@@ -186,6 +301,14 @@ export class InspectorPane {
             `).join('')}
           </div>
           <div class="detail-modal-body">
+            <div class="detail-modal-summary">
+              ${card.digestLines.map(([label, value]) => `
+                <article class="digest-line">
+                  <span class="digest-line-label">${this.tree.escapeHtml(label)}</span>
+                  <span class="digest-line-value">${this.tree.escapeHtml(value)}</span>
+                </article>
+              `).join('')}
+            </div>
             ${card.timelineGroups ? `
               <div class="detail-timeline-grid">
                 ${card.timelineGroups.map(([title, events]) => `
@@ -197,12 +320,42 @@ export class InspectorPane {
               </div>
             ` : ''}
             <div class="detail-section-stack">
-              ${card.sections.map(([label, value], index) => `
-                <details class="detail-section" ${index === 0 ? 'open' : ''} id="${this.anchorId(card.id, label)}">
-                  <summary>${this.tree.escapeHtml(label)}</summary>
-                  <div class="detail-section-body">${this.tree.renderNode(label.toLowerCase().replaceAll(' ', '_'), value, true)}</div>
-                </details>
+              ${card.sections.map(([label, value]) => `
+                <section class="detail-section" id="${this.anchorId(card.id, label)}">
+                  <div class="detail-section-header">
+                    <span>${this.tree.escapeHtml(label)}</span>
+                    <button
+                      class="detail-modal-close"
+                      type="button"
+                      data-open-section-detail="${this.tree.escapeHtml(this.sectionKey(card.id, label))}"
+                    >Expand</button>
+                  </div>
+                  <div class="detail-section-body">${renderInspectorSection(card.id, label, value, this.tree)}</div>
+                </section>
               `).join('')}
+            </div>
+          </div>
+        </section>
+      </div>
+    `;
+  }
+
+  private renderSectionModal(card: CardSpec, label: string, value: unknown): string {
+    return `
+      <div class="detail-modal-backdrop" data-section-backdrop="true">
+        <section class="detail-modal">
+          <header class="detail-modal-header">
+            <div>
+              <div class="section-kicker">${this.tree.escapeHtml(card.title)}</div>
+              <h3>${this.tree.escapeHtml(label)}</h3>
+              <p class="muted">分类详细内容</p>
+            </div>
+            <button class="detail-modal-close" type="button" data-close-section-detail="true">Close</button>
+          </header>
+          <div class="detail-modal-body">
+            <div class="detail-section">
+              <div class="detail-section-header">${this.tree.escapeHtml(label)}</div>
+              <div class="detail-section-body">${renderInspectorSection(card.id, label, value, this.tree)}</div>
             </div>
           </div>
         </section>
@@ -233,6 +386,10 @@ export class InspectorPane {
 
   private anchorId(cardId: DashboardCardId, label: string): string {
     return `${cardId}-${label.toLowerCase().replaceAll(/[^a-z0-9]+/g, '-')}`;
+  }
+
+  private sectionKey(cardId: DashboardCardId, label: string): string {
+    return `${cardId}::${label}`;
   }
 
   private empty(text: string): string {
@@ -266,6 +423,48 @@ function shortPath(value: unknown): string {
   if (text === '-') return text;
   const parts = text.split('/').filter(Boolean);
   return parts.length <= 3 ? text : `…/${parts.slice(-3).join('/')}`;
+}
+
+function promptLayerById(layers: JsonRecord[], layerId: string): JsonRecord {
+  return layers.find((layer) => scalar(layer.layer_id) === layerId) ?? {};
+}
+
+function modulesForLayer(modules: JsonRecord[], layer: JsonRecord): JsonRecord[] {
+  const moduleIds = Array.isArray(layer.module_ids)
+    ? layer.module_ids.map((item) => String(item))
+    : [];
+  if (!moduleIds.length) return [];
+  const order = new Map(moduleIds.map((moduleId, index) => [moduleId, index]));
+  return modules
+    .filter((module) => order.has(scalar(module.module_id)))
+    .sort((left, right) => {
+      const leftIndex = order.get(scalar(left.module_id)) ?? 0;
+      const rightIndex = order.get(scalar(right.module_id)) ?? 0;
+      return leftIndex - rightIndex;
+    });
+}
+
+function layerDigest(layer: JsonRecord, modules: JsonRecord[]): string {
+  if (!countKeys(layer)) return 'inactive';
+  const title = scalar(layer.title);
+  const summary = scalar(layer.summary);
+  return `${title} · modules=${modules.length} · ${summary}`;
+}
+
+function countKeys(value: JsonRecord): number {
+  return Object.keys(value).length;
+}
+
+function arrayCount(value: unknown): number {
+  return Array.isArray(value) ? value.length : 0;
+}
+
+function firstArrayItem(value: unknown): unknown {
+  return Array.isArray(value) && value.length ? value[0] : undefined;
+}
+
+function toolCount(value: JsonRecord): number {
+  return arrayCount(value.model_tools) + arrayCount(value.framework_tools);
 }
 
 function timelineLevel(eventType?: string): string {

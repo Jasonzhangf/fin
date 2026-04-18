@@ -31,10 +31,12 @@ pub(crate) fn stream_runtime_updates(
         }
 
         if last_heartbeat.elapsed() >= HEARTBEAT_INTERVAL {
-            stream.write_all(b": heartbeat\n\n").map_err(|source| DebugDataError::Io {
-                path: "tcp-stream-write".into(),
-                source,
-            })?;
+            stream
+                .write_all(b": heartbeat\n\n")
+                .map_err(|source| DebugDataError::Io {
+                    path: "tcp-stream-write".into(),
+                    source,
+                })?;
             stream.flush().map_err(|source| DebugDataError::Io {
                 path: "tcp-stream-write".into(),
                 source,

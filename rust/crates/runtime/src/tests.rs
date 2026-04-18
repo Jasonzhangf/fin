@@ -1,9 +1,9 @@
 use super::*;
-
 use fin_config::{
     ConfigMapper, ProviderCredential, ProviderProtocol, ResolvedProviderConfig, UserConfig,
     UserProviderConfig,
 };
+use fin_contracts::ControlFeedback;
 use fin_provider::{ProviderDescriptor, StaticProviderClient};
 use std::collections::BTreeMap;
 
@@ -64,9 +64,7 @@ fn run_closure_emits_expected_event_chain() {
         )
         .expect("build operation");
 
-    let run = runtime
-        .run_closure(op, &provider())
-        .expect("closure should run");
+    let run = runtime.run_closure(op, &provider()).expect("closure should run");
     let kinds: Vec<_> = run.events.iter().map(|e| e.event_type.as_str()).collect();
     assert_eq!(
         kinds,
@@ -78,9 +76,14 @@ fn run_closure_emits_expected_event_chain() {
             "provider.gateway_response_received",
             "provider.response_normalized",
             "provider.completed",
+            "model.output_parsed",
             "progress.updated",
+            "tool.execution_recorded",
+            "control.feedback_recorded",
             "execution_note.appended",
+            "reasoning.view_recorded",
             "digest.finalized",
+            "closure.trace_recorded",
             "operation.completed",
         ]
     );
@@ -88,7 +91,16 @@ fn run_closure_emits_expected_event_chain() {
     assert_eq!(run.context_snapshot.operation_id, "op-1");
     assert_eq!(run.context_snapshot.trace_id, "trace-1");
     assert!(run.provider_response.output_text.contains("hello"));
+    assert!(run.assistant_response_text.contains("hello"));
     assert!(run.events.iter().all(|event| event.trace_id == "trace-1"));
+    assert_eq!(run.control_feedback.origin, "runtime_heuristic");
+    assert_eq!(run.note.control_feedback, Some(run.control_feedback.clone()));
+    assert_eq!(run.digest.control_feedback, Some(run.control_feedback.clone()));
+    assert_eq!(run.tool_records.len(), 1);
+    assert_eq!(run.tool_records[0].tool_name, "provider.call");
+    assert_eq!(run.reasoning_view.operation_id, "op-1");
+    assert_eq!(run.closure_trace.operation_id, "op-1");
+    assert!(run.closure_trace.rendered_input.contains("Current user input:"));
     let provider_event = run
         .events
         .iter()
@@ -97,6 +109,25 @@ fn run_closure_emits_expected_event_chain() {
     let payload: ProviderEventPayload =
         serde_json::from_value(provider_event.payload.clone()).expect("payload should decode");
     assert!(payload.debug.is_some());
+    let control_event = run
+        .events
+        .iter()
+        .find(|event| event.event_type == "control.feedback_recorded")
+        .expect("control.feedback_recorded event should exist");
+    let control_payload: ControlFeedback =
+        serde_json::from_value(control_event.payload.clone()).expect("payload should decode");
+    assert_eq!(control_payload, run.control_feedback);
+    let inference_started = run
+        .events
+        .iter()
+        .find(|event| event.event_type == "inference.started")
+        .expect("inference.started should exist");
+    assert!(inference_started
+        .payload
+        .get("rendered_input")
+        .and_then(serde_json::Value::as_str)
+        .unwrap_or_default()
+        .contains("Current user input:\nhello"));
 }
 
 #[test]
@@ -114,25 +145,16 @@ fn inference_builder_carries_runtime_policy_into_operation() {
                 context: MinimalContextView {
                     continuity_tail: vec!["previous".into()],
                     summary: Some("recent continuity".into()),
+                    ..MinimalContextView::default()
                 },
             },
         )
         .expect("operation");
 
     assert_eq!(operation.payload.role.role_id.as_str(), "default");
-    assert_eq!(
-        operation
-            .payload
-            .provider_path
-            .primary_target()
-            .provider_name,
-        "openai"
-    );
+    assert_eq!(operation.payload.provider_path.primary_target().provider_name, "openai");
     assert_eq!(operation.timeout_ms, Some(60_000));
-    assert_eq!(
-        operation.payload.context.summary.as_deref(),
-        Some("recent continuity")
-    );
+    assert_eq!(operation.payload.context.summary.as_deref(), Some("recent continuity"));
 }
 
 #[test]
@@ -154,15 +176,11 @@ fn runtime_policy_snapshot_builds_from_default_role() {
     };
     let system = ConfigMapper::map_user_to_system(&user).expect("mapping should succeed");
 
-    let snapshot =
-        RuntimePolicySnapshot::from_system(&system, None).expect("snapshot should build");
+    let snapshot = RuntimePolicySnapshot::from_system(&system, None).expect("snapshot should build");
     assert_eq!(snapshot.role.role_id.as_str(), "default");
     assert_eq!(snapshot.protocol_version, "fin.m1");
     assert_eq!(snapshot.provider_strategy, ProviderStrategy::Priority);
-    assert_eq!(
-        snapshot.provider_path.primary_target().provider_name,
-        "openai"
-    );
+    assert_eq!(snapshot.provider_path.primary_target().provider_name, "openai");
 
     let encoded = serde_json::to_string(&snapshot).expect("snapshot should serialize");
     let decoded: RuntimePolicySnapshot =
@@ -188,10 +206,14 @@ fn worker_runtime_inherits_policy_snapshot() {
         )]),
     };
     let system = ConfigMapper::map_user_to_system(&user).expect("mapping should succeed");
-
-    let runtime =
-        WorkerRuntime::from_system(&system, "agent-project-leader", "worker-1", "runtime", None)
-            .expect("worker runtime should build");
+    let runtime = WorkerRuntime::from_system(
+        &system,
+        "agent-project-leader",
+        "worker-1",
+        "runtime",
+        None,
+    )
+    .expect("worker runtime should build");
 
     assert_eq!(runtime.agent_id.as_str(), "agent-project-leader");
     assert_eq!(runtime.worker_id, "worker-1");
@@ -214,31 +236,31 @@ fn run_closure_renders_context_into_provider_input() {
                 context: MinimalContextView {
                     continuity_tail: vec!["first".into(), "second".into()],
                     summary: Some("carry previous state".into()),
+                    role_prompt: Some(fin_contracts::RolePromptBlock {
+                        role_id: "default".into(),
+                        output_contract: vec![
+                            "exact control feedback JSON shape example: {\"origin\":\"model_output_contract_v1\"}".into(),
+                            "do not emit extra control-feedback keys outside the fin whitelist".into(),
+                        ],
+                        ..Default::default()
+                    }),
+                    ..MinimalContextView::default()
                 },
             },
         )
         .expect("build operation");
 
-    let run = runtime
-        .run_closure(op, &provider())
-        .expect("closure should run");
-    assert!(
-        run.prepared_request
-            .rendered_input
-            .contains("Context summary:")
-    );
-    assert!(
-        run.prepared_request
-            .rendered_input
-            .contains("carry previous state")
-    );
-    assert!(
-        run.prepared_request
-            .rendered_input
-            .contains("Continuity tail:")
-    );
+    let run = runtime.run_closure(op, &provider()).expect("closure should run");
+    assert!(run.prepared_request.rendered_input.contains("Context summary:"));
+    assert!(run.prepared_request.rendered_input.contains("carry previous state"));
+    assert!(run.prepared_request.rendered_input.contains("Continuity tail:"));
+    assert!(run.prepared_request.rendered_input.contains("Structured output contract:"));
+    assert!(run.prepared_request.rendered_input.contains("model_output_contract_v1"));
+    assert!(run
+        .prepared_request
+        .rendered_input
+        .contains("do not emit extra control-feedback keys"));
     assert!(run.prepared_request.rendered_input.contains(
-        "Current user input:
-answer current turn"
+        "Current user input:\nanswer current turn"
     ));
 }

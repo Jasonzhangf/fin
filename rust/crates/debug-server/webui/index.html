@@ -20,14 +20,24 @@
 
     <main class="app-shell">
       <section class="chat-interface">
-        <div class="chat-header">
+        <div id="chat-header" class="chat-header">
           <div class="header-title">
             <span class="title-text">Conversation</span>
             <span id="binding-project" class="connection-badge">project: loading</span>
             <span id="binding-session" class="connection-badge">session: loading</span>
           </div>
-          <div class="header-status">
+          <div class="header-status header-status-row">
             <span id="binding-task" class="header-phase-text">task: -</span>
+            <div class="chat-status-bullets">
+              <button id="binding-model" class="status-bullet" type="button" data-open-card="provider">model: -</button>
+              <button id="binding-context-size" class="status-bullet" type="button" data-open-card="context">context: -</button>
+              <button id="binding-project-path" class="status-bullet" type="button" data-open-card="system">path: -</button>
+            </div>
+            <div class="richness-toggle" role="group" aria-label="conversation richness">
+              <button id="richness-minimal" class="richness-btn" type="button" data-richness="minimal">Minimal</button>
+              <button id="richness-rich" class="richness-btn active" type="button" data-richness="rich">Rich</button>
+              <button id="richness-full-trace" class="richness-btn" type="button" data-richness="full_trace">Full Trace</button>
+            </div>
           </div>
         </div>
 
@@ -45,6 +55,7 @@
             <span id="composer-status" class="muted">Bound to current session context.</span>
             <button id="send-btn" type="submit" class="control-btn">Send</button>
           </div>
+          <div id="composer-context" class="composer-context-bar" aria-live="polite"></div>
         </form>
       </section>
 

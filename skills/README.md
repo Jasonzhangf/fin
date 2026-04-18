@@ -9,3 +9,4 @@
 - `fin-architecture`：分层、crate、唯一真源
 - `fin-testing-harness`：测试、回放、故障注入
 - `fin-runtime-debug`：事件定位与 runtime 调试
+- `fin-prompt-system`：prompt system 分层、role family、model overlays、tool prompt spec

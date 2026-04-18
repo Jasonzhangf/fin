@@ -2,14 +2,15 @@
 
 本文档是 `fin` 的 M1-A contract 总入口。
 
-M1-A 当前先冻结六类最小 contract：
+M1-A 当前先冻结七类最小 contract：
 
 1. `Operation Envelope`
 2. `Event Envelope`
 3. `Progress Block`
-4. `Execution Note`
-5. `Digest Record`
-6. `Projection View`
+4. `Control Feedback`
+5. `Execution Note`
+6. `Digest Record`
+7. `Projection View`
 
 ## 目标
 
@@ -22,16 +23,20 @@ M1-A 当前先冻结六类最小 contract：
 1. `docs/contracts/operation-envelope-contract.md`
 2. `docs/contracts/event-envelope-contract.md`
 3. `docs/contracts/progress-block-contract.md`
-4. `docs/contracts/execution-note-contract.md`
-5. `docs/contracts/digest-contract.md`
-6. `docs/contracts/projection-view-contract.md`
+4. `fin_contracts::ControlFeedback`（当前先以内联 Rust contract 冻结，后续独立成文）
+5. `docs/contracts/execution-note-contract.md`
+6. `docs/contracts/digest-contract.md`
+7. `docs/contracts/projection-view-contract.md`
 
 ## 扩展 contract（后续 provider / pub-sub 真源）
 
-以下文档不属于最初 M1-A 六类最小 schema，但已作为后续真源预留：
+以下文档不属于最初 M1-A 七类最小 schema 的扩展部分，但已作为后续真源预留：
 
 1. `docs/contracts/provider-operation-contract.md`
 2. `docs/contracts/provider-event-contract.md`
+3. `docs/contracts/prompt-module-contract.md`
+4. `docs/contracts/reasoning-view-contract.md`
+5. `docs/contracts/tool-execution-record-contract.md`
 
 ## crate 真源
 

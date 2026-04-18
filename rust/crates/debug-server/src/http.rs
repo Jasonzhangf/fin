@@ -5,6 +5,7 @@ use std::{
     io::{Read, Write},
     net::TcpStream,
     path::Path,
+    time::Duration,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -22,14 +23,58 @@ pub(crate) struct HttpResponse {
 }
 
 pub(crate) fn read_http_request(stream: &mut TcpStream) -> Result<HttpRequest, DebugDataError> {
-    let mut buffer = vec![0_u8; 32 * 1024];
-    let bytes_read = stream
-        .read(&mut buffer)
-        .map_err(|source| DebugDataError::Io {
-            path: "tcp-stream-read".into(),
-            source,
-        })?;
-    let request = String::from_utf8_lossy(&buffer[..bytes_read]);
+    let _ = stream.set_read_timeout(Some(Duration::from_millis(500)));
+    let mut buffer = Vec::with_capacity(32 * 1024);
+    let mut chunk = [0_u8; 4096];
+    let mut header_end = None;
+    let mut content_length = 0usize;
+
+    loop {
+        let bytes_read = match stream.read(&mut chunk) {
+            Ok(bytes_read) => bytes_read,
+            Err(source)
+                if matches!(
+                    source.kind(),
+                    std::io::ErrorKind::WouldBlock | std::io::ErrorKind::TimedOut
+                ) =>
+            {
+                if !buffer.is_empty() {
+                    break;
+                }
+                continue;
+            }
+            Err(source) => {
+                return Err(DebugDataError::Io {
+                    path: "tcp-stream-read".into(),
+                    source,
+                })
+            }
+        };
+        if bytes_read == 0 {
+            break;
+        }
+        buffer.extend_from_slice(&chunk[..bytes_read]);
+        if header_end.is_none() {
+            header_end = find_header_end(&buffer);
+            if let Some(end) = header_end {
+                let head = String::from_utf8_lossy(&buffer[..end]);
+                content_length = parse_content_length(&head);
+                let body_bytes = buffer.len().saturating_sub(end + 4);
+                if has_expect_continue(&head) && body_bytes < content_length {
+                    write_continue_response(stream)?;
+                }
+            }
+        }
+
+        if let Some(end) = header_end {
+            let body_bytes = buffer.len().saturating_sub(end + 4);
+            if body_bytes >= content_length {
+                break;
+            }
+        }
+    }
+
+    let request = String::from_utf8_lossy(&buffer);
     let (head, body) = request.split_once("\r\n\r\n").unwrap_or((&request, ""));
     let mut parts = head
         .lines()
@@ -37,11 +82,57 @@ pub(crate) fn read_http_request(stream: &mut TcpStream) -> Result<HttpRequest, D
         .unwrap_or("GET / HTTP/1.1")
         .split_whitespace();
 
+    let body_bytes = if content_length == 0 {
+        body.as_bytes().to_vec()
+    } else {
+        body.as_bytes()
+            .iter()
+            .take(content_length)
+            .copied()
+            .collect()
+    };
+
     Ok(HttpRequest {
         method: parts.next().unwrap_or("GET").to_string(),
         path: parts.next().unwrap_or("/").to_string(),
-        body: body.as_bytes().to_vec(),
+        body: body_bytes,
     })
+}
+
+fn find_header_end(buffer: &[u8]) -> Option<usize> {
+    buffer.windows(4).position(|window| window == b"\r\n\r\n")
+}
+
+fn parse_content_length(head: &str) -> usize {
+    head.lines()
+        .find_map(|line| {
+            let (name, value) = line.split_once(':')?;
+            name.trim()
+                .eq_ignore_ascii_case("content-length")
+                .then(|| value.trim().parse::<usize>().ok())
+                .flatten()
+        })
+        .unwrap_or(0)
+}
+
+fn has_expect_continue(head: &str) -> bool {
+    head.lines().any(|line| {
+        let Some((name, value)) = line.split_once(':') else {
+            return false;
+        };
+        name.trim().eq_ignore_ascii_case("expect")
+            && value.trim().eq_ignore_ascii_case("100-continue")
+    })
+}
+
+fn write_continue_response(stream: &mut TcpStream) -> Result<(), DebugDataError> {
+    stream
+        .write_all(b"HTTP/1.1 100 Continue\r\n\r\n")
+        .and_then(|_| stream.flush())
+        .map_err(|source| DebugDataError::Io {
+            path: "tcp-stream-write".into(),
+            source,
+        })
 }
 
 pub(crate) fn write_http_response(
@@ -142,5 +233,29 @@ pub(crate) fn internal_error_response(message: &str) -> HttpResponse {
         status_code: 500,
         content_type: "text/plain; charset=utf-8",
         body: format!("internal error: {message}\n").into_bytes(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{find_header_end, has_expect_continue, parse_content_length};
+
+    #[test]
+    fn parse_content_length_reads_case_insensitive_header() {
+        let head = "POST /api/chat/send HTTP/1.1\r\nHost: localhost\r\nContent-Length: 27\r\n\r\n";
+        assert_eq!(parse_content_length(head), 27);
+    }
+
+    #[test]
+    fn detect_expect_continue_header() {
+        let head =
+            "POST /api/chat/send HTTP/1.1\r\nExpect: 100-continue\r\nContent-Length: 27\r\n\r\n";
+        assert!(has_expect_continue(head));
+    }
+
+    #[test]
+    fn find_header_end_locates_separator() {
+        let raw = b"POST / HTTP/1.1\r\nHost: localhost\r\n\r\nbody";
+        assert_eq!(find_header_end(raw), Some(32));
     }
 }
