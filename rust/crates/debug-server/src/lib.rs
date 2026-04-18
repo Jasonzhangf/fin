@@ -44,6 +44,8 @@ const API_RECENT_TOOL_RECORDS_PATH: &str = "/api/recent_tool_records.json";
 const API_RECENT_CLOSURES_PATH: &str = "/api/recent_closures.json";
 const API_SESSION_MESSAGES_PATH: &str = "/api/session_messages.json";
 const API_SESSION_EVENTS_PATH: &str = "/api/session_events.json";
+const API_QQBOT_STATE_PATH: &str = "/api/qqbot_state.json";
+const API_QQBOT_EVENTS_PATH: &str = "/api/qqbot_events.jsonl";
 const API_CHAT_SEND_PATH: &str = "/api/chat/send";
 const API_WATCH_PATH: &str = "/api/watch";
 
@@ -368,6 +370,14 @@ fn response_for_request(
             "application/json; charset=utf-8",
         ),
         ("GET", API_SESSION_EVENTS_PATH) => session_events_response(runtime_home),
+        ("GET", API_QQBOT_STATE_PATH) => file_response(
+            &runtime_home.join("runtime/peers/qqbot/state.json"),
+            "application/json; charset=utf-8",
+        ),
+        ("GET", API_QQBOT_EVENTS_PATH) => file_response(
+            &runtime_home.join("runtime/peers/qqbot/events.jsonl"),
+            "application/x-ndjson; charset=utf-8",
+        ),
         ("POST", API_CHAT_SEND_PATH) => chat_send_response(runtime_home, request, handler),
         _ => not_found_response(&request.path),
     }

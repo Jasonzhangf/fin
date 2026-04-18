@@ -160,6 +160,68 @@ pub struct ProjectContextBlock {
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PeerDescriptorSummary {
+    #[serde(default)]
+    pub peer_id: String,
+    #[serde(default)]
+    pub label: String,
+    #[serde(default)]
+    pub peer_kind: String,
+    #[serde(default)]
+    pub presence_state: String,
+    #[serde(default)]
+    pub health_state: Option<String>,
+    #[serde(default)]
+    pub capability_ids: Vec<String>,
+    #[serde(default)]
+    pub supports_session_binding: bool,
+    #[serde(default)]
+    pub supports_agentic_execution: bool,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PeerBindingSummary {
+    #[serde(default)]
+    pub owner_peer_id: Option<String>,
+    #[serde(default)]
+    pub bound_peer_id: Option<String>,
+    #[serde(default)]
+    pub binding_scope: Option<String>,
+    #[serde(default)]
+    pub binding_state: Option<String>,
+    #[serde(default)]
+    pub lease_ttl_ms: Option<u64>,
+    #[serde(default)]
+    pub rebind_hint: Option<String>,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DaemonStateSummary {
+    #[serde(default)]
+    pub daemon_id: Option<String>,
+    #[serde(default)]
+    pub supervision_state: Option<String>,
+    #[serde(default)]
+    pub status_summary: Option<String>,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PeerContextBlock {
+    #[serde(default)]
+    pub topology_summary: Option<String>,
+    #[serde(default)]
+    pub active_peer_ids: Vec<String>,
+    #[serde(default)]
+    pub peers: Vec<PeerDescriptorSummary>,
+    #[serde(default)]
+    pub binding: Option<PeerBindingSummary>,
+    #[serde(default)]
+    pub daemon: Option<DaemonStateSummary>,
+    #[serde(default)]
+    pub routing_hints: Vec<String>,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct CurrentInputBlock {
     pub input: String,
     pub source: String,
@@ -178,5 +240,7 @@ pub struct MinimalContextView {
     pub history: Option<HistoryBlock>,
     pub knowledge: Option<KnowledgeArtifactBlock>,
     pub project: Option<ProjectContextBlock>,
+    #[serde(default)]
+    pub peer: Option<PeerContextBlock>,
     pub current_input: Option<CurrentInputBlock>,
 }

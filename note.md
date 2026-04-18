@@ -1,6 +1,40 @@
 # fin architecture note
 
-Updated: 2026-04-17
+Updated: 2026-04-18
+
+## 2026-04-18 compact rebuild implementation snapshot
+
+- `/compact` 不再走 `session select/rebind` 占位逻辑。
+- 当前已升级为真正的 framework rebuild pipeline：
+  - 输入：`recent_messages + recent_digests + recent_reasoning_views + recent_tool_records + recent_turn_ids + latest note`
+  - 装配：`ContextRebuildService -> ContextViewBuilder`
+  - 输出：
+    - `runtime/current/current_context.json`
+    - `runtime/current/current_rebuild_index.json`
+    - `sessions/.../context/recent_contexts.json`
+    - `sessions/.../context/rebuild-index.json`
+    - `sessions/.../events/stream.jsonl` 追加 `context.rebuild_completed`
+- rebuild 不调用 provider，不生成新 closure，不改写 `messages.json` / `recent_digests.json`。
+- Web debug 已接上新 endpoint：
+  - `POST /api/session/rebuild`
+  - Web slash command `/compact` 现在调用这个 endpoint，而不是 `/api/session/select`
+
+## 2026-04-18 web debug UI scaffold refinement
+
+- 用户新口径已经收敛为三条独立平面：
+  1. `Project`：project context
+  2. `Team`：team status plane（不是 project metadata）
+  3. `Progress Update`：project progress update framework
+- 当前最小实现策略：
+  - 顶部先落 `Project / Team` 两个 strip，`Team` 允许先占位
+  - 左侧底部先落 `Progress Update` bar，当前从 `taskDigest` 取数
+  - 后续再把真源升级为 `update_plan record -> runtime/session artifact -> UI + system agent fanout`
+- 推理动画只是 progress/update 的可视化，不是第二事实源。
+- 右侧 debug window 的布局规则继续收敛为：
+  - category tabs 切类别
+  - 当前类别内容占满整个宽度
+  - 详情只做 inline vertical expand，不做 fullscreen modal
+  - detail / summary 默认单列优先，避免右侧两列堆积
 
 ## Current architecture discussion snapshot
 
@@ -253,6 +287,75 @@ This direction keeps:
 - Event 表示系统接受后的事实。
 - projection / debug / replay / UI 以 Event 为主要事实流。
 - Event 既是调试记录，也是正常反馈机制的重要组成。
+
+## 2026-04-18 webui + command/tool alignment snapshot
+
+### A) WebUI immediate fixes applied
+- provider call 不再默认展开为整张工具卡片，改为消息内的最小 bullet button，点击才展开 detail。
+- assistant 等待动画已放慢，避免过快闪烁。
+- session sidebar 已进入最小可用态：`list/select/new` 已接上 Rust 后端。
+
+### B) Codex slash command truth source
+- 参考真源：
+  - `~/code/codex/codex-rs/tui/src/slash_command.rs`
+  - `~/code/codex/codex-rs/tui/src/bottom_pane/slash_commands.rs`
+- 当前最相关的 built-ins（和 fin 最小闭环强相关）：
+  - `/new`
+  - `/resume`
+  - `/compact`
+  - `/status`
+  - `/clear`
+  - `/diff`
+  - `/review`
+  - `/plan`
+- codex 还区分：
+  - 是否允许 inline args
+  - 是否允许在 task 执行中调用
+  - feature flag / sandbox gating
+
+### C) Finger tool / command truth source
+- 参考真源：
+  - `~/code/finger/src/agents/chat-codex/agent-role-config.ts`
+  - `~/code/finger/src/server/routes/message-super-command.ts`
+  - `~/code/finger/src/agents/finger-system-agent/capability.md`
+- finger 的核心工具族可归纳为：
+  1. execution tools：`exec_command` / `write_stdin` / `patch` / `view_image`
+  2. coordination tools：`agent.*` / `orchestrator.*` / `user.ask`
+  3. mailbox tools：`mailbox.*`
+  4. memory/context tools：`context_ledger.memory` / `context_history.rebuild`
+  5. session/project tools：`session.list` / `project.task.*`
+  6. clock / control tools：`clock` / `reasoning.stop`
+
+### D) 当前 fin 的落差
+- fin 目前已有：
+  - framework tool context 描述
+  - session list/select/new 基础框架
+  - web debug / session 真源渲染
+- fin 目前缺少：
+  - 用户可调用的 slash command router
+  - 真正可执行的工具注册表 / tool dispatch
+  - `/new` `/resume` `/compact` 等会话级控制命令
+  - knowledge digest 独立于 session 生命周期的保留 / 提升机制
+
+### E) 当前建议的实现顺序
+1. 先做 slash command router（最小先上 `/new` `/resume` `/status` `/compact`）。
+2. `/compact` 不走大模型压缩，直接走 `context rebuild`。
+3. 再引入最小 tool registry，把现有 framework-owned abilities 正式注册为 tool specs。
+4. session delete 之前必须先有 `knowledge digest promote`，避免删除 session 时丢失已验证结论。
+
+### F) Knowledge digest / wiki-link / graph draft
+- `session digest`：会话内 closure 级摘要，跟 session 走。
+- `knowledge digest`：经过验证/提升后的知识节点，独立于 session 生命周期。
+- 删除 session 时：
+  - 原始 session 可删（需授权）
+  - 已 promote 的 knowledge digest 保留
+- 最小图模型建议：
+  - node: `knowledge/{id}.json`
+  - edge: `links/{source}->{target}.json`
+  - refs: 来源 session/task/closure/artifact
+- 原则：
+  - 唯一真源知识只在 knowledge store 提升后复用
+  - 错误认知不覆盖旧记录，而是追加 `supersedes` / `invalidates` 边
 
 ### E) Project / Task / Control accepted conclusions
 - Project 是 workdirectory 级协作域。
@@ -986,3 +1089,648 @@ This direction keeps:
 - Web debug 新增 `Recent Context History`，通过 `/api/recent_contexts.json` 读取 `last_run.json -> session_recent_contexts_path`，可以直观看每轮请求时的 context 结构。
 - 真实 provider 隔离验证已通过：三轮 transcript 中第三轮成功仅回复 `BANANA-42`，证明 context 不只是记录，而是已经真正进入模型请求。
 
+
+## 2026-04-18 multi-turn history architecture conclusion
+
+### Reference takeaways
+- Finger:
+  - session is the durable execution substrate
+  - raw ledger and compact memory must be split
+  - different agent/worker runtimes can keep separate ledgers
+  - shared value should be retrieved from memory/ledger-derived artifacts rather than injected from skills
+- Codex:
+  - persistent history and local rich state must be separated
+  - cross-session history should stay lightweight
+  - current-session history can retain richer working payloads
+- Hermes-agent:
+  - context compression must be structured and iterative
+  - compression should preserve the tail
+  - tool-call/tool-result pairs must remain intact across compression
+
+### fin accepted full multi-turn history model
+fin should freeze the multi-turn history stack into six layers:
+
+1. Operation / Event Ledger Layer
+   - append-only runtime fact truth
+   - records operation accepted, provider/tool progress, control feedback, dispatch, mailbox, heartbeat, failures
+   - never treated as direct prompt history
+
+2. Turn / Closure Record Layer
+   - one complete closure = one durable turn unit
+   - interrupted execution does not create an independent closure
+   - each turn record should bind user input, assistant visible output, control feedback, progress, reasoning/tool/provider refs, context snapshot ref, digest ref
+
+3. Progress / Execution Note Layer
+   - ProgressBlock: high-frequency phase, tool snapshots, blocker, health, next step
+   - ExecutionNote: continuous notes promoted from control blocks, plan changes, lessons, handoff facts
+   - execution note is part of digest input, but is generated continuously rather than only at task end
+
+4. Digest / Compact Memory Layer
+   - closure digest generated at every valid closure
+   - task digest and topic digest updated iteratively
+   - used for rebuild and continuity, not as raw truth replacement
+
+5. Knowledge Artifact Layer
+   - promoted only from verified, reusable, durable conclusions
+   - shared via retrieval scope instead of direct session-history sharing
+   - suitable for cross-worker, cross-session, workdir/repo-level reuse
+
+6. Working Context Layer
+   - framework-built dynamic view for one inference
+   - context is assembled from prompt blocks, routing/control state, project/collab state, retrieved knowledge, recent continuity tail, current input
+   - session is not context; context is an ephemeral view over session state and retrieved materials
+
+### Session vs context
+- Session = durable substrate for execution, rebuild, replay, debug, and collaboration
+- Context = one inference-time assembled view
+- ContextView must prioritize the latest runjournal/recent continuity tail as the most important reasoning continuation material
+
+### Recommended context assembly order
+1. Stable core prompt / role prompt / skills / output contract
+2. Control + routing blocks (session/task/topic/task-list/topic-list/current routing hints)
+3. Project and collab blocks (project root, active projects, cwd, selected paths, collab deltas)
+4. Retrieved knowledge artifacts + task/topic digests
+5. Recent continuity tail:
+   - recent closure digests
+   - recent execution notes
+   - recent reasoning summaries
+   - recent tool activities
+   - recent visible messages / turn tail
+6. Current input
+
+### Compression and rebuild rules
+- Never compress raw event ledger
+- Compress turn/digest/rebuild layers only
+- Always preserve:
+  - latest N closures
+  - unfinished tool/result pairs
+  - latest control state
+  - active task/topic binding
+  - recent runjournal + execution note tail
+- Rebuild should be triggered by:
+  - token pressure
+  - task/topic switch
+  - session revive
+  - worker handoff
+  - long-gap resume
+- Rebuild should combine:
+  - relevant task/topic digests
+  - retrieved knowledge artifacts
+  - recent continuity tail
+  - latest runjournal / note tail
+
+### Multi-worker sharing rule under same workdir
+- workers must not directly share raw session history
+- each worker keeps its own runjournal / worker ledger / worker-local notes
+- sharing happens through:
+  - collab deltas for current collaboration
+  - approved digests
+  - promoted knowledge artifacts
+  - retrieval scopes
+- recommended retrieval scopes:
+  - worker_local
+  - session_local
+  - task_shared
+  - workdir_shared
+  - repo_shared
+  - global
+
+### Directory/model implications for fin
+The future session layout should evolve toward:
+- ledger/: operations/events/step-ledger/worker-ledgers
+- conversation/: messages + turn records
+- progress/ + notes/ + control/
+- context/: recent contexts + rebuild index
+- digests/: closure/task/topic digest families
+- reasoning/ + tools/ + closures/
+- collab/ + tasks/ + topics/
+- artifacts/: candidate/knowledge/verified
+
+### Implementation priority after architecture freeze
+1. Add a canonical TurnRecord / ClosureRecord layer
+2. Add StepLedger inside each turn
+3. Split digest family into closure/task/topic
+4. Add retrieval scope + rebuild index
+5. Only then upgrade runtime to true multi-step inference loop
+
+### Final architectural sentence
+fin should adopt the following canonical model:
+- raw truth lives in ledger
+- closed-loop conversation units live in turn records
+- ongoing process state lives in progress/execution notes
+- continuity and rebuild live in digest families
+- cross-worker sharing lives in knowledge artifacts plus retrieval scope
+- model input always comes from a framework-built ContextView rather than directly from raw history
+
+## 2026-04-18 WebUI multi-turn history truth wiring
+- New debug truth exposed to WebUI:
+  - `recent_turns` -> canonical turn anchor
+  - `recent_steps` -> per-turn step timeline
+  - `task_digest` / `session_digest` / `rebuild_index` -> digest family + rebuild truth
+- Backend additions:
+  - added `/api/recent_steps.json`
+  - `DebugBinding` now includes `recent_steps_path`
+- Frontend wiring rules:
+  - `FocusTurn` now anchors on `TurnRecord.operation_id`
+  - message/context/reasoning/tool/closure/events merge into the turn anchored by `TurnRecord`
+  - `StepRecord[]` attaches to the same focus turn and is rendered in inspector as `Step Timeline`
+- Inspector layout update:
+  - `System` card now shows task digest / session digest / rebuild index summary
+  - `Operation` card now shows turn record + step timeline before lower-level request/debug details
+- Validation evidence:
+  - `cargo test -p fin-debug-server -p fin-cli` passed after TS + Rust wiring
+- Remaining next step:
+  - review live WebUI rendering against real runtime artifacts, then continue inference-core completion and context assembly hardening
+
+
+## 2026-04-18 multi-step inference core snapshot
+
+- `M1Runtime::run_closure` 已从单轮 provider closure 升级为多步 loop：
+  - `context -> provider -> parse -> tool dispatch -> context update -> provider -> ... -> final answer / failed closure`
+- 模型输出 contract 新增 `fin_tool_calls`：
+  - 第一块现在允许二选一：`<fin_user_response>` 或 `<fin_tool_calls>`
+  - 第二块仍固定为 `<fin_control_feedback>`
+- runtime 当前已真正可执行的 model-selected tools：
+  - `update_plan`
+  - `session.list`
+  - `context_history.rebuild`
+- runtime 对未实现工具不再静默忽略：
+  - 会产出 `tool.dispatch_failed`
+  - closure 以 `status=failed` 收口
+  - 追加 `operation.failed` 事件、失败 progress、failure summary
+- provider 失败也不再直接中断为无 artifacts 的裸错误：
+  - 当前 closure 会合成失败结果并正常落 note/digest/closure/event 链，便于 session truth / Web 继续观察
+- event 链已升级为 step-aware：
+  - 每轮 provider 事件保留 step 语义
+  - tool dispatch 增加 `tool.dispatch_started/completed/failed`
+- final closure 现在带：
+  - `status`
+  - `failure_summary`
+  - 多个 `provider.call` records（多步时每次 provider round-trip 都单独记录）
+  - model-selected tool records
+- context 在 closure 内会持续更新：
+  - interim reasoning -> `history.recent_reasoning`
+  - tool result -> `history.recent_tool_activity`
+  - tool output summary -> `history.recent_messages`
+  - `context_history.rebuild` 会直接替换后续 provider 使用的 context
+- tool registry 已从 staged-only 向最小可执行推进：
+  - `update_plan / session.list / context_history.rebuild` 已从 disabled 列表移出
+- 新增回归：
+  - parser 能解析 `fin_tool_calls`
+  - provider 第 1 轮请求工具、第 2 轮给最终答案的多步 loop 测试
+  - 请求未实现工具时的 failed closure 测试
+
+## 2026-04-18 peer taxonomy and supervision snapshot
+
+- `fin` 后续不应把远端对象只理解成 agent，而应统一理解成 `peer`
+- peer 至少分为三类：
+  - `capability peer`
+  - `agent peer`
+  - `channel gateway`
+- `project agent` 属于 `agent peer`
+- `system agent` 是唯一用户入口与总编排者，不属于“被路由执行的 peer”
+- `daemon` 是本机生命周期与资源管理真源，负责：
+  - spawn / restart / reap / drain local peers
+  - orphan cleanup
+  - local peer registry
+  - health / crash / quarantine
+- 后续架构要冻结为两层平面：
+  - `peer plane`: discover / auth / lease / heartbeat / health / capability advertisement
+  - `execution plane`: job / task / message
+- presence 与 binding 必须拆开：
+  - `presence = existence + liveness`
+  - `binding = ownership + assignment`
+- 冻结规则：
+  - presence 对称
+  - binding 非对称（只有 system agent 能做 task/session binding）
+- `fin start --slave` 的语义冻结为：
+  - 启动远端 `project agent` service mode
+  - idle/listening
+  - 等待 system agent discover/connect/auth/lease/bind
+- 本机 unattached project agent 的正确启动路径应为：
+  - `system agent -> daemon.ensure_peer(...) -> daemon spawn/reuse -> system agent connect + bind`
+- 用户会话主真源始终属于 `system agent`
+- `project agent / capability peer / channel gateway` 只拥有各自的执行账本、能力结果或 channel 适配态，不直接接管用户主会话
+
+## 2026-04-18 local reasoning gap audit under peer model
+
+在新冻结的 peer 模型下，当前本地 runtime 推理部分还缺以下几类东西：
+
+### A. Role / Prompt 缺口
+- 当前 role family 只有：
+  - `system`
+  - `worker`
+  - `reviewer/analyzer`
+  - 默认 `project`
+- 还缺明确的：
+  - `project_agent`
+  - `capability_router` 或 `peer_router`
+  - `channel_gateway`（即使不直接推理，也应有 prompt/contract 位）
+- 当前 `system` prompt 仍偏“单机总控”，还没有显式声明：
+  - peer discovery
+  - presence/binding ownership
+  - daemon 协作
+  - capability vs agent 路由优先级
+
+### B. Context 结构缺口
+- 当前 context blocks 主要是：
+  - `control`
+  - `role_prompt`
+  - `tools`
+  - `history`
+  - `knowledge`
+  - `project`
+  - `current_input`
+- 缺少新的 peer 相关 block：
+  - `peer_topology`
+  - `peer_presence`
+  - `binding_state`
+  - `capability_catalog`
+  - `daemon_state`
+  - `channel_routes`
+- 当前 `project` block 仍是 repo/workdir 视角，不足以支撑 `system agent` 的多 peer 编排
+
+### C. Tool / Dispatch 缺口
+- 当前可执行 model tools 只有：
+  - `update_plan`
+  - `session.list`
+  - `context_history.rebuild`
+- 下一层除了 `exec_command / write_stdin` 以外，还需要预留 peer 相关工具抽象：
+  - `peer.list`
+  - `peer.describe`
+  - `capability.invoke`
+  - `agent.assign`
+  - `binding.open`
+  - `binding.close`
+  - `daemon.ensure_peer`
+  - `peer.status_probe`
+- 当前 tool dispatch 仍默认都是本地 runtime 内工具，不支持把“执行动作”路由到 capability peer / agent peer
+
+### D. Control Block 缺口
+- 当前 `ControlFeedback` 只有连续性/话题/simple query 相关字段
+- 在 peer 模型下，后续需要增加的控制判断包括：
+  - 是否需要 peer 路由
+  - 更适合 capability peer 还是 agent peer
+  - 是否需要 daemon ensure/spawn
+  - 是否需要 bind / rebind
+  - 对目标 peer/task route 的置信度
+- 这些不一定要直接塞进现有 `ControlFeedback`，但至少需要一个并行的 control/routing block
+
+### E. Event / Runtime Fact 缺口
+- 当前 runtime 事件主要还是：
+  - provider.*
+  - tool.dispatch.*
+  - progress/note/digest/closure
+- 还缺最小 peer 事件族：
+  - `peer.discovered`
+  - `peer.connected`
+  - `peer.authenticated`
+  - `lease.opened`
+  - `heartbeat.missed`
+  - `binding.opened`
+  - `binding.closed`
+  - `daemon.peer_spawned`
+  - `daemon.peer_reaped`
+- 没有这些事件，就很难把 system/project/daemon 协作纳入统一 debug 真源
+
+### F. 执行闭环缺口
+- 当前 inference loop 已支持：
+  - provider -> tool -> provider 的本地多步闭环
+- 但还不支持：
+  - capability peer 异步 job
+  - agent peer task binding
+  - remote peer progress merge
+  - peer failure / reconnect / rebind
+- 所以当前闭环仍然是“单 runtime 本地闭环”，还不是“多 peer 协作闭环”
+
+### 当前建议的优先顺序
+1. 先把 `exec_command / write_stdin` 接入，完成本地通用工具闭环
+2. 然后补 `system_agent / project_agent` role prompt 分层
+3. 再补 `peer_topology / presence / binding / capability_catalog` context blocks
+4. 再引入最小 peer tools 与 `peer.* / binding.* / daemon.*` 事件族
+5. 最后再进入真正的 local/remote peer 执行接入
+
+## 2026-04-18 peer-aware local reasoning skeleton landed
+
+已将“peer 设计如何先进入本地推理骨架”冻结到：
+
+- `docs/architecture/32-peer-aware-local-reasoning-skeleton.md`
+
+本轮已实际接入的代码骨架：
+
+1. `MinimalContextView` 新增 `peer` block
+2. `ContextViewBuilder` 会在没有 peer registry 时生成受控的 `local-only M1 mode` placeholder
+3. `ModelInputAssembler` 新增 `Peer topology` 段，并把 `history` 下移到 `project/peer` 后面
+4. `prompt_assembly` 已补：
+   - `system_agent`
+   - `project_agent`
+   - `capability_router / peer_router`
+   - `channel_gateway`
+   的 role baseline 差异
+
+当前刻意未做的事情：
+
+- 不伪造 remote peer registry
+- 不伪造真实 lease/binding 事实
+- 不把 placeholder 当作真实运行事实
+- 不提前接入 peer tools / peer events / daemon IPC
+
+这意味着：
+
+- 当前仍是单 runtime 本地闭环
+- 但 prompt/context 结构已经不再是 project-only 视角
+- 后续接 peer plane 时，不需要再次推翻上下文 schema
+
+## 2026-04-18 peer routing control skeleton landed
+
+本轮继续完成：
+
+1. 新增 `PeerRoutingFeedback`
+2. runtime finalize 阶段会生成 routing artifact，并写入：
+   - `runtime/current/current_peer_routing_feedback.json`
+   - `sessions/.../routing/latest.json`
+   - `ExecutionNote.peer_routing_feedback`
+   - `DigestRecord.peer_routing_feedback`
+3. event 链新增：
+   - `peer.routing_feedback_recorded`
+4. 若上下文本身已有 peer block，则 runtime 会发 observation skeleton：
+   - `peer.discovered`
+   - `binding.opened`
+   - `daemon.state_observed`
+5. projection 已可消费：
+   - `latest_route_target_kind`
+   - `latest_route_target_peer_id`
+   - `latest_route_confidence`
+   - `latest_route_origin`
+
+本轮新增真源文档：
+
+- `docs/architecture/33-peer-routing-control-and-observation-events.md`
+- `docs/contracts/peer-routing-feedback-contract.md`
+
+当前刻意保持的边界：
+
+- 没有 remote peer 真执行
+- 没有 auth/connect/lease/reconnect
+- 没有 daemon.ensure_peer IPC
+- 没有 peer.list / capability.invoke / agent.assign 真动作
+
+所以当前 routing 仍是 framework-owned heuristic truth，不是 peer plane 完整实现。
+
+## 2026-04-18 peer tools skeleton cleanup + validation
+
+本轮继续“peer-aware local reasoning skeleton”收口，完成了最小可验证闭环：
+
+1. contracts/context:
+   - `MinimalContextView.peer` 已稳定接入（`PeerContextBlock` family）
+2. runtime assembly:
+   - `ContextViewBuilder` 挂接 `peer` block（local-only placeholder）
+   - `ModelInputAssembler` 渲染 `Peer scope`
+3. tool catalog:
+   - 新增独立模块 `runtime/src/tool_catalog.rs`
+   - peer tools skeleton: `peer.list`, `peer.describe`, `daemon.ensure_peer`
+   - 当前全部处于 contract-frozen placeholder（在 `disabled_tools` 中显式标注）
+4. 模块拆分收口：
+   - 清理 `context_blocks.rs` 残留 tool catalog helper，避免重复语义
+   - `context_view.rs` 改为从 `tool_catalog` 模块装配工具目录
+   - `runtime/lib.rs` 注册 `mod tool_catalog`
+5. 验证：
+   - `cargo fmt --all --manifest-path rust/Cargo.toml`
+   - `cargo test -p fin-contracts -p fin-runtime --manifest-path rust/Cargo.toml`
+   - 结果：通过
+
+边界声明：
+- 本轮只完成 schema/context/prompt 可见性与最小工具目录骨架；
+- 未接入真实 peer dispatch / handshake / daemon IPC 执行链。
+
+## 2026-04-18 model tools completion + async wait reminder (system self wakeup)
+
+本轮补齐了缺失工具的最小可执行闭环（runtime 真源）：
+
+1. 模型工具调用协议
+   - `ModelOutputParser` 新增 `<fin_tool_calls>...</fin_tool_calls>` 解析
+   - 支持 `[{"tool_name":"...","arguments":{...}}]` 或单对象
+   - 解析结果进入 runtime tool dispatcher
+
+2. tool dispatcher（已可执行）
+   - `peer.list`（读取当前 context.peer 快照）
+   - `peer.describe`（按 peer_id 描述）
+   - `daemon.ensure_peer`（placeholder intent + event）
+   - `wait.remind`（异步等待调度）
+   - 未注册工具显式 failed record（不静默）
+
+3. wait.remind 异步提醒闭环
+   - 参数固定两项：`wait_minutes` + `reminder`
+   - 调度事件：`system.reminder_scheduled`
+   - SessionMaterializer 会把调度持久化到 `~/.fin/runtime/reminders/pending.json`
+   - Web debug 每次收消息前执行 due-check，超时提醒注入 session `system` 消息，推动下一次推理
+   - wake role 固定为 `system`（system self wakeup）
+
+4. Prompt / Tool 提示词规则
+   - 新增规则：若预计等待超过 1 分钟，优先 `wait.remind`，不要 busy waiting
+   - 输出契约支持可选第三块 `<fin_tool_calls>`（前两块仍为强制）
+
+5. 验证
+   - `cargo fmt --all --manifest-path rust/Cargo.toml`
+   - `cargo test -p fin-runtime -p fin-contracts -p fin-cli --manifest-path rust/Cargo.toml`
+   - 全部通过
+
+## 2026-04-18 reasoning.stop migration (from finger semantics)
+
+已按你的要求把“停止判定”切到 `reasoning.stop`：
+
+1. 新增模型工具：`reasoning.stop`
+2. runtime 闭环停止信号改为工具调用：
+   - `operation.completed.status=stopped` 仅在收到 `reasoning.stop` 时成立
+   - 若未收到 `reasoning.stop`，状态为 `continued`
+3. 明确不再把 provider `finish_reason=stop/end_turn` 作为闭环停止依据
+4. prompt/tool policy 已更新：
+   - 结束当前推理 turn 时必须调用 `reasoning.stop`
+   - 超过 1 分钟等待优先用 `wait.remind`
+
+验证已通过：
+- 新增单测 `runtime_closure_uses_reasoning_stop_as_stop_signal`
+- 全量命令：`cargo test -p fin-runtime -p fin-cli -p fin-contracts --manifest-path rust/Cargo.toml`
+
+## 2026-04-18 tool loop + slash commands + qqbot builtin gateway peer bootstrap
+
+本轮新增了三块关键能力：
+
+1) 多轮自动 tool loop（同一 turn 内）
+- runtime 现在支持最小自动 roundtrip：
+  - 第一轮若产出 `fin_tool_calls` 且未 `reasoning.stop`
+  - 框架会自动基于“原始问题 + 上轮回答 + 最新工具结果”发起第二轮 provider 推理
+- 新增事件：`reasoning.auto_tool_roundtrip_completed`
+- 停止语义仍保持：只有 `reasoning.stop` 才算 `status=stopped`；否则 `continued`
+
+2) slash command router（web chat path）
+- 已接入本地命令：
+  - `/new`：创建并绑定新 session/task
+  - `/resume <session_id>`：恢复已有会话绑定
+  - `/compact`：不调用 provider，直接 rebuild context 并写
+    - `runtime/current/current_context.json`
+    - `runtime/current/current_rebuild_index.json`
+    - `sessions/.../context/recent_contexts.json`
+    - `sessions/.../context/rebuild-index.json`
+- 命令会写入 session conversation 的 `local_command + system notice`
+
+3) QQBot 内置 gateway peer 启动骨架
+- `web-debug` 启动时自动执行 `ensure_builtin_qqbot_peer`
+- 新增运行时状态文件：
+  - `runtime/peers/qqbot/state.json`
+  - `runtime/peers/registry.json`
+- 先冻结为 lifecycle bootstrap：`idle_unpaired + pairing_required=true`
+
+附带：
+- tool catalog 扩展了下一步将接线的工具族（exec_command / write_stdin / mailbox / agent.assign / capability.invoke）
+  目前先完成 contract/prompt 可见性，逐步接 dispatcher 真执行。
+
+验证：
+- `cargo test -p fin-cli -p fin-runtime -p fin-debug-server --manifest-path rust/Cargo.toml`
+- `cargo test -p fin-contracts --manifest-path rust/Cargo.toml`
+- 结果：通过
+
+## 2026-04-18 继续推进（tool dispatcher 收口）
+
+- 修复 runtime 编译断点：补齐 `tool_dispatch_extended` 及相关模块声明，恢复 `fin-runtime` 构建。
+- 将大文件拆分为可维护模块（全部 <500 行）：
+  - `tool_dispatch_extended_exec.rs`
+  - `tool_dispatch_extended_collab_mailbox.rs`
+  - `tool_dispatch_extended_collab_coordination.rs`
+  - `tool_dispatch_extended*.rs` 作为薄编排层。
+- 新增可执行模型工具处理：
+  - `exec_command`
+  - `write_stdin`（基于 exec replay session）
+  - `mailbox.send`
+  - `mailbox.poll`
+  - `agent.assign`
+  - `capability.invoke`
+- 补充 runtime 单测：
+  - `exec_command + write_stdin` replay 闭环
+  - `mailbox.send + mailbox.poll(consume)` 闭环
+- 完整回归：`fin-runtime + fin-cli + fin-debug-server` 全部通过。
+- 推理自动工具循环从“固定一轮 follow-up”升级为“多轮 loop + 最大轮次保护（6）”：满足同一 turn 内连续工具调用，且避免无限循环；触发保护时写 `reasoning.auto_tool_roundtrip_limit_reached`。
+- QQBot 内置 gateway peer 生命周期第二阶段已落地（CLI 框架层）：
+  - `channel_peer` 新增 session/pairing 生命周期状态字段（pairing_required/session_valid/session_id/session_expires_at/reconnect_count/heartbeat）。
+  - 新增结构化 peer 事件日志 `~/.fin/runtime/peers/qqbot/events.jsonl`，事件包含 `event_id/sequence/timestamp/sender/source/protocol_version/payload`。
+  - 事件类型落地：`channel.peer.pairing_required`、`channel.peer.pairing_completed`、`channel.peer.session_expired`、`channel.peer.heartbeat_recorded`。
+  - `ensure_builtin_qqbot_peer` 现在具备 TTL 到期检测：到期后自动置 `pairing_required=true` 并产出 `session_expired + pairing_required` 事件，实现“session失效需重配”的框架闭环。
+  - `web_debug` 每次接收消息前会调用 `ensure_builtin_qqbot_peer` 做生命周期同步检查。
+- QQBot 配对入口已接入本地 slash command 路由：支持 `/qqbot status|pair|heartbeat|expire`。其中 `/qqbot pair` 默认绑定当前 active session，并将 local_command + system notice 写入当前 session conversation，保证 channel 渲染仍以 session 文件为真源。
+- debug-server 已新增 qqbot peer 观测入口：`/api/qqbot_state.json`、`/api/qqbot_events.jsonl`，便于后续 Web debug 面板直接消费 peer lifecycle 事实。
+- 本轮顺手抽出了 `local_command_notice.rs`，把本地命令写 session conversation 的逻辑下沉复用；同时把 `channel_peer.rs`、`session_commands.rs` 拉回 500 行内，line-limit 当前只剩历史超限文件。
+- QQBot gateway 与 active session 的绑定失配现在会被框架主动失效化：当 peer 已 paired 到旧 session，而当前会话切到新 session（包括 `/new`、`/resume`、后续正常消息入口），框架会产出 `channel.peer.session_invalidated` + `channel.peer.pairing_required`，并把 peer 状态恢复到 `idle_unpaired`，避免旧绑定继续伪装为有效。
+
+## 2026-04-18 finger 配对码机制核查结论
+
+本轮只做证据核查，不改 fin 流程。结论：
+
+1. **finger 仓库里没有现成的“配对码 / pairing code”握手实现可直接复用**
+   - 全仓 grep 未发现稳定的 `pairing code / pair code / link code / device code / 验证码 / 配对码 / qr code` 机制落地。
+   - 命中内容主要是 `gateway process session`、`thread binding`、`session binding`、`mailbox`、`qqbot gateway bridge`。
+
+2. **finger 的 qqbot 接入是“凭证启动 + thread/session binding”，不是“用户配对码绑定”**
+   - `src/cli/openclaw-gateway-bridge.ts`
+     - `connect <channel-id>` 要求 `appId + clientSecret`
+     - `sendStartAction(..., appId, clientSecret, ...)`
+     - `handleStart(payload)` 明确校验 `Missing appId or clientSecret`
+   - `tests/e2e/gateway-bridge-qqbot.test.ts`
+     - 测试也是直接发 `action:start` + `payload:{ appId, clientSecret }`
+   - `docs/reference/templates/system-agent/OPENCLAW-INTEGRATION.md`
+     - SOP 也是安装插件 + 写 `~/.finger/config/channels.json` / runtime plugin config + 重启 daemon
+
+3. **finger 有可借鉴的不是配对码，而是“绑定语义”**
+   - `src/inputs/openclaw.ts`
+     - 入站消息会提取 `senderId / threadId / messageId`
+   - `memory/2026-03-10-openclaw-mailbox-design-decision.md`
+     - finger 自己做 `thread binding`、权限策略、mailbox 回流
+   - `memory/2026-03-12-qqbot-channel-architecture.md`
+     - 核心是消息进入统一 MessageHub / session route，而不是做配对码认证
+
+4. **对 fin 的直接含义**
+   - 不能说“复用 finger 现成配对码连接”，因为 finger 当前没有这个机制。
+   - 可以复用 / 借鉴的是：
+     - channel 接入后的 `thread/session binding`
+     - gateway 生命周期
+     - ready / error / stopped 事件模型
+   - 如果 fin 要“首次配对、session 失效后重配”，需要做 **fin-native pairing code flow**，而不是照搬 finger 代码。
+
+### 同日更正：pairing 需要拆成两个正交层面
+
+用户补充后，结论修正为：
+
+1. **channel ↔ upstream service 配对 / 鉴权**
+   - 这是渠道自身接入层。
+   - 例如 qqbot 通过 `appId + secret` 与上游服务建立认证和连接。
+   - 有些 channel 可能需要服务器鉴权，有些不需要；这是 channel-specific 生命周期。
+
+2. **peer ↔ agent 配对 / 绑定**
+   - 这是 fin 框架内部的协作绑定层。
+   - 目标是把某个 channel peer / remote peer 绑定到 system agent / project agent / session route。
+   - 本地场景可以有默认 pairing code（如 `fin:welcome`）；远程场景则可走双方显式配置（如 `service + account:password`）后的握手。
+
+3. **设计规则**
+   - 这两个层面不能混为一谈：
+     - upstream auth 成功 ≠ peer 已绑定 fin agent
+     - peer 已绑定 fin agent ≠ upstream 仍然有效
+   - 状态机、事件、debug 面板需要分别显示：
+     - `channel auth / connection state`
+     - `peer-agent binding state`
+
+### 同日补充：bootstrap 顺序应先 peer 可达，再做上游鉴权
+
+用户确认后的统一顺序：
+
+1. **peer 先自己能起来**
+   - 本地先把 peer 进程/服务启动成功。
+   - 此时只代表 peer 在本机/本网络可达，不代表它已经能访问上游服务。
+
+2. **本地访问权限先成立**
+   - system agent / 本机控制面需要先具备访问 peer 的权限与管理权。
+   - 这是本地 control plane 与 peer 的管理关系，不等于 peer 已取得服务器权限。
+
+3. **peer 再通过配对 / 鉴权访问服务器**
+   - peer 与上游 server/service 的 pairing/auth 成功后，才进入真正 connected / active。
+   - 这层属于 upstream connectivity，不与本地 agent binding 混淆。
+
+4. **channel 也应采用同类分层**
+   - channel process / gateway 自己先可启动、可本地管理
+   - 再完成 channel-specific upstream auth
+   - 再进入 fin 内部的 peer-agent binding / session route binding
+
+5. **统一状态视角**
+   - `peer runtime state`：进程/服务是否活着、可达、可管理
+   - `upstream auth/connectivity state`：是否已和服务器配对鉴权并连通
+   - `peer-agent binding state`：是否已绑定到 fin 的 system/project/session 路由
+
+## 2026-04-18 qqbot peer 三层状态模型已落地（最小实现）
+
+本轮已把当前内置 qqbot peer 的状态真源从“单 lifecycle + pairing/session bool”升级为三条显式状态线：
+
+1. `runtime_state`
+   - 当前最小实现：`ready_local`
+   - 表示 peer 已在本地可达、可管理
+
+2. `connectivity_state`
+   - 当前最小实现：`local_only`
+   - 表示当前只是本地 peer bootstrap 完成，还没有实现上游 server auth/connectivity 闭环
+
+3. `binding_state`
+   - 当前使用：
+     - `pairing_required`
+     - `bound`
+     - `expired`
+     - `invalidated`
+
+兼容策略：
+- 旧字段 `lifecycle_state / pairing_required / session_valid` 继续保留，但改为从三条状态线派生。
+- `state.json`、`registry.json` 现在都会带三条状态线，旧消费者仍可继续读兼容字段。
+
+本轮还补了：
+- 初始 bootstrap 事件：`channel.peer.runtime_ready`
+- 原有事件 payload 中补入：
+  - `runtime_state`
+  - `connectivity_state`
+  - `binding_state`
+- `/qqbot status` 和 `/qqbot expire` 输出已切到显示三条状态线
+- 相关 Rust 单测已通过

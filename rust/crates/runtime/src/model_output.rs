@@ -1,9 +1,11 @@
 use fin_contracts::{ControlFeedback, InferenceOperationPayload};
 use fin_provider::{PreparedRequest, ProviderResponse};
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 const USER_RESPONSE_TAG: &str = "fin_user_response";
 const CONTROL_FEEDBACK_TAG: &str = "fin_control_feedback";
+const TOOL_CALLS_TAG: &str = "fin_tool_calls";
 const CONTROL_FEEDBACK_KEYS: &[&str] = &[
     "origin",
     "is_continuation",
@@ -26,6 +28,14 @@ pub struct ParsedModelOutput {
     pub control_feedback: Option<ControlFeedback>,
     pub control_feedback_salvaged: bool,
     pub contract_detected: bool,
+    pub tool_calls: Vec<ModelToolCall>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ModelToolCall {
+    pub tool_name: String,
+    #[serde(default)]
+    pub arguments: Value,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -42,7 +52,7 @@ impl ModelOutputParser {
         let user_response = extract_tag(raw, USER_RESPONSE_TAG)
             .map(|value| value.trim().to_string())
             .filter(|value| !value.is_empty())
-            .unwrap_or_else(|| strip_control_block(raw).trim().to_string());
+            .unwrap_or_else(|| strip_structured_blocks(raw).trim().to_string());
         let (control_feedback, control_feedback_salvaged) = extract_tag(raw, CONTROL_FEEDBACK_TAG)
             .and_then(|block| parse_control_feedback(&block))
             .map(|result| {
@@ -58,6 +68,9 @@ impl ModelOutputParser {
                 )
             })
             .unwrap_or((None, false));
+        let tool_calls = extract_tag(raw, TOOL_CALLS_TAG)
+            .map(|block| parse_tool_calls(&block))
+            .unwrap_or_default();
 
         ParsedModelOutput {
             user_response: if user_response.is_empty() {
@@ -68,9 +81,41 @@ impl ModelOutputParser {
             control_feedback,
             control_feedback_salvaged,
             contract_detected: raw.contains("<fin_user_response>")
-                || raw.contains("<fin_control_feedback>"),
+                || raw.contains("<fin_control_feedback>")
+                || raw.contains("<fin_tool_calls>"),
+            tool_calls,
         }
     }
+}
+
+fn parse_tool_calls(raw: &str) -> Vec<ModelToolCall> {
+    let Ok(value) = serde_json::from_str::<Value>(raw.trim()) else {
+        return Vec::new();
+    };
+    match value {
+        Value::Array(items) => items.into_iter().filter_map(normalize_tool_call).collect(),
+        other => normalize_tool_call(other).into_iter().collect(),
+    }
+}
+
+fn normalize_tool_call(value: Value) -> Option<ModelToolCall> {
+    let object = value.as_object()?;
+    let tool_name = object
+        .get("tool_name")
+        .or_else(|| object.get("name"))
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty())?
+        .to_string();
+    let arguments = object
+        .get("arguments")
+        .or_else(|| object.get("args"))
+        .cloned()
+        .unwrap_or_else(|| Value::Object(Default::default()));
+    Some(ModelToolCall {
+        tool_name,
+        arguments,
+    })
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -147,9 +192,7 @@ fn normalize_feedback(
     if feedback.digest_candidate.trim().is_empty() {
         feedback.digest_candidate = format!(
             "closure on {}:{} produced answer {}",
-            request.provider_name,
-            request.model,
-            response.output_text
+            request.provider_name, request.model, response.output_text
         );
     }
     if feedback.reason.trim().is_empty() {
@@ -178,19 +221,31 @@ fn salvage_control_feedback(object: &serde_json::Map<String, Value>) -> Option<C
         feedback.candidate_task_id = Some(value);
         matched += 1;
     }
-    if let Some(value) = object.get("candidate_topic_thread_id").and_then(mask_string) {
+    if let Some(value) = object
+        .get("candidate_topic_thread_id")
+        .and_then(mask_string)
+    {
         feedback.candidate_topic_thread_id = Some(value);
         matched += 1;
     }
-    if let Some(value) = object.get("continuity_confidence").and_then(mask_confidence) {
+    if let Some(value) = object
+        .get("continuity_confidence")
+        .and_then(mask_confidence)
+    {
         feedback.continuity_confidence = value;
         matched += 1;
     }
-    if let Some(value) = object.get("topic_shift_confidence").and_then(mask_confidence) {
+    if let Some(value) = object
+        .get("topic_shift_confidence")
+        .and_then(mask_confidence)
+    {
         feedback.topic_shift_confidence = value;
         matched += 1;
     }
-    if let Some(value) = object.get("simple_query_confidence").and_then(mask_confidence) {
+    if let Some(value) = object
+        .get("simple_query_confidence")
+        .and_then(mask_confidence)
+    {
         feedback.simple_query_confidence = value;
         matched += 1;
     }
@@ -238,9 +293,7 @@ fn mask_bool(value: &Value) -> Option<bool> {
             "false" | "0" | "no" => Some(false),
             _ => None,
         },
-        Value::Number(number) => number
-            .as_f64()
-            .map(|raw| raw != 0.0),
+        Value::Number(number) => number.as_f64().map(|raw| raw != 0.0),
         _ => None,
     }
 }
@@ -268,14 +321,24 @@ fn extract_tag(raw: &str, tag: &str) -> Option<String> {
     Some(raw[content_start..content_start + end].to_string())
 }
 
-fn strip_control_block(raw: &str) -> String {
-    let Some(start) = raw.find(&format!("<{CONTROL_FEEDBACK_TAG}>")) else {
+fn strip_structured_blocks(raw: &str) -> String {
+    let mut cleaned = raw.to_string();
+    for tag in [CONTROL_FEEDBACK_TAG, TOOL_CALLS_TAG] {
+        cleaned = remove_tag_block(&cleaned, tag);
+    }
+    cleaned
+}
+
+fn remove_tag_block(raw: &str, tag: &str) -> String {
+    let start_tag = format!("<{tag}>");
+    let end_tag = format!("</{tag}>");
+    let Some(start) = raw.find(&start_tag) else {
         return raw.to_string();
     };
-    let Some(end) = raw.find(&format!("</{CONTROL_FEEDBACK_TAG}>")) else {
+    let Some(end) = raw[start..].find(&end_tag) else {
         return raw.to_string();
     };
-    let end = end + CONTROL_FEEDBACK_TAG.len() + 3;
+    let end = start + end + end_tag.len();
     let mut cleaned = String::new();
     cleaned.push_str(raw[..start].trim_end());
     if !cleaned.is_empty() && end < raw.len() {

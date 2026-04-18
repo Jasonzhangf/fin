@@ -116,6 +116,7 @@ dependencies = [
  "fin-provider",
  "fin-runtime",
  "fin-shared",
+ "reqwest",
  "serde",
  "serde_json",
  "thiserror",

@@ -3,8 +3,8 @@ use super::*;
 use fin_config::{ProviderCredential, ResolvedProviderConfig};
 use std::io::{Read, Write};
 use std::net::TcpListener;
-use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::thread;
 
 fn openai_config() -> ResolvedProviderConfig {
@@ -185,7 +185,9 @@ fn anthropic_execute_retries_retryable_request_failures() {
                 body.len(),
                 body
             );
-            stream.write_all(response.as_bytes()).expect("write response");
+            stream
+                .write_all(response.as_bytes())
+                .expect("write response");
         }
     });
 
@@ -231,7 +233,9 @@ fn anthropic_execute_does_not_retry_http_status_errors() {
             body.len(),
             body
         );
-        stream.write_all(response.as_bytes()).expect("write response");
+        stream
+            .write_all(response.as_bytes())
+            .expect("write response");
     });
 
     let facade = ProviderFacade::from_resolved(&ResolvedProviderConfig {

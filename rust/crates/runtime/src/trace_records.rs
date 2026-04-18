@@ -117,7 +117,11 @@ pub(super) fn closure_trace_record(run: &ClosureRun) -> ClosureTraceRecord {
         control_feedback_path: "control/latest.json".into(),
         reasoning_view_path: "reasoning/latest.json".into(),
         tool_record_paths: vec!["tools/recent_tool_records.json".into()],
-        source_event_ids: run.events.iter().map(|event| event.event_id.clone()).collect(),
+        source_event_ids: run
+            .events
+            .iter()
+            .map(|event| event.event_id.clone())
+            .collect(),
     }
 }
 

@@ -7,8 +7,9 @@ mod feedback;
 mod records;
 
 pub use context::{
-    ContextControlBlock, CurrentInputBlock, HistoryBlock, KnowledgeArtifactBlock,
-    MinimalContextView, ProjectContextBlock, ProjectRef, PromptLayerSummary, PromptModuleEntry,
+    ContextControlBlock, CurrentInputBlock, DaemonStateSummary, HistoryBlock,
+    KnowledgeArtifactBlock, MinimalContextView, PeerBindingSummary, PeerContextBlock,
+    PeerDescriptorSummary, ProjectContextBlock, ProjectRef, PromptLayerSummary, PromptModuleEntry,
     RolePromptBlock, ToolCatalogBlock, ToolCatalogEntry,
 };
 pub use feedback::ControlFeedback;

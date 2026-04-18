@@ -46,3 +46,4 @@ description: Architecture ownership and crate-boundary skill for fin. Use when d
 - 把所有通用逻辑堆到 orchestrator
 - 在 Web 维护第二份状态
 - harness 复制协议定义
+- peer/discovery/binding 设计还没接线时，就先把执行逻辑写死在 project-only prompt/context；正确顺序是先补 role/context schema 骨架，再接 peer tools / peer events / daemon

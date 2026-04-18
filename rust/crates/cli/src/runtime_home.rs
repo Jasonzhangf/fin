@@ -65,6 +65,8 @@ pub(crate) fn ensure_runtime_home_layout(runtime_home: &Path) -> Result<(), CliE
         "runtime/sockets",
         "runtime/leases",
         "runtime/heartbeats",
+        "runtime/reminders",
+        "runtime/peers",
         "runtime/projections",
         "runtime/current",
         "logs/cli",
@@ -126,7 +128,9 @@ pub(crate) fn read_session_messages(path: &Path) -> Result<Vec<SessionMessageRec
     read_json_or_empty(path)
 }
 
-pub(crate) fn read_recent_reasoning_views(path: &Path) -> Result<Vec<ReasoningViewRecord>, CliError> {
+pub(crate) fn read_recent_reasoning_views(
+    path: &Path,
+) -> Result<Vec<ReasoningViewRecord>, CliError> {
     read_json_or_empty(path)
 }
 

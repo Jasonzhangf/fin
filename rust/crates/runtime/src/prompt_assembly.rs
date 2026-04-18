@@ -299,6 +299,8 @@ fn behavior_rules(role_id: &str, loaded_skills: &[LoadedSkill]) -> Vec<String> {
         "treat events as runtime fact truth".into(),
         "keep outputs structured for note, digest, and projection recording".into(),
         "do not treat framework-owned capabilities as model-selected tools".into(),
+        "if expected wait exceeds 1 minute, use wait.remind with wait_minutes + reminder instead of busy waiting".into(),
+        "when the turn should terminate, call reasoning.stop; do not rely on provider finish_reason for closure".into(),
     ];
     match role_id {
         "system" => rules.push(
@@ -332,6 +334,9 @@ fn output_contract(role_id: &str) -> Vec<String> {
         "do not claim framework internals as model-selected tools".into(),
         "keep wording consistent with session continuity and current project scope".into(),
         "output exactly two top-level blocks and no extra prose before or after them".into(),
+        "when a model tool call is needed, append an optional third block <fin_tool_calls>...</fin_tool_calls> after the two mandatory blocks".into(),
+        "the fin_tool_calls block must be JSON (object or array) using {\"tool_name\":\"...\",\"arguments\":{...}} items".into(),
+        "when the turn is complete, include reasoning.stop in fin_tool_calls; runtime closure tracks this signal instead of provider finish_reason".into(),
         "when emitting structured control feedback, wrap the user-visible answer in <fin_user_response>...</fin_user_response>".into(),
         "when emitting structured control feedback, wrap a JSON ControlFeedback object in <fin_control_feedback>...</fin_control_feedback>".into(),
         "the JSON ControlFeedback object must use fin keys such as is_continuation, is_simple_query, continuity_confidence, topic_shift_confidence, simple_query_confidence, current_topic_summary, note_candidate, digest_candidate, and reason".into(),
@@ -370,6 +375,9 @@ pub(crate) fn mandatory_response_format_lines() -> Vec<String> {
     vec![
         "output exactly two top-level blocks and no extra prose before or after them".into(),
         "emit <fin_user_response>...</fin_user_response> first and <fin_control_feedback>...</fin_control_feedback> second".into(),
+        "if and only if a model tool call is needed, append <fin_tool_calls>...</fin_tool_calls> as an optional third block".into(),
+        "fin_tool_calls JSON must use tool_name + arguments; for waits longer than 1 minute prefer wait.remind".into(),
+        "if the turn should end now, include reasoning.stop in fin_tool_calls".into(),
         "the control JSON must stay within the fin whitelist; do not add project/reporting/debug keys".into(),
         "confidence fields must be integers in the range 0-100; convert 0.98 -> 98 and 1.0 -> 100 before output".into(),
         "use JSON booleans true/false, not quoted strings such as \"true\" or \"false\"".into(),

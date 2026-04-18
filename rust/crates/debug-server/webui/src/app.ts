@@ -1,6 +1,7 @@
 import { ChatPane, type PendingAssistantState } from './chat.js';
 import { buildFocusTurns, FocusPane } from './focus.js';
 import { InspectorPane } from './inspector.js';
+import { renderSidebar, type SidebarSectionId } from './sidebar.js';
 import { formatLocalTimestamp } from './time.js';
 import { StructuredTreeRenderer } from './tree.js';
 import type {
@@ -22,11 +23,15 @@ import type {
 class DebugApp {
   private readonly statusPill = this.requireEl('status-pill');
   private readonly lastUpdatedEl = this.requireEl('last-updated');
+  private readonly sidebarEl = this.requireEl('nav-sidebar');
   private readonly refreshBtn = this.requireEl('refresh-btn') as HTMLButtonElement;
   private readonly chatForm = this.requireEl('chat-form') as HTMLFormElement;
   private readonly chatInput = this.requireEl('chat-input') as HTMLTextAreaElement;
   private readonly sendBtn = this.requireEl('send-btn') as HTMLButtonElement;
   private readonly composerStatusEl = this.requireEl('composer-status');
+  private readonly composerProviderPillEl = this.requireEl('composer-provider-pill');
+  private readonly composerModelPillEl = this.requireEl('composer-model-pill');
+  private readonly composerRichnessPillEl = this.requireEl('composer-richness-pill');
   private readonly composerContextEl = this.requireEl('composer-context');
   private readonly messagesEl = this.requireEl('chat-messages');
   private readonly chatHeaderEl = this.requireEl('chat-header');
@@ -43,6 +48,9 @@ class DebugApp {
     this.requireEl('binding-context-size'),
     this.requireEl('binding-project-path'),
     this.composerStatusEl,
+    this.composerProviderPillEl,
+    this.composerModelPillEl,
+    this.composerRichnessPillEl,
     this.composerContextEl,
     this.tree,
   );
@@ -54,6 +62,7 @@ class DebugApp {
   private pendingTimer: number | null = null;
   private watchSource: EventSource | null = null;
   private openedChatDetailKey: string | null = null;
+  private openedRailSectionId: SidebarSectionId | null = null;
   private state: RefreshState = {
     binding: null,
     projection: {},
@@ -93,6 +102,7 @@ class DebugApp {
       });
     });
     this.messagesEl.addEventListener('click', (event: Event) => this.onMessageClick(event));
+    this.sidebarEl.addEventListener('click', (event: Event) => this.onSidebarClick(event));
     this.chatHeaderEl.addEventListener('click', (event: Event) => this.onInspectorClick(event));
     this.requireEl('inspector-content').addEventListener('click', (event: Event) => this.onInspectorClick(event));
     document.addEventListener('keydown', (event: KeyboardEvent) => this.onKeyDown(event));
@@ -257,6 +267,7 @@ class DebugApp {
 
   private render(): void {
     this.syncRichnessButtons();
+    renderSidebar(this.sidebarEl, this.state, this.tree, this.openedRailSectionId);
     this.chatPane.render(
       this.state.binding,
       this.state.messages,
@@ -299,23 +310,10 @@ class DebugApp {
     const target = event.target;
     if (!(target instanceof HTMLElement)) return;
 
-    const closeChatDetail = target.closest<HTMLElement>('[data-close-chat-detail]');
-    if (closeChatDetail) {
-      this.openedChatDetailKey = null;
-      this.render();
-      return;
-    }
-
-    const chatDetailBackdrop = target.closest<HTMLElement>('[data-chat-detail-backdrop]');
-    if (chatDetailBackdrop && target === chatDetailBackdrop) {
-      this.openedChatDetailKey = null;
-      this.render();
-      return;
-    }
-
     const detailTrigger = target.closest<HTMLElement>('[data-open-chat-detail]');
     if (detailTrigger) {
-      this.openedChatDetailKey = detailTrigger.dataset.openChatDetail?.trim() ?? null;
+      const detailKey = detailTrigger.dataset.openChatDetail?.trim() ?? null;
+      this.openedChatDetailKey = this.openedChatDetailKey === detailKey ? null : detailKey;
       const parentMessage = detailTrigger.closest<HTMLElement>('.message[data-operation-id]');
       const operationId = parentMessage?.dataset.operationId?.trim();
       if (operationId) this.state.selectedOperationId = operationId;
@@ -331,44 +329,53 @@ class DebugApp {
     this.render();
   }
 
+  private onSidebarClick(event: Event): void {
+    const target = event.target;
+    if (!(target instanceof HTMLElement)) return;
+
+    const closeButton = target.closest<HTMLElement>('[data-close-rail-detail]');
+    if (closeButton) {
+      this.openedRailSectionId = null;
+      this.render();
+      return;
+    }
+
+    const backdrop = target.closest<HTMLElement>('[data-close-rail-backdrop]');
+    if (backdrop && target === backdrop) {
+      this.openedRailSectionId = null;
+      this.render();
+      return;
+    }
+
+    const trigger = target.closest<HTMLElement>('[data-open-rail-section]');
+    const sectionId = trigger?.dataset.openRailSection;
+    if (
+      sectionId !== 'project'
+      && sectionId !== 'session'
+      && sectionId !== 'skills'
+      && sectionId !== 'plugins'
+    ) return;
+
+    this.openedRailSectionId = sectionId;
+    this.render();
+  }
+
   private onInspectorClick(event: Event): void {
     const target = event.target;
     if (!(target instanceof HTMLElement)) return;
 
-    const close = target.closest<HTMLElement>('[data-close-modal]');
-    if (close) {
+    const closeButton = target.closest<HTMLElement>('[data-close-card-detail]');
+    if (closeButton) {
       this.state.openedCard = null;
       this.state.openedSectionKey = null;
       this.render();
       return;
     }
 
-    const closeSection = target.closest<HTMLElement>('[data-close-section-detail]');
-    if (closeSection) {
-      this.state.openedSectionKey = null;
-      this.render();
-      return;
-    }
-
-    const sectionBackdrop = target.closest<HTMLElement>('[data-section-backdrop]');
-    if (sectionBackdrop && target === sectionBackdrop) {
-      this.state.openedSectionKey = null;
-      this.render();
-      return;
-    }
-
-    const backdrop = target.closest<HTMLElement>('[data-modal-backdrop]');
+    const backdrop = target.closest<HTMLElement>('[data-close-card-backdrop]');
     if (backdrop && target === backdrop) {
       this.state.openedCard = null;
       this.state.openedSectionKey = null;
-      this.render();
-      return;
-    }
-
-    const section = target.closest<HTMLElement>('[data-open-section-detail]');
-    const sectionKey = section?.dataset.openSectionDetail?.trim();
-    if (sectionKey) {
-      this.state.openedSectionKey = sectionKey;
       this.render();
       return;
     }
@@ -382,7 +389,7 @@ class DebugApp {
       && cardId !== 'operation'
     ) return;
 
-    this.state.openedCard = cardId as DashboardCardId;
+    this.state.openedCard = this.state.openedCard === cardId ? null : cardId as DashboardCardId;
     this.state.openedSectionKey = null;
     this.render();
   }
@@ -391,6 +398,11 @@ class DebugApp {
     if (event.key !== 'Escape') return;
     if (this.openedChatDetailKey) {
       this.openedChatDetailKey = null;
+      this.render();
+      return;
+    }
+    if (this.openedRailSectionId) {
+      this.openedRailSectionId = null;
       this.render();
       return;
     }

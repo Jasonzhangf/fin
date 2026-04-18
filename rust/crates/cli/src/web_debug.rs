@@ -1,16 +1,19 @@
 use crate::{
     CliError,
+    channel_peer::{ensure_builtin_qqbot_binding, ensure_builtin_qqbot_peer},
     config::default_provider_facade,
     demo::{DemoRequest, demo_identity, run_demo_request, sanitize_id_fragment},
+    reminder_scheduler::inject_due_reminders,
     runtime_home::{
         persist_runtime_demo, read_last_run_value, read_recent_digests,
         read_recent_reasoning_views, read_recent_tool_records, read_session_messages,
         resolved_runtime_home,
     },
+    session_commands::try_handle_local_command,
     status_probe::build_status_probe_response,
     time::local_timestamp_now,
-    turn_ids::next_turn_index,
     transcript::scope_from_session_id,
+    turn_ids::next_turn_index,
 };
 use fin_config::SystemConfig;
 use fin_debug_server::{
@@ -73,9 +76,17 @@ impl CliDebugActionHandler {
             return Err(CliError::Usage);
         }
 
-        let existing_binding = self.read_binding_internal(runtime_home)?;
+        let mut existing_binding = self.read_binding_internal(runtime_home)?;
+        let _ = ensure_builtin_qqbot_binding(runtime_home, existing_binding.session_id.as_deref())?;
+        let _ = inject_due_reminders(runtime_home, &existing_binding)?;
+        existing_binding = self.read_binding_internal(runtime_home)?;
         if request.is_status_probe() {
             return build_status_probe_response(runtime_home, existing_binding, &request);
+        }
+        if let Some(response) =
+            try_handle_local_command(runtime_home, &self.system, &request, &existing_binding)?
+        {
+            return Ok(response);
         }
         let default_identity = demo_identity(Some("web-debug"));
         let last_run = read_last_run_value(runtime_home).ok();
@@ -131,15 +142,12 @@ impl CliDebugActionHandler {
         let scope = scope_from_session_id(&session_id);
         let turn_index = next_turn_index(
             last_run.as_ref(),
-            existing_binding
-                .session_id
-                .as_deref()
-                .and_then(|_| {
-                    last_run
-                        .as_ref()
-                        .and_then(|value| value.get("operation_id"))
-                        .and_then(serde_json::Value::as_str)
-                }),
+            existing_binding.session_id.as_deref().and_then(|_| {
+                last_run
+                    .as_ref()
+                    .and_then(|value| value.get("operation_id"))
+                    .and_then(serde_json::Value::as_str)
+            }),
             &observed_ops,
         );
 
@@ -212,6 +220,7 @@ pub(crate) fn serve_web_debug(
     runtime_home: PathBuf,
     bind_addr: &str,
 ) -> Result<(), CliError> {
+    ensure_builtin_qqbot_peer(&runtime_home)?;
     let handler = CliDebugActionHandler::new(user_toml, system)?;
     serve_debug_mvp_with_handler(&runtime_home, bind_addr, &handler)?;
     Ok(())
@@ -228,9 +237,7 @@ pub(crate) fn web_debug_runtime_home(
 mod tests {
     use super::*;
     use crate::{
-        config::map_system_config,
-        fs_utils::write_file,
-        runtime_home::ensure_runtime_home_layout,
+        config::map_system_config, fs_utils::write_file, runtime_home::ensure_runtime_home_layout,
     };
     use fin_contracts::{ControlFeedback, ExecutionNote, ProgressBlock};
     use std::{
@@ -372,9 +379,16 @@ api_key_env = "OPENAI_API_KEY"
         assert_eq!(response.events_count, 0);
         assert!(response.answer.contains("status probe (live)"));
         assert!(response.answer.contains("phase=running"));
-        assert!(response.answer.contains("currently applying runtime changes"));
+        assert!(
+            response
+                .answer
+                .contains("currently applying runtime changes")
+        );
         assert_eq!(
-            response.control_feedback.as_ref().map(|value| value.continuity_confidence),
+            response
+                .control_feedback
+                .as_ref()
+                .map(|value| value.continuity_confidence),
             Some(93)
         );
         assert_eq!(
@@ -384,6 +398,92 @@ api_key_env = "OPENAI_API_KEY"
         assert_eq!(
             fs::read_to_string(session_dir.join("digests/recent_digests.json")).expect("after"),
             before_digests
+        );
+    }
+
+    #[test]
+    fn slash_new_creates_and_binds_new_session() {
+        let home = temp_runtime_home();
+        ensure_runtime_home_layout(&home).expect("runtime home should init");
+        let system = map_system_config(&sample_user_toml()).expect("system config");
+        let handler =
+            CliDebugActionHandler::new(sample_user_toml(), system).expect("handler should build");
+
+        let response = handler
+            .send_message_internal(
+                &home,
+                ChatSendRequest {
+                    message: "/new".into(),
+                    input_kind: None,
+                },
+            )
+            .expect("new command should work");
+        assert_eq!(response.response_kind, "system_notice");
+        let session_id = response.binding.session_id.expect("session");
+        let task_id = response.binding.task_id.expect("task");
+        assert!(session_id.starts_with("session-"));
+        assert!(task_id.starts_with("task-"));
+        let last_run = read_last_run_value(&home).expect("last run");
+        assert_eq!(
+            last_run
+                .get("session_id")
+                .and_then(serde_json::Value::as_str),
+            Some(session_id.as_str())
+        );
+    }
+
+    #[test]
+    fn slash_compact_rebuilds_current_context_without_provider_call() {
+        let home = temp_runtime_home();
+        ensure_runtime_home_layout(&home).expect("runtime home should init");
+        let system = map_system_config(&sample_user_toml()).expect("system config");
+        let handler =
+            CliDebugActionHandler::new(sample_user_toml(), system).expect("handler should build");
+        let session_dir = home.join("sessions/2026/04/session-compact");
+        fs::create_dir_all(session_dir.join("conversation")).expect("conversation dir");
+        fs::create_dir_all(session_dir.join("digests")).expect("digests dir");
+        fs::create_dir_all(session_dir.join("context")).expect("context dir");
+        fs::create_dir_all(session_dir.join("reasoning")).expect("reasoning dir");
+        fs::create_dir_all(session_dir.join("tools")).expect("tools dir");
+        write_file(
+            &session_dir.join("conversation/messages.json"),
+            br#"[{"message_id":"user-1","role":"user","content":"keep context","created_at":"2026-04-18T08:10:00+08:00","session_id":"session-compact","task_id":"task-compact"}]"#,
+        )
+        .expect("messages");
+        write_file(&session_dir.join("digests/recent_digests.json"), b"[]").expect("digests");
+        write_file(&session_dir.join("context/recent_contexts.json"), b"[]").expect("contexts");
+        write_file(
+            &session_dir.join("reasoning/recent_reasoning_views.json"),
+            b"[]",
+        )
+        .expect("reasoning");
+        write_file(&session_dir.join("tools/recent_tool_records.json"), b"[]").expect("tools");
+        write_file(
+            &home.join("runtime/current/last_run.json"),
+            br#"{
+  "session_id":"session-compact",
+  "task_id":"task-compact",
+  "session_messages_path":"sessions/2026/04/session-compact/conversation/messages.json",
+  "session_recent_contexts_path":"sessions/2026/04/session-compact/context/recent_contexts.json",
+  "session_recent_digests_path":"sessions/2026/04/session-compact/digests/recent_digests.json"
+}"#,
+        )
+        .expect("last_run");
+
+        let response = handler
+            .send_message_internal(
+                &home,
+                ChatSendRequest {
+                    message: "/compact".into(),
+                    input_kind: None,
+                },
+            )
+            .expect("compact command should work");
+        assert_eq!(response.response_kind, "system_notice");
+        assert!(home.join("runtime/current/current_context.json").exists());
+        assert!(
+            home.join("runtime/current/current_rebuild_index.json")
+                .exists()
         );
     }
 }

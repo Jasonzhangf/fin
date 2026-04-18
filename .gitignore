@@ -3,6 +3,8 @@
 .DS_Store
 .idea/
 .vscode/
+.beads/*
+!.beads/issues.jsonl
 node_modules/
 dist/
 coverage/

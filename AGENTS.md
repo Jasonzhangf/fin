@@ -68,6 +68,12 @@
 38. conversation richness、reasoning/tool 渲染、interrupt / parallel 边界：`docs/architecture/28-conversation-richness-and-interrupt-model.md`
 39. reasoning view contract：`docs/contracts/reasoning-view-contract.md`
 40. tool execution semantic render contract：`docs/contracts/tool-execution-record-contract.md`
+41. 多轮历史记录、Turn/Closure、Digest family、Context rebuild：`docs/architecture/29-multi-turn-history-model.md`
+42. turn / step ledger / digest family / context rebuild index contracts：`docs/contracts/turn-record-contract.md`、`docs/contracts/step-ledger-contract.md`、`docs/contracts/digest-family-contract.md`、`docs/contracts/context-rebuild-index-contract.md`
+43. system/project/daemon 与 peer 分类：`docs/architecture/30-peer-taxonomy-and-supervision.md`
+44. peer plane / execution plane / presence / binding：`docs/architecture/31-peer-plane-and-binding-model.md`
+45. peer-aware 本地推理骨架与 local-only placeholder：`docs/architecture/32-peer-aware-local-reasoning-skeleton.md`
+46. peer routing control skeleton 与 peer observation events：`docs/architecture/33-peer-routing-control-and-observation-events.md`
 
 ## mandatory-flow
 1. 先读本文件。

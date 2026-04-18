@@ -1,6 +1,11 @@
 use crate::{ClosureRun, RuntimeError};
-use fin_contracts::{ClosureTraceRecord, ContextSnapshotRecord, DigestRecord, ReasoningViewRecord, ToolExecutionRecord};
+use fin_contracts::EventEnvelope;
+use fin_contracts::{
+    ClosureTraceRecord, ContextSnapshotRecord, DigestRecord, ReasoningViewRecord,
+    ToolExecutionRecord,
+};
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 use serde_json::json;
 use std::{
     fs,
@@ -14,6 +19,28 @@ const RECENT_REASONING_LIMIT: usize = 16;
 const RECENT_TOOL_RECORD_LIMIT: usize = 32;
 const RECENT_CLOSURE_LIMIT: usize = 16;
 const SESSION_MESSAGE_LIMIT: usize = 128;
+const REMINDER_PENDING_LIMIT: usize = 128;
+
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+struct PendingReminderRecord {
+    reminder_id: String,
+    #[serde(default)]
+    session_id: Option<String>,
+    #[serde(default)]
+    task_id: Option<String>,
+    #[serde(default)]
+    operation_id: Option<String>,
+    #[serde(default)]
+    trace_id: Option<String>,
+    wait_minutes: u64,
+    reminder: String,
+    wake_role: String,
+    scheduled_at: String,
+    #[serde(default)]
+    status: String,
+    #[serde(default)]
+    fired_at: Option<String>,
+}
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SessionMessageRecord {
@@ -86,7 +113,10 @@ impl SessionMaterializer {
 
         write_json_lines(&session_dir.join("events/stream.jsonl"), &run.events)?;
         write_json_file(&session_dir.join("progress/latest.json"), &run.progress)?;
-        write_json_file(&session_dir.join("control/latest.json"), &run.control_feedback)?;
+        write_json_file(
+            &session_dir.join("control/latest.json"),
+            &run.control_feedback,
+        )?;
         write_json_file(&session_dir.join("notes/latest.json"), &run.note)?;
         write_json_file(&session_dir.join("digests/latest.json"), &run.digest)?;
         persist_recent_digests(&session_dir, &run.digest)?;
@@ -94,6 +124,7 @@ impl SessionMaterializer {
         persist_reasoning_views(runtime_home, &session_dir, &run.reasoning_view)?;
         persist_tool_records(runtime_home, &session_dir, &run.tool_records)?;
         persist_closure_traces(runtime_home, &session_dir, &run.closure_trace)?;
+        persist_scheduled_reminders(runtime_home, &run.events)?;
         write_json_file(
             &runtime_home.join("runtime/current/current_control_feedback.json"),
             &run.control_feedback,
@@ -269,6 +300,95 @@ fn persist_session_messages(session_dir: &Path, run: &ClosureRun) -> Result<(), 
     });
     trim_head(&mut messages, SESSION_MESSAGE_LIMIT);
     write_json_file(&path, &messages)
+}
+
+fn persist_scheduled_reminders(
+    runtime_home: &Path,
+    events: &[EventEnvelope<Value>],
+) -> Result<(), RuntimeError> {
+    let reminders = events
+        .iter()
+        .filter(|event| event.event_type == "system.reminder_scheduled")
+        .filter_map(|event| parse_scheduled_reminder_payload(&event.payload))
+        .collect::<Vec<_>>();
+    if reminders.is_empty() {
+        return Ok(());
+    }
+    let reminders_dir = runtime_home.join("runtime/reminders");
+    create_dir_all(&reminders_dir)?;
+    let pending_path = reminders_dir.join("pending.json");
+    let mut pending = read_json_or_empty::<PendingReminderRecord>(&pending_path)?;
+    let mut changed = false;
+    for reminder in reminders {
+        if pending
+            .iter()
+            .any(|item| item.reminder_id == reminder.reminder_id)
+        {
+            continue;
+        }
+        pending.push(reminder);
+        changed = true;
+    }
+    if !changed {
+        return Ok(());
+    }
+    trim_head(&mut pending, REMINDER_PENDING_LIMIT);
+    write_json_file(&pending_path, &pending)?;
+    write_json_file(
+        &runtime_home.join("runtime/current/current_reminders.json"),
+        &pending,
+    )?;
+    Ok(())
+}
+
+fn parse_scheduled_reminder_payload(payload: &Value) -> Option<PendingReminderRecord> {
+    let object = payload.as_object()?;
+    let reminder_id = object.get("reminder_id")?.as_str()?.trim().to_string();
+    if reminder_id.is_empty() {
+        return None;
+    }
+    let reminder = object.get("reminder")?.as_str()?.trim().to_string();
+    if reminder.is_empty() {
+        return None;
+    }
+    let wait_minutes = object.get("wait_minutes")?.as_u64()?;
+    if wait_minutes == 0 {
+        return None;
+    }
+    let scheduled_at = object.get("scheduled_at")?.as_str()?.trim().to_string();
+    if scheduled_at.is_empty() {
+        return None;
+    }
+    Some(PendingReminderRecord {
+        reminder_id,
+        session_id: object
+            .get("session_id")
+            .and_then(Value::as_str)
+            .map(str::to_string),
+        task_id: object
+            .get("task_id")
+            .and_then(Value::as_str)
+            .map(str::to_string),
+        operation_id: object
+            .get("operation_id")
+            .and_then(Value::as_str)
+            .map(str::to_string),
+        trace_id: object
+            .get("trace_id")
+            .and_then(Value::as_str)
+            .map(str::to_string),
+        wait_minutes,
+        reminder,
+        wake_role: object
+            .get("wake_role")
+            .and_then(Value::as_str)
+            .filter(|value| !value.trim().is_empty())
+            .unwrap_or("system")
+            .to_string(),
+        scheduled_at,
+        status: "pending".into(),
+        fired_at: None,
+    })
 }
 
 fn trim_head<T>(items: &mut Vec<T>, limit: usize) {

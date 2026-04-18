@@ -19,7 +19,22 @@
     </header>
 
     <main class="app-shell">
-      <section class="chat-interface">
+      <aside class="nav-shell">
+        <div class="nav-shell-header">
+          <div>
+            <div class="section-kicker">Workspace Rail</div>
+            <h2>Project / Session</h2>
+            <p class="muted">Project settings, session truth, skills, plugins, and runtime facts.</p>
+          </div>
+        </div>
+        <div id="nav-sidebar" class="nav-sidebar">
+          <div class="empty-state compact">
+            <div class="empty-text">Loading workspace facts…</div>
+          </div>
+        </div>
+      </aside>
+
+      <section class="chat-interface conversation-shell">
         <div id="chat-header" class="chat-header">
           <div class="header-title">
             <span class="title-text">Conversation</span>
@@ -48,12 +63,20 @@
           </div>
         </div>
 
-        <form id="chat-form" class="chat-composer">
+        <form id="chat-form" class="chat-composer floating-composer">
           <label class="composer-label" for="chat-input">Send message into current project/session</label>
           <textarea id="chat-input" class="chat-input" rows="4" placeholder="Type a message for the current bound session..."></textarea>
-          <div class="composer-actions">
-            <span id="composer-status" class="muted">Bound to current session context.</span>
-            <button id="send-btn" type="submit" class="control-btn">Send</button>
+          <div class="composer-toolbar">
+            <div class="composer-toolbar-left">
+              <button type="button" class="composer-icon-btn" aria-label="Add context">+</button>
+              <span id="composer-status" class="composer-toolbar-pill">Bound to current session context.</span>
+            </div>
+            <div class="composer-toolbar-right">
+              <span id="composer-provider-pill" class="composer-toolbar-pill">provider: -</span>
+              <span id="composer-model-pill" class="composer-toolbar-pill">model: -</span>
+              <span id="composer-richness-pill" class="composer-toolbar-pill">richness: rich</span>
+              <button id="send-btn" type="submit" class="control-btn composer-send-btn">Send</button>
+            </div>
           </div>
           <div id="composer-context" class="composer-context-bar" aria-live="polite"></div>
         </form>

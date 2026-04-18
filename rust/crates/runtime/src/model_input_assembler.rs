@@ -1,5 +1,5 @@
 use crate::{
-    context_blocks::{render_project_lines, render_role_prompt_lines},
+    context_blocks::{render_peer_lines, render_project_lines, render_role_prompt_lines},
     prompt_assembly::{exact_control_feedback_schema_example, mandatory_response_format_lines},
 };
 use fin_contracts::MinimalContextView;
@@ -37,6 +37,14 @@ impl ModelInputAssembler {
             }
         }
         if let Some(tools) = &context.tools {
+            let model_tools = tools
+                .model_tools
+                .iter()
+                .map(|tool| format!("{} ({})", tool.tool_name, tool.summary))
+                .collect::<Vec<_>>();
+            if !model_tools.is_empty() {
+                sections.push(format!("Model tools:\n- {}", model_tools.join("\n- ")));
+            }
             let framework_tools = tools
                 .framework_tools
                 .iter()
@@ -85,6 +93,12 @@ impl ModelInputAssembler {
             let lines = render_project_lines(project);
             if !lines.is_empty() {
                 sections.push(format!("Project scope:\n{}", lines.join("\n")));
+            }
+        }
+        if let Some(peer) = &context.peer {
+            let lines = render_peer_lines(peer);
+            if !lines.is_empty() {
+                sections.push(format!("Peer scope:\n{}", lines.join("\n")));
             }
         }
         sections.push(format!("Current user input:\n{input}"));

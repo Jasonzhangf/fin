@@ -1,7 +1,8 @@
 use crate::{
     WorkerRuntime,
-    context_blocks::{build_project_block, build_tool_catalog_block},
+    context_blocks::{build_peer_block, build_project_block},
     prompt_assembly::build_role_prompt_block,
+    tool_catalog::build_tool_catalog_block,
 };
 use fin_contracts::{
     ContextControlBlock, CurrentInputBlock, DigestRecord, EntityRefs, HistoryBlock,
@@ -128,6 +129,7 @@ impl ContextViewBuilder {
                 artifact_candidates,
             }),
             project: Some(build_project_block(&input)),
+            peer: Some(build_peer_block(worker, &input)),
             current_input: Some(CurrentInputBlock {
                 input: input.input,
                 source: input.source,

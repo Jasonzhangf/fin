@@ -5,7 +5,10 @@ pub(crate) fn next_turn_index(
     operation_id: Option<&str>,
     observed_ops: &[String],
 ) -> u64 {
-    let observed_max = observed_ops.iter().filter_map(|op| parse_turn_index(op)).max();
+    let observed_max = observed_ops
+        .iter()
+        .filter_map(|op| parse_turn_index(op))
+        .max();
     last_run
         .and_then(|value| value.get("turn_index"))
         .and_then(Value::as_u64)
@@ -35,7 +38,10 @@ mod tests {
     #[test]
     fn next_turn_index_prefers_last_run_counter() {
         let last_run = json!({"turn_index": 9_u64});
-        assert_eq!(next_turn_index(Some(&last_run), Some("op-demo-0008"), &[]), 10);
+        assert_eq!(
+            next_turn_index(Some(&last_run), Some("op-demo-0008"), &[]),
+            10
+        );
     }
 
     #[test]

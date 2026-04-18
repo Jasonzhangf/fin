@@ -1,36 +1,48 @@
 use fin_contracts::{
     AgentId, ClosureTraceRecord, ContextSnapshotRecord, ControlFeedback, DigestRecord, EntityRefs,
-    EventEnvelope, ExecutionNote,
-    InferenceOperationPayload, MinimalContextView, OperationEnvelope, ProgressBlock,
-    ProviderEventPayload, ProviderPath, ProviderStrategy, ReasoningViewRecord, RoleProfileRef,
-    SanitizedProviderDebug, ToolExecutionRecord, ToolSnapshot,
+    EventEnvelope, ExecutionNote, InferenceOperationPayload, MinimalContextView, OperationEnvelope,
+    ProgressBlock, ProviderEventPayload, ProviderPath, ProviderStrategy, ReasoningViewRecord,
+    RoleProfileRef, SanitizedProviderDebug, ToolExecutionRecord, ToolSnapshot,
 };
 use fin_provider::{InferenceProvider, PreparedRequest, ProviderRequest, ProviderResponse};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use thiserror::Error;
+#[cfg(test)]
+mod assembler_tests;
 mod context_blocks;
 mod context_view;
+#[cfg(test)]
+mod context_view_tests;
 mod control_feedback;
 mod model_input_assembler;
 mod model_output;
-mod prompt_assembly;
-mod session_materializer;
-mod skill_loader;
-mod trace_records;
-#[cfg(test)]
-mod assembler_tests;
-#[cfg(test)]
-mod context_view_tests;
 #[cfg(test)]
 mod model_output_tests;
+mod prompt_assembly;
 #[cfg(test)]
 mod prompt_tests;
+mod session_materializer;
+mod skill_loader;
+mod tool_catalog;
+mod tool_dispatch;
+mod tool_dispatch_control;
+mod tool_dispatch_extended;
+mod tool_dispatch_extended_collab;
+mod tool_dispatch_extended_collab_coordination;
+mod tool_dispatch_extended_collab_mailbox;
+mod tool_dispatch_extended_exec;
+mod tool_dispatch_peer;
+#[cfg(test)]
+mod tool_dispatch_tests;
+mod trace_records;
 pub use context_view::{ContextAssemblyInput, ContextViewBuilder};
 pub use control_feedback::ControlFeedbackBuilder;
 pub use model_input_assembler::ModelInputAssembler;
 pub use model_output::{ModelOutputParser, ParsedModelOutput};
-pub use session_materializer::{SessionMaterializationReceipt, SessionMaterializer, SessionMessageRecord};
+pub use session_materializer::{
+    SessionMaterializationReceipt, SessionMaterializer, SessionMessageRecord,
+};
 #[derive(Debug, Error)]
 pub enum RuntimeError {
     #[error(transparent)]
@@ -189,9 +201,9 @@ impl M1Runtime {
         operation.validate()?;
         operation.payload.validate()?;
         let refs = operation.refs.clone();
-        let rendered_input =
-            ModelInputAssembler::default().assemble(&operation.payload.input, &operation.payload.context);
-        let prepared_request = provider.prepare_request(&ProviderRequest {
+        let rendered_input = ModelInputAssembler::default()
+            .assemble(&operation.payload.input, &operation.payload.context);
+        let mut prepared_request = provider.prepare_request(&ProviderRequest {
             input: operation.payload.input.clone(),
             rendered_input: Some(rendered_input),
             override_model: Some(
@@ -203,19 +215,27 @@ impl M1Runtime {
                     .clone(),
             ),
         });
-        let provider_response = provider.execute_prepared(&prepared_request)?;
-        let provider_debug = SanitizedProviderDebug {
+        let mut provider_response = provider.execute_prepared(&prepared_request)?;
+        let mut provider_debug = SanitizedProviderDebug {
             user_agent: prepared_request.user_agent.clone(),
             request_headers: prepared_request.sanitized_headers.clone(),
         };
-        let parsed_output =
-            ModelOutputParser::default().parse(&operation.payload, &prepared_request, &provider_response);
-        let assistant_response_text = parsed_output.user_response.clone();
-        let fallback_feedback = ControlFeedbackBuilder.build(
+        let mut parsed_output = ModelOutputParser::default().parse(
             &operation.payload,
             &prepared_request,
             &provider_response,
         );
+        let mut dispatched_tools = tool_dispatch::execute_model_tools(
+            &operation.operation_id,
+            &operation.trace_id,
+            &refs,
+            &operation.submitted_at,
+            &operation.payload.context,
+            &parsed_output.tool_calls,
+        );
+        let mut assistant_response_text = parsed_output.user_response.clone();
+        let fallback_feedback =
+            ControlFeedbackBuilder.build(&operation.payload, &prepared_request, &provider_response);
         let mut control_feedback = ControlFeedbackBuilder::default()
             .merge_with_fallback(parsed_output.control_feedback.clone(), fallback_feedback);
         ControlFeedbackBuilder::default().rewrite_runtime_heuristic_candidates(
@@ -224,6 +244,8 @@ impl M1Runtime {
             &provider_response,
             assistant_response_text.as_str(),
         );
+        let mut round_count = 1usize;
+        let max_auto_tool_rounds = 6usize;
         let context_snapshot = ContextSnapshotRecord {
             operation_id: operation.operation_id.clone(),
             trace_id: operation.trace_id.clone(),
@@ -238,26 +260,7 @@ impl M1Runtime {
             captured_at: operation.submitted_at.clone(),
         };
 
-        let progress = ProgressBlock {
-            progress_id: format!("progress-{}", operation.operation_id),
-            refs: refs.clone(),
-            phase: "inference_completed".into(),
-            blocker: None,
-            next_step: Some("render_projection".into()),
-            health_hint: Some("healthy".into()),
-            tool_snapshots: vec![ToolSnapshot {
-                tool_name: "provider.call".into(),
-                status: "completed".into(),
-                summary: format!(
-                    "{} -> {} @ {} => {}",
-                    prepared_request.provider_name,
-                    prepared_request.model,
-                    prepared_request.endpoint,
-                    assistant_response_text.as_str()
-                ),
-            }],
-        };
-        let tool_records = vec![trace_records::provider_tool_record(
+        let mut tool_records = vec![trace_records::provider_tool_record(
             &operation.operation_id,
             &operation.trace_id,
             &refs,
@@ -266,23 +269,166 @@ impl M1Runtime {
             assistant_response_text.as_str(),
             &operation.submitted_at,
         )];
+        tool_records.extend(dispatched_tools.tool_records.clone());
+        while !dispatched_tools.stop_requested
+            && !parsed_output.tool_calls.is_empty()
+            && round_count < max_auto_tool_rounds
+        {
+            let followup_input = build_followup_input(
+                operation.payload.input.as_str(),
+                assistant_response_text.as_str(),
+                &tool_records,
+            );
+            let followup_rendered = ModelInputAssembler::default()
+                .assemble(&followup_input, &operation.payload.context);
+            let followup_prepared = provider.prepare_request(&ProviderRequest {
+                input: followup_input,
+                rendered_input: Some(followup_rendered),
+                override_model: Some(
+                    operation
+                        .payload
+                        .provider_path
+                        .primary_target()
+                        .model
+                        .clone(),
+                ),
+            });
+            let followup_response = provider.execute_prepared(&followup_prepared)?;
+            let followup_debug = SanitizedProviderDebug {
+                user_agent: followup_prepared.user_agent.clone(),
+                request_headers: followup_prepared.sanitized_headers.clone(),
+            };
+            let followup_parsed = ModelOutputParser::default().parse(
+                &operation.payload,
+                &followup_prepared,
+                &followup_response,
+            );
+            let followup_dispatched = tool_dispatch::execute_model_tools(
+                &operation.operation_id,
+                &operation.trace_id,
+                &refs,
+                &operation.submitted_at,
+                &operation.payload.context,
+                &followup_parsed.tool_calls,
+            );
+            let followup_assistant = followup_parsed.user_response.clone();
+            let followup_fallback = ControlFeedbackBuilder.build(
+                &operation.payload,
+                &followup_prepared,
+                &followup_response,
+            );
+            let mut followup_feedback = ControlFeedbackBuilder::default()
+                .merge_with_fallback(followup_parsed.control_feedback.clone(), followup_fallback);
+            ControlFeedbackBuilder::default().rewrite_runtime_heuristic_candidates(
+                &mut followup_feedback,
+                &followup_prepared,
+                &followup_response,
+                followup_assistant.as_str(),
+            );
+            tool_records.push(trace_records::provider_tool_record(
+                &operation.operation_id,
+                &operation.trace_id,
+                &refs,
+                &followup_prepared,
+                &followup_response,
+                followup_assistant.as_str(),
+                &operation.submitted_at,
+            ));
+            tool_records.extend(followup_dispatched.tool_records.clone());
+            dispatched_tools.events.extend(followup_dispatched.events);
+            dispatched_tools
+                .note_hints
+                .extend(followup_dispatched.note_hints);
+            dispatched_tools.reminder_scheduled |= followup_dispatched.reminder_scheduled;
+            dispatched_tools.stop_requested |= followup_dispatched.stop_requested;
+            prepared_request = followup_prepared;
+            provider_response = followup_response;
+            provider_debug = followup_debug;
+            parsed_output = followup_parsed;
+            assistant_response_text = followup_assistant;
+            control_feedback = followup_feedback;
+            round_count += 1;
+        }
+        if !dispatched_tools.stop_requested
+            && !parsed_output.tool_calls.is_empty()
+            && round_count >= max_auto_tool_rounds
+        {
+            dispatched_tools.note_hints.push(format!(
+                "auto tool loop stopped at round limit ({max_auto_tool_rounds})"
+            ));
+            dispatched_tools.events.push((
+                "reasoning.auto_tool_roundtrip_limit_reached".into(),
+                serde_json::json!({
+                    "round_count": round_count,
+                    "max_rounds": max_auto_tool_rounds,
+                    "remaining_tool_calls": parsed_output.tool_calls.len(),
+                }),
+            ));
+        }
+        let closure_stopped = dispatched_tools.stop_requested;
+
+        let progress = ProgressBlock {
+            progress_id: format!("progress-{}", operation.operation_id),
+            refs: refs.clone(),
+            phase: "inference_completed".into(),
+            blocker: None,
+            next_step: Some(if dispatched_tools.reminder_scheduled {
+                "wait_for_scheduled_reminder".into()
+            } else if !closure_stopped {
+                "continue_reasoning".into()
+            } else {
+                "render_projection".into()
+            }),
+            health_hint: Some("healthy".into()),
+            tool_snapshots: tool_records
+                .iter()
+                .map(|record| ToolSnapshot {
+                    tool_name: record.tool_name.clone(),
+                    status: record.status.clone(),
+                    summary: record
+                        .output_summary
+                        .clone()
+                        .or_else(|| record.input_summary.clone())
+                        .unwrap_or_else(|| record.purpose.clone()),
+                })
+                .collect(),
+        };
 
         let note = ExecutionNote {
             note_id: format!("note-{}", operation.operation_id),
             refs: refs.clone(),
-            summary: format!(
-                "provider {} returned: {}",
-                prepared_request.provider_name,
-                assistant_response_text.as_str()
-            ),
-            decision: Some(if control_feedback.is_continuation {
+            summary: if dispatched_tools.note_hints.is_empty() {
+                format!(
+                    "provider {} returned: {}",
+                    prepared_request.provider_name,
+                    assistant_response_text.as_str()
+                )
+            } else {
+                format!(
+                    "provider {} returned: {}; {}",
+                    prepared_request.provider_name,
+                    assistant_response_text.as_str(),
+                    dispatched_tools.note_hints.join(" | ")
+                )
+            },
+            decision: Some(if dispatched_tools.reminder_scheduled {
+                "wait_for_system_self_reminder".into()
+            } else if !closure_stopped {
+                "continue_reasoning".into()
+            } else if control_feedback.is_continuation {
                 "continue_current_task".into()
             } else {
                 "observe_topic_continuity".into()
             }),
             lesson: None,
             blocker: None,
-            next_step: Some("render_projection".into()),
+            next_step: Some(if dispatched_tools.reminder_scheduled {
+                "wait_for_scheduled_reminder".into()
+            } else if !closure_stopped {
+                "continue_reasoning".into()
+            } else {
+                "render_projection".into()
+            }),
             control_feedback: Some(control_feedback.clone()),
             created_at: operation.submitted_at.clone(),
         };
@@ -301,7 +447,12 @@ impl M1Runtime {
             closure_id: format!("closure-{}", operation.operation_id),
             refs: refs.clone(),
             summary: format!(
-                "closure finished with model {} and answer {}",
+                "closure {} with model {} and answer {}",
+                if closure_stopped {
+                    "stopped"
+                } else {
+                    "checkpointed_without_reasoning_stop"
+                },
                 prepared_request.model,
                 assistant_response_text.as_str()
             ),
@@ -352,26 +503,26 @@ impl M1Runtime {
                     "stream": operation.payload.stream,
                 }),
             )?;
-        let provider_started_payload = ProviderEventPayload {
-            provider_name: prepared_request.provider_name.clone(),
-            model: prepared_request.model.clone(),
-            endpoint: prepared_request.endpoint.clone(),
-            output_text: None,
-            response_id: None,
-            stop_reason: None,
-            status: None,
-            debug: Some(provider_debug.clone()),
-        };
-        let provider_payload = ProviderEventPayload {
-            provider_name: prepared_request.provider_name.clone(),
-            model: prepared_request.model.clone(),
-            endpoint: prepared_request.endpoint.clone(),
-            output_text: Some(provider_response.output_text.clone()),
-            response_id: provider_response.response_id.clone(),
-            stop_reason: provider_response.stop_reason.clone(),
-            status: Some(provider_response.status),
-            debug: Some(provider_debug),
-        };
+            let provider_started_payload = ProviderEventPayload {
+                provider_name: prepared_request.provider_name.clone(),
+                model: prepared_request.model.clone(),
+                endpoint: prepared_request.endpoint.clone(),
+                output_text: None,
+                response_id: None,
+                stop_reason: None,
+                status: None,
+                debug: Some(provider_debug.clone()),
+            };
+            let provider_payload = ProviderEventPayload {
+                provider_name: prepared_request.provider_name.clone(),
+                model: prepared_request.model.clone(),
+                endpoint: prepared_request.endpoint.clone(),
+                output_text: Some(provider_response.output_text.clone()),
+                response_id: provider_response.response_id.clone(),
+                stop_reason: provider_response.stop_reason.clone(),
+                status: Some(provider_response.status),
+                debug: Some(provider_debug),
+            };
             push_event(
                 "provider.operation_accepted",
                 serde_json::to_value(&provider_started_payload)?,
@@ -392,19 +543,39 @@ impl M1Runtime {
                 "provider.response_normalized",
                 serde_json::to_value(&provider_payload)?,
             )?;
-            push_event("provider.completed", serde_json::to_value(&provider_payload)?)?;
+            push_event(
+                "provider.completed",
+                serde_json::to_value(&provider_payload)?,
+            )?;
             push_event(
                 "model.output_parsed",
                 serde_json::json!({
                     "contract_detected": parsed_output.contract_detected,
                     "control_feedback_parsed": parsed_output.control_feedback.is_some(),
                     "control_feedback_salvaged": parsed_output.control_feedback_salvaged,
+                    "tool_calls_count": parsed_output.tool_calls.len(),
+                    "round_count": round_count,
                     "assistant_response": assistant_response_text.as_str(),
                     "control_feedback_origin": control_feedback.origin,
                 }),
             )?;
+            if round_count > 1 {
+                push_event(
+                    "reasoning.auto_tool_roundtrip_completed",
+                    serde_json::json!({
+                        "round_count": round_count,
+                        "stop_requested": closure_stopped,
+                    }),
+                )?;
+            }
+            for (event_type, payload) in dispatched_tools.events {
+                push_event(event_type.as_str(), payload)?;
+            }
             push_event("progress.updated", serde_json::to_value(&progress)?)?;
-            push_event("tool.execution_recorded", serde_json::to_value(&tool_records)?)?;
+            push_event(
+                "tool.execution_recorded",
+                serde_json::to_value(&tool_records)?,
+            )?;
             push_event(
                 "control.feedback_recorded",
                 serde_json::to_value(&control_feedback)?,
@@ -447,7 +618,8 @@ impl M1Runtime {
             &refs,
             Some(operation.operation_id.clone()),
             serde_json::json!({
-                "status": "ok",
+                "status": if closure_stopped { "stopped" } else { "continued" },
+                "stop_source": if closure_stopped { "reasoning.stop" } else { "not_emitted" },
                 "answer": assistant_response_text.clone(),
             }),
         )?);
@@ -493,6 +665,37 @@ impl M1Runtime {
         event.validate()?;
         Ok(event)
     }
+}
+
+fn build_followup_input(
+    original_input: &str,
+    assistant_response: &str,
+    tool_records: &[ToolExecutionRecord],
+) -> String {
+    let tool_lines = tool_records
+        .iter()
+        .rev()
+        .take(4)
+        .map(|record| {
+            format!(
+                "{} => {}",
+                record.tool_name,
+                record
+                    .output_summary
+                    .clone()
+                    .or_else(|| record.error_summary.clone())
+                    .unwrap_or_else(|| record.status.clone())
+            )
+        })
+        .collect::<Vec<_>>();
+    format!(
+        "Continue the same turn with the latest tool results.\nOriginal request: {original_input}\nLast assistant response: {assistant_response}\nRecent tool results:\n- {}",
+        if tool_lines.is_empty() {
+            "none".to_string()
+        } else {
+            tool_lines.join("\n- ")
+        }
+    )
 }
 
 #[cfg(test)]

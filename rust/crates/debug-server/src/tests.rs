@@ -170,7 +170,10 @@ fn projector_tracks_latest_progress_note_digest_and_provider_activity() {
         projector.current.latest_provider_header_names,
         vec!["user-agent".to_string(), "x-api-key".to_string()]
     );
-    assert_eq!(projector.current.latest_control_origin.as_deref(), Some("runtime_heuristic"));
+    assert_eq!(
+        projector.current.latest_control_origin.as_deref(),
+        Some("runtime_heuristic")
+    );
     assert_eq!(projector.current.latest_continuity_confidence, Some(92));
     assert_eq!(projector.current.latest_topic_shift_confidence, Some(8));
     assert_eq!(projector.current.latest_simple_query_confidence, Some(20));
@@ -224,6 +227,14 @@ fn response_for_section_renderers_js_serves_compiled_module() {
     let body = String::from_utf8(response.body).expect("js should be utf8");
     assert_eq!(response.status_code, 200);
     assert!(body.contains("renderInspectorSection"));
+}
+
+#[test]
+fn response_for_sidebar_js_serves_compiled_module() {
+    let response = response_for_path("/sidebar.js", Path::new("/tmp/unused"));
+    let body = String::from_utf8(response.body).expect("js should be utf8");
+    assert_eq!(response.status_code, 200);
+    assert!(body.contains("renderSidebar"));
 }
 
 #[test]
@@ -307,6 +318,28 @@ fn response_for_recent_closures_reads_runtime_artifact_via_last_run() {
     );
 }
 
+#[test]
+fn response_for_qqbot_state_reads_peer_state_file() {
+    let runtime_home = std::env::temp_dir().join(format!(
+        "fin-debug-qqbot-{}",
+        SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("time should work")
+            .as_nanos()
+    ));
+    let peer_dir = runtime_home.join("runtime/peers/qqbot");
+    fs::create_dir_all(&peer_dir).expect("peer dir");
+    fs::write(
+        peer_dir.join("state.json"),
+        br#"{"peer_id":"peer-channel-gateway-qqbot-local","lifecycle_state":"paired_active"}"#,
+    )
+    .expect("state");
+    let response = response_for_path(API_QQBOT_STATE_PATH, &runtime_home);
+    assert_eq!(response.status_code, 200);
+    let body = String::from_utf8(response.body).expect("utf8");
+    assert!(body.contains("paired_active"));
+}
+
 fn assert_runtime_artifact_response(
     label: &str,
     api_path: &str,
@@ -324,7 +357,10 @@ fn assert_runtime_artifact_response(
     ));
     let current_dir = runtime_home.join("runtime/current");
     let artifact_path = runtime_home.join(relative_path);
-    let session_dir = artifact_path.parent().expect("artifact parent").to_path_buf();
+    let session_dir = artifact_path
+        .parent()
+        .expect("artifact parent")
+        .to_path_buf();
     fs::create_dir_all(&current_dir).expect("current dir should exist");
     fs::create_dir_all(&session_dir).expect("session dir should exist");
     fs::write(
@@ -345,5 +381,9 @@ fn assert_runtime_artifact_response(
     );
     assert_eq!(response.status_code, 200);
     assert_eq!(response.content_type, "application/json; charset=utf-8");
-    assert!(String::from_utf8(response.body).unwrap().contains(expected_fragment));
+    assert!(
+        String::from_utf8(response.body)
+            .unwrap()
+            .contains(expected_fragment)
+    );
 }

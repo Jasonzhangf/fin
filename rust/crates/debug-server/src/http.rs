@@ -47,7 +47,7 @@ pub(crate) fn read_http_request(stream: &mut TcpStream) -> Result<HttpRequest, D
                 return Err(DebugDataError::Io {
                     path: "tcp-stream-read".into(),
                     source,
-                })
+                });
             }
         };
         if bytes_read == 0 {

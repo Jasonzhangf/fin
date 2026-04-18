@@ -64,6 +64,7 @@ description: Project-local default development workflow for fin. Use for feature
 - 生命周期设计默认前台可控；未获批准不引入 detached daemon / orphan process
 - 正式 build / install / promote 统一走 build-versioning flow；不要把裸 `cargo build` 当成交付闭环
 - 非白名单代码文件必须遵守 500 行上限；门禁脚本真源为 `scripts/check-code-line-limit.py`
+- 对“工具分发/控制”类模块默认使用“薄编排 + 功能切片”拆分：入口文件只做路由，执行逻辑按能力拆到独立文件，避免 dispatcher 再次长成单体文件
 - Web debug 实例纪律必须单一；当前对外只允许引用 `4040`，禁止把历史测试端口混进当前验证与汇报
 - `ControlFeedback` / continuity / topic-shift / simple-query 判断必须由 runtime 产出单一事实，并进入 event + session artifact + note/digest；Web 只消费，不得二次推断
 - 模型输出的结构化 block 必须做 schema 识别；错 shape 的 JSON 只能当 raw provider output 观察，不能冒充有效 control feedback
@@ -71,6 +72,7 @@ description: Project-local default development workflow for fin. Use for feature
 - normal conversation 与 debug 共享同一份 session render truth；所谓 richer UI 是 richness level 的差异，不允许做两套前后端真源
 - `Minimal / Rich / Full Trace` 这类 UI richness 开关只能控制展示层次，不能切换事实来源；所有 richness 都必须基于同一份 `operation_id -> session artifacts` 绑定结果
 - 用户在任务进行中询问“当前状态”的请求应视为特殊并行 inquiry；必须带显式标记，走 non-interrupting side path，从最新 progress/note/control/tool state 组装回复，不能打断主推理
+- 同一 turn 的自动工具编排必须有轮次上限与结构化限幅事件（如 `reasoning.auto_tool_roundtrip_limit_reached`），防止模型重复工具调用导致无界循环
 
 ## 4) Minimal validation matrix
 

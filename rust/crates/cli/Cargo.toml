@@ -12,6 +12,7 @@ fin-provider = { path = "../provider" }
 fin-runtime = { path = "../runtime" }
 fin-shared = { path = "../shared" }
 chrono.workspace = true
+reqwest.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true

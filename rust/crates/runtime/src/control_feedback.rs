@@ -61,10 +61,7 @@ impl ControlFeedbackBuilder {
             ),
             digest_candidate: format!(
                 "closure on {}:{} kept task continuity={} and produced answer {}",
-                request.provider_name,
-                request.model,
-                has_task,
-                response.output_text
+                request.provider_name, request.model, has_task, response.output_text
             ),
             reason: if is_simple_query {
                 "short single-turn request without prior history".into()
@@ -110,7 +107,9 @@ impl ControlFeedbackBuilder {
             previous_topic_summary: parsed
                 .previous_topic_summary
                 .or(fallback.previous_topic_summary),
-            current_topic_summary: parsed.current_topic_summary.or(fallback.current_topic_summary),
+            current_topic_summary: parsed
+                .current_topic_summary
+                .or(fallback.current_topic_summary),
             note_candidate: if parsed.note_candidate.trim().is_empty() {
                 fallback.note_candidate
             } else {
@@ -147,10 +146,7 @@ impl ControlFeedbackBuilder {
         );
         feedback.digest_candidate = format!(
             "closure on {}:{} kept task continuity={} and produced answer {}",
-            request.provider_name,
-            request.model,
-            feedback.is_continuation,
-            assistant_response_text
+            request.provider_name, request.model, feedback.is_continuation, assistant_response_text
         );
     }
 }

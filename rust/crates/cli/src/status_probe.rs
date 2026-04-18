@@ -3,7 +3,10 @@ use fin_contracts::{ControlFeedback, ExecutionNote, ProgressBlock};
 use fin_debug_server::{ChatSendRequest, ChatSendResponse, DebugBinding};
 use serde::de::DeserializeOwned;
 use serde_json::Value;
-use std::{fs, path::{Path, PathBuf}};
+use std::{
+    fs,
+    path::{Path, PathBuf},
+};
 
 pub(crate) fn build_status_probe_response(
     runtime_home: &Path,
@@ -25,16 +28,13 @@ pub(crate) fn build_status_probe_response(
         "conversation/messages.json",
         "notes/latest.json",
     )?;
-    let control_feedback = runtime_json::<ControlFeedback>(
-        runtime_home,
-        &last_run,
-        "session_control_feedback_path",
-    )?
-    .or(runtime_json::<ControlFeedback>(
-        runtime_home,
-        &last_run,
-        "current_control_feedback_path",
-    )?);
+    let control_feedback =
+        runtime_json::<ControlFeedback>(runtime_home, &last_run, "session_control_feedback_path")?
+            .or(runtime_json::<ControlFeedback>(
+                runtime_home,
+                &last_run,
+                "current_control_feedback_path",
+            )?);
 
     let freshness = probe_freshness(progress.as_ref(), note.as_ref(), control_feedback.as_ref());
     let digest_id = last_run
@@ -133,7 +133,8 @@ fn sibling_json<T: DeserializeOwned>(
     source_suffix: &str,
     target_suffix: &str,
 ) -> Result<Option<T>, CliError> {
-    let Some(path) = sibling_path(runtime_home, last_run, field, source_suffix, target_suffix) else {
+    let Some(path) = sibling_path(runtime_home, last_run, field, source_suffix, target_suffix)
+    else {
         return Ok(None);
     };
     read_json_file(&path).map(Some)

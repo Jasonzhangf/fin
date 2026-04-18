@@ -31,6 +31,8 @@ pub enum CliError {
         #[source]
         source: std::io::Error,
     },
+    #[error("channel connectivity error: {0}")]
+    ChannelConnectivity(String),
     #[error(transparent)]
     Config(#[from] fin_config::ConfigError),
     #[error(transparent)]

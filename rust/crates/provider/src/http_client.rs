@@ -1,6 +1,6 @@
 use crate::ProviderError;
-use reqwest::blocking::Client;
 use reqwest::Error as ReqwestError;
+use reqwest::blocking::Client;
 use std::time::Duration;
 
 const REQUEST_TIMEOUT_SECS: u64 = 120;

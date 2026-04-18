@@ -1,98 +1,11 @@
 use fin_contracts::{
-    ProjectContextBlock, ProjectRef, RolePromptBlock, ToolCatalogBlock, ToolCatalogEntry,
+    DaemonStateSummary, PeerBindingSummary, PeerContextBlock, PeerDescriptorSummary,
+    ProjectContextBlock, ProjectRef, RolePromptBlock,
 };
 use std::path::{Path, PathBuf};
 
 use super::ContextAssemblyInput;
-
-pub(super) fn build_tool_catalog_block() -> ToolCatalogBlock {
-    ToolCatalogBlock {
-        model_tools: Vec::new(),
-        framework_tools: vec![
-            framework_tool(
-                "provider.call",
-                "framework-owned provider execution boundary",
-                "dispatch the compiled prompt to the configured provider and normalize the response",
-                vec!["the framework has already assembled context and needs a provider round-trip".into()],
-                vec!["the model is deciding whether it should call a tool itself".into()],
-                "no model-visible input schema; framework passes compiled prompt + provider path".into(),
-                "normalized provider response event + sanitized debug snapshot".into(),
-                vec!["network request to external provider".into()],
-                vec!["framework auto-runs provider.call after inference operation acceptance".into()],
-            ),
-            framework_tool(
-                "session.materialize",
-                "session artifact write + revision advance",
-                "persist messages, contexts, digests, and revision pointers to session truth",
-                vec!["a closure has produced artifacts that must become channel render truth".into()],
-                vec!["the model wants to directly write UI-visible state".into()],
-                "framework-owned session artifacts bundle".into(),
-                "updated session files + revision advance".into(),
-                vec!["writes session files under ~/.fin/sessions".into()],
-                vec!["framework materializes session artifacts before Web reads them".into()],
-            ),
-            framework_tool(
-                "event.append",
-                "append-only runtime fact recording",
-                "record operation lifecycle and provider facts as immutable events",
-                vec!["runtime state changes or side effects must become facts".into()],
-                vec!["a channel only needs a projection refresh".into()],
-                "structured event payload".into(),
-                "event row appended to stream.jsonl".into(),
-                vec!["appends raw event data to session/runtime event streams".into()],
-                vec!["framework emits started/completed/failed events automatically".into()],
-            ),
-            framework_tool(
-                "progress.update",
-                "structured progress snapshot emission",
-                "publish the current execution phase, health hint, and next step",
-                vec!["execution phase changes and observers need a new progress snapshot".into()],
-                vec!["nothing changed in execution state".into()],
-                "progress block".into(),
-                "latest progress snapshot".into(),
-                vec!["updates progress/latest.json".into()],
-                vec!["framework updates progress after provider completion".into()],
-            ),
-            framework_tool(
-                "execution_note.append",
-                "framework note persistence for ongoing execution",
-                "persist concise execution note for later digest merge and inspection",
-                vec!["a closure or step yields a durable lesson / decision / next step".into()],
-                vec!["the content is only transient chain-of-thought".into()],
-                "execution note block".into(),
-                "notes/latest.json + note refs".into(),
-                vec!["writes note artifact visible to debug tools".into()],
-                vec!["framework records execution note after provider response normalization".into()],
-            ),
-            framework_tool(
-                "digest.finalize",
-                "closure compression and continuity carry-over",
-                "compress the closure result into continuity tail, summary, and artifact candidates",
-                vec!["a closure reaches a stable stop and continuity must roll forward".into()],
-                vec!["the turn was interrupted and not closure-complete".into()],
-                "closure result bundle".into(),
-                "digest artifact for history + future context rebuild".into(),
-                vec!["writes digest artifact and continuity tail".into()],
-                vec!["framework finalizes digest only on successful closure stop".into()],
-            ),
-        ],
-        tool_selection_policy: vec![
-            "only model_tools are eligible for model-selected tool use".into(),
-            "framework_tools are runtime-owned capabilities and must not be hallucinated as direct tool calls".into(),
-            "if model_tools is empty, answer directly using current context and do not fabricate tool execution".into(),
-        ],
-        disabled_tools: vec![
-            "direct_fs_write".into(),
-            "direct_channel_render".into(),
-            "runtime_fact_mutation".into(),
-        ],
-        hard_guards: vec![
-            "session artifacts are the only channel render truth".into(),
-            "events are the only runtime fact truth".into(),
-            "framework writes session files before UI consumes them".into(),
-        ],
-    }
-}
+use crate::WorkerRuntime;
 
 pub(super) fn build_project_block(input: &ContextAssemblyInput) -> ProjectContextBlock {
     let project_root = input.cwd.as_deref().and_then(resolve_project_root);
@@ -140,6 +53,67 @@ pub(super) fn build_project_block(input: &ContextAssemblyInput) -> ProjectContex
         relative_selected_paths,
         scope_summary: Some("current project/session scoped reasoning input".into()),
         focus_summary,
+    }
+}
+
+pub(super) fn build_peer_block(
+    worker: &WorkerRuntime,
+    input: &ContextAssemblyInput,
+) -> PeerContextBlock {
+    let local_peer_id = format!("local-{}", worker.worker_id);
+    let role_id = worker.policy.role.role_id.as_str();
+    let binding_scope = if input.refs.task_id.is_some() {
+        Some("task".into())
+    } else if input.refs.session_id.is_some() {
+        Some("session".into())
+    } else {
+        Some("turn".into())
+    };
+    let binding_state = if matches!(role_id, "system" | "system_agent") {
+        Some("controller_local_only".into())
+    } else {
+        Some("local_execution_only".into())
+    };
+    PeerContextBlock {
+        topology_summary: Some(
+            "peer registry snapshot unavailable; running in local-only M1 placeholder mode".into(),
+        ),
+        active_peer_ids: vec![local_peer_id.clone()],
+        peers: vec![PeerDescriptorSummary {
+            peer_id: local_peer_id.clone(),
+            label: format!("local {}", role_id.replace('_', " ")),
+            peer_kind: inferred_peer_kind(role_id).into(),
+            presence_state: "local_only".into(),
+            health_state: Some("unknown".into()),
+            capability_ids: vec![
+                "peer.list".into(),
+                "peer.describe".into(),
+                "daemon.ensure_peer".into(),
+            ],
+            supports_session_binding: true,
+            supports_agentic_execution: !matches!(role_id, "channel_gateway"),
+        }],
+        binding: Some(PeerBindingSummary {
+            owner_peer_id: Some(if matches!(role_id, "system" | "system_agent") {
+                local_peer_id.clone()
+            } else {
+                "system-agent".into()
+            }),
+            bound_peer_id: Some(local_peer_id),
+            binding_scope,
+            binding_state,
+            lease_ttl_ms: None,
+            rebind_hint: Some("placeholder binding until peer plane is wired".into()),
+        }),
+        daemon: Some(DaemonStateSummary {
+            daemon_id: Some("daemon-local".into()),
+            supervision_state: Some("not_attached".into()),
+            status_summary: Some("daemon ensure is contract-only in current M1 runtime".into()),
+        }),
+        routing_hints: vec![
+            "use peer.list and peer.describe to inspect topology before selecting routes".into(),
+            "daemon.ensure_peer is placeholder-only until lifecycle supervisor is connected".into(),
+        ],
     }
 }
 
@@ -193,6 +167,43 @@ pub(super) fn render_role_prompt_lines(role_prompt: &RolePromptBlock) -> Vec<Str
             "output_contract:\n- {}",
             role_prompt.output_contract.join("\n- ")
         ));
+    }
+    lines
+}
+
+pub(super) fn render_peer_lines(peer: &PeerContextBlock) -> Vec<String> {
+    let mut lines = Vec::new();
+    if let Some(summary) = &peer.topology_summary {
+        lines.push(format!("topology={summary}"));
+    }
+    if !peer.active_peer_ids.is_empty() {
+        lines.push(format!(
+            "active_peer_ids={}",
+            peer.active_peer_ids.join(", ")
+        ));
+    }
+    if !peer.peers.is_empty() {
+        lines.push(format!(
+            "peers={}",
+            peer.peers
+                .iter()
+                .map(|item| format!(
+                    "{} [{}:{}]",
+                    item.peer_id, item.peer_kind, item.presence_state
+                ))
+                .collect::<Vec<_>>()
+                .join(", ")
+        ));
+    }
+    if let Some(binding) = &peer.binding {
+        if let Some(state) = &binding.binding_state {
+            lines.push(format!("binding_state={state}"));
+        }
+    }
+    if let Some(daemon) = &peer.daemon {
+        if let Some(state) = &daemon.supervision_state {
+            lines.push(format!("daemon_state={state}"));
+        }
     }
     lines
 }
@@ -252,28 +263,10 @@ pub(super) fn render_project_lines(project: &ProjectContextBlock) -> Vec<String>
     lines
 }
 
-fn framework_tool(
-    name: &str,
-    summary: &str,
-    purpose: &str,
-    when_to_use: Vec<String>,
-    when_not_to_use: Vec<String>,
-    input_schema_summary: String,
-    output_schema_summary: String,
-    side_effects: Vec<String>,
-    example_uses: Vec<String>,
-) -> ToolCatalogEntry {
-    ToolCatalogEntry {
-        tool_name: name.into(),
-        kind: "framework_capability".into(),
-        summary: summary.into(),
-        purpose: purpose.into(),
-        when_to_use,
-        when_not_to_use,
-        input_schema_summary,
-        output_schema_summary,
-        side_effects,
-        example_uses,
+fn inferred_peer_kind(role_id: &str) -> &'static str {
+    match role_id {
+        "channel_gateway" => "channel_gateway",
+        _ => "agent",
     }
 }
 fn resolve_project_root(cwd: &str) -> Option<String> {

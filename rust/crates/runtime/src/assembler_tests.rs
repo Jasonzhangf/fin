@@ -1,6 +1,7 @@
 use crate::ModelInputAssembler;
 use fin_contracts::{
-    HistoryBlock, MinimalContextView, ProjectContextBlock, RolePromptBlock, ToolCatalogBlock,
+    DaemonStateSummary, HistoryBlock, MinimalContextView, PeerBindingSummary, PeerContextBlock,
+    PeerDescriptorSummary, ProjectContextBlock, RolePromptBlock, ToolCatalogBlock,
     ToolCatalogEntry,
 };
 
@@ -24,6 +25,12 @@ fn model_input_assembler_renders_role_tools_history_and_project_scope() {
                 ..Default::default()
             }),
             tools: Some(ToolCatalogBlock {
+                model_tools: vec![ToolCatalogEntry {
+                    tool_name: "peer.list".into(),
+                    kind: "agent_tool".into(),
+                    summary: "list peers".into(),
+                    ..Default::default()
+                }],
                 framework_tools: vec![ToolCatalogEntry {
                     tool_name: "provider.call".into(),
                     summary: "invoke provider".into(),
@@ -41,6 +48,29 @@ fn model_input_assembler_renders_role_tools_history_and_project_scope() {
                 focus_summary: Some("focus".into()),
                 ..Default::default()
             }),
+            peer: Some(PeerContextBlock {
+                topology_summary: Some("local-only placeholder".into()),
+                active_peer_ids: vec!["local-worker-1".into()],
+                peers: vec![PeerDescriptorSummary {
+                    peer_id: "local-worker-1".into(),
+                    label: "local worker".into(),
+                    peer_kind: "agent".into(),
+                    presence_state: "local_only".into(),
+                    health_state: Some("unknown".into()),
+                    capability_ids: vec!["peer.list".into()],
+                    supports_session_binding: true,
+                    supports_agentic_execution: true,
+                }],
+                binding: Some(PeerBindingSummary {
+                    binding_state: Some("local_execution_only".into()),
+                    ..Default::default()
+                }),
+                daemon: Some(DaemonStateSummary {
+                    supervision_state: Some("not_attached".into()),
+                    ..Default::default()
+                }),
+                ..Default::default()
+            }),
             ..Default::default()
         },
     );
@@ -50,10 +80,13 @@ fn model_input_assembler_renders_role_tools_history_and_project_scope() {
     assert!(rendered.contains("Role prompt"));
     assert!(rendered.contains("Structured output contract"));
     assert!(rendered.contains("model_output_contract_v1"));
+    assert!(rendered.contains("Model tools"));
+    assert!(rendered.contains("peer.list"));
     assert!(rendered.contains("Framework capabilities"));
     assert!(rendered.contains("Tool selection policy"));
     assert!(rendered.contains("Recent history"));
     assert!(rendered.contains("Project scope"));
+    assert!(rendered.contains("Peer scope"));
     assert!(rendered.contains("Current user input"));
     assert!(rendered.contains("Mandatory final answer format"));
     assert!(rendered.contains("Mandatory final answer example"));

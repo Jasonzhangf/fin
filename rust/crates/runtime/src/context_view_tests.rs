@@ -1,7 +1,5 @@
 use crate::{ContextAssemblyInput, ContextViewBuilder, WorkerRuntime};
-use fin_config::{
-    ConfigMapper, ProviderProtocol, UserConfig, UserProviderConfig,
-};
+use fin_config::{ConfigMapper, ProviderProtocol, UserConfig, UserProviderConfig};
 use fin_contracts::{DigestRecord, EntityRefs};
 use std::collections::BTreeMap;
 
@@ -70,34 +68,245 @@ fn context_view_builder_populates_rich_blocks() {
         },
     );
 
-    assert_eq!(context.control.as_ref().and_then(|v| v.session_id.as_deref()), Some("session-rich"));
-    assert_eq!(context.role_prompt.as_ref().map(|v| v.role_id.as_str()), Some("default"));
-    assert_eq!(context.role_prompt.as_ref().map(|v| v.prompt_history.len()), Some(1));
-    assert!(context.role_prompt.as_ref().map(|v| v.prompt_lineage.iter().any(|i| i.contains("stable core"))).unwrap_or(false));
-    assert!(context.role_prompt.as_ref().map(|v| v.prompt_modules.iter().any(|i| i.module_id == "stable_core.framework_truth_rules")).unwrap_or(false));
-    assert!(context.role_prompt.as_ref().map(|v| v.prompt_modules.iter().any(|i| i.module_id == "role.project.purpose")).unwrap_or(false));
-    assert!(context.role_prompt.as_ref().map(|v| v.prompt_modules.iter().any(|i| i.module_id == "overlay.gpt_codex.tool_persistence")).unwrap_or(false));
-    assert!(context.role_prompt.as_ref().map(|v| v.prompt_layers.iter().any(|i| i.layer_id == "stable_core")).unwrap_or(false));
-    assert!(context.role_prompt.as_ref().map(|v| v.prompt_layers.iter().any(|i| i.layer_id == "model_overlay")).unwrap_or(false));
-    assert!(context.role_prompt.as_ref().map(|v| v.output_contract.len() >= 6).unwrap_or(false));
-    assert!(context.role_prompt.as_ref().map(|v| v.output_contract.iter().any(|i| i.contains("project scope") || i.contains("verify step"))).unwrap_or(false));
-    assert!(context.role_prompt.as_ref().map(|v| v.output_contract.iter().any(|i| i.contains("model_output_contract_v1"))).unwrap_or(false));
-    assert!(context.role_prompt.as_ref().map(|v| v.output_contract.iter().any(|i| i.contains("do not emit extra control-feedback keys"))).unwrap_or(false));
-    assert!(context.role_prompt.as_ref().map(|v| v.output_contract.iter().any(|i| i.contains("two top-level blocks"))).unwrap_or(false));
-    assert!(context.role_prompt.as_ref().map(|v| v.output_contract.iter().any(|i| i.contains("0.98/1.0"))).unwrap_or(false));
-    assert_eq!(context.tools.as_ref().map(|v| v.framework_tools.len()), Some(6));
-    assert_eq!(context.tools.as_ref().map(|v| v.tool_selection_policy.len()), Some(3));
-    assert_eq!(context.tools.as_ref().map(|v| v.disabled_tools.len()), Some(3));
-    assert!(context.tools.as_ref().and_then(|v| v.framework_tools.first()).map(|t| !t.purpose.is_empty() && !t.input_schema_summary.is_empty()).unwrap_or(false));
-    assert_eq!(context.history.as_ref().map(|v| v.recent_messages.len()), Some(2));
-    assert_eq!(context.knowledge.as_ref().map(|v| v.artifact_candidates.len()), Some(1));
-    assert_eq!(context.project.as_ref().and_then(|v| v.cwd.as_deref()), Some(cwd.as_str()));
-    assert_eq!(context.project.as_ref().map(|v| v.relative_selected_paths.clone()), Some(vec!["src".to_string(), "docs".to_string()]));
-    assert_eq!(context.project.as_ref().and_then(|v| v.primary_project.as_ref()).map(|v| v.label.as_str()), Some("fin"));
-    assert_eq!(context.project.as_ref().map(|v| v.active_projects.len()), Some(1));
+    assert_eq!(
+        context
+            .control
+            .as_ref()
+            .and_then(|v| v.session_id.as_deref()),
+        Some("session-rich")
+    );
+    assert_eq!(
+        context.role_prompt.as_ref().map(|v| v.role_id.as_str()),
+        Some("default")
+    );
+    assert_eq!(
+        context.role_prompt.as_ref().map(|v| v.prompt_history.len()),
+        Some(1)
+    );
+    assert!(
+        context
+            .role_prompt
+            .as_ref()
+            .map(|v| v.prompt_lineage.iter().any(|i| i.contains("stable core")))
+            .unwrap_or(false)
+    );
+    assert!(
+        context
+            .role_prompt
+            .as_ref()
+            .map(|v| v
+                .prompt_modules
+                .iter()
+                .any(|i| i.module_id == "stable_core.framework_truth_rules"))
+            .unwrap_or(false)
+    );
+    assert!(
+        context
+            .role_prompt
+            .as_ref()
+            .map(|v| v
+                .prompt_modules
+                .iter()
+                .any(|i| i.module_id == "role.project.purpose"))
+            .unwrap_or(false)
+    );
+    assert!(
+        context
+            .role_prompt
+            .as_ref()
+            .map(|v| v
+                .prompt_modules
+                .iter()
+                .any(|i| i.module_id == "overlay.gpt_codex.tool_persistence"))
+            .unwrap_or(false)
+    );
+    assert!(
+        context
+            .role_prompt
+            .as_ref()
+            .map(|v| v.prompt_layers.iter().any(|i| i.layer_id == "stable_core"))
+            .unwrap_or(false)
+    );
+    assert!(
+        context
+            .role_prompt
+            .as_ref()
+            .map(|v| v
+                .prompt_layers
+                .iter()
+                .any(|i| i.layer_id == "model_overlay"))
+            .unwrap_or(false)
+    );
+    assert!(
+        context
+            .role_prompt
+            .as_ref()
+            .map(|v| v.output_contract.len() >= 6)
+            .unwrap_or(false)
+    );
+    assert!(
+        context
+            .role_prompt
+            .as_ref()
+            .map(|v| v
+                .output_contract
+                .iter()
+                .any(|i| i.contains("project scope") || i.contains("verify step")))
+            .unwrap_or(false)
+    );
+    assert!(
+        context
+            .role_prompt
+            .as_ref()
+            .map(|v| v
+                .output_contract
+                .iter()
+                .any(|i| i.contains("model_output_contract_v1")))
+            .unwrap_or(false)
+    );
+    assert!(
+        context
+            .role_prompt
+            .as_ref()
+            .map(|v| v
+                .output_contract
+                .iter()
+                .any(|i| i.contains("do not emit extra control-feedback keys")))
+            .unwrap_or(false)
+    );
+    assert!(
+        context
+            .role_prompt
+            .as_ref()
+            .map(|v| v
+                .output_contract
+                .iter()
+                .any(|i| i.contains("two top-level blocks")))
+            .unwrap_or(false)
+    );
+    assert!(
+        context
+            .role_prompt
+            .as_ref()
+            .map(|v| v.output_contract.iter().any(|i| i.contains("0.98/1.0")))
+            .unwrap_or(false)
+    );
+    assert_eq!(
+        context.tools.as_ref().map(|v| v.model_tools.len()),
+        Some(11)
+    );
+    assert_eq!(
+        context.tools.as_ref().map(|v| v.framework_tools.len()),
+        Some(6)
+    );
+    assert_eq!(
+        context
+            .tools
+            .as_ref()
+            .map(|v| v.tool_selection_policy.len()),
+        Some(6)
+    );
+    assert_eq!(
+        context.tools.as_ref().map(|v| v.disabled_tools.len()),
+        Some(6)
+    );
+    assert!(
+        context
+            .tools
+            .as_ref()
+            .map(|v| v
+                .model_tools
+                .iter()
+                .any(|tool| tool.tool_name == "peer.list"))
+            .unwrap_or(false)
+    );
+    assert!(
+        context
+            .tools
+            .as_ref()
+            .map(|v| v
+                .model_tools
+                .iter()
+                .any(|tool| tool.tool_name == "wait.remind"))
+            .unwrap_or(false)
+    );
+    assert!(
+        context
+            .tools
+            .as_ref()
+            .map(|v| v
+                .model_tools
+                .iter()
+                .any(|tool| tool.tool_name == "reasoning.stop"))
+            .unwrap_or(false)
+    );
+    assert!(
+        context
+            .tools
+            .as_ref()
+            .and_then(|v| v.framework_tools.first())
+            .map(|t| !t.purpose.is_empty() && !t.input_schema_summary.is_empty())
+            .unwrap_or(false)
+    );
+    assert_eq!(
+        context.history.as_ref().map(|v| v.recent_messages.len()),
+        Some(2)
+    );
+    assert_eq!(
+        context
+            .knowledge
+            .as_ref()
+            .map(|v| v.artifact_candidates.len()),
+        Some(1)
+    );
+    assert_eq!(
+        context.project.as_ref().and_then(|v| v.cwd.as_deref()),
+        Some(cwd.as_str())
+    );
+    assert_eq!(
+        context
+            .project
+            .as_ref()
+            .map(|v| v.relative_selected_paths.clone()),
+        Some(vec!["src".to_string(), "docs".to_string()])
+    );
+    assert_eq!(
+        context
+            .project
+            .as_ref()
+            .and_then(|v| v.primary_project.as_ref())
+            .map(|v| v.label.as_str()),
+        Some("fin")
+    );
+    assert_eq!(
+        context.project.as_ref().map(|v| v.active_projects.len()),
+        Some(1)
+    );
     assert_eq!(context.project.as_ref().map(|v| v.projects.len()), Some(1));
-    assert!(context.project.as_ref().and_then(|v| v.focus_summary.as_deref()).unwrap_or_default().contains("src"));
-    assert_eq!(context.current_input.as_ref().map(|v| v.input.as_str()), Some("current input"));
+    assert!(
+        context
+            .project
+            .as_ref()
+            .and_then(|v| v.focus_summary.as_deref())
+            .unwrap_or_default()
+            .contains("src")
+    );
+    assert_eq!(
+        context.current_input.as_ref().map(|v| v.input.as_str()),
+        Some("current input")
+    );
+    assert_eq!(
+        context.peer.as_ref().map(|v| v.active_peer_ids.len()),
+        Some(1)
+    );
+    assert!(
+        context
+            .peer
+            .as_ref()
+            .and_then(|v| v.topology_summary.as_deref())
+            .unwrap_or_default()
+            .contains("local-only M1 placeholder")
+    );
 
     let encoded = serde_json::to_value(&context).expect("context should serialize");
     assert!(encoded.get("control").is_some());
@@ -106,5 +315,6 @@ fn context_view_builder_populates_rich_blocks() {
     assert!(encoded.get("history").is_some());
     assert!(encoded.get("knowledge").is_some());
     assert!(encoded.get("project").is_some());
+    assert!(encoded.get("peer").is_some());
     assert!(encoded.get("current_input").is_some());
 }

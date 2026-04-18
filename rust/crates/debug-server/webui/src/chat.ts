@@ -39,6 +39,9 @@ export class ChatPane {
     private readonly contextSizeEl: HTMLElement,
     private readonly projectPathEl: HTMLElement,
     private readonly composerStatusEl: HTMLElement,
+    private readonly composerProviderPillEl: HTMLElement,
+    private readonly composerModelPillEl: HTMLElement,
+    private readonly composerRichnessPillEl: HTMLElement,
     private readonly composerContextEl: HTMLElement,
     private readonly tree: StructuredTreeRenderer,
   ) {}
@@ -69,7 +72,10 @@ export class ChatPane {
     this.modelEl.setAttribute('title', `model=${scalar(lastRun?.model)} provider=${scalar(lastRun?.provider)}`);
     this.contextSizeEl.setAttribute('title', `approx size of current_context.json = ${contextSize}`);
     this.projectPathEl.setAttribute('title', projectPath);
-    this.composerStatusEl.textContent = `session truth · ${binding?.project_id ?? 'fin'} / ${sessionLabel} / ${richness}`;
+    this.composerStatusEl.textContent = `session truth · ${binding?.project_id ?? 'fin'} / ${sessionLabel}`;
+    this.composerProviderPillEl.textContent = `provider: ${scalar(lastRun?.provider)}`;
+    this.composerModelPillEl.textContent = `model: ${scalar(lastRun?.model)}`;
+    this.composerRichnessPillEl.textContent = `richness: ${richness}`;
     this.composerContextEl.innerHTML = renderComposerContextBar(
       binding,
       projectPath,
@@ -85,7 +91,6 @@ export class ChatPane {
           <div class="empty-icon">💬</div>
           <div class="empty-text">No session messages yet. Send the first message into this bound session.</div>
         </div>
-        ${this.renderChatDetailModal(focusTurns, openedChatDetailKey)}
       `;
       this.lastRenderedSignature = '';
       return;
@@ -97,9 +102,14 @@ export class ChatPane {
     const focusByOperation = new Map(focusTurns.map((turn) => [turn.operationId, turn]));
 
     this.messagesEl.innerHTML = [
-      ...messages.map((message) => this.renderMessage(message, focusByOperation, selectedOperationId, richness)),
+      ...messages.map((message) => this.renderMessage(
+        message,
+        focusByOperation,
+        selectedOperationId,
+        richness,
+        openedChatDetailKey,
+      )),
       this.renderPendingAssistant(pendingAssistant),
-      this.renderChatDetailModal(focusTurns, openedChatDetailKey),
     ].join('');
 
     if (signature !== this.lastRenderedSignature && wasNearBottom) {
@@ -115,6 +125,7 @@ export class ChatPane {
     focusByOperation: Map<string, FocusTurn>,
     selectedOperationId: string | null,
     richness: ConversationRichness,
+    openedChatDetailKey: string | null,
   ): string {
     const role = message.role === 'user' ? 'user' : 'agent';
     const presentation = role === 'user'
@@ -128,7 +139,7 @@ export class ChatPane {
     const focusTurn = operationId ? focusByOperation.get(operationId) : undefined;
     const selectedClass = operationId && operationId === selectedOperationId ? 'selected' : '';
     const turnLabel = operationId ? shortTurnLabel(operationId) : null;
-    const richPanel = role === 'user' ? '' : this.renderRichPanel(focusTurn, richness);
+    const richPanel = role === 'user' ? '' : this.renderRichPanel(focusTurn, richness, openedChatDetailKey);
 
     return `
       <article class="message ${role} ${selectedClass}" data-operation-id="${this.tree.escapeHtml(operationId ?? '')}">
@@ -146,33 +157,51 @@ export class ChatPane {
     `;
   }
 
-  private renderRichPanel(focusTurn: FocusTurn | undefined, richness: ConversationRichness): string {
+  private renderRichPanel(
+    focusTurn: FocusTurn | undefined,
+    richness: ConversationRichness,
+    openedChatDetailKey: string | null,
+  ): string {
     if (!focusTurn || richness === 'minimal') return '';
     const cards = buildTurnCards(focusTurn);
     if (!cards.length) return '';
     return `
       <section class="message-rich-panel ${richness}">
         <div class="turn-card-stack">
-          ${cards.map((card) => this.renderTurnCard(card)).join('')}
+          ${cards.map((card) => this.renderTurnCard(card, openedChatDetailKey === card.key)).join('')}
         </div>
       </section>
     `;
   }
 
-  private renderTurnCard(card: TurnCard): string {
+  private renderTurnCard(card: TurnCard, expanded: boolean): string {
     return `
       <article
-        class="turn-card ${card.tone} interactive ${!card.body && !card.extra ? 'compact' : ''}"
+        class="turn-card ${card.tone} interactive ${!card.body && !card.extra ? 'compact' : ''} ${expanded ? 'expanded' : ''}"
         data-open-chat-detail="${this.tree.escapeHtml(card.key)}"
       >
         <div class="turn-card-header">
           <span class="turn-card-verb">${this.tree.escapeHtml(card.verb)}</span>
           <span class="turn-card-title">${this.tree.escapeHtml(card.title)}</span>
-          <span class="turn-card-open">detail</span>
+          <span class="turn-card-open">${expanded ? 'collapse' : 'detail'}</span>
         </div>
         ${card.chips.length ? `<div class="turn-card-chip-row">${card.chips.map((chip) => `<span class="turn-card-chip">${this.tree.escapeHtml(chip)}</span>`).join('')}</div>` : ''}
         ${card.body ? `<div class="turn-card-body">${this.tree.escapeHtml(card.body)}</div>` : ''}
         ${card.extra ? `<div class="turn-card-extra">${this.tree.escapeHtml(card.extra)}</div>` : ''}
+        ${expanded ? `
+          <div class="turn-card-detail">
+            <div class="turn-card-detail-header">
+              <div>
+                <div class="section-kicker">Conversation Detail</div>
+                <div class="turn-card-detail-title">${this.tree.escapeHtml(card.detailTitle)}</div>
+                <div class="turn-card-detail-subtitle muted">${this.tree.escapeHtml(card.detailSubtitle)}</div>
+              </div>
+            </div>
+            <div class="turn-card-detail-body">
+              ${this.tree.renderPanelValue(card.detailValue)}
+            </div>
+          </div>
+        ` : ''}
       </article>
     `;
   }
@@ -195,30 +224,6 @@ export class ChatPane {
           </div>
         </div>
       </article>
-    `;
-  }
-
-  private renderChatDetailModal(focusTurns: FocusTurn[], openedChatDetailKey: string | null): string {
-    if (!openedChatDetailKey) return '';
-    const match = resolveChatDetail(focusTurns, openedChatDetailKey);
-    if (!match) return '';
-
-    return `
-      <div class="chat-detail-backdrop" data-chat-detail-backdrop>
-        <section class="chat-detail-modal" role="dialog" aria-modal="true">
-          <header class="chat-detail-header">
-            <div>
-              <div class="section-kicker">Conversation Detail</div>
-              <h3>${this.tree.escapeHtml(match.detailTitle)}</h3>
-              <p class="muted">${this.tree.escapeHtml(match.detailSubtitle)}</p>
-            </div>
-            <button class="chat-detail-close" type="button" data-close-chat-detail>Close</button>
-          </header>
-          <div class="chat-detail-body">
-            ${this.tree.renderPanelValue(match.detailValue)}
-          </div>
-        </section>
-      </div>
     `;
   }
 }
@@ -279,14 +284,6 @@ function buildTurnCards(focusTurn: FocusTurn): TurnCard[] {
   return cards;
 }
 
-function resolveChatDetail(focusTurns: FocusTurn[], key: string): TurnCard | null {
-  for (const turn of focusTurns) {
-    const match = buildTurnCards(turn).find((card) => card.key === key);
-    if (match) return match;
-  }
-  return null;
-}
-
 function renderComposerContextBar(
   binding: DebugBinding | null,
   projectPath: string,
@@ -322,8 +319,15 @@ function compactControlChips(control: JsonRecord): string[] {
   return chips.slice(0, 2);
 }
 
-function compactProviderChips(provider: { finish: string; status: string }): string[] {
-  return [provider.finish, provider.status].filter((item) => item !== '-').slice(0, 2);
+function compactProviderChips(
+  provider: { finish: string; status: string; closureStatus: string; stopSource: string },
+): string[] {
+  const chips: string[] = [];
+  if (provider.closureStatus !== '-') chips.push(`closure ${provider.closureStatus}`);
+  if (provider.stopSource !== '-') chips.push(`stop ${provider.stopSource}`);
+  if (provider.finish !== '-') chips.push(`finish ${provider.finish}`);
+  if (provider.status !== '-') chips.push(`http ${provider.status}`);
+  return chips.slice(0, 3);
 }
 
 function compactToolChips(tool: ToolExecutionRecord): string[] {
@@ -357,11 +361,20 @@ function extractControlFeedback(turn: FocusTurn): JsonRecord {
   return {};
 }
 
-function extractProviderMeta(turn: FocusTurn): { title: string; finish: string; status: string } {
+function extractProviderMeta(turn: FocusTurn): {
+  title: string;
+  finish: string;
+  status: string;
+  closureStatus: string;
+  stopSource: string;
+} {
   const accepted = asRecord(turn.events.find((event) => event.event_type === 'provider.operation_accepted')?.payload);
   const completed = asRecord(
     turn.events.find((event) => event.event_type === 'provider.completed')?.payload
     ?? turn.events.find((event) => event.event_type === 'provider.gateway_response_received')?.payload,
+  );
+  const operationCompleted = asRecord(
+    turn.events.find((event) => event.event_type === 'operation.completed')?.payload,
   );
   const providerName = scalar(completed.provider_name ?? accepted.provider_name);
   const model = scalar(completed.model ?? accepted.model);
@@ -369,6 +382,8 @@ function extractProviderMeta(turn: FocusTurn): { title: string; finish: string; 
     title: joinNonEmpty([providerName, model], ' / '),
     finish: scalar(completed.stop_reason),
     status: scalar(completed.status),
+    closureStatus: scalar(operationCompleted.status),
+    stopSource: scalar(operationCompleted.stop_source),
   };
 }
 

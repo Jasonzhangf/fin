@@ -199,7 +199,9 @@ fn runtime_demo_persists_home_artifacts() {
         Some("runtime/current/current_control_feedback.json")
     );
     assert_eq!(
-        last_run.get("turn_index").and_then(serde_json::Value::as_u64),
+        last_run
+            .get("turn_index")
+            .and_then(serde_json::Value::as_u64),
         None
     );
 }
@@ -323,8 +325,8 @@ fn transcript_demo_persists_recent_context_history() {
             .iter()
             .any(|tool| tool.tool_name == "provider.call")
     );
-    assert_eq!(tools.tool_selection_policy.len(), 3);
-    assert_eq!(tools.disabled_tools.len(), 3);
+    assert_eq!(tools.tool_selection_policy.len(), 6);
+    assert_eq!(tools.disabled_tools.len(), 6);
     assert_eq!(
         recent_contexts[2]
             .context
@@ -418,14 +420,28 @@ fn transcript_demo_persists_recent_context_history() {
             .contains("simulated response for third turn")
     );
 
-    let recent_reasoning: Vec<fin_contracts::ReasoningViewRecord> = serde_json::from_str(&fs::read_to_string(session_dir.join("reasoning/recent_reasoning_views.json")).expect("recent reasoning should exist")).expect("recent reasoning should decode");
-    let recent_tools: Vec<fin_contracts::ToolExecutionRecord> = serde_json::from_str(&fs::read_to_string(session_dir.join("tools/recent_tool_records.json")).expect("recent tools should exist")).expect("recent tools should decode");
-    let recent_closures: Vec<fin_contracts::ClosureTraceRecord> = serde_json::from_str(&fs::read_to_string(session_dir.join("closures/recent_closures.json")).expect("recent closures should exist")).expect("recent closures should decode");
+    let recent_reasoning: Vec<fin_contracts::ReasoningViewRecord> = serde_json::from_str(
+        &fs::read_to_string(session_dir.join("reasoning/recent_reasoning_views.json"))
+            .expect("recent reasoning should exist"),
+    )
+    .expect("recent reasoning should decode");
+    let recent_tools: Vec<fin_contracts::ToolExecutionRecord> = serde_json::from_str(
+        &fs::read_to_string(session_dir.join("tools/recent_tool_records.json"))
+            .expect("recent tools should exist"),
+    )
+    .expect("recent tools should decode");
+    let recent_closures: Vec<fin_contracts::ClosureTraceRecord> = serde_json::from_str(
+        &fs::read_to_string(session_dir.join("closures/recent_closures.json"))
+            .expect("recent closures should exist"),
+    )
+    .expect("recent closures should decode");
     assert_eq!(recent_reasoning[2].operation_id, "op-test-transcript-0003");
     assert_eq!(recent_tools[2].tool_name, "provider.call");
-    assert!(recent_closures[2]
-        .rendered_input
-        .contains("Current user input:\nthird turn"));
+    assert!(
+        recent_closures[2]
+            .rendered_input
+            .contains("Current user input:\nthird turn")
+    );
 }
 
 #[test]

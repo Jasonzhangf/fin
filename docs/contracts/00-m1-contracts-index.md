@@ -37,6 +37,11 @@ M1-A 当前先冻结七类最小 contract：
 3. `docs/contracts/prompt-module-contract.md`
 4. `docs/contracts/reasoning-view-contract.md`
 5. `docs/contracts/tool-execution-record-contract.md`
+6. `docs/contracts/turn-record-contract.md`
+7. `docs/contracts/step-ledger-contract.md`
+8. `docs/contracts/digest-family-contract.md`
+9. `docs/contracts/context-rebuild-index-contract.md`
+10. `docs/contracts/peer-routing-feedback-contract.md`
 
 ## crate 真源
 

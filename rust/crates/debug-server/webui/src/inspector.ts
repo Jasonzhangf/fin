@@ -22,19 +22,13 @@ export class InspectorPane {
   render(state: RefreshState): void {
     const selected = state.focusTurns.find((turn) => turn.operationId === state.selectedOperationId);
     const cards = this.buildCards(selected, state);
-    const opened = state.openedCard ? cards.find((item) => item.id === state.openedCard) ?? null : null;
-    const openedSection = opened && state.openedSectionKey
-      ? opened.sections.find(([label]) => this.sectionKey(opened.id, label) === state.openedSectionKey) ?? null
-      : null;
+    const openedCard = cards.find((card) => card.id === state.openedCard) ?? null;
 
     this.rootEl.innerHTML = `
-      <section class="dashboard-shell">
-        <div class="dashboard-waterfall">
-          ${cards.map((card) => this.renderDigestCard(card)).join('')}
-        </div>
-        ${opened ? this.renderModal(opened) : ''}
-        ${opened && openedSection ? this.renderSectionModal(opened, openedSection[0], openedSection[1]) : ''}
+      <section class="dashboard-shell dashboard-stack">
+        ${cards.map((card) => this.renderDigestCard(card)).join('')}
       </section>
+      ${openedCard ? this.renderDetailModal(openedCard) : ''}
     `;
   }
 
@@ -263,56 +257,65 @@ export class InspectorPane {
 
   private renderDigestCard(card: CardSpec): string {
     return `
-      <button class="dashboard-digest-card" type="button" data-open-card="${this.tree.escapeHtml(card.id)}">
-        <div class="dashboard-digest-header">
-          <div>
-            <h3>${this.tree.escapeHtml(card.title)}</h3>
-            <p class="muted">${this.tree.escapeHtml(card.subtitle)}</p>
-          </div>
-          <span class="dashboard-digest-open">View</span>
-        </div>
-        <div class="dashboard-digest-lines">
-          ${card.digestLines.map(([label, value]) => `
-            <article class="digest-line">
-              <span class="digest-line-label">${this.tree.escapeHtml(label)}</span>
-              <span class="digest-line-value">${this.tree.escapeHtml(value)}</span>
-            </article>
-          `).join('')}
-        </div>
-      </button>
-    `;
-  }
-
-  private renderModal(card: CardSpec): string {
-    return `
-      <div class="detail-modal-backdrop" data-modal-backdrop="true">
-        <section class="detail-modal">
-          <header class="detail-modal-header">
+      <article class="dashboard-card">
+        <button
+          class="dashboard-digest-card"
+          type="button"
+          data-open-card="${this.tree.escapeHtml(card.id)}"
+          aria-expanded="false"
+        >
+          <div class="dashboard-digest-header">
             <div>
-              <div class="section-kicker">Detail</div>
               <h3>${this.tree.escapeHtml(card.title)}</h3>
               <p class="muted">${this.tree.escapeHtml(card.subtitle)}</p>
             </div>
-            <button class="detail-modal-close" type="button" data-close-modal="true">Close</button>
-          </header>
-          <div class="detail-focus-strip">
-            ${card.focusAreas.map((area) => `
-              <a class="detail-focus-chip" href="#${this.anchorId(card.id, area)}">${this.tree.escapeHtml(area)}</a>
+            <span class="dashboard-digest-open">Expand</span>
+          </div>
+          <div class="dashboard-digest-lines">
+            ${card.digestLines.slice(0, 3).map(([label, value]) => `
+              <article class="digest-line">
+                <span class="digest-line-label">${this.tree.escapeHtml(label)}</span>
+                <span class="digest-line-value">${this.tree.escapeHtml(value)}</span>
+              </article>
             `).join('')}
           </div>
+        </button>
+      </article>
+    `;
+  }
+
+  private renderDetailModal(card: CardSpec): string {
+    return `
+      <div class="detail-modal-backdrop" data-close-card-backdrop>
+        <section class="detail-modal dashboard-detail-modal" role="dialog" aria-modal="true">
+          <header class="detail-modal-header">
+            <div>
+              <div class="section-kicker">Debug Detail</div>
+              <h3>${this.tree.escapeHtml(card.title)}</h3>
+              <p class="muted">${this.tree.escapeHtml(card.subtitle)}</p>
+            </div>
+            <button class="detail-modal-close" type="button" data-close-card-detail>Close</button>
+          </header>
+          ${card.focusAreas.length ? `
+            <div class="detail-focus-strip">
+              ${card.focusAreas.map((focus) => `
+                <span class="detail-focus-chip">${this.tree.escapeHtml(focus)}</span>
+              `).join('')}
+            </div>
+          ` : ''}
           <div class="detail-modal-body">
             <div class="detail-modal-summary">
               ${card.digestLines.map(([label, value]) => `
-                <article class="digest-line">
-                  <span class="digest-line-label">${this.tree.escapeHtml(label)}</span>
-                  <span class="digest-line-value">${this.tree.escapeHtml(value)}</span>
+                <article class="summary-chip">
+                  <span class="summary-chip-label">${this.tree.escapeHtml(label)}</span>
+                  <span class="summary-chip-value">${this.tree.escapeHtml(value)}</span>
                 </article>
               `).join('')}
             </div>
             ${card.timelineGroups ? `
               <div class="detail-timeline-grid">
                 ${card.timelineGroups.map(([title, events]) => `
-                  <section class="timeline-block">
+                  <section class="timeline-block subtle">
                     <div class="detail-subtitle">${this.tree.escapeHtml(title)}</div>
                     ${this.renderEventTimeline(events)}
                   </section>
@@ -320,19 +323,7 @@ export class InspectorPane {
               </div>
             ` : ''}
             <div class="detail-section-stack">
-              ${card.sections.map(([label, value]) => `
-                <section class="detail-section" id="${this.anchorId(card.id, label)}">
-                  <div class="detail-section-header">
-                    <span>${this.tree.escapeHtml(label)}</span>
-                    <button
-                      class="detail-modal-close"
-                      type="button"
-                      data-open-section-detail="${this.tree.escapeHtml(this.sectionKey(card.id, label))}"
-                    >Expand</button>
-                  </div>
-                  <div class="detail-section-body">${renderInspectorSection(card.id, label, value, this.tree)}</div>
-                </section>
-              `).join('')}
+              ${card.sections.map(([label, value], index) => this.renderInlineSection(card.id, label, value, index === 0)).join('')}
             </div>
           </div>
         </section>
@@ -340,26 +331,20 @@ export class InspectorPane {
     `;
   }
 
-  private renderSectionModal(card: CardSpec, label: string, value: unknown): string {
+  private renderInlineSection(
+    cardId: DashboardCardId,
+    label: string,
+    value: unknown,
+    open: boolean,
+  ): string {
     return `
-      <div class="detail-modal-backdrop" data-section-backdrop="true">
-        <section class="detail-modal">
-          <header class="detail-modal-header">
-            <div>
-              <div class="section-kicker">${this.tree.escapeHtml(card.title)}</div>
-              <h3>${this.tree.escapeHtml(label)}</h3>
-              <p class="muted">分类详细内容</p>
-            </div>
-            <button class="detail-modal-close" type="button" data-close-section-detail="true">Close</button>
-          </header>
-          <div class="detail-modal-body">
-            <div class="detail-section">
-              <div class="detail-section-header">${this.tree.escapeHtml(label)}</div>
-              <div class="detail-section-body">${renderInspectorSection(card.id, label, value, this.tree)}</div>
-            </div>
-          </div>
-        </section>
-      </div>
+      <details class="inline-detail-section" ${open ? 'open' : ''}>
+        <summary class="inline-detail-summary">
+          <span>${this.tree.escapeHtml(label)}</span>
+          <span class="inline-detail-open">toggle</span>
+        </summary>
+        <div class="detail-section-body">${renderInspectorSection(cardId, label, value, this.tree)}</div>
+      </details>
     `;
   }
 
@@ -382,14 +367,6 @@ export class InspectorPane {
         `).join('')}
       </div>
     `;
-  }
-
-  private anchorId(cardId: DashboardCardId, label: string): string {
-    return `${cardId}-${label.toLowerCase().replaceAll(/[^a-z0-9]+/g, '-')}`;
-  }
-
-  private sectionKey(cardId: DashboardCardId, label: string): string {
-    return `${cardId}::${label}`;
   }
 
   private empty(text: string): string {
