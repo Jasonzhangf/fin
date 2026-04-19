@@ -2,6 +2,7 @@ use crate::{
     CliError,
     command::{Command, parse_command},
     config::{default_provider_facade, load_system_config, map_system_config},
+    control_boundary_demo::run_control_boundary_demo,
     demo::{run_demo, runtime_home_override_from_env},
     fs_utils::read_file,
     install_flow::{build_dev, promote_existing_build, rollback_install},
@@ -39,6 +40,19 @@ pub fn run_with_runtime_home(
             let runtime_home =
                 init_runtime_home(&user_toml, &system, runtime_home_override.as_deref())?;
             println!("home init ok: {}", runtime_home.display());
+        }
+        Command::ControlBoundaryDemo { path } => {
+            let user_toml = read_file(Path::new(&path))?;
+            let system = map_system_config(&user_toml)?;
+            let run =
+                run_control_boundary_demo(&user_toml, &system, runtime_home_override.as_deref())?;
+            println!(
+                "control boundary demo ok: session={} task={} responses={} home={}",
+                run.session_id,
+                run.task_id,
+                run.responses.len(),
+                run.runtime_home.display()
+            );
         }
         Command::MainlineDemo { path } => {
             let user_toml = read_file(Path::new(&path))?;

@@ -80,6 +80,17 @@ fn parse_command_accepts_home_init() {
 }
 
 #[test]
+fn parse_command_accepts_control_boundary_demo() {
+    let args = vec!["control-boundary-demo".into(), "/tmp/user.toml".into()];
+    assert_eq!(
+        parse_command(&args).expect("command should parse"),
+        Command::ControlBoundaryDemo {
+            path: "/tmp/user.toml".into(),
+        }
+    );
+}
+
+#[test]
 fn parse_command_accepts_mainline_demo() {
     let args = vec!["mainline-demo".into(), "/tmp/user.toml".into()];
     assert_eq!(

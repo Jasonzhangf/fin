@@ -129,6 +129,11 @@ fin.receipt.mainline.v1
 
 原始真源候选：
 
+- `control/execution_state.json`
+- `control/pause_checkpoint.json`
+- `control/scheduler/latest.json`
+- `control/scheduler/latest_tick.json`
+- `control/supervisor/latest.json`
 - `control/supervisor/latest_heartbeat.json`
 - `control/supervisor/recent_heartbeats.json`
 - `control/daemon/latest_state.json`
@@ -148,6 +153,7 @@ fin.receipt.mainline.v1
 
 - 该 session 是否已经有 durable control-plane evidence
 - 当前 evidence 来自哪些 families
+- 是否真实发生过 pause / queue / resume / scheduler drive / segment merge
 - 后续 wait / interrupt / queue 强样本还缺什么
 
 ---
@@ -197,9 +203,9 @@ harness/reports/<build-version>/mainline-receipts.json
 
 下一步若继续推进，顺序固定为：
 
-1. 继续补真实 `auto_tool_roundtrip` closeout 样本
-2. 再补 queue / interrupt / pending / resume 的强 control-boundary 样本
-3. 最后再考虑把 mainline receipt 纳入统一 receipt index
+1. 继续补 queue / interrupt / pending / resume 的强 control-boundary 样本
+2. 再把 mainline receipt 纳入统一 receipt index
+3. 最后再考虑更多 installed-binary / control-plane receipt family
 
 也就是说：
 

@@ -8,6 +8,7 @@ mod chat_policy;
 mod cli;
 mod command;
 mod config;
+mod control_boundary_demo;
 mod daemon_state;
 #[cfg(test)]
 mod daemon_state_tests;

@@ -200,6 +200,14 @@ def build_auto_tool_roundtrip(session_id: str, session_dir: Path, runtime_home: 
 
 def build_control_boundary(session_id: str, session_dir: Path, runtime_home: Path) -> dict[str, Any]:
     candidate_paths = {
+        "execution_state": session_dir / "control" / "execution_state.json",
+        "pause_checkpoint": session_dir / "control" / "pause_checkpoint.json",
+        "scheduler_latest_decision": session_dir / "control" / "scheduler" / "latest.json",
+        "scheduler_recent_decisions": session_dir / "control" / "scheduler" / "recent_decisions.json",
+        "scheduler_latest_tick": session_dir / "control" / "scheduler" / "latest_tick.json",
+        "scheduler_recent_ticks": session_dir / "control" / "scheduler" / "recent_ticks.json",
+        "supervisor_latest_cycle": session_dir / "control" / "supervisor" / "latest.json",
+        "supervisor_recent_cycles": session_dir / "control" / "supervisor" / "recent_cycles.json",
         "supervisor_latest_heartbeat": session_dir / "control" / "supervisor" / "latest_heartbeat.json",
         "supervisor_recent_heartbeats": session_dir / "control" / "supervisor" / "recent_heartbeats.json",
         "daemon_latest_state": session_dir / "control" / "daemon" / "latest_state.json",
@@ -222,8 +230,22 @@ def build_control_boundary(session_id: str, session_dir: Path, runtime_home: Pat
     summary: dict[str, Any] = {
         "present_families": sorted(present.keys()),
         "queue_pending_inputs": 0,
+        "interrupt_segment_records": 0,
         "interrupt_open_segments": 0,
+        "interrupt_merged_segments": 0,
         "interrupt_merge_records": 0,
+        "pause_checkpoint_present": False,
+        "scheduler_action": None,
+        "scheduler_reason": None,
+        "tick_source": None,
+        "tick_drove_count": None,
+        "tick_initial_pending": None,
+        "tick_final_pending": None,
+        "supervisor_source": None,
+        "supervisor_drove_count": None,
+        "supervisor_pending_before": None,
+        "supervisor_pending_after": None,
+        "supervisor_blocked_kind": None,
         "heartbeat_status": None,
         "daemon_state": None,
         "daemon_recovery_action": None,
@@ -232,14 +254,40 @@ def build_control_boundary(session_id: str, session_dir: Path, runtime_home: Pat
     pending = read_json(candidate_paths["queue_pending_inputs"]) or []
     segments = read_json(candidate_paths["interrupts_recent_segments"]) or []
     merges = read_json(candidate_paths["interrupts_recent_merges"]) or []
+    pause_checkpoint = read_json(candidate_paths["pause_checkpoint"]) or {}
+    scheduler_decision = read_json(candidate_paths["scheduler_latest_decision"]) or {}
+    scheduler_tick = read_json(candidate_paths["scheduler_latest_tick"]) or {}
+    supervisor_cycle = read_json(candidate_paths["supervisor_latest_cycle"]) or {}
     heartbeat = read_json(candidate_paths["supervisor_latest_heartbeat"]) or {}
     daemon_state = read_json(candidate_paths["daemon_latest_state"]) or {}
     recovery = read_json(candidate_paths["daemon_latest_recovery_action"]) or {}
-    execution_state = read_json(candidate_paths["runtime_current_execution_state"]) or {}
+    execution_state = read_json(candidate_paths["execution_state"]) or read_json(
+        candidate_paths["runtime_current_execution_state"]
+    ) or {}
 
     summary["queue_pending_inputs"] = len(pending) if isinstance(pending, list) else 0
+    summary["interrupt_segment_records"] = len(segments) if isinstance(segments, list) else 0
     summary["interrupt_open_segments"] = len(segments) if isinstance(segments, list) else 0
+    if isinstance(segments, list):
+        summary["interrupt_open_segments"] = sum(
+            1 for item in segments if item.get("status") == "open"
+        )
+        summary["interrupt_merged_segments"] = sum(
+            1 for item in segments if item.get("status") == "merged"
+        )
     summary["interrupt_merge_records"] = len(merges) if isinstance(merges, list) else 0
+    summary["pause_checkpoint_present"] = bool(pause_checkpoint)
+    summary["scheduler_action"] = scheduler_decision.get("action_kind")
+    summary["scheduler_reason"] = scheduler_decision.get("reason")
+    summary["tick_source"] = scheduler_tick.get("source")
+    summary["tick_drove_count"] = scheduler_tick.get("drove_count")
+    summary["tick_initial_pending"] = scheduler_tick.get("initial_pending_input_count")
+    summary["tick_final_pending"] = scheduler_tick.get("final_pending_input_count")
+    summary["supervisor_source"] = supervisor_cycle.get("source")
+    summary["supervisor_drove_count"] = supervisor_cycle.get("drove_count")
+    summary["supervisor_pending_before"] = supervisor_cycle.get("pending_input_count_before")
+    summary["supervisor_pending_after"] = supervisor_cycle.get("pending_input_count_after")
+    summary["supervisor_blocked_kind"] = supervisor_cycle.get("blocked_kind")
     summary["heartbeat_status"] = heartbeat.get("status")
     summary["daemon_state"] = daemon_state.get("lifecycle_state")
     summary["daemon_recovery_action"] = recovery.get("action_kind")

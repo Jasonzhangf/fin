@@ -40,7 +40,7 @@ pub(crate) struct CliDebugActionHandler {
 }
 
 impl CliDebugActionHandler {
-    fn new(user_toml: String, system: SystemConfig) -> Result<Self, CliError> {
+    pub(crate) fn new(user_toml: String, system: SystemConfig) -> Result<Self, CliError> {
         let provider = default_provider_facade(&system)?;
         Ok(Self {
             user_toml,
@@ -81,6 +81,15 @@ impl CliDebugActionHandler {
         request: ChatSendRequest,
     ) -> Result<ChatSendResponse, CliError> {
         self.send_message_internal_with_provider(runtime_home, request, &self.provider)
+    }
+
+    pub(crate) fn send_message_for_provider(
+        &self,
+        runtime_home: &Path,
+        request: ChatSendRequest,
+        provider: &impl InferenceProvider,
+    ) -> Result<ChatSendResponse, CliError> {
+        self.send_message_internal_with_provider(runtime_home, request, provider)
     }
 
     fn send_message_internal_with_provider(
