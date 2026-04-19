@@ -20,6 +20,23 @@ Updated: 2026-04-18
   - M1 closeout 不再被正式 build/install gate 阻断
   - closeout 文档需要同步修正，避免继续保留“仍被 line-limit 阻断”的旧结论
 
+## 2026-04-19 当前状态总结已固定
+
+- 已新增 `docs/closeout/m1-current-state-summary.md`
+- 文档结论：
+  - 当前 `fin` 已进入“可冻结、可验证、可继续成熟化”的 M1 后段状态
+  - 单 agent runtime 内核已经具备：
+    - 真实 provider
+    - 多轮推理
+    - auto tool loop
+    - queue / interrupt / reminder / tick / heartbeat / daemon observation
+    - durable truth + Web/debug 观察链
+    - build/install gate
+- 下一阶段建议不再扩新框架，而是进入 `M1.1 stability pass`：
+  1. receipt 标准化
+  2. 推理主链 review 固化
+  3. truth consistency 小范围修正
+
 ## 2026-04-19 review-driven truth fixes
 
 - 已按 review 修正三项 P0 truth 问题：
