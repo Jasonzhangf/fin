@@ -2341,3 +2341,6 @@ fin should adopt the following canonical model:
   - `current_context.json` 与 `current_rebuild_index.json` hash 改变
   - `recent_contexts` 计数 `3 -> 4`
   - `conversation/messages.json` 因 notice 追加而变化
+- [2026-04-19] M1.1 receipt 第二步开始：从 `receipt-index` 继续推进推理主链 receipts，当前已有真实样本最稳的是 `session-test-real-transcript`，它能证明 history/context continuity（0001 -> 0002 -> 0003 continuity_tail 0 -> 2 -> 4）。
+- [2026-04-19] 当前 closeout runtime-home 里还没有真实 multi-round auto-tool-loop artifact；本轮先标准化 mainline receipt schema 和生成脚本，先产出 `history_context`，并把 `auto_tool_roundtrip` 明确标记为 `missing`，避免无证据硬宣称完成。
+- [2026-04-19] `control_boundary` receipt 当前先收 session durable control-plane artifacts（heartbeat / daemon state / recovery action 等）；queue/wait/interrupt 的更强样本后续再补到 closeout run，不在本轮伪造事实。
