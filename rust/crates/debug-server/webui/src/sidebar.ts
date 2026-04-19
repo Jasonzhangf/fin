@@ -319,7 +319,7 @@ function renderSidebarExpanded(section: SidebarSection, tree: StructuredTreeRend
       </div>
       ${section.list?.length ? `
         <section class="rail-inline-list">
-          ${section.list.slice(0, 4).map((item) => `
+          ${section.list.slice(0, 3).map((item) => `
             <article class="rail-inline-item">
               <div class="rail-inline-title">${tree.escapeHtml(item.title)}</div>
               <div class="rail-inline-meta">${tree.escapeHtml(item.meta)}</div>

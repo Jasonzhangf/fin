@@ -56,7 +56,7 @@ class DebugApp {
   private pendingTimer: number | null = null;
   private watchSource: EventSource | null = null;
   private openedChatDetailKey: string | null = null;
-  private expandedRailSectionId: SidebarSectionId | null = 'session';
+  private expandedRailSectionId: SidebarSectionId | null = null;
   private openedRailSectionId: SidebarSectionId | null = null;
   private expandedCardId: DashboardCardId | null = 'operation';
   private state: RefreshState = {
