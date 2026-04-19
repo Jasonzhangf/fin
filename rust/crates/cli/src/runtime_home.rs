@@ -108,7 +108,8 @@ pub(crate) fn persist_runtime_demo(
     override_path: Option<&Path>,
 ) -> Result<RuntimeHomeArtifacts, CliError> {
     let runtime_home = init_runtime_home(user_toml, system, override_path)?;
-    let receipt = SessionMaterializer::default().persist(&runtime_home, run)?;
+    let receipt =
+        SessionMaterializer::default().persist(&runtime_home, run, &system.runtime.retention)?;
 
     let snapshot_paths = persist_snapshot(&runtime_home.join("runtime/projections"), &run.events)?;
 

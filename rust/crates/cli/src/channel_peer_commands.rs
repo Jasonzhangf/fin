@@ -2,8 +2,8 @@ use crate::{
     CliError,
     channel_peer::{
         complete_builtin_qqbot_pairing, ensure_builtin_qqbot_peer,
-        force_expire_builtin_qqbot_session, record_builtin_qqbot_heartbeat,
-        probe_builtin_qqbot_connectivity,
+        force_expire_builtin_qqbot_session, probe_builtin_qqbot_connectivity,
+        record_builtin_qqbot_heartbeat,
     },
     local_command_notice::append_notice_messages,
 };
@@ -202,6 +202,7 @@ fn build_response(binding: &DebugBinding, answer: String, suffix: &str) -> ChatS
         control_feedback: None,
         progress: None,
         note: None,
+        routing_action: None,
     }
 }
 

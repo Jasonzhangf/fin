@@ -10,6 +10,7 @@ dist/
 coverage/
 *.log
 *.tmp
+.tmp_*
 .tmp/
 .fin/
 rust/crates/debug-server/webui/dist/

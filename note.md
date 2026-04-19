@@ -2,6 +2,36 @@
 
 Updated: 2026-04-18
 
+## 2026-04-19 build/install gate recovery
+
+- 已完成正式 gate recovery：
+  - `cargo fmt --all --check`
+  - `cargo test -p fin-runtime -p fin-cli -p fin-debug-server --manifest-path rust/Cargo.toml`
+  - `python3 scripts/check-code-line-limit.py`
+  - `cargo run -p fin-cli --manifest-path rust/Cargo.toml -- install-dev ~/.fin/config/user.toml 0.1.0001`
+- 当前 install truth：
+  - `~/.fin/install/versions/0.1.0001` 已生成
+  - `~/.fin/bin/fin -> ~/.fin/install/current/bin/fin`
+  - install / regression / harness summary 已分别写入：
+    - `~/.fin/logs/install/0.1.0001.log`
+    - `~/.fin/logs/regression/0.1.0001.log`
+    - `~/.fin/harness/reports/0.1.0001/summary.json`
+- 结论：
+  - M1 closeout 不再被正式 build/install gate 阻断
+  - closeout 文档需要同步修正，避免继续保留“仍被 line-limit 阻断”的旧结论
+
+## 2026-04-19 review-driven truth fixes
+
+- 已按 review 修正三项 P0 truth 问题：
+  1. `InterruptedSegmentRecord.segment_id` 现在包含 `session + turn + paused_at`，同一 session 多次 pause 不再复用同 id。
+  2. runtime `StepRecord.step_index` 改为与 `step_id` 同步逐步分配，`provider_request / model_parse / control_feedback / tool_dispatch / finalize` 在同一 turn 内严格单调递增。
+  3. 多轮自动 tool loop 的 `tool_call_id` 改为带 round 维度：`tool-model-{operation_id}-r{round}-{index}`，避免 round 之间撞 id。
+- 顺手补了 round truth 的一致性修正：follow-up round 的 tool dispatch summary 现在使用“当轮结果”，不再错误复用累计 dispatch 状态。
+- archive summary 已从“first matching event”改成 `latest-per-type` 读取策略，避免多 round operation 在 archive inspector 中展示第一轮旧状态。
+- 验证已通过：
+  - `cargo test -p fin-runtime -p fin-cli -p fin-debug-server --manifest-path rust/Cargo.toml`
+  - `(cd rust/crates/debug-server/webui && npx tsc -p tsconfig.json)`
+
 ## 2026-04-18 compact rebuild implementation snapshot
 
 - `/compact` 不再走 `session select/rebind` 占位逻辑。
@@ -1734,3 +1764,535 @@ fin should adopt the following canonical model:
   - `binding_state`
 - `/qqbot status` 和 `/qqbot expire` 输出已切到显示三条状态线
 - 相关 Rust 单测已通过
+
+## 2026-04-18 qqbot connectivity plane 已落地 + 实测 upstream 可通
+
+本轮新增：
+
+1. `probe_builtin_qqbot_connectivity`
+   - 为内置 qqbot peer 增加最小上游探活闭环
+   - 使用 `POST https://bots.qq.com/app/getAppAccessToken`
+   - 不持久化 access token，只验证上游 auth/connectivity
+
+2. credential 解析优先级（当前为 bootstrap 兼容）
+   - `FIN_QQBOT_APP_ID` + `FIN_QQBOT_CLIENT_SECRET`
+   - `QQBOT_APP_ID` + `QQBOT_CLIENT_SECRET`
+   - `~/.finger/runtime/plugins/openclaw-qqbot.json`
+   - `~/.finger/config/channels.json`
+
+3. qqbot peer state 新增字段
+   - `connectivity_checked_at`
+   - `upstream_authenticated_at`
+   - `upstream_expires_at`
+   - `credential_source`
+   - `last_connectivity_error`
+
+4. 新增事件
+   - 成功：`channel.peer.upstream_authenticated`
+   - 失败：`channel.peer.connectivity_probe_failed`
+
+5. `/qqbot connect`
+   - 通过本地命令触发 connectivity probe
+   - `status` 也会显示 `credential_source + last_error`
+
+### 实测结果
+
+已用本机现有 qqbot 凭证做真实 probe（脱敏）：
+
+- `credential_source = legacy_finger_plugin`
+- `app_id_masked = 1903…(len=10)`
+- `POST https://bots.qq.com/app/getAppAccessToken`
+- 返回 `status = 200`
+- `ok = true`
+- `expires_in = 3977`
+- 说明：**当前 qqbot upstream 是通的**
+
+## 2026-04-18 推理核心收口（第一批）
+
+- 已补 canonical turn / step 真源：新增 `TurnRecord`、`StepRecord`、`ProviderRequestRecord`、`ProviderResponseRecord`、`RoutingDecisionRecord`。
+- `run_closure` 现在会为每个 provider round 记录 request/response + step ledger；不再只有 closure 末尾的一份 summary。
+- session/runtime 当前已新增 durable artifacts：
+  - `runtime/current/current_turn.json`
+  - `runtime/current/current_step_records.json`
+  - `runtime/current/current_provider_requests.json`
+  - `runtime/current/current_provider_responses.json`
+  - `runtime/current/current_routing_decision.json`
+  - `sessions/.../turns/recent_turns.json`
+  - `sessions/.../steps/recent_steps.json`
+  - `sessions/.../provider/recent_provider_requests.json`
+  - `sessions/.../provider/recent_provider_responses.json`
+  - `sessions/.../tasks/routing/recent_decisions.json`
+- 当前 control block 已不只是展示：会先落成 `RoutingDecisionRecord`，作为后续 tentative->formal task / topic switch / revive 的框架输入锚点。
+- 本轮还没有做真正 pause/resume / pending input queue / interrupted merge，只是先把 turn-level canonical truth 补齐。
+- 回归：`cargo test -p fin-runtime -p fin-cli --manifest-path rust/Cargo.toml` 通过。
+
+## 2026-04-19 推理核心收口（第二批：pause/resume + pending input 最小状态机）
+
+- 新增执行状态真源：`ExecutionStateRecord`、`PendingInputRecord`、`PauseCheckpointRecord`。
+- CLI / web-debug 现已支持最小状态机：
+  - `/pause [reason]`：写 `execution_state=paused` + `pause_checkpoint`
+  - `/resume-run`：恢复到 `idle`
+  - paused / running 时新输入不直接推理，进入 `queue/pending_inputs.json`
+- 新增当前态落盘：
+  - `runtime/current/current_execution_state.json`
+  - `runtime/current/current_pause_checkpoint.json`
+  - `runtime/current/current_pending_inputs.json`
+- session 级落盘：
+  - `sessions/.../control/execution_state.json`
+  - `sessions/.../control/pause_checkpoint.json`
+  - `sessions/.../queue/pending_inputs.json`
+- `status_probe` 现在会显示：`phase/status`、`active_step`、`resume_from`、`pending_inputs`。
+- `wait.remind` 到期注入 system reminder 后，会把 `waiting_external -> idle`。
+- 这仍然不是“真正并行推理”或“真正 provider 中途恢复”；当前只是先把框架状态机、checkpoint 与 queue 真源补齐。
+- 回归：`cargo test -p fin-cli -p fin-runtime --manifest-path rust/Cargo.toml` 通过。
+
+## 2026-04-19 推理核心收口（第三批：queue drain + resumed continuation）
+
+- `/resume-run` 不再只是把 `paused -> idle`；现在若 `queue/pending_inputs.json` 中有待处理输入，会自动 dequeue 第一条并继续执行一次正常 closure。
+- dequeue 后会更新：
+  - `queue/pending_inputs.json`
+  - `runtime/current/current_pending_inputs.json`
+  - `execution_state.pending_input_count`
+- 继续执行时走与正常 chat 相同的推理链，不做旁路拼接；因此 turn/digest/tool/reasoning/turn-record/step-record 都继续保持同一套真源。
+- 本轮新增回归：`resume_run_drains_pending_queue_and_executes_next_input`，用静态 provider 验证 `/resume-run` 会真正消费 pending 输入并写入会话消息。
+- 这仍然还没做 interrupted segment merge；当前 resumed continuation 是“队列驱动的新 closure 继续同一 session/task”，不是 provider 中途恢复。
+- 回归：`cargo test -p fin-cli -p fin-runtime --manifest-path rust/Cargo.toml` 通过。
+
+## 2026-04-19 推理核心收口（第四批：interrupted segment + merge-back）
+
+- `/pause` 现在除了写 `pause_checkpoint` 与 `execution_state=paused`，还会生成 `InterruptedSegmentRecord`。
+- 新增 session/runtime artifacts：
+  - `sessions/.../interrupts/recent_segments.json`
+  - `sessions/.../interrupts/latest_segment.json`
+  - `sessions/.../interrupts/recent_merges.json`
+  - `sessions/.../interrupts/latest_merge.json`
+  - `runtime/current/current_interrupted_segment.json`
+  - `runtime/current/current_segment_merge.json`
+- `/resume-run` 在 drain queue 时，如果存在 open interrupted segment，会在 resumed closure 落盘后写 `SegmentMergeRecord`，并把 segment 状态更新为 `merged`，写入 `merged_into_turn_id / merged_into_operation_id / merged_at`。
+- 这一步明确了当前语义：
+  - interrupted segment **不生成 closure digest**
+  - resumed continuation 仍然是 **同一 session/task 下的新 closure**
+  - merge-back 通过 `SegmentMergeRecord` 和被更新后的 `InterruptedSegmentRecord` 进行索引，不是假装中断那一轮已经完成
+- 新增回归：
+  - `/pause` 后 `current_interrupted_segment_path` 存在且 segment 为 `open`
+  - `/resume-run` 消费队列后 `recent_merges.json` 出现 `resume_as_new_closure`，`recent_segments.json` 里的 segment 状态变为 `merged`
+- 回归：`cargo test -p fin-cli -p fin-runtime --manifest-path rust/Cargo.toml` 通过。
+
+## 2026-04-19 推理核心收口（第五批：interrupt policy + queue auto-drain）
+
+- `chat_policy` 已接入 `web-debug` 发送链，当前请求分为四类：
+  - `status_probe`：旁路读取框架当前态，不生成 closure
+  - `interrupt_request`：立即执行，不进入 pending queue
+  - `queue`：当 execution state 为 `paused | running | waiting_external` 时普通输入入队
+  - `run_now`：空闲态直接执行 closure
+- `/interrupt <message>` 与 `input_kind=interrupt_request` 现在都会走 immediate path：
+  - 若已有 open interrupted segment，则保留它不 merge
+  - 若当前是 `running | paused` 且还没有 open segment，会先补 `pause_checkpoint + interrupted segment`
+  - 然后直接执行新的 closure
+- `/resume-run` 现在不只 drain 一条 pending input，而是会在 execution state 维持 `idle` 时持续 drain，直到：
+  - queue 为空
+  - 或进入 `waiting_external`
+  - 或再次 `paused`
+  - 或执行失败
+- 当前 merge-back 只发生在 `/resume-run` drain 的第一条 resumed closure；后续自动 drain 的 closure 不再重复 merge 原 interrupted segment。
+- 新增回归：
+  - `interrupt_request_runs_immediately_and_preserves_open_segment`
+  - `resume_run_auto_drains_multiple_pending_inputs_until_queue_empty`
+- 回归：`cargo fmt --all --manifest-path rust/Cargo.toml && cargo test -p fin-cli -p fin-runtime --manifest-path rust/Cargo.toml` 通过。
+
+## 2026-04-19 推理核心 audit + 收口（第六批：wait.remind yield + round-level hooks）
+
+本轮先做了 runtime audit，确认当前 durable truth 的分层是：
+- channel render 真源：`conversation/messages.json`（只保留 user / assistant）
+- 完整 closure 索引真源：`TurnRecord`
+- turn 内完整推进真源：`StepRecord`
+- 推理可见真源：`ReasoningViewRecord`
+- 工具真源：`ToolExecutionRecord`
+- provider 往返真源：`ProviderRequestRecord / ProviderResponseRecord`
+
+结论：
+- `conversation/messages.json` 不应承载所有工具 / reasoning / provider 明细，否则会破坏当前 Web turn 聚合逻辑；完整历史应继续通过 `turns / steps / reasoning / tools / provider / closures` 这一组 records 追索。
+- 之前 runtime 的一个真问题是：`wait.remind` 调度后不会结束本轮，而会继续同 turn 自动 tool loop，直到 hit round limit。这会制造重复 reminder 与错误的“继续推理”语义。
+- 另一个缺口是：虽然已经有 `StepRecord`，但 `event_ids` 为空，且每轮 provider/model/control/tool 没有独立 round-level event，导致“每一轮到底发生了什么”不够直观。
+
+已修：
+- `wait.remind` 现在会设置 `yield_requested=true`，当前 closure 在调度 reminder 后立即收束，不再继续同 turn tool loop。
+- `operation.completed` 对 reminder waiting 现在会产出：
+  - `status = waiting_external`
+  - `stop_source = wait.remind`
+- 新增 round-level event hooks：
+  - `provider.round_completed`
+  - `model.output_round_parsed`
+  - `control.feedback_round_recorded`
+  - `tool.dispatch_round_completed`
+- `StepRecord.event_ids` 现已回填到对应 step（至少 provider_request / model_parse / control_feedback / tool_dispatch）。
+
+新增回归：
+- `runtime_closure_records_wait_reminder_tool_and_event`
+  - 验证 `wait.remind` 不再触发多轮 provider loop
+  - 验证 `operation.completed = waiting_external / wait.remind`
+- `runtime_closure_records_round_level_events_for_multi_round_tool_loop`
+  - 验证两轮 tool loop 会产生两组 round-level events
+  - 验证相关 `StepRecord.event_ids` 非空
+
+回归：`cargo fmt --all --manifest-path rust/Cargo.toml && cargo test -p fin-runtime -p fin-cli --manifest-path rust/Cargo.toml` 通过。
+
+## 2026-04-19 推理核心收口（第七批：retention config + round durable records）
+
+这轮把“资源受控、自动清理、避免无界增长”一起落进了 runtime：
+
+### 1. retention 已进入 system config
+- 新增 `RuntimeRetentionConfig`，挂在 `SystemConfig.runtime.retention` 下。
+- 当前可控窗口包括：
+  - `recent_context_limit`
+  - `recent_digest_limit`
+  - `recent_reasoning_limit`
+  - `recent_tool_record_limit`
+  - `recent_closure_limit`
+  - `recent_provider_request_limit`
+  - `recent_provider_response_limit`
+  - `recent_step_record_limit`
+  - `recent_turn_limit`
+  - `recent_routing_decision_limit`
+  - `recent_round_limit`
+  - `session_message_limit`
+  - `reminder_pending_limit`
+- 这些都是 system/runtime 层配置，不暴露给普通 user config 选择，符合之前“用户配置尽量简单，系统配置集中控制”的原则。
+
+### 2. per-round durable records 已落地
+- 新增 `RoundRecord`，表达单个 closure 内每一轮 provider/model/control/tool 的稳定汇总。
+- 新增落盘：
+  - `runtime/current/current_rounds.json`
+  - `sessions/.../rounds/recent_rounds.json`
+  - `sessions/.../rounds/latest.json`
+- `last_run.json` 新增：
+  - `current_rounds_path`
+  - `session_recent_rounds_path`
+
+### 3. 自动清理策略
+- 所有 recent windows 继续沿用 `latest overwrite + recent bounded window`。
+- 现在窗口大小不再硬编码在 runtime crate，而是走 system retention config。
+- 每次 persist 时自动 `trim_head`，不会因为 round/step/provider/tool/message 增长而无限放大。
+- 新增测试已验证：把 `recent_round_limit=2`、`session_message_limit=4` 后，三轮 transcript 结束只保留最近 2 个 round 和最近 4 条会话消息。
+
+### 4. 当前边界
+- 本轮控制的是 current/recent/materialized windows 的资源增长。
+- `events/stream.jsonl` 仍是 session raw ledger，不在这轮裁剪；后续若做 archive/rotation，必须走“保留事实真源 + 冷归档”的方案，不能直接丢失语义。
+
+回归：`cargo fmt --all --manifest-path rust/Cargo.toml && cargo test -p fin-config -p fin-runtime -p fin-cli --manifest-path rust/Cargo.toml` 通过。
+
+### 6. debug-server / Web 侧 archive-aware event viewer（本轮）
+- 后端新增显式 API：
+  - `/api/session_event_archive_index.json`
+  - `/api/session_events_segment.json?tier=local|cold&segment=segment-XXXXXX.jsonl`
+- 保持 `/api/session_events.json` 只返回 **live hot stream**，不把 archive 混进默认 timeline，避免普通页面无界拉全量 raw events。
+- `session_event_archive_index.json` 会在原始 index 基础上补出：
+  - `local_segments[]`
+  - `cold_segments[]`
+  - 每个 segment 的 `relative_path + event_count`
+- Web inspector 的 `Operation & Event` 卡已支持：
+  - `live / local archive / cold archive` scope 切换
+  - 点击 segment 后显式加载该 archive segment 的 raw events
+  - 默认仍保持 live timeline，不改变聊天区和 turn 聚合真源
+
+### 7. 这轮验证
+- `cargo fmt --all --manifest-path rust/Cargo.toml`
+- `(cd rust/crates/debug-server/webui && npx tsc -p tsconfig.json)`
+- `cargo test -p fin-debug-server --manifest-path rust/Cargo.toml`
+- 结果：`fin-debug-server` 20 tests passed
+
+### 8. archive viewer 第二步：segment 内 operation 级聚焦
+- Web inspector 现在不只是能选 `segment`，还能在当前 ledger scope 内看到 `operation list`
+- 点击 operation 后：
+  - 只过滤当前 ledger timeline
+  - 如果该 operation 同时仍存在于 live `focusTurns`，则同步更新左侧主选中 operation
+  - 如果它只是 archive 中的旧 operation，则只在 inspector 内局部聚焦，不伪造 live session truth
+- 这样 archive drill-down 已从“看 raw event 段”升级到“看 raw event 段里的某个 operation”
+
+### 9. 本轮额外验证
+- `(cd rust/crates/debug-server/webui && npx tsc -p tsconfig.json)` 通过
+- `cargo test -p fin-debug-server --manifest-path rust/Cargo.toml` 通过
+- 结果：`fin-debug-server` 22 tests passed
+
+### 10. archive operation 第三步：从 raw events 重建可读摘要
+- 当前 selected archive operation 已不只是“过滤 timeline”：
+  - 现在会从该 operation 的 raw events 中重建一份可读摘要
+  - 读取来源仅限已有事件 payload，不补第二套业务真相
+- 当前重建内容包括：
+  - request input
+  - provider / model
+  - operation status / stop_source / provider finish / http status
+  - control origin / topic shift / simple query
+  - execution note summary
+  - reasoning summary
+  - digest summary
+  - tool summary
+- 这使 archive 中的历史 operation 已经接近“轻量 closure 视图”，而不只是 raw event 列表
+
+### 11. 本轮再次验证
+- `(cd rust/crates/debug-server/webui && npx tsc -p tsconfig.json)` 通过
+- `cargo test -p fin-debug-server --manifest-path rust/Cargo.toml` 通过
+- 结果：`fin-debug-server` 23 tests passed
+
+### 12. archive operation 第四步：live/materialized 关联索引
+- 当前 selected archive operation 现在还会额外挂出一块 `Linked live / materialized records`
+- 它只使用当前 session 的 recent materialized windows 做关联，不创造新事实：
+  - live turn（若该 operation 仍在 live focusTurns）
+  - digest
+  - reasoning view
+  - closure trace
+  - tool records
+- 当前展示内容包括：
+  - availability / recent-window-miss
+  - live turn snippet
+  - digest summary
+  - reasoning summary
+  - closure summary
+  - tool summary
+- 这样 archive operation 已同时具备：
+  - raw event timeline
+  - event-derived readable summary
+  - live/materialized cross-link index
+
+### 13. 本轮再次验证
+- `cargo fmt --all --manifest-path rust/Cargo.toml`
+- `(cd rust/crates/debug-server/webui && npx tsc -p tsconfig.json)` 通过
+- `cargo test -p fin-debug-server --manifest-path rust/Cargo.toml` 通过
+- 结果：`fin-debug-server` 25 tests passed
+
+## 2026-04-19 推理核心收口（第八批：raw event ledger rotation + cold archive）
+
+这轮修的是 session raw event ledger 本身：
+
+### 1. 发现的真问题
+- 之前 `sessions/.../events/stream.jsonl` 每次 closure persist 都是 `File::create` 重写。
+- 这意味着它并不是 session append-only ledger，而只是“当前 closure 的 latest event slice”。
+- 这和我们前面反复确认的 raw event ledger 真源定位不一致。
+
+### 2. 当前修正后的语义
+- `events/stream.jsonl` 现在变成 **hot live stream**：保留最近一段 session raw events。
+- 超出 `runtime.retention.session_event_hot_limit` 后，不再丢弃，而是把溢出 head spill 成 archive segment：
+  - session 热归档：`sessions/.../events/archive/segment-XXXXXX.jsonl`
+- 若 session 本地 archive 文件数超过 `runtime.retention.session_event_local_archive_file_limit`：
+  - 再把更老的 segment 移到冷归档：
+  - `~/.fin/archive/sessions/YYYY/MM/<session-id>/events/segment-XXXXXX.jsonl`
+
+### 3. 结果
+- raw fact truth 不再因 current/recent 限额被静默删除。
+- session 热路径资源受控：
+  - hot stream 行数 bounded
+  - 本地 archive 文件数 bounded
+- 更老 raw truth 进入 `~/.fin/archive/...` 冷数据区，符合 runtime-home 文档中的 archive 设计。
+
+### 4. 新增索引
+- `sessions/.../events/archive_index.json`
+- `runtime/current/current_event_archive_index.json`
+- `last_run.json` 新增：
+  - `current_event_archive_index_path`
+  - `session_event_archive_index_path`
+
+### 5. retention 配置新增两项
+- `session_event_hot_limit`
+- `session_event_local_archive_file_limit`
+
+当前验证过：
+- hot stream 超限会分段归档
+- 本地 archive 超限会移动到冷归档
+- live + local archive + cold archive 的总 event 行数仍等于所有 closure 事件总数，没有事实丢失
+
+回归：`cargo fmt --all --manifest-path rust/Cargo.toml && cargo test -p fin-config -p fin-runtime -p fin-cli --manifest-path rust/Cargo.toml` 通过。
+
+## 2026-04-19 runtime-owned control plane slice (state transition downshift)
+
+- 本轮先做最小 ownership 下沉：把 `execution/pending/pause/segment` 的**状态转移逻辑**从 `fin-cli` 下沉到 `fin-runtime::control_plane`。
+- 当前 runtime control plane 已拥有的纯逻辑：
+  - `running_state`
+  - `state_after_run`
+  - `failed_state`
+  - `paused_state`
+  - `resumed_state`
+  - `new_pending_input`
+  - `dequeue_pending_input`
+  - `state_with_pending_count`
+  - `clear_waiting_state_if_due`
+  - `interrupted_segment`
+  - `segment_merge`
+  - `apply_segment_merge`
+- `fin-cli` 现在只保留：
+  - session/runtime current 路径解析
+  - json 读写
+  - last_run path 更新
+  - command/web-debug glue
+- 这一步的意义：先把 control plane 的**语义真源**收回 runtime，再在下一轮继续把 scheduler/supervisor / executable routing action 接上。
+- 新增 runtime 单测覆盖：
+  - pause state 继承 active turn/step
+  - pending queue dequeue 语义
+  - interrupted segment id 唯一性
+  - exact-open-match merge 语义
+  - run completion -> execution state 语义
+- 回归通过：
+  - `cargo fmt --all --manifest-path rust/Cargo.toml`
+  - `cargo test -p fin-runtime -p fin-cli -p fin-debug-server --manifest-path rust/Cargo.toml`
+
+## 2026-04-19 routing decision -> executable action (minimal closeout)
+
+- 本轮把 `RoutingDecisionRecord` 从“观察结果”升级成 runtime 产出的 canonical `RoutingActionRecord`。
+- 新增 contract：`RoutingActionRecord`
+  - `action_kind`
+  - `source_disposition`
+  - `apply_immediately`
+  - `prompt_user`
+  - `prompt_text`
+  - `suggested_task_id / suggested_topic_thread_id`
+  - `confidence`
+  - `reason`
+- 新增 runtime 规则模块：`runtime::routing_actions`
+  - `continue_current_task -> continue_current_task`
+  - `tentative_simple_chat -> stay_tentative_session`
+  - `candidate_existing_task -> ask_reuse_existing_task`
+  - `candidate_topic_switch -> ask_topic_switch`
+  - other -> `observe_only`
+- `ClosureRun` 现在同时携带：
+  - `routing_decision`
+  - `routing_action`
+- runtime event 新增：
+  - `routing.action_derived`
+- session/runtime artifacts 新增：
+  - `runtime/current/current_routing_action.json`
+  - `sessions/.../tasks/routing/recent_actions.json`
+  - `sessions/.../tasks/routing/latest_action.json`
+- `last_run.json` 现在会写：
+  - `current_routing_action_path`
+  - `session_recent_routing_actions_path`
+- CLI/web-debug 当前最小消费：
+  - 普通 assistant response 会把 `routing_action` 带回 `ChatSendResponse`
+  - `status_probe` 会读取 latest routing action，并在 answer 中显示 `routing_action=...`
+- 这一步仍然是“最小闭环”：
+  - action 已是 runtime 真源
+  - CLI 只消费，不再自己二次推断
+  - 但真正的 scheduler / supervisor / auto-confirm / auto-switch 还没接
+- 验证通过：
+  - `cargo fmt --all --manifest-path rust/Cargo.toml`
+  - `cargo test -p fin-runtime -p fin-cli -p fin-debug-server --manifest-path rust/Cargo.toml`
+
+## 2026-04-19 runtime-owned scheduler skeleton + bounded queue drive
+
+- 本轮新增 `SchedulerDecisionRecord`，并把 queue/supervisor 的第一层判断语义收回 runtime：
+  - `wait_paused`
+  - `wait_running`
+  - `wait_external`
+  - `await_user_confirmation`
+  - `run_next_pending`
+  - `stay_idle`
+  - `observe_only`
+- 新增 runtime 规则模块：`runtime::scheduler::derive_scheduler_decision`
+  - 输入：`ExecutionStateRecord + pending_input_count + latest RoutingActionRecord`
+  - 输出：canonical `SchedulerDecisionRecord`
+- 新增 CLI 驱动模块：`cli::scheduler_driver`
+  - 当前只负责：
+    - 读取 state / pending / latest routing action
+    - 生成 scheduler decision
+    - 持久化 scheduler decision
+    - 在 `run_next_pending` 时 bounded auto drive（max=8）
+- scheduler decision 落盘：
+  - `runtime/current/current_scheduler_decision.json`
+  - `sessions/.../control/scheduler/latest.json`
+  - `sessions/.../control/scheduler/recent_decisions.json`
+- `last_run.json` 新增：
+  - `current_scheduler_decision_path`
+  - `session_recent_scheduler_decisions_path`
+- 当前 web-debug 的 `/resume-run` 已不再直接写死 drain loop，而是改为：
+  - `resume -> scheduler decision -> bounded drive`
+- `status_probe` 现在会同时展示：
+  - `routing_action=...`
+  - `scheduler=...`
+- 当前边界明确：
+  - scheduler 决策语义已 runtime-owned
+  - bounded drive 已 framework-owned
+  - 但它还不是 daemon/clock 驱动的 autonomous tick，也还没有真正 supervisor/lease/heartbeat 管理
+- 验证通过：
+  - `cargo test -p fin-runtime -p fin-cli -p fin-debug-server --manifest-path rust/Cargo.toml`
+
+## 2026-04-19 autonomous tick v1 (wake-driven)
+
+- 当前已不只是 `/resume-run` 手动驱动：当 `inject_due_reminders` 触发 reminder fired 后，web-debug 入口会：
+  1. `clear_waiting_if_due`
+  2. 重新读取 binding
+  3. 自动调用 scheduler bounded drive
+- 新增显式本地入口：`/tick`
+  - 作用：强制让 framework 执行一次 scheduler tick
+  - 当前路径与 `/resume-run` 一样，都会走 `scheduler decision -> bounded drive`
+- 新增测试覆盖：
+  - `scheduler_driver::drive_scheduler_runs_pending_until_queue_is_empty`
+  - `scheduler_driver::drive_scheduler_blocks_when_prompt_user_is_required`
+  - `web_debug::tick_command_drives_pending_queue_when_scheduler_allows`
+  - `web_debug::due_reminder_auto_ticks_scheduler_and_drains_pending_queue`
+- 到这里第一版 autonomous tick 的边界已明确：
+  - wake source：reminder fired / explicit `/tick`
+  - drive mode：single-process bounded drive
+  - owning truth：runtime scheduler decision + routing action
+  - 还没有 daemon/timer loop/lease/heartbeat supervisor
+- [2026-04-19] scheduler tick 已升级为独立 framework truth：新增 `SchedulerTickRecord`，`/tick`、`/resume-run` 的 bounded drive 与 `reminder fired` 自动唤醒现在统一走同一条 tick pipeline，而不是只在 wrapper 里直接 drain queue。
+- [2026-04-19] tick 现在会把 `scheduler.tick_started / scheduler.tick_decision_recorded / scheduler.tick_drove_pending|blocked / scheduler.tick_completed` 写入 session `events/stream.jsonl`，并把 `latest_tick.json` / `recent_ticks.json` / `runtime/current/current_scheduler_tick.json` 作为控制面真源持久化。
+- [2026-04-19] tick pipeline 当前边界已冻结：它只负责 framework control-plane truth（tick record + tick events + bounded scheduler drive），不伪装成 provider/runtime inference event；下一层再把常驻 supervisor/daemon 接到这条统一 tick 真源上。
+- [2026-04-19] framework-side tick events 不再由 CLI 直接 append raw stream；现统一复用 `fin-runtime::append_framework_events` 进入 session event archive/rebalance/index 真源，避免 control-plane 事件再分叉出第二套热流/归档语义。
+- [2026-04-19] `status_probe` 已纳入 latest tick 摘要：读取 `control/scheduler/latest_tick.json` 或 `runtime/current/current_scheduler_tick.json`，可直接看到 `source / drove_count / final action / blocked_by`，便于非中断并行询问当前 scheduler/tick 状态。
+- [2026-04-19] supervisor 第一层真源已落地为 `SupervisorCycleRecord`：它不重写 scheduler/tick 语义，只包装一次 framework-owned cycle，记录 `source / tick_id / drove_count / blocked_by / next_wake_hint / result_summary`，为后续 daemon 常驻接管预留稳定入口。
+- [2026-04-19] `web_debug` 中 `/tick`、`/resume-run`、`reminder fired` 现在统一先经过 `run_supervisor_cycle -> run_scheduler_tick -> drive_scheduler`；status probe 也已暴露 `supervisor=` 摘要，可非中断查看最近一次 supervisor cycle 的控制结论。
+- [2026-04-19] supervisor cycle 现在具备 canonical blocked taxonomy：`await_user_confirmation / wait_external / wait_running / wait_paused / idle_no_work / auto_step_limit / observe_only`；daemon 以后应直接消费该 taxonomy，而不是再从 scheduler/tick 字段二次猜测阻断原因。
+- [2026-04-19] supervisor cycle 已补 `next_check_at / heartbeat_interval_ms / lease_ttl_ms / next_wake_hint`：当前 `wait_running` 与 `auto_step_limit` 会生成下一次 heartbeat 检查时间，`wait_external`/`await_user_confirmation`/`idle_no_work` 则以 wake hint 为主，不做无意义轮询。
+- [2026-04-19] supervisor heartbeat 第一版已落地为 `SupervisorHeartbeatRecord`：它负责观察最近一次 supervisor cycle，判断 `due_for_tick / stale_lease`，并在 `next_check_at` 已过期时自动触发 `supervisor_heartbeat_due` cycle；这使 daemon 常驻化前，framework 已具备最小自驱心跳能力。
+- [2026-04-19] `web_debug` 入口现在会先记录一次 `supervisor_heartbeat`；`status_probe` 也已暴露 `heartbeat=` 摘要，能直接看到 `source / due_for_tick / stale_lease / blocked_kind / next_check_at`，用于非中断检查常驻控制面的健康度。
+- [2026-04-19] daemon state 第一版已落地为 `DaemonStateRecord + DaemonRecoveryActionRecord`：当前以 `web_debug_attached` 作为 attached daemon 真源，记录 `lifecycle_state / supervision_state / pid / health_state / recovery_needed / recovery_action_kind`，为将来的 headless daemon 统一生命周期模型铺路。
+- [2026-04-19] attached daemon recovery skeleton 现在直接消费 `SupervisorHeartbeatRecord + SupervisorCycleRecord`：当 heartbeat 标记 `stale_lease=true` 时派生 `recover_stale_cycle`，否则派生 `continue_heartbeat_monitoring / await_external_event / await_user_confirmation / observe_only` 等 canonical recovery actions，避免 daemon 层再次从原始事件猜恢复策略。
+
+## 2026-04-19 M1 closeout freeze
+
+- 当前项目正式切换到 **M1 收口模式**：默认优先 `scope freeze -> regression matrix -> blocker fix -> receipts`，不再继续扩大的 framework 设计。
+- 本轮新增 closeout 真源文档：
+  - `docs/closeout/m1-scope-and-freeze.md`
+  - `docs/closeout/m1-regression-matrix.md`
+  - `docs/closeout/m1-known-gaps-and-m2-backlog.md`
+- M1 冻结边界已明确：
+  - 包含：单 agent 推理闭环、context rebuild、tool loop、stop/wait/reminder、session truth、event archive、status/tick/supervisor/heartbeat/daemon state
+  - 不包含：真多 agent 执行面、跨机协作、detached daemon、真正 pause/resume、普通推理并行、完整 session/task/topic 产品化、成熟 memory graph
+- 当前 closeout 期间只允许做：
+  - 阻塞 M1 的 bug 修复
+  - regression matrix 补齐
+  - receipts / hand-check 证据整理
+  - truth consistency 修复
+- 当前 closeout 的主要证据缺口也已单独列出：
+  - installed-binary smoke 自动化仍缺
+  - provider real smoke receipt 需固化
+  - compact rebuild 对照 evidence 需补
+  - 4040 web debug 真源验收需保留 receipt
+
+## 2026-04-19 M1 receipts completed
+
+- 本轮 closeout receipts 已在隔离 run `~/.fin/harness/runs/m1-closeout-20260419-163831/runtime-home` 完成，并汇总到 `docs/closeout/m1-receipts-2026-04-19.md`。
+- formal `install-dev` 已真实执行，但被 line-limit gate 阻断；当前阻断文件包括：
+  - `rust/crates/cli/src/session_commands.rs`
+  - `rust/crates/cli/src/web_debug.rs`
+  - `rust/crates/runtime/src/lib.rs`
+  - `rust/crates/runtime/src/session_materializer.rs`
+  - 以及其余超 500 行文件
+- installed-binary smoke 已用隔离 manual install layout 完成 receipt：
+  - staged binary `config-check/runtime-demo/debug-projection`
+  - current bin link `config-check`
+  - 对应 receipt：`installed-binary-smoke-manual.json`
+- provider real smoke 已完成 receipt：
+  - `provider = ali-coding-plan`
+  - `protocol = anthropic-wire`
+  - `model = qwen3.6-plus`
+  - `status = 200`
+  - `output_text = OK`
+- 4040 web-debug live hand-check 已完成：
+  - `/status` 返回 `response_kind=status_probe`
+  - `events_count=0`
+  - `messages/digests/context-count` 不变
+- `/compact` live hand-check 已完成：
+  - 返回 `response_kind=system_notice`
+  - `events_count=0`
+  - `current_context.json` 与 `current_rebuild_index.json` hash 改变
+  - `recent_contexts` 计数 `3 -> 4`
+  - `conversation/messages.json` 因 notice 追加而变化

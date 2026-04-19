@@ -1,4 +1,7 @@
-use crate::{CliError, runtime_home::SessionMessageRecord, time::local_timestamp_now};
+use crate::{
+    CliError, execution_state::clear_waiting_if_due, runtime_home::SessionMessageRecord,
+    time::local_timestamp_now,
+};
 use chrono::{DateTime, Duration, Local};
 use fin_debug_server::DebugBinding;
 use serde::{Deserialize, Serialize};
@@ -92,6 +95,9 @@ pub(crate) fn inject_due_reminders(
         &runtime_home.join("runtime/current/current_reminders.json"),
         &reminders,
     )?;
+    if fired_count > 0 {
+        clear_waiting_if_due(runtime_home, binding, &local_timestamp_now())?;
+    }
     Ok(fired_count)
 }
 

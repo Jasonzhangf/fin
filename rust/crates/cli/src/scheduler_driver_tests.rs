@@ -1,0 +1,242 @@
+use crate::{
+    CliError,
+    scheduler_driver::{drive_scheduler, load_latest_scheduler_decision},
+};
+use fin_debug_server::{ChatSendResponse, DebugBinding};
+use serde::{Serialize, de::DeserializeOwned};
+use std::{
+    fs,
+    path::{Path, PathBuf},
+    time::{SystemTime, UNIX_EPOCH},
+};
+
+fn temp_runtime_home() -> PathBuf {
+    std::env::temp_dir().join(format!(
+        "fin-scheduler-driver-{}",
+        SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("time should work")
+            .as_nanos()
+    ))
+}
+
+fn binding(home: &Path) -> DebugBinding {
+    DebugBinding {
+        project_id: "fin".into(),
+        project_label: "fin".into(),
+        runtime_home: home.display().to_string(),
+        session_id: Some("session-scheduler".into()),
+        task_id: Some("task-scheduler".into()),
+        session_messages_path: Some(
+            "sessions/2026/04/session-scheduler/conversation/messages.json".into(),
+        ),
+        recent_contexts_path: None,
+        recent_digests_path: None,
+    }
+}
+
+fn entity_refs(binding: &DebugBinding) -> fin_contracts::EntityRefs {
+    fin_contracts::EntityRefs {
+        session_id: binding.session_id.clone(),
+        task_id: binding.task_id.clone(),
+        ..fin_contracts::EntityRefs::default()
+    }
+}
+
+fn write_json<T: Serialize>(path: &Path, value: &T) {
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent).expect("parent");
+    }
+    fs::write(path, serde_json::to_vec_pretty(value).expect("json")).expect("write");
+}
+
+fn read_json_or_empty<T: DeserializeOwned>(path: &Path) -> Vec<T> {
+    match fs::read_to_string(path) {
+        Ok(content) => serde_json::from_str(&content).expect("json"),
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => Vec::new(),
+        Err(err) => panic!("read failed: {err}"),
+    }
+}
+
+#[test]
+fn drive_scheduler_runs_pending_until_queue_is_empty() {
+    let home = temp_runtime_home();
+    let session_dir = home.join("sessions/2026/04/session-scheduler");
+    fs::create_dir_all(session_dir.join("conversation")).expect("conversation dir");
+    fs::create_dir_all(session_dir.join("control")).expect("control dir");
+    fs::create_dir_all(session_dir.join("queue")).expect("queue dir");
+    fs::create_dir_all(session_dir.join("tasks/routing")).expect("routing dir");
+    write_json(
+        &session_dir.join("control/execution_state.json"),
+        &fin_contracts::ExecutionStateRecord {
+            state_id: "exec-1".into(),
+            refs: entity_refs(&binding(&home)),
+            status: "idle".into(),
+            active_turn_id: None,
+            active_step_id: None,
+            resume_from_step_id: None,
+            pending_input_count: 2,
+            accepts_user_input: true,
+            reason: None,
+            updated_at: "2026-04-19T22:30:00+08:00".into(),
+        },
+    );
+    write_json(
+        &session_dir.join("queue/pending_inputs.json"),
+        &vec![
+            fin_contracts::PendingInputRecord {
+                pending_input_id: "pending-1".into(),
+                refs: entity_refs(&binding(&home)),
+                input_kind: "chat".into(),
+                message: "a".into(),
+                status: "pending".into(),
+                enqueue_reason: "test".into(),
+                enqueued_at: "2026-04-19T22:30:01+08:00".into(),
+            },
+            fin_contracts::PendingInputRecord {
+                pending_input_id: "pending-2".into(),
+                refs: entity_refs(&binding(&home)),
+                input_kind: "chat".into(),
+                message: "b".into(),
+                status: "pending".into(),
+                enqueue_reason: "test".into(),
+                enqueued_at: "2026-04-19T22:30:02+08:00".into(),
+            },
+        ],
+    );
+    write_json(
+        &session_dir.join("tasks/routing/latest_action.json"),
+        &fin_contracts::RoutingActionRecord {
+            action_id: "routing-action-1".into(),
+            decision_id: "routing-1".into(),
+            operation_id: "op-1".into(),
+            trace_id: "trace-1".into(),
+            refs: entity_refs(&binding(&home)),
+            created_at: "2026-04-19T22:30:00+08:00".into(),
+            action_kind: "continue_current_task".into(),
+            source_disposition: "continue_current_task".into(),
+            apply_immediately: true,
+            prompt_user: false,
+            prompt_text: None,
+            suggested_task_id: Some("task-scheduler".into()),
+            suggested_topic_thread_id: None,
+            confidence: 91,
+            reason: "same task".into(),
+        },
+    );
+
+    let mut seen = Vec::new();
+    let response = drive_scheduler(
+        &home,
+        &binding(&home),
+        16,
+        |binding, message, _merge_segment| {
+            seen.push(message.clone());
+            Ok(ChatSendResponse {
+                binding,
+                answer: format!("ran:{message}"),
+                digest_id: "digest-test".into(),
+                events_count: 0,
+                response_kind: "assistant_message".into(),
+                freshness: None,
+                control_feedback: None,
+                progress: None,
+                note: None,
+                routing_action: None,
+            })
+        },
+    )
+    .expect("drive");
+
+    assert_eq!(seen, vec!["a".to_string(), "b".to_string()]);
+    assert_eq!(response.last_response.expect("response").answer, "ran:b");
+    assert_eq!(response.drove_count, 2);
+    assert!(!response.decisions.is_empty());
+    let remaining: Vec<fin_contracts::PendingInputRecord> =
+        read_json_or_empty(&session_dir.join("queue/pending_inputs.json"));
+    assert!(remaining.is_empty());
+    let latest = load_latest_scheduler_decision(&home, &binding(&home))
+        .expect("latest")
+        .expect("decision");
+    assert!(matches!(
+        latest.action_kind.as_str(),
+        "run_next_pending" | "stay_idle"
+    ));
+}
+
+#[test]
+fn drive_scheduler_blocks_when_prompt_user_is_required() {
+    let home = temp_runtime_home();
+    let session_dir = home.join("sessions/2026/04/session-scheduler");
+    fs::create_dir_all(session_dir.join("conversation")).expect("conversation dir");
+    fs::create_dir_all(session_dir.join("control")).expect("control dir");
+    fs::create_dir_all(session_dir.join("queue")).expect("queue dir");
+    fs::create_dir_all(session_dir.join("tasks/routing")).expect("routing dir");
+    write_json(
+        &session_dir.join("control/execution_state.json"),
+        &fin_contracts::ExecutionStateRecord {
+            state_id: "exec-2".into(),
+            refs: entity_refs(&binding(&home)),
+            status: "idle".into(),
+            active_turn_id: None,
+            active_step_id: None,
+            resume_from_step_id: None,
+            pending_input_count: 1,
+            accepts_user_input: true,
+            reason: None,
+            updated_at: "2026-04-19T22:31:00+08:00".into(),
+        },
+    );
+    write_json(
+        &session_dir.join("queue/pending_inputs.json"),
+        &vec![fin_contracts::PendingInputRecord {
+            pending_input_id: "pending-1".into(),
+            refs: entity_refs(&binding(&home)),
+            input_kind: "chat".into(),
+            message: "a".into(),
+            status: "pending".into(),
+            enqueue_reason: "test".into(),
+            enqueued_at: "2026-04-19T22:31:01+08:00".into(),
+        }],
+    );
+    write_json(
+        &session_dir.join("tasks/routing/latest_action.json"),
+        &fin_contracts::RoutingActionRecord {
+            action_id: "routing-action-2".into(),
+            decision_id: "routing-2".into(),
+            operation_id: "op-2".into(),
+            trace_id: "trace-2".into(),
+            refs: entity_refs(&binding(&home)),
+            created_at: "2026-04-19T22:31:00+08:00".into(),
+            action_kind: "ask_topic_switch".into(),
+            source_disposition: "candidate_topic_switch".into(),
+            apply_immediately: false,
+            prompt_user: true,
+            prompt_text: Some("switch?".into()),
+            suggested_task_id: None,
+            suggested_topic_thread_id: Some("topic-2".into()),
+            confidence: 83,
+            reason: "topic changed".into(),
+        },
+    );
+
+    let mut called = false;
+    let response = drive_scheduler(
+        &home,
+        &binding(&home),
+        16,
+        |_binding, _message, _merge_segment| {
+            called = true;
+            Err(CliError::Usage)
+        },
+    )
+    .expect("drive");
+    assert!(response.last_response.is_none());
+    assert_eq!(response.drove_count, 0);
+    assert_eq!(response.decisions.len(), 1);
+    assert!(!called);
+    let latest = load_latest_scheduler_decision(&home, &binding(&home))
+        .expect("latest")
+        .expect("decision");
+    assert_eq!(latest.action_kind, "await_user_confirmation");
+}

@@ -53,6 +53,7 @@ impl DebugActionHandler for TestHandler {
             control_feedback: None,
             progress: None,
             note: None,
+            routing_action: None,
         })
     }
 }
@@ -222,6 +223,54 @@ fn response_for_chat_js_serves_compiled_module() {
 }
 
 #[test]
+fn response_for_event_ledger_js_serves_compiled_module() {
+    let response = response_for_path("/event_ledger.js", Path::new("/tmp/unused"));
+    let body = String::from_utf8(response.body).expect("js should be utf8");
+    assert_eq!(response.status_code, 200);
+    assert!(body.contains("renderEventLedger"));
+}
+
+#[test]
+fn response_for_event_ledger_state_js_serves_compiled_module() {
+    let response = response_for_path("/event_ledger_state.js", Path::new("/tmp/unused"));
+    let body = String::from_utf8(response.body).expect("js should be utf8");
+    assert_eq!(response.status_code, 200);
+    assert!(body.contains("resolveEventLedgerState"));
+}
+
+#[test]
+fn response_for_app_ui_js_serves_compiled_module() {
+    let response = response_for_path("/app_ui.js", Path::new("/tmp/unused"));
+    let body = String::from_utf8(response.body).expect("js should be utf8");
+    assert_eq!(response.status_code, 200);
+    assert!(body.contains("setStatusPill"));
+}
+
+#[test]
+fn response_for_event_ledger_summary_js_serves_compiled_module() {
+    let response = response_for_path("/event_ledger_summary.js", Path::new("/tmp/unused"));
+    let body = String::from_utf8(response.body).expect("js should be utf8");
+    assert_eq!(response.status_code, 200);
+    assert!(body.contains("renderEventLedgerOperationSummary"));
+}
+
+#[test]
+fn response_for_event_ledger_links_js_serves_compiled_module() {
+    let response = response_for_path("/event_ledger_links.js", Path::new("/tmp/unused"));
+    let body = String::from_utf8(response.body).expect("js should be utf8");
+    assert_eq!(response.status_code, 200);
+    assert!(body.contains("renderEventLedgerLinks"));
+}
+
+#[test]
+fn response_for_event_ledger_view_state_js_serves_compiled_module() {
+    let response = response_for_path("/event_ledger_view_state.js", Path::new("/tmp/unused"));
+    let body = String::from_utf8(response.body).expect("js should be utf8");
+    assert_eq!(response.status_code, 200);
+    assert!(body.contains("buildEventLedgerView"));
+}
+
+#[test]
 fn response_for_section_renderers_js_serves_compiled_module() {
     let response = response_for_path("/section_renderers.js", Path::new("/tmp/unused"));
     let body = String::from_utf8(response.body).expect("js should be utf8");
@@ -296,7 +345,7 @@ fn response_for_chat_send_status_probe_round_trips_kind_and_freshness() {
 
 #[test]
 fn response_for_session_messages_reads_runtime_artifact_via_last_run() {
-    assert_runtime_artifact_response(
+    tests_archive::assert_runtime_artifact_response(
         "messages",
         API_SESSION_MESSAGES_PATH,
         "session_messages_path",
@@ -308,7 +357,7 @@ fn response_for_session_messages_reads_runtime_artifact_via_last_run() {
 
 #[test]
 fn response_for_recent_closures_reads_runtime_artifact_via_last_run() {
-    assert_runtime_artifact_response(
+    tests_archive::assert_runtime_artifact_response(
         "closures",
         API_RECENT_CLOSURES_PATH,
         "session_recent_closures_path",
@@ -340,50 +389,5 @@ fn response_for_qqbot_state_reads_peer_state_file() {
     assert!(body.contains("paired_active"));
 }
 
-fn assert_runtime_artifact_response(
-    label: &str,
-    api_path: &str,
-    last_run_field: &str,
-    relative_path: &str,
-    artifact_body: &[u8],
-    expected_fragment: &str,
-) {
-    let runtime_home = std::env::temp_dir().join(format!(
-        "fin-debug-{label}-{}",
-        SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .expect("time should work")
-            .as_nanos()
-    ));
-    let current_dir = runtime_home.join("runtime/current");
-    let artifact_path = runtime_home.join(relative_path);
-    let session_dir = artifact_path
-        .parent()
-        .expect("artifact parent")
-        .to_path_buf();
-    fs::create_dir_all(&current_dir).expect("current dir should exist");
-    fs::create_dir_all(&session_dir).expect("session dir should exist");
-    fs::write(
-        current_dir.join("last_run.json"),
-        format!(r#"{{"{last_run_field}":"{relative_path}"}}"#),
-    )
-    .expect("last run should write");
-    fs::write(&artifact_path, artifact_body).expect("artifact should write");
-
-    let response = response_for_request(
-        &HttpRequest {
-            method: "GET".into(),
-            path: api_path.into(),
-            body: Vec::new(),
-        },
-        &runtime_home,
-        &TestHandler,
-    );
-    assert_eq!(response.status_code, 200);
-    assert_eq!(response.content_type, "application/json; charset=utf-8");
-    assert!(
-        String::from_utf8(response.body)
-            .unwrap()
-            .contains(expected_fragment)
-    );
-}
+#[path = "tests_archive.rs"]
+mod tests_archive;

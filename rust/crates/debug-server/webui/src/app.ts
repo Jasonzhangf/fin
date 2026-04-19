@@ -1,4 +1,6 @@
+import { setStatusPill, syncRichnessButtons } from './app_ui.js';
 import { ChatPane, type PendingAssistantState } from './chat.js';
+import { resolveEventLedgerState } from './event_ledger_state.js';
 import { buildFocusTurns, FocusPane } from './focus.js';
 import { InspectorPane } from './inspector.js';
 import { renderSidebar, type SidebarSectionId } from './sidebar.js';
@@ -12,6 +14,8 @@ import type {
   DebugBinding,
   DebugSnapshot,
   DigestRecord,
+  EventArchiveIndex,
+  EventLedgerScope,
   JsonRecord,
   ReasoningViewRecord,
   RefreshState,
@@ -68,6 +72,11 @@ class DebugApp {
     projection: {},
     events: [],
     sessionEvents: [],
+    eventArchiveIndex: null,
+    eventLedgerScope: 'live',
+    eventLedgerSegment: null,
+    eventLedgerEvents: [],
+    eventLedgerSelectedOperationId: null,
     lastRun: null,
     currentContext: null,
     recentContexts: [],
@@ -124,14 +133,11 @@ class DebugApp {
 
   private requireEl(id: string): HTMLElement {
     const element = document.getElementById(id);
-    if (!element) throw new Error(`missing required element: ${id}`);
-    return element;
+    if (!element) throw new Error(`missing required element: ${id}`); return element;
   }
 
   private setStatus(text: string, ok: boolean): void {
-    this.statusPill.textContent = text;
-    this.statusPill.style.borderColor = ok ? 'rgba(56,189,248,0.45)' : 'rgba(255,123,114,0.45)';
-    this.statusPill.style.color = ok ? 'var(--accent-strong)' : 'var(--error)';
+    setStatusPill(this.statusPill, text, ok);
   }
 
   private connectWatchStream(): void {
@@ -154,8 +160,7 @@ class DebugApp {
   }
 
   private disconnectWatchStream(): void {
-    this.watchSource?.close();
-    this.watchSource = null;
+    this.watchSource?.close(); this.watchSource = null;
   }
 
   private async fetchJson<T>(url: string): Promise<T> {
@@ -207,6 +212,7 @@ class DebugApp {
         recentClosures,
         messages,
         sessionEvents,
+        eventArchiveIndex,
         lastRun,
         currentContext,
       ] = await Promise.all([
@@ -218,9 +224,31 @@ class DebugApp {
         this.fetchJson<ClosureTraceRecord[]>('/api/recent_closures.json').catch(() => []),
         this.fetchJson<SessionMessage[]>('/api/session_messages.json').catch(() => []),
         this.fetchJson<RuntimeEvent[]>('/api/session_events.json').catch(() => []),
+        this.fetchJson<EventArchiveIndex>('/api/session_event_archive_index.json').catch(() => null),
         this.fetchJson<JsonRecord>('/api/last_run.json').catch(() => null),
         this.fetchJson<JsonRecord>('/api/current_context.json').catch(() => null),
       ]);
+      const liveEvents = Array.isArray(sessionEvents) ? sessionEvents : [];
+      let eventLedgerScope = this.state.eventLedgerScope;
+      let eventLedgerSegment = this.state.eventLedgerSegment;
+      let eventLedgerEvents = liveEvents;
+      if (eventLedgerScope !== 'live' && eventLedgerSegment) {
+        const tier = eventLedgerScope === 'local_archive' ? 'local' : 'cold';
+        eventLedgerEvents = await this.fetchJson<RuntimeEvent[]>(
+          `/api/session_events_segment.json?tier=${tier}&segment=${encodeURIComponent(eventLedgerSegment)}`,
+        ).catch(() => []);
+      }
+      const resolvedLedgerState = resolveEventLedgerState(
+        eventArchiveIndex,
+        eventLedgerScope,
+        eventLedgerSegment,
+        Array.isArray(eventLedgerEvents) ? eventLedgerEvents : [],
+        this.state.eventLedgerSelectedOperationId,
+        this.state.selectedOperationId,
+      );
+      eventLedgerScope = resolvedLedgerState.scope;
+      eventLedgerSegment = resolvedLedgerState.segment;
+      const eventLedgerSelectedOperationId = resolvedLedgerState.selectedOperationId;
 
       const focusTurns = buildFocusTurns(
         messages,
@@ -229,7 +257,7 @@ class DebugApp {
         recentReasoningViews,
         recentToolRecords,
         recentClosures,
-        sessionEvents,
+        liveEvents,
       );
       const selectedOperationId = focusTurns.some((turn) => turn.operationId === this.state.selectedOperationId)
         ? this.state.selectedOperationId
@@ -239,7 +267,12 @@ class DebugApp {
         binding,
         projection: {},
         events: [],
-        sessionEvents: Array.isArray(sessionEvents) ? sessionEvents : [],
+        sessionEvents: liveEvents,
+        eventArchiveIndex,
+        eventLedgerScope,
+        eventLedgerSegment,
+        eventLedgerEvents: Array.isArray(eventLedgerEvents) ? eventLedgerEvents : [],
+        eventLedgerSelectedOperationId,
         lastRun,
         currentContext,
         recentContexts: Array.isArray(recentContexts) ? recentContexts : [],
@@ -284,9 +317,7 @@ class DebugApp {
   }
 
   private syncRichnessButtons(): void {
-    this.richnessButtons.forEach((button) => {
-      button.classList.toggle('active', button.dataset.richness === this.state.conversationRichness);
-    });
+    syncRichnessButtons(this.richnessButtons, this.state.conversationRichness);
   }
 
   private ensurePendingTimer(): void {
@@ -302,8 +333,7 @@ class DebugApp {
 
   private stopPendingTimer(): void {
     if (this.pendingTimer === null) return;
-    window.clearInterval(this.pendingTimer);
-    this.pendingTimer = null;
+    window.clearInterval(this.pendingTimer); this.pendingTimer = null;
   }
 
   private onMessageClick(event: Event): void {
@@ -317,6 +347,9 @@ class DebugApp {
       const parentMessage = detailTrigger.closest<HTMLElement>('.message[data-operation-id]');
       const operationId = parentMessage?.dataset.operationId?.trim();
       if (operationId) this.state.selectedOperationId = operationId;
+      if (this.state.eventLedgerScope === 'live') {
+        this.state.eventLedgerSelectedOperationId = operationId ?? this.state.eventLedgerSelectedOperationId;
+      }
       this.render();
       return;
     }
@@ -326,6 +359,9 @@ class DebugApp {
     if (!operationId) return;
 
     this.state.selectedOperationId = operationId;
+    if (this.state.eventLedgerScope === 'live') {
+      this.state.eventLedgerSelectedOperationId = operationId;
+    }
     this.render();
   }
 
@@ -364,6 +400,41 @@ class DebugApp {
     const target = event.target;
     if (!(target instanceof HTMLElement)) return;
 
+    const ledgerScopeButton = target.closest<HTMLElement>('[data-event-ledger-scope]');
+    if (ledgerScopeButton) {
+      const scope = ledgerScopeButton.dataset.eventLedgerScope;
+      if (scope === 'live' || scope === 'local_archive' || scope === 'cold_archive') {
+        this.onInspectorLedgerScope(scope, null);
+      }
+      return;
+    }
+
+    const ledgerSegmentButton = target.closest<HTMLElement>('[data-event-ledger-segment]');
+    if (ledgerSegmentButton) {
+      const scope = ledgerSegmentButton.dataset.eventLedgerTier;
+      const segment = ledgerSegmentButton.dataset.eventLedgerSegment?.trim() ?? null;
+      if (
+        segment
+        && (scope === 'local_archive' || scope === 'cold_archive')
+      ) {
+        this.onInspectorLedgerScope(scope, segment);
+      }
+      return;
+    }
+
+    const ledgerOperationButton = target.closest<HTMLElement>('[data-event-ledger-operation]');
+    if (ledgerOperationButton) {
+      const operationId = ledgerOperationButton.dataset.eventLedgerOperation?.trim() ?? null;
+      if (operationId) {
+        this.state.eventLedgerSelectedOperationId = operationId;
+        if (this.state.focusTurns.some((turn) => turn.operationId === operationId)) {
+          this.state.selectedOperationId = operationId;
+        }
+        this.render();
+      }
+      return;
+    }
+
     const closeButton = target.closest<HTMLElement>('[data-close-card-detail]');
     if (closeButton) {
       this.state.openedCard = null;
@@ -392,6 +463,14 @@ class DebugApp {
     this.state.openedCard = this.state.openedCard === cardId ? null : cardId as DashboardCardId;
     this.state.openedSectionKey = null;
     this.render();
+  }
+
+  private onInspectorLedgerScope(scope: EventLedgerScope, segment: string | null): void {
+    this.state.eventLedgerScope = scope;
+    this.state.eventLedgerSegment = segment;
+    this.state.eventLedgerSelectedOperationId = null;
+    this.render();
+    void this.refresh();
   }
 
   private onKeyDown(event: KeyboardEvent): void {

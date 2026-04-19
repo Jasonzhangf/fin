@@ -89,6 +89,7 @@ pub(super) fn handle_wait_remind(
         "scheduled system self reminder in {wait_minutes} minute(s): {reminder}"
     ));
     outcome.reminder_scheduled = true;
+    outcome.yield_requested = true;
     true
 }
 

@@ -48,6 +48,7 @@ fn exec_command_and_write_stdin_replay_session_work() {
         &refs(),
         "2026-04-18T21:00:00+08:00",
         &context,
+        1,
         &[ModelToolCall {
             tool_name: "exec_command".into(),
             arguments: json!({
@@ -75,6 +76,7 @@ fn exec_command_and_write_stdin_replay_session_work() {
         &refs(),
         "2026-04-18T21:00:01+08:00",
         &context,
+        2,
         &[ModelToolCall {
             tool_name: "write_stdin".into(),
             arguments: json!({
@@ -116,6 +118,7 @@ fn mailbox_send_then_poll_consume_produces_expected_events() {
         &refs(),
         "2026-04-18T21:10:00+08:00",
         &context,
+        1,
         &[ModelToolCall {
             tool_name: "mailbox.send".into(),
             arguments: json!({
@@ -136,6 +139,7 @@ fn mailbox_send_then_poll_consume_produces_expected_events() {
         &refs(),
         "2026-04-18T21:10:01+08:00",
         &context,
+        2,
         &[ModelToolCall {
             tool_name: "mailbox.poll".into(),
             arguments: json!({

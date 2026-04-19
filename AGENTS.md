@@ -70,6 +70,8 @@
 40. tool execution semantic render contract：`docs/contracts/tool-execution-record-contract.md`
 41. 多轮历史记录、Turn/Closure、Digest family、Context rebuild：`docs/architecture/29-multi-turn-history-model.md`
 42. turn / step ledger / digest family / context rebuild index contracts：`docs/contracts/turn-record-contract.md`、`docs/contracts/step-ledger-contract.md`、`docs/contracts/digest-family-contract.md`、`docs/contracts/context-rebuild-index-contract.md`
+43. M1 收口、冻结范围、回归矩阵、M2 backlog：`docs/closeout/m1-scope-and-freeze.md`、`docs/closeout/m1-regression-matrix.md`、`docs/closeout/m1-known-gaps-and-m2-backlog.md`
+44. M1 收口 receipts：`docs/closeout/m1-receipts-2026-04-19.md`
 43. system/project/daemon 与 peer 分类：`docs/architecture/30-peer-taxonomy-and-supervision.md`
 44. peer plane / execution plane / presence / binding：`docs/architecture/31-peer-plane-and-binding-model.md`
 45. peer-aware 本地推理骨架与 local-only placeholder：`docs/architecture/32-peer-aware-local-reasoning-skeleton.md`

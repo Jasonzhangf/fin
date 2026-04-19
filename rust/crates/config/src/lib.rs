@@ -68,6 +68,8 @@ pub enum ProviderCredential {
 pub struct RuntimeConfig {
     pub runtime_home: String,
     pub heartbeat_interval_ms: u64,
+    #[serde(default)]
+    pub retention: RuntimeRetentionConfig,
 }
 
 impl Default for RuntimeConfig {
@@ -75,6 +77,48 @@ impl Default for RuntimeConfig {
         Self {
             runtime_home: "~/.fin".into(),
             heartbeat_interval_ms: 5_000,
+            retention: RuntimeRetentionConfig::default(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct RuntimeRetentionConfig {
+    pub session_event_hot_limit: usize,
+    pub session_event_local_archive_file_limit: usize,
+    pub recent_context_limit: usize,
+    pub recent_digest_limit: usize,
+    pub recent_reasoning_limit: usize,
+    pub recent_tool_record_limit: usize,
+    pub recent_closure_limit: usize,
+    pub recent_provider_request_limit: usize,
+    pub recent_provider_response_limit: usize,
+    pub recent_step_record_limit: usize,
+    pub recent_turn_limit: usize,
+    pub recent_routing_decision_limit: usize,
+    pub recent_round_limit: usize,
+    pub session_message_limit: usize,
+    pub reminder_pending_limit: usize,
+}
+
+impl Default for RuntimeRetentionConfig {
+    fn default() -> Self {
+        Self {
+            session_event_hot_limit: 512,
+            session_event_local_archive_file_limit: 8,
+            recent_context_limit: 8,
+            recent_digest_limit: 8,
+            recent_reasoning_limit: 16,
+            recent_tool_record_limit: 32,
+            recent_closure_limit: 16,
+            recent_provider_request_limit: 32,
+            recent_provider_response_limit: 32,
+            recent_step_record_limit: 64,
+            recent_turn_limit: 16,
+            recent_routing_decision_limit: 32,
+            recent_round_limit: 32,
+            session_message_limit: 128,
+            reminder_pending_limit: 128,
         }
     }
 }
@@ -160,8 +204,74 @@ impl SystemConfig {
             profile.validate_with_providers(&self.providers)?;
         }
 
+        validate_positive_usize(
+            "runtime.retention.session_event_hot_limit",
+            self.runtime.retention.session_event_hot_limit,
+        )?;
+        validate_positive_usize(
+            "runtime.retention.recent_context_limit",
+            self.runtime.retention.recent_context_limit,
+        )?;
+        validate_positive_usize(
+            "runtime.retention.recent_digest_limit",
+            self.runtime.retention.recent_digest_limit,
+        )?;
+        validate_positive_usize(
+            "runtime.retention.recent_reasoning_limit",
+            self.runtime.retention.recent_reasoning_limit,
+        )?;
+        validate_positive_usize(
+            "runtime.retention.recent_tool_record_limit",
+            self.runtime.retention.recent_tool_record_limit,
+        )?;
+        validate_positive_usize(
+            "runtime.retention.recent_closure_limit",
+            self.runtime.retention.recent_closure_limit,
+        )?;
+        validate_positive_usize(
+            "runtime.retention.recent_provider_request_limit",
+            self.runtime.retention.recent_provider_request_limit,
+        )?;
+        validate_positive_usize(
+            "runtime.retention.recent_provider_response_limit",
+            self.runtime.retention.recent_provider_response_limit,
+        )?;
+        validate_positive_usize(
+            "runtime.retention.recent_step_record_limit",
+            self.runtime.retention.recent_step_record_limit,
+        )?;
+        validate_positive_usize(
+            "runtime.retention.recent_turn_limit",
+            self.runtime.retention.recent_turn_limit,
+        )?;
+        validate_positive_usize(
+            "runtime.retention.recent_routing_decision_limit",
+            self.runtime.retention.recent_routing_decision_limit,
+        )?;
+        validate_positive_usize(
+            "runtime.retention.recent_round_limit",
+            self.runtime.retention.recent_round_limit,
+        )?;
+        validate_positive_usize(
+            "runtime.retention.session_message_limit",
+            self.runtime.retention.session_message_limit,
+        )?;
+        validate_positive_usize(
+            "runtime.retention.reminder_pending_limit",
+            self.runtime.retention.reminder_pending_limit,
+        )?;
+
         Ok(())
     }
+}
+
+fn validate_positive_usize(field: &str, value: usize) -> Result<(), ConfigError> {
+    if value == 0 {
+        return Err(ConfigError::Validation {
+            message: format!("{field} must be greater than 0"),
+        });
+    }
+    Ok(())
 }
 
 fn default_stream() -> bool {
@@ -436,6 +546,7 @@ X-Client = "fin"
         );
         assert_eq!(system.providers["openai"].headers["X-Client"], "fin");
         assert_eq!(system.runtime.runtime_home, "~/.fin");
+        assert_eq!(system.runtime.retention.recent_round_limit, 32);
         assert_eq!(system.policy.default_role, "default");
         assert_eq!(
             system.policy.roles["default"].provider_path.targets[0].provider_name,
@@ -519,6 +630,7 @@ X-Client = "fin"
         );
         assert_eq!(reparsed.providers["openai"].headers["X-Client"], "fin");
         assert_eq!(reparsed.policy.protocol_version, "fin.m1");
+        assert_eq!(reparsed.runtime.retention.session_message_limit, 128);
     }
 
     #[test]
@@ -556,6 +668,65 @@ model = "gpt-5"
         assert!(
             err.to_string()
                 .contains("provider_path target 'missing' is not present in providers")
+        );
+    }
+
+    #[test]
+    fn parse_system_toml_rejects_zero_retention_limit() {
+        let input = r#"
+default_provider = "openai"
+
+[providers.openai]
+name = "openai"
+protocol = "open-ai-compatible"
+base_url = "https://api.example.com/v1"
+model = "gpt-5"
+
+[providers.openai.credential]
+kind = "api_key_env"
+env_var = "OPENAI_API_KEY"
+
+[runtime]
+runtime_home = "~/.fin"
+heartbeat_interval_ms = 5000
+
+[runtime.retention]
+session_event_hot_limit = 0
+session_event_local_archive_file_limit = 1
+recent_context_limit = 8
+recent_digest_limit = 8
+recent_reasoning_limit = 16
+recent_tool_record_limit = 32
+recent_closure_limit = 16
+recent_provider_request_limit = 32
+recent_provider_response_limit = 32
+recent_step_record_limit = 64
+recent_turn_limit = 16
+recent_routing_decision_limit = 32
+recent_round_limit = 32
+session_message_limit = 128
+reminder_pending_limit = 128
+
+[policy]
+default_role = "default"
+protocol_version = "fin.m1"
+
+[policy.roles.default]
+stream = false
+timeout_ms = 60000
+
+[policy.roles.default.provider_path]
+strategy = "priority"
+
+[[policy.roles.default.provider_path.targets]]
+provider_name = "openai"
+model = "gpt-5"
+"#;
+
+        let err = parse_system_toml(input).expect_err("zero retention must fail");
+        assert!(
+            err.to_string()
+                .contains("runtime.retention.session_event_hot_limit must be greater than 0")
         );
     }
 }

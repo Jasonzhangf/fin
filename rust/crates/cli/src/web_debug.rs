@@ -1,8 +1,15 @@
 use crate::{
     CliError,
     channel_peer::{ensure_builtin_qqbot_binding, ensure_builtin_qqbot_peer},
+    chat_policy::{ChatDisposition, classify_request},
     config::default_provider_facade,
+    daemon_state::refresh_attached_daemon_state,
     demo::{DemoRequest, demo_identity, run_demo_request, sanitize_id_fragment},
+    execution_segments::{create_interrupted_segment, latest_open_segment, merge_segment_into_run},
+    execution_state::{
+        clear_waiting_if_due, enqueue_pending_input, finalize_after_run, load_execution_state,
+        mark_failed, mark_running, pause_execution,
+    },
     reminder_scheduler::inject_due_reminders,
     runtime_home::{
         persist_runtime_demo, read_last_run_value, read_recent_digests,
@@ -11,6 +18,8 @@ use crate::{
     },
     session_commands::try_handle_local_command,
     status_probe::build_status_probe_response,
+    supervisor_cycle::run_supervisor_cycle,
+    supervisor_heartbeat::run_supervisor_heartbeat,
     time::local_timestamp_now,
     transcript::scope_from_session_id,
     turn_ids::next_turn_index,
@@ -20,7 +29,7 @@ use fin_debug_server::{
     ChatSendRequest, ChatSendResponse, DebugActionHandler, DebugBinding,
     serve_debug_mvp_with_handler,
 };
-use fin_provider::ProviderFacade;
+use fin_provider::{InferenceProvider, ProviderFacade};
 use std::path::{Path, PathBuf};
 
 #[derive(Debug, Clone)]
@@ -71,14 +80,67 @@ impl CliDebugActionHandler {
         runtime_home: &Path,
         request: ChatSendRequest,
     ) -> Result<ChatSendResponse, CliError> {
-        let message = request.message.trim();
-        if message.is_empty() {
+        self.send_message_internal_with_provider(runtime_home, request, &self.provider)
+    }
+
+    fn send_message_internal_with_provider(
+        &self,
+        runtime_home: &Path,
+        request: ChatSendRequest,
+        provider: &impl InferenceProvider,
+    ) -> Result<ChatSendResponse, CliError> {
+        if request.message.trim().is_empty() {
             return Err(CliError::Usage);
         }
 
         let mut existing_binding = self.read_binding_internal(runtime_home)?;
         let _ = ensure_builtin_qqbot_binding(runtime_home, existing_binding.session_id.as_deref())?;
-        let _ = inject_due_reminders(runtime_home, &existing_binding)?;
+        let _ = run_supervisor_heartbeat(
+            runtime_home,
+            &existing_binding,
+            "web_debug_request",
+            self.system.runtime.heartbeat_interval_ms,
+            &self.system.runtime.retention,
+            self.system.runtime.retention.recent_routing_decision_limit,
+            |binding, message, merge_segment| {
+                self.run_chat_turn_with_provider(
+                    runtime_home,
+                    binding,
+                    message,
+                    provider,
+                    merge_segment,
+                )
+            },
+        )?;
+        let fired = inject_due_reminders(runtime_home, &existing_binding)?;
+        if fired > 0 {
+            clear_waiting_if_due(runtime_home, &existing_binding, &local_timestamp_now())?;
+            existing_binding = self.read_binding_internal(runtime_home)?;
+            let _ = run_supervisor_cycle(
+                runtime_home,
+                &existing_binding,
+                "reminder_fired",
+                self.system.runtime.heartbeat_interval_ms,
+                &self.system.runtime.retention,
+                self.system.runtime.retention.recent_routing_decision_limit,
+                |binding, message, merge_segment| {
+                    self.run_chat_turn_with_provider(
+                        runtime_home,
+                        binding,
+                        message,
+                        provider,
+                        merge_segment,
+                    )
+                },
+            )?;
+        }
+        let _ = refresh_attached_daemon_state(
+            runtime_home,
+            &existing_binding,
+            "web_debug_request",
+            &self.system.runtime.retention,
+            self.system.runtime.retention.recent_routing_decision_limit,
+        )?;
         existing_binding = self.read_binding_internal(runtime_home)?;
         if request.is_status_probe() {
             return build_status_probe_response(runtime_home, existing_binding, &request);
@@ -86,25 +148,159 @@ impl CliDebugActionHandler {
         if let Some(response) =
             try_handle_local_command(runtime_home, &self.system, &request, &existing_binding)?
         {
+            if request.message.trim_start().starts_with("/resume-run")
+                || request.message.trim_start().starts_with("/tick")
+            {
+                let source = if request.message.trim_start().starts_with("/resume-run") {
+                    "resume_run"
+                } else {
+                    "manual_tick"
+                };
+                let cycle = run_supervisor_cycle(
+                    runtime_home,
+                    &response.binding,
+                    source,
+                    self.system.runtime.heartbeat_interval_ms,
+                    &self.system.runtime.retention,
+                    self.system.runtime.retention.recent_routing_decision_limit,
+                    |binding, message, merge_segment| {
+                        self.run_chat_turn_with_provider(
+                            runtime_home,
+                            binding,
+                            message,
+                            provider,
+                            merge_segment,
+                        )
+                    },
+                )?;
+                if let Some(drained) = cycle.tick.drive.last_response {
+                    return Ok(drained);
+                }
+            }
             return Ok(response);
         }
+        let state = load_execution_state(runtime_home, &existing_binding)?;
+        match classify_request(&request, state.as_ref()) {
+            ChatDisposition::StatusProbe => {
+                build_status_probe_response(runtime_home, existing_binding, &request)
+            }
+            ChatDisposition::InterruptRequest { message } => self.run_interrupt_request(
+                runtime_home,
+                existing_binding,
+                &message,
+                provider,
+                state,
+            ),
+            ChatDisposition::Queue { reason } => self.enqueue_request_notice(
+                runtime_home,
+                existing_binding,
+                &request,
+                state.as_ref(),
+                &reason,
+            ),
+            ChatDisposition::RunNow => self.run_chat_turn_with_provider(
+                runtime_home,
+                existing_binding,
+                request.message.trim().to_string(),
+                provider,
+                None,
+            ),
+        }
+    }
+
+    fn enqueue_request_notice(
+        &self,
+        runtime_home: &Path,
+        binding: DebugBinding,
+        request: &ChatSendRequest,
+        state: Option<&fin_contracts::ExecutionStateRecord>,
+        reason: &str,
+    ) -> Result<ChatSendResponse, CliError> {
+        let queued = enqueue_pending_input(
+            runtime_home,
+            &binding,
+            request,
+            &local_timestamp_now(),
+            reason,
+        )?;
+        let status = state.map(|value| value.status.as_str()).unwrap_or("queued");
+        let pending_count =
+            state.map_or(0, |value| value.pending_input_count) + usize::from(queued.is_some());
+        Ok(ChatSendResponse {
+            binding,
+            answer: format!(
+                "input queued: status={status} pending_inputs={pending_count}{}",
+                queued
+                    .as_ref()
+                    .map(|value| format!(" id={}", value.pending_input_id))
+                    .unwrap_or_default()
+            ),
+            digest_id: format!(
+                "digest-queued-{}",
+                queued
+                    .as_ref()
+                    .map(|value| value.pending_input_id.as_str())
+                    .unwrap_or("pending")
+            ),
+            events_count: 0,
+            response_kind: "system_notice".into(),
+            freshness: Some("instant".into()),
+            control_feedback: None,
+            progress: None,
+            note: None,
+            routing_action: None,
+        })
+    }
+
+    fn run_interrupt_request(
+        &self,
+        runtime_home: &Path,
+        binding: DebugBinding,
+        message: &str,
+        provider: &impl InferenceProvider,
+        state: Option<fin_contracts::ExecutionStateRecord>,
+    ) -> Result<ChatSendResponse, CliError> {
+        let mut open_segment = latest_open_segment(runtime_home, &binding)?;
+        let should_create_segment = open_segment.is_none()
+            && state
+                .as_ref()
+                .is_some_and(|value| matches!(value.status.as_str(), "running" | "paused"));
+        if should_create_segment {
+            if let Some((_, checkpoint)) = pause_execution(
+                runtime_home,
+                &binding,
+                &local_timestamp_now(),
+                Some("interrupt_request".into()),
+            )? {
+                open_segment = create_interrupted_segment(runtime_home, &binding, &checkpoint)?;
+            }
+        }
+        let _ = open_segment;
+        self.run_chat_turn_with_provider(runtime_home, binding, message.to_string(), provider, None)
+    }
+
+    fn run_chat_turn_with_provider(
+        &self,
+        runtime_home: &Path,
+        binding: DebugBinding,
+        message: String,
+        provider: &impl InferenceProvider,
+        merge_segment: Option<&fin_contracts::InterruptedSegmentRecord>,
+    ) -> Result<ChatSendResponse, CliError> {
         let default_identity = demo_identity(Some("web-debug"));
         let last_run = read_last_run_value(runtime_home).ok();
-        let session_id = existing_binding
+        let session_id = binding
             .session_id
             .clone()
             .unwrap_or(default_identity.session_id);
-        let task_id = existing_binding
-            .task_id
-            .clone()
-            .unwrap_or(default_identity.task_id);
-        let digests = existing_binding
+        let task_id = binding.task_id.clone().unwrap_or(default_identity.task_id);
+        let digests = binding
             .recent_digests_path
             .as_deref()
             .map(|relative| read_recent_digests(&runtime_home.join(relative)))
             .transpose()?
             .unwrap_or_default();
-        let recent_messages = existing_binding
+        let recent_messages = binding
             .session_messages_path
             .as_deref()
             .map(|relative| read_session_messages(&runtime_home.join(relative)))
@@ -113,7 +309,7 @@ impl CliDebugActionHandler {
             .into_iter()
             .map(|message| format!("{}: {}", message.role, message.content))
             .collect::<Vec<_>>();
-        let mut observed_ops = existing_binding
+        let mut observed_ops = binding
             .session_messages_path
             .as_deref()
             .map(|relative| read_session_messages(&runtime_home.join(relative)))
@@ -142,7 +338,7 @@ impl CliDebugActionHandler {
         let scope = scope_from_session_id(&session_id);
         let turn_index = next_turn_index(
             last_run.as_ref(),
-            existing_binding.session_id.as_deref().and_then(|_| {
+            binding.session_id.as_deref().and_then(|_| {
                 last_run
                     .as_ref()
                     .and_then(|value| value.get("operation_id"))
@@ -150,31 +346,51 @@ impl CliDebugActionHandler {
             }),
             &observed_ops,
         );
+        let submitted_at = local_timestamp_now();
+        let operation_id = format!("op-{scope}-{turn_index:04}");
+        let trace_id = format!("trace-{scope}-{turn_index:04}");
+        mark_running(runtime_home, &binding, &operation_id, &submitted_at)?;
 
-        let run = run_demo_request(
+        let run = match run_demo_request(
             &self.system,
-            &self.provider,
+            provider,
             DemoRequest {
-                operation_id: format!("op-{scope}-{turn_index:04}"),
-                trace_id: format!("trace-{scope}-{turn_index:04}"),
+                operation_id: operation_id.clone(),
+                trace_id: trace_id.clone(),
                 session_id,
                 task_id,
-                input: message.to_string(),
+                input: message,
                 recent_messages,
                 recent_digests: digests,
                 recent_reasoning_views,
                 recent_tool_records,
-                project_label: Some(existing_binding.project_label.clone()),
+                project_label: Some(binding.project_label.clone()),
                 runtime_home: Some(runtime_home.display().to_string()),
                 cwd: std::env::current_dir()
                     .ok()
                     .map(|path| path.display().to_string()),
                 selected_paths: Vec::new(),
-                submitted_at: local_timestamp_now(),
+                submitted_at,
             },
-        )?;
+        ) {
+            Ok(run) => run,
+            Err(err) => {
+                mark_failed(
+                    runtime_home,
+                    &binding,
+                    &operation_id,
+                    &local_timestamp_now(),
+                    err.to_string().as_str(),
+                )?;
+                return Err(err);
+            }
+        };
         persist_runtime_demo(&self.user_toml, &self.system, &run, Some(runtime_home))?;
         let binding = self.read_binding_internal(runtime_home)?;
+        finalize_after_run(runtime_home, &binding, &run)?;
+        if let Some(segment) = merge_segment {
+            let _ = merge_segment_into_run(runtime_home, &binding, segment, &run)?;
+        }
 
         Ok(ChatSendResponse {
             binding,
@@ -186,6 +402,7 @@ impl CliDebugActionHandler {
             control_feedback: None,
             progress: None,
             note: None,
+            routing_action: Some(run.routing_action),
         })
     }
 }
@@ -234,256 +451,5 @@ pub(crate) fn web_debug_runtime_home(
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::{
-        config::map_system_config, fs_utils::write_file, runtime_home::ensure_runtime_home_layout,
-    };
-    use fin_contracts::{ControlFeedback, ExecutionNote, ProgressBlock};
-    use std::{
-        fs,
-        time::{SystemTime, UNIX_EPOCH},
-    };
-
-    fn sample_user_toml() -> String {
-        r#"
-default_provider = "openai"
-
-[providers.openai]
-protocol = "open-ai-compatible"
-base_url = "https://api.example.com/v1"
-model = "gpt-5"
-api_key_env = "OPENAI_API_KEY"
-"#
-        .into()
-    }
-
-    fn temp_runtime_home() -> PathBuf {
-        std::env::temp_dir().join(format!(
-            "fin-status-probe-{}",
-            SystemTime::now()
-                .duration_since(UNIX_EPOCH)
-                .expect("time should work")
-                .as_nanos()
-        ))
-    }
-
-    #[test]
-    fn status_probe_returns_latest_framework_state_without_new_closure() {
-        let home = temp_runtime_home();
-        ensure_runtime_home_layout(&home).expect("runtime home should init");
-        let system = map_system_config(&sample_user_toml()).expect("system config");
-        let handler =
-            CliDebugActionHandler::new(sample_user_toml(), system).expect("handler should build");
-        let session_dir = home.join("sessions/2026/04/session-web-debug");
-        fs::create_dir_all(session_dir.join("conversation")).expect("conversation dir");
-        fs::create_dir_all(session_dir.join("progress")).expect("progress dir");
-        fs::create_dir_all(session_dir.join("notes")).expect("notes dir");
-        fs::create_dir_all(session_dir.join("control")).expect("control dir");
-        fs::create_dir_all(session_dir.join("digests")).expect("digests dir");
-        write_file(
-            &session_dir.join("conversation/messages.json"),
-            br#"[{"message_id":"user-1","role":"user","content":"build it","created_at":"2026-04-18T08:10:00+08:00","session_id":"session-web-debug","task_id":"task-web-debug"}]"#,
-        )
-        .expect("messages should write");
-        write_file(
-            &session_dir.join("digests/recent_digests.json"),
-            br#"[{"digest_id":"digest-existing","closure_id":"closure-existing","session_id":"session-web-debug","task_id":"task-web-debug","summary":"existing digest","continuity_tail":[],"note_refs":[],"artifact_candidates":[],"created_at":"2026-04-18T08:10:01+08:00"}]"#,
-        )
-        .expect("digests should write");
-        write_file(
-            &session_dir.join("progress/latest.json"),
-            serde_json::to_vec_pretty(&ProgressBlock {
-                progress_id: "progress-1".into(),
-                refs: fin_contracts::EntityRefs {
-                    session_id: Some("session-web-debug".into()),
-                    task_id: Some("task-web-debug".into()),
-                    ..fin_contracts::EntityRefs::default()
-                },
-                phase: "running".into(),
-                blocker: None,
-                next_step: Some("finish current closure".into()),
-                health_hint: Some("healthy".into()),
-                tool_snapshots: vec![],
-            })
-            .expect("progress json")
-            .as_slice(),
-        )
-        .expect("progress should write");
-        write_file(
-            &session_dir.join("notes/latest.json"),
-            serde_json::to_vec_pretty(&ExecutionNote {
-                note_id: "note-1".into(),
-                refs: fin_contracts::EntityRefs {
-                    session_id: Some("session-web-debug".into()),
-                    task_id: Some("task-web-debug".into()),
-                    ..fin_contracts::EntityRefs::default()
-                },
-                summary: "currently applying runtime changes".into(),
-                decision: None,
-                lesson: None,
-                blocker: None,
-                next_step: Some("wait for verification".into()),
-                control_feedback: None,
-                created_at: "2026-04-18T08:10:02+08:00".into(),
-            })
-            .expect("note json")
-            .as_slice(),
-        )
-        .expect("note should write");
-        write_file(
-            &session_dir.join("control/latest.json"),
-            serde_json::to_vec_pretty(&ControlFeedback {
-                origin: "runtime_heuristic".into(),
-                is_continuation: true,
-                continuity_confidence: 93,
-                topic_shift_confidence: 7,
-                simple_query_confidence: 10,
-                reason: "current task still active".into(),
-                ..ControlFeedback::default()
-            })
-            .expect("control json")
-            .as_slice(),
-        )
-        .expect("control should write");
-        write_file(
-            &home.join("runtime/current/last_run.json"),
-            br#"{
-  "session_id":"session-web-debug",
-  "task_id":"task-web-debug",
-  "digest_id":"digest-existing",
-  "session_messages_path":"sessions/2026/04/session-web-debug/conversation/messages.json",
-  "session_control_feedback_path":"sessions/2026/04/session-web-debug/control/latest.json"
-}"#,
-        )
-        .expect("last_run should write");
-
-        let before_messages =
-            fs::read_to_string(session_dir.join("conversation/messages.json")).expect("before");
-        let before_digests =
-            fs::read_to_string(session_dir.join("digests/recent_digests.json")).expect("before");
-
-        let response = handler
-            .send_message_internal(
-                &home,
-                ChatSendRequest {
-                    message: "/status current?".into(),
-                    input_kind: Some("status_probe".into()),
-                },
-            )
-            .expect("status probe should work");
-
-        assert_eq!(response.response_kind, "status_probe");
-        assert_eq!(response.freshness.as_deref(), Some("live"));
-        assert_eq!(response.digest_id, "digest-existing");
-        assert_eq!(response.events_count, 0);
-        assert!(response.answer.contains("status probe (live)"));
-        assert!(response.answer.contains("phase=running"));
-        assert!(
-            response
-                .answer
-                .contains("currently applying runtime changes")
-        );
-        assert_eq!(
-            response
-                .control_feedback
-                .as_ref()
-                .map(|value| value.continuity_confidence),
-            Some(93)
-        );
-        assert_eq!(
-            fs::read_to_string(session_dir.join("conversation/messages.json")).expect("after"),
-            before_messages
-        );
-        assert_eq!(
-            fs::read_to_string(session_dir.join("digests/recent_digests.json")).expect("after"),
-            before_digests
-        );
-    }
-
-    #[test]
-    fn slash_new_creates_and_binds_new_session() {
-        let home = temp_runtime_home();
-        ensure_runtime_home_layout(&home).expect("runtime home should init");
-        let system = map_system_config(&sample_user_toml()).expect("system config");
-        let handler =
-            CliDebugActionHandler::new(sample_user_toml(), system).expect("handler should build");
-
-        let response = handler
-            .send_message_internal(
-                &home,
-                ChatSendRequest {
-                    message: "/new".into(),
-                    input_kind: None,
-                },
-            )
-            .expect("new command should work");
-        assert_eq!(response.response_kind, "system_notice");
-        let session_id = response.binding.session_id.expect("session");
-        let task_id = response.binding.task_id.expect("task");
-        assert!(session_id.starts_with("session-"));
-        assert!(task_id.starts_with("task-"));
-        let last_run = read_last_run_value(&home).expect("last run");
-        assert_eq!(
-            last_run
-                .get("session_id")
-                .and_then(serde_json::Value::as_str),
-            Some(session_id.as_str())
-        );
-    }
-
-    #[test]
-    fn slash_compact_rebuilds_current_context_without_provider_call() {
-        let home = temp_runtime_home();
-        ensure_runtime_home_layout(&home).expect("runtime home should init");
-        let system = map_system_config(&sample_user_toml()).expect("system config");
-        let handler =
-            CliDebugActionHandler::new(sample_user_toml(), system).expect("handler should build");
-        let session_dir = home.join("sessions/2026/04/session-compact");
-        fs::create_dir_all(session_dir.join("conversation")).expect("conversation dir");
-        fs::create_dir_all(session_dir.join("digests")).expect("digests dir");
-        fs::create_dir_all(session_dir.join("context")).expect("context dir");
-        fs::create_dir_all(session_dir.join("reasoning")).expect("reasoning dir");
-        fs::create_dir_all(session_dir.join("tools")).expect("tools dir");
-        write_file(
-            &session_dir.join("conversation/messages.json"),
-            br#"[{"message_id":"user-1","role":"user","content":"keep context","created_at":"2026-04-18T08:10:00+08:00","session_id":"session-compact","task_id":"task-compact"}]"#,
-        )
-        .expect("messages");
-        write_file(&session_dir.join("digests/recent_digests.json"), b"[]").expect("digests");
-        write_file(&session_dir.join("context/recent_contexts.json"), b"[]").expect("contexts");
-        write_file(
-            &session_dir.join("reasoning/recent_reasoning_views.json"),
-            b"[]",
-        )
-        .expect("reasoning");
-        write_file(&session_dir.join("tools/recent_tool_records.json"), b"[]").expect("tools");
-        write_file(
-            &home.join("runtime/current/last_run.json"),
-            br#"{
-  "session_id":"session-compact",
-  "task_id":"task-compact",
-  "session_messages_path":"sessions/2026/04/session-compact/conversation/messages.json",
-  "session_recent_contexts_path":"sessions/2026/04/session-compact/context/recent_contexts.json",
-  "session_recent_digests_path":"sessions/2026/04/session-compact/digests/recent_digests.json"
-}"#,
-        )
-        .expect("last_run");
-
-        let response = handler
-            .send_message_internal(
-                &home,
-                ChatSendRequest {
-                    message: "/compact".into(),
-                    input_kind: None,
-                },
-            )
-            .expect("compact command should work");
-        assert_eq!(response.response_kind, "system_notice");
-        assert!(home.join("runtime/current/current_context.json").exists());
-        assert!(
-            home.join("runtime/current/current_rebuild_index.json")
-                .exists()
-        );
-    }
-}
+#[path = "web_debug_tests.rs"]
+mod web_debug_tests;

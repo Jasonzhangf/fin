@@ -73,6 +73,7 @@ description: Project-local default development workflow for fin. Use for feature
 - `Minimal / Rich / Full Trace` 这类 UI richness 开关只能控制展示层次，不能切换事实来源；所有 richness 都必须基于同一份 `operation_id -> session artifacts` 绑定结果
 - 用户在任务进行中询问“当前状态”的请求应视为特殊并行 inquiry；必须带显式标记，走 non-interrupting side path，从最新 progress/note/control/tool state 组装回复，不能打断主推理
 - 同一 turn 的自动工具编排必须有轮次上限与结构化限幅事件（如 `reasoning.auto_tool_roundtrip_limit_reached`），防止模型重复工具调用导致无界循环
+- 项目进入 M1 收口模式后，默认优先做 `scope freeze -> regression matrix -> blocker fix -> receipts`；非阻塞的新框架/新模块需求先登记到 closeout/backlog 文档，不直接实现
 
 ## 4) Minimal validation matrix
 

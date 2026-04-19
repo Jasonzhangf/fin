@@ -1,4 +1,4 @@
-use fin_contracts::{ControlFeedback, ExecutionNote, ProgressBlock};
+use fin_contracts::{ControlFeedback, ExecutionNote, ProgressBlock, RoutingActionRecord};
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -57,4 +57,6 @@ pub struct ChatSendResponse {
     pub progress: Option<ProgressBlock>,
     #[serde(default)]
     pub note: Option<ExecutionNote>,
+    #[serde(default)]
+    pub routing_action: Option<RoutingActionRecord>,
 }

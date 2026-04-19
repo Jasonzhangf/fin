@@ -176,7 +176,13 @@ fn connectivity_probe_marks_auth_required_when_credentials_missing() {
     fs::create_dir_all(&home).expect("home");
     let state = probe_builtin_qqbot_connectivity(&home).expect("probe");
     assert_eq!(state.connectivity_state, "auth_required");
-    assert!(state.last_connectivity_error.as_deref().unwrap_or_default().contains("missing qqbot credentials"));
+    assert!(
+        state
+            .last_connectivity_error
+            .as_deref()
+            .unwrap_or_default()
+            .contains("missing qqbot credentials")
+    );
     let events = fs::read_to_string(home.join("runtime/peers/qqbot/events.jsonl")).expect("events");
     assert!(events.contains("channel.peer.connectivity_probe_failed"));
     unsafe {

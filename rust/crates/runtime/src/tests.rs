@@ -78,13 +78,21 @@ fn run_closure_emits_expected_event_chain() {
             "provider.gateway_response_received",
             "provider.response_normalized",
             "provider.completed",
+            "provider.round_completed",
+            "model.output_round_parsed",
+            "control.feedback_round_recorded",
+            "tool.dispatch_round_completed",
             "model.output_parsed",
             "progress.updated",
             "tool.execution_recorded",
             "control.feedback_recorded",
             "execution_note.appended",
             "reasoning.view_recorded",
+            "routing.decision_recorded",
+            "routing.action_derived",
+            "step.ledger_recorded",
             "digest.finalized",
+            "turn.recorded",
             "closure.trace_recorded",
             "operation.completed",
         ]
@@ -106,6 +114,12 @@ fn run_closure_emits_expected_event_chain() {
     );
     assert_eq!(run.tool_records.len(), 1);
     assert_eq!(run.tool_records[0].tool_name, "provider.call");
+    assert_eq!(run.provider_request_records.len(), 1);
+    assert_eq!(run.provider_response_records.len(), 1);
+    assert!(run.step_records.len() >= 5);
+    assert_eq!(run.turn_record.operation_id, "op-1");
+    assert_eq!(run.routing_decision.operation_id, "op-1");
+    assert_eq!(run.routing_action.operation_id, "op-1");
     assert_eq!(run.reasoning_view.operation_id, "op-1");
     assert_eq!(run.closure_trace.operation_id, "op-1");
     assert!(
@@ -129,6 +143,14 @@ fn run_closure_emits_expected_event_chain() {
     let control_payload: ControlFeedback =
         serde_json::from_value(control_event.payload.clone()).expect("payload should decode");
     assert_eq!(control_payload, run.control_feedback);
+    let turn_event = run
+        .events
+        .iter()
+        .find(|event| event.event_type == "turn.recorded")
+        .expect("turn.recorded event should exist");
+    let turn_payload: fin_contracts::TurnRecord =
+        serde_json::from_value(turn_event.payload.clone()).expect("turn should decode");
+    assert_eq!(turn_payload.turn_id, run.turn_record.turn_id);
     let inference_started = run
         .events
         .iter()
@@ -141,6 +163,21 @@ fn run_closure_emits_expected_event_chain() {
             .and_then(serde_json::Value::as_str)
             .unwrap_or_default()
             .contains("Current user input:\nhello")
+    );
+    assert!(
+        run.step_records
+            .iter()
+            .any(|step| step.step_kind == "provider_request" && !step.event_ids.is_empty())
+    );
+    assert!(
+        run.step_records
+            .iter()
+            .any(|step| step.step_kind == "model_parse" && !step.event_ids.is_empty())
+    );
+    assert!(
+        run.step_records
+            .iter()
+            .any(|step| step.step_kind == "control_feedback" && !step.event_ids.is_empty())
     );
 }
 

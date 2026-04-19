@@ -1,7 +1,16 @@
+import { renderEventLedger } from './event_ledger.js';
+import { buildEventLedgerView } from './event_ledger_view_state.js';
 import { formatLocalTimestamp } from './time.js';
 import { renderInspectorSection } from './section_renderers.js';
 import { StructuredTreeRenderer } from './tree.js';
-import type { DashboardCardId, FocusTurn, JsonRecord, RefreshState, RuntimeEvent } from './types.js';
+import type {
+  DashboardCardId,
+  EventLedgerView,
+  FocusTurn,
+  JsonRecord,
+  RefreshState,
+  RuntimeEvent,
+} from './types.js';
 
 interface CardSpec {
   id: DashboardCardId;
@@ -11,6 +20,7 @@ interface CardSpec {
   focusAreas: string[];
   sections: Array<[string, unknown]>;
   timelineGroups?: Array<[string, RuntimeEvent[]]>;
+  eventLedger?: EventLedgerView;
 }
 
 export class InspectorPane {
@@ -33,6 +43,15 @@ export class InspectorPane {
   }
 
   private buildCards(selected: FocusTurn | undefined, state: RefreshState): CardSpec[] {
+    const ledgerOperationId = state.eventLedgerSelectedOperationId;
+    const filteredLedgerEvents = ledgerOperationId
+      ? state.eventLedgerEvents.filter((event) => event.operation_id === ledgerOperationId)
+      : state.eventLedgerEvents;
+    const ledgerLatestEventNames = filteredLedgerEvents
+      .slice(-4)
+      .map((event) => String(event.event_type ?? '-'))
+      .join(' → ');
+    const ledgerView = buildEventLedgerView(state);
     const providerAccepted = asRecord(findEvent(selected?.events ?? [], 'provider.operation_accepted')?.payload);
     const providerResponse = asRecord(
       findEvent(selected?.events ?? [], 'provider.completed')?.payload
@@ -229,12 +248,13 @@ export class InspectorPane {
         digestLines: [
           ['operation', `${selected?.operationId ?? '-'} · trace=${selected?.traceId ?? '-'}`],
           ['timeline', shortText(latestEventNames || '-', 180)],
+          ['ledger', `scope=${state.eventLedgerScope} · segment=${state.eventLedgerSegment ?? '-'} · op=${ledgerOperationId ?? '-'} · events=${filteredLedgerEvents.length}`],
           ['control', `continuity=${scalar(controlFeedback.continuity_confidence)} · shift=${scalar(controlFeedback.topic_shift_confidence)} · simple=${scalar(controlFeedback.simple_query_confidence)}`],
           ['reasoning', shortText(scalar(reasoningView.summary ?? notePayload.summary), 120)],
           ['tools', `records=${toolRecords.length} · ${shortText(toolRecords.map((record) => `${scalar(record.tool_name)}:${scalar(record.status)}`).join(' | '), 120)}`],
           ['closure', shortText(scalar(selected?.digest?.summary ?? selected?.assistantMessage?.content ?? '-'), 180)],
         ],
-        focusAreas: ['Turn Messages', 'Request Structure', 'Control Feedback', 'Reasoning View', 'Tool Activity', 'Execution Note', 'Closure Trace', 'Selected Timeline', 'Recent Session Timeline', 'Digest'],
+        focusAreas: ['Turn Messages', 'Request Structure', 'Control Feedback', 'Reasoning View', 'Tool Activity', 'Execution Note', 'Closure Trace', 'Selected Timeline', 'Event Ledger', 'Digest'],
         sections: [
           ['Turn Messages', { user: selected?.userMessage ?? {}, assistant: selected?.assistantMessage ?? {} }],
           ['Request Structure', request],
@@ -244,13 +264,22 @@ export class InspectorPane {
           ['Execution Note', notePayload],
           ['Closure Trace', closureTrace],
           ['Selected Timeline', { events: selected?.events ?? [] }],
-          ['Recent Session Timeline', { events: state.sessionEvents.slice(-8) }],
+          ['Event Ledger', {
+            scope: state.eventLedgerScope,
+            segment: state.eventLedgerSegment ?? null,
+            selected_operation_id: ledgerOperationId,
+            live_event_count: state.eventArchiveIndex?.live_event_count ?? state.sessionEvents.length,
+            local_segments: state.eventArchiveIndex?.local_segments ?? [],
+            cold_segments: state.eventArchiveIndex?.cold_segments ?? [],
+          }],
+          ['Ledger Timeline', { events: filteredLedgerEvents.slice(-32), latest_event_names: ledgerLatestEventNames || '-' }],
           ['Digest', selected?.digest ?? {}],
         ],
         timelineGroups: [
           ['Selected Request Timeline', selected?.events ?? []],
-          ['Recent Session Timeline', state.sessionEvents.slice(-8)],
+          ['Event Ledger Timeline', filteredLedgerEvents.slice(-32)],
         ],
+        eventLedger: ledgerView,
       },
     ];
   }
@@ -304,6 +333,7 @@ export class InspectorPane {
             </div>
           ` : ''}
           <div class="detail-modal-body">
+            ${card.eventLedger ? renderEventLedger(this.tree, card.eventLedger) : ''}
             <div class="detail-modal-summary">
               ${card.digestLines.map(([label, value]) => `
                 <article class="summary-chip">

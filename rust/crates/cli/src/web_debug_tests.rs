@@ -1,0 +1,307 @@
+use super::*;
+use crate::{
+    config::map_system_config, fs_utils::write_file, runtime_home::ensure_runtime_home_layout,
+};
+use fin_contracts::{ControlFeedback, ExecutionNote, ProgressBlock};
+use fin_provider::{ProviderDescriptor, StaticProviderClient};
+use std::{
+    fs,
+    time::{SystemTime, UNIX_EPOCH},
+};
+
+fn sample_user_toml() -> String {
+    r#"
+default_provider = "openai"
+
+[providers.openai]
+protocol = "open-ai-compatible"
+base_url = "https://api.example.com/v1"
+model = "gpt-5"
+api_key_env = "OPENAI_API_KEY"
+"#
+    .into()
+}
+
+fn temp_runtime_home() -> PathBuf {
+    std::env::temp_dir().join(format!(
+        "fin-status-probe-{}",
+        SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("time should work")
+            .as_nanos()
+    ))
+}
+
+fn static_provider(system: &SystemConfig) -> StaticProviderClient {
+    StaticProviderClient::new(ProviderDescriptor::from_resolved(
+        system.default_provider_config().expect("default provider"),
+    ))
+}
+
+#[test]
+fn status_probe_returns_latest_framework_state_without_new_closure() {
+    let home = temp_runtime_home();
+    ensure_runtime_home_layout(&home).expect("runtime home should init");
+    let system = map_system_config(&sample_user_toml()).expect("system config");
+    let handler =
+        CliDebugActionHandler::new(sample_user_toml(), system).expect("handler should build");
+    let session_dir = home.join("sessions/2026/04/session-web-debug");
+    fs::create_dir_all(session_dir.join("conversation")).expect("conversation dir");
+    fs::create_dir_all(session_dir.join("progress")).expect("progress dir");
+    fs::create_dir_all(session_dir.join("notes")).expect("notes dir");
+    fs::create_dir_all(session_dir.join("control")).expect("control dir");
+    fs::create_dir_all(session_dir.join("digests")).expect("digests dir");
+    write_file(
+            &session_dir.join("conversation/messages.json"),
+            br#"[{"message_id":"user-1","role":"user","content":"build it","created_at":"2026-04-18T08:10:00+08:00","session_id":"session-web-debug","task_id":"task-web-debug"}]"#,
+        )
+        .expect("messages should write");
+    write_file(
+            &session_dir.join("digests/recent_digests.json"),
+            br#"[{"digest_id":"digest-existing","closure_id":"closure-existing","session_id":"session-web-debug","task_id":"task-web-debug","summary":"existing digest","continuity_tail":[],"note_refs":[],"artifact_candidates":[],"created_at":"2026-04-18T08:10:01+08:00"}]"#,
+        )
+        .expect("digests should write");
+    write_file(
+        &session_dir.join("progress/latest.json"),
+        serde_json::to_vec_pretty(&ProgressBlock {
+            progress_id: "progress-1".into(),
+            refs: fin_contracts::EntityRefs {
+                session_id: Some("session-web-debug".into()),
+                task_id: Some("task-web-debug".into()),
+                ..fin_contracts::EntityRefs::default()
+            },
+            phase: "running".into(),
+            blocker: None,
+            next_step: Some("finish current closure".into()),
+            health_hint: Some("healthy".into()),
+            tool_snapshots: vec![],
+        })
+        .expect("progress json")
+        .as_slice(),
+    )
+    .expect("progress should write");
+    write_file(
+        &session_dir.join("notes/latest.json"),
+        serde_json::to_vec_pretty(&ExecutionNote {
+            note_id: "note-1".into(),
+            refs: fin_contracts::EntityRefs {
+                session_id: Some("session-web-debug".into()),
+                task_id: Some("task-web-debug".into()),
+                ..fin_contracts::EntityRefs::default()
+            },
+            summary: "currently applying runtime changes".into(),
+            decision: None,
+            lesson: None,
+            blocker: None,
+            next_step: Some("wait for verification".into()),
+            control_feedback: None,
+            created_at: "2026-04-18T08:10:02+08:00".into(),
+        })
+        .expect("note json")
+        .as_slice(),
+    )
+    .expect("note should write");
+    write_file(
+        &session_dir.join("control/latest.json"),
+        serde_json::to_vec_pretty(&ControlFeedback {
+            origin: "runtime_heuristic".into(),
+            is_continuation: true,
+            continuity_confidence: 93,
+            topic_shift_confidence: 7,
+            simple_query_confidence: 10,
+            reason: "current task still active".into(),
+            ..ControlFeedback::default()
+        })
+        .expect("control json")
+        .as_slice(),
+    )
+    .expect("control should write");
+    write_file(
+        &session_dir.join("control/execution_state.json"),
+        br#"{
+  "state_id":"exec-state-running",
+  "session_id":"session-web-debug",
+  "task_id":"task-web-debug",
+  "status":"running",
+  "active_turn_id":"turn-op-live",
+  "active_step_id":"step-op-live-03-model_parse",
+  "resume_from_step_id":"step-op-live-03-model_parse",
+  "pending_input_count":1,
+  "accepts_user_input":false,
+  "reason":"active closure running",
+  "updated_at":"2026-04-18T08:10:02+08:00"
+}"#,
+    )
+    .expect("execution state should write");
+    fs::create_dir_all(session_dir.join("tasks/routing")).expect("routing dir");
+    write_file(
+            &session_dir.join("tasks/routing/latest_action.json"),
+            br#"{"action_id":"routing-action-op-live","decision_id":"routing-op-live","operation_id":"op-live","trace_id":"trace-live","session_id":"session-web-debug","task_id":"task-web-debug","created_at":"2026-04-18T08:10:02+08:00","action_kind":"continue_current_task","source_disposition":"continue_current_task","apply_immediately":true,"prompt_user":false,"prompt_text":null,"suggested_task_id":"task-web-debug","suggested_topic_thread_id":null,"confidence":93,"reason":"current task still active"}"#,
+        )
+        .expect("routing action should write");
+    fs::create_dir_all(session_dir.join("queue")).expect("queue dir");
+    write_file(
+            &session_dir.join("queue/pending_inputs.json"),
+            br#"[{"pending_input_id":"pending-1","session_id":"session-web-debug","task_id":"task-web-debug","input_kind":"chat","message":"queued question","status":"pending","enqueue_reason":"paused","enqueued_at":"2026-04-18T08:11:00+08:00"}]"#,
+        )
+        .expect("pending queue should write");
+    write_file(
+        &home.join("runtime/current/last_run.json"),
+        br#"{
+  "session_id":"session-web-debug",
+  "task_id":"task-web-debug",
+  "digest_id":"digest-existing",
+  "session_messages_path":"sessions/2026/04/session-web-debug/conversation/messages.json",
+  "session_control_feedback_path":"sessions/2026/04/session-web-debug/control/latest.json",
+  "current_execution_state_path":"runtime/current/current_execution_state.json",
+  "current_pending_inputs_path":"runtime/current/current_pending_inputs.json"
+}"#,
+    )
+    .expect("last_run should write");
+
+    let before_messages =
+        fs::read_to_string(session_dir.join("conversation/messages.json")).expect("before");
+    let before_digests =
+        fs::read_to_string(session_dir.join("digests/recent_digests.json")).expect("before");
+
+    let response = handler
+        .send_message_internal(
+            &home,
+            ChatSendRequest {
+                message: "/status current?".into(),
+                input_kind: Some("status_probe".into()),
+            },
+        )
+        .expect("status probe should work");
+
+    assert_eq!(response.response_kind, "status_probe");
+    assert_eq!(response.freshness.as_deref(), Some("live"));
+    assert_eq!(response.digest_id, "digest-existing");
+    assert_eq!(response.events_count, 0);
+    assert!(response.answer.contains("status probe (live)"));
+    assert!(response.answer.contains("phase=running"));
+    assert!(
+        response
+            .answer
+            .contains("active_step=step-op-live-03-model_parse")
+    );
+    assert!(response.answer.contains("pending_inputs=1"));
+    assert!(
+        response
+            .answer
+            .contains("currently applying runtime changes")
+    );
+    assert!(response.answer.contains("routing_action="));
+    assert_eq!(
+        response
+            .routing_action
+            .as_ref()
+            .map(|value| value.action_kind.as_str()),
+        Some("continue_current_task")
+    );
+    assert_eq!(
+        response
+            .control_feedback
+            .as_ref()
+            .map(|value| value.continuity_confidence),
+        Some(93)
+    );
+    assert_eq!(
+        fs::read_to_string(session_dir.join("conversation/messages.json")).expect("after"),
+        before_messages
+    );
+    assert_eq!(
+        fs::read_to_string(session_dir.join("digests/recent_digests.json")).expect("after"),
+        before_digests
+    );
+}
+
+#[test]
+fn slash_new_creates_and_binds_new_session() {
+    let home = temp_runtime_home();
+    ensure_runtime_home_layout(&home).expect("runtime home should init");
+    let system = map_system_config(&sample_user_toml()).expect("system config");
+    let handler =
+        CliDebugActionHandler::new(sample_user_toml(), system).expect("handler should build");
+
+    let response = handler
+        .send_message_internal(
+            &home,
+            ChatSendRequest {
+                message: "/new".into(),
+                input_kind: None,
+            },
+        )
+        .expect("new command should work");
+    assert_eq!(response.response_kind, "system_notice");
+    let session_id = response.binding.session_id.expect("session");
+    let task_id = response.binding.task_id.expect("task");
+    assert!(session_id.starts_with("session-"));
+    assert!(task_id.starts_with("task-"));
+    let last_run = read_last_run_value(&home).expect("last run");
+    assert_eq!(
+        last_run
+            .get("session_id")
+            .and_then(serde_json::Value::as_str),
+        Some(session_id.as_str())
+    );
+}
+
+#[test]
+fn paused_session_queues_new_message_instead_of_running_provider() {
+    let home = temp_runtime_home();
+    ensure_runtime_home_layout(&home).expect("runtime home should init");
+    let system = map_system_config(&sample_user_toml()).expect("system config");
+    let handler =
+        CliDebugActionHandler::new(sample_user_toml(), system).expect("handler should build");
+    let session_dir = home.join("sessions/2026/04/session-paused");
+    fs::create_dir_all(session_dir.join("conversation")).expect("conversation dir");
+    fs::create_dir_all(session_dir.join("control")).expect("control dir");
+    fs::create_dir_all(session_dir.join("queue")).expect("queue dir");
+    write_file(&session_dir.join("conversation/messages.json"), b"[]").expect("messages");
+    write_file(
+        &session_dir.join("control/execution_state.json"),
+        br#"{
+  "state_id":"exec-state-paused",
+  "session_id":"session-paused",
+  "task_id":"task-paused",
+  "status":"paused",
+  "active_turn_id":"turn-op-paused",
+  "active_step_id":"step-op-paused-05-tool_dispatch",
+  "resume_from_step_id":"step-op-paused-05-tool_dispatch",
+  "pending_input_count":0,
+  "accepts_user_input":false,
+  "reason":"manual pause",
+  "updated_at":"2026-04-18T08:10:02+08:00"
+}"#,
+    )
+    .expect("state");
+    write_file(&session_dir.join("queue/pending_inputs.json"), b"[]").expect("pending");
+    write_file(
+        &home.join("runtime/current/last_run.json"),
+        br#"{
+  "session_id":"session-paused",
+  "task_id":"task-paused",
+  "session_messages_path":"sessions/2026/04/session-paused/conversation/messages.json"
+}"#,
+    )
+    .expect("last_run");
+
+    let response = handler
+        .send_message_internal(
+            &home,
+            ChatSendRequest {
+                message: "new request while paused".into(),
+                input_kind: None,
+            },
+        )
+        .expect("queued");
+    assert_eq!(response.response_kind, "system_notice");
+    assert!(response.answer.contains("input queued: status=paused"));
+    let pending = fs::read_to_string(session_dir.join("queue/pending_inputs.json"))
+        .expect("pending should exist");
+    assert!(pending.contains("new request while paused"));
+}
+
+#[path = "web_debug_tests_runtime.rs"]
+mod web_debug_tests_runtime;

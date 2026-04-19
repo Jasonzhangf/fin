@@ -1,7 +1,7 @@
 use crate::DebugDataError;
 use serde_json::Value;
 use std::{
-    fs,
+    fs, io,
     path::{Path, PathBuf},
 };
 
@@ -54,4 +54,175 @@ pub(crate) fn read_json_lines(path: &Path) -> Result<Vec<Value>, DebugDataError>
         .filter(|line| !line.trim().is_empty())
         .map(|line| serde_json::from_str::<Value>(line).map_err(DebugDataError::Serialize))
         .collect()
+}
+
+pub(crate) fn read_json_value(path: &Path) -> Result<Value, DebugDataError> {
+    let body = fs::read_to_string(path).map_err(|source| DebugDataError::Io {
+        path: path.display().to_string(),
+        source,
+    })?;
+    serde_json::from_str(&body).map_err(DebugDataError::Serialize)
+}
+
+pub(crate) fn session_event_stream_path(
+    runtime_home: &Path,
+) -> Result<Option<PathBuf>, DebugDataError> {
+    sibling_artifact_path(
+        runtime_home,
+        "session_messages_path",
+        "conversation/messages.json",
+        "events/stream.jsonl",
+    )
+}
+
+pub(crate) fn session_event_archive_index_path(
+    runtime_home: &Path,
+) -> Result<Option<PathBuf>, DebugDataError> {
+    if let Some(path) = last_run_artifact_path(runtime_home, "session_event_archive_index_path")? {
+        return Ok(Some(path));
+    }
+    last_run_artifact_path(runtime_home, "current_event_archive_index_path")
+}
+
+pub(crate) fn read_event_archive_index(
+    runtime_home: &Path,
+) -> Result<Option<Value>, DebugDataError> {
+    let Some(index_path) = session_event_archive_index_path(runtime_home)? else {
+        return Ok(None);
+    };
+    let mut index = match read_json_value(&index_path)? {
+        Value::Object(map) => map,
+        _ => serde_json::Map::new(),
+    };
+    let local_dir = index
+        .get("local_archive_dir")
+        .and_then(Value::as_str)
+        .map(|path| runtime_home.join(path));
+    let cold_dir = index
+        .get("cold_archive_dir")
+        .and_then(Value::as_str)
+        .map(|path| runtime_home.join(path));
+    index.insert(
+        "local_segments".into(),
+        Value::Array(list_event_archive_segments(
+            local_dir.as_deref(),
+            runtime_home,
+        )?),
+    );
+    index.insert(
+        "cold_segments".into(),
+        Value::Array(list_event_archive_segments(
+            cold_dir.as_deref(),
+            runtime_home,
+        )?),
+    );
+    Ok(Some(Value::Object(index)))
+}
+
+pub(crate) fn event_archive_segment_path(
+    runtime_home: &Path,
+    tier: &str,
+    segment: &str,
+) -> Result<Option<PathBuf>, DebugDataError> {
+    let segment = sanitize_segment_name(segment)?;
+    let Some(index) = read_event_archive_index(runtime_home)? else {
+        return Ok(None);
+    };
+    let base_dir = match tier {
+        "local" => index
+            .get("local_archive_dir")
+            .and_then(Value::as_str)
+            .map(|path| runtime_home.join(path)),
+        "cold" => index
+            .get("cold_archive_dir")
+            .and_then(Value::as_str)
+            .map(|path| runtime_home.join(path)),
+        _ => None,
+    };
+    Ok(base_dir.map(|dir| dir.join(segment)))
+}
+
+pub(crate) fn request_path(path: &str) -> &str {
+    path.split_once('?').map(|(head, _)| head).unwrap_or(path)
+}
+
+pub(crate) fn query_value<'a>(path: &'a str, name: &str) -> Option<&'a str> {
+    let (_, query) = path.split_once('?')?;
+    query.split('&').find_map(|pair| {
+        let (key, value) = pair.split_once('=')?;
+        (key == name).then_some(value)
+    })
+}
+
+fn sanitize_segment_name(segment: &str) -> Result<&str, DebugDataError> {
+    let trimmed = segment.trim();
+    let valid = !trimmed.is_empty()
+        && trimmed.starts_with("segment-")
+        && trimmed.ends_with(".jsonl")
+        && !trimmed.contains('/')
+        && !trimmed.contains('\\');
+    if valid {
+        Ok(trimmed)
+    } else {
+        Err(DebugDataError::Io {
+            path: format!("invalid event archive segment: {segment}"),
+            source: io::Error::new(io::ErrorKind::InvalidInput, "invalid segment"),
+        })
+    }
+}
+
+fn list_event_archive_segments(
+    dir: Option<&Path>,
+    runtime_home: &Path,
+) -> Result<Vec<Value>, DebugDataError> {
+    let Some(dir) = dir else {
+        return Ok(Vec::new());
+    };
+    let entries = match fs::read_dir(dir) {
+        Ok(entries) => entries,
+        Err(source) if source.kind() == io::ErrorKind::NotFound => return Ok(Vec::new()),
+        Err(source) => {
+            return Err(DebugDataError::Io {
+                path: dir.display().to_string(),
+                source,
+            });
+        }
+    };
+    let mut segments = entries
+        .filter_map(Result::ok)
+        .map(|entry| entry.path())
+        .filter(|path| path.extension().and_then(|value| value.to_str()) == Some("jsonl"))
+        .collect::<Vec<_>>();
+    segments.sort();
+    segments
+        .into_iter()
+        .map(|path| {
+            let segment = path
+                .file_name()
+                .and_then(|value| value.to_str())
+                .unwrap_or("segment-unknown.jsonl")
+                .to_string();
+            Ok(serde_json::json!({
+                "segment": segment,
+                "relative_path": relative_path(&path, runtime_home),
+                "event_count": count_non_empty_lines(&path)?,
+            }))
+        })
+        .collect()
+}
+
+fn count_non_empty_lines(path: &Path) -> Result<usize, DebugDataError> {
+    let body = fs::read_to_string(path).map_err(|source| DebugDataError::Io {
+        path: path.display().to_string(),
+        source,
+    })?;
+    Ok(body.lines().filter(|line| !line.trim().is_empty()).count())
+}
+
+fn relative_path(path: &Path, runtime_home: &Path) -> String {
+    path.strip_prefix(runtime_home)
+        .ok()
+        .and_then(|value| value.to_str())
+        .map(str::to_string)
+        .unwrap_or_else(|| path.display().to_string())
 }

@@ -70,19 +70,27 @@ pub(crate) fn probe_qqbot_upstream() -> Result<ConnectivitySuccess, Connectivity
             error: format!("network error probing qqbot upstream: {err}"),
         })?;
     let status = response.status();
-    let body = response
-        .text()
-        .map_err(|err| ConnectivityFailure {
-            connectivity_state: "auth_failed",
-            credential_source: Some(credentials.source.clone()),
-            error: format!("failed reading qqbot upstream response: {err}"),
-        })?;
+    let body = response.text().map_err(|err| ConnectivityFailure {
+        connectivity_state: "auth_failed",
+        credential_source: Some(credentials.source.clone()),
+        error: format!("failed reading qqbot upstream response: {err}"),
+    })?;
     let parsed: TokenResponse = serde_json::from_str(&body).map_err(|err| ConnectivityFailure {
         connectivity_state: "auth_failed",
         credential_source: Some(credentials.source.clone()),
-        error: format!("invalid qqbot upstream json (status={}): {}", status.as_u16(), err),
+        error: format!(
+            "invalid qqbot upstream json (status={}): {}",
+            status.as_u16(),
+            err
+        ),
     })?;
-    if !status.is_success() || parsed.access_token.as_deref().unwrap_or_default().is_empty() {
+    if !status.is_success()
+        || parsed
+            .access_token
+            .as_deref()
+            .unwrap_or_default()
+            .is_empty()
+    {
         let detail = parsed
             .extra
             .get("message")
@@ -93,7 +101,11 @@ pub(crate) fn probe_qqbot_upstream() -> Result<ConnectivitySuccess, Connectivity
         return Err(ConnectivityFailure {
             connectivity_state: "auth_failed",
             credential_source: Some(credentials.source.clone()),
-            error: format!("qqbot upstream rejected credentials (status={}): {}", status.as_u16(), detail),
+            error: format!(
+                "qqbot upstream rejected credentials (status={}): {}",
+                status.as_u16(),
+                detail
+            ),
         });
     }
     let expires_at = parsed
@@ -199,11 +211,18 @@ fn resolve_from_finger_channels_config() -> Option<QqbotCredentials> {
     let channels = parsed.get("channels")?.as_array()?;
     let entry = channels.iter().find(|channel| {
         matches!(channel.get("id").and_then(Value::as_str), Some("qqbot"))
-            || matches!(channel.get("channelId").and_then(Value::as_str), Some("qqbot"))
+            || matches!(
+                channel.get("channelId").and_then(Value::as_str),
+                Some("qqbot")
+            )
     })?;
     let credentials = entry.get("credentials")?.as_object()?;
     let app_id = credentials.get("appId")?.as_str()?.trim().to_string();
-    let client_secret = credentials.get("clientSecret")?.as_str()?.trim().to_string();
+    let client_secret = credentials
+        .get("clientSecret")?
+        .as_str()?
+        .trim()
+        .to_string();
     if app_id.is_empty() || client_secret.is_empty() {
         return None;
     }
@@ -246,8 +265,9 @@ fn shorten(input: String, max_chars: usize) -> String {
 }
 
 fn add_seconds(ts: &str, seconds: u64) -> Result<String, CliError> {
-    let parsed = chrono::DateTime::parse_from_rfc3339(ts)
-        .map_err(|err| CliError::ChannelConnectivity(format!("invalid timestamp '{}': {}", ts, err)))?;
+    let parsed = chrono::DateTime::parse_from_rfc3339(ts).map_err(|err| {
+        CliError::ChannelConnectivity(format!("invalid timestamp '{}': {}", ts, err))
+    })?;
     Ok((parsed + chrono::Duration::seconds(seconds as i64))
         .format("%Y-%m-%dT%H:%M:%S%:z")
         .to_string())

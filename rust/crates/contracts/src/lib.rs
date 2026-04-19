@@ -3,6 +3,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
 mod context;
+mod daemon;
 mod feedback;
 mod records;
 
@@ -12,8 +13,15 @@ pub use context::{
     PeerDescriptorSummary, ProjectContextBlock, ProjectRef, PromptLayerSummary, PromptModuleEntry,
     RolePromptBlock, ToolCatalogBlock, ToolCatalogEntry,
 };
+pub use daemon::{DaemonRecoveryActionRecord, DaemonStateRecord};
 pub use feedback::ControlFeedback;
-pub use records::{ClosureTraceRecord, ReasoningViewRecord, ToolExecutionRecord};
+pub use records::{
+    ClosureTraceRecord, ExecutionStateRecord, InterruptedSegmentRecord, PauseCheckpointRecord,
+    PendingInputRecord, ProviderRequestRecord, ProviderResponseRecord, ReasoningViewRecord,
+    RoundRecord, RoutingActionRecord, RoutingDecisionRecord, SchedulerDecisionRecord,
+    SchedulerTickRecord, SegmentMergeRecord, StepRecord, SupervisorCycleRecord,
+    SupervisorHeartbeatRecord, ToolExecutionRecord, TurnRecord,
+};
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(transparent)]

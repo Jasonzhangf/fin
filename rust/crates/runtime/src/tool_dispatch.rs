@@ -12,6 +12,7 @@ pub(super) struct ToolDispatchOutcome {
     pub(super) note_hints: Vec<String>,
     pub(super) reminder_scheduled: bool,
     pub(super) stop_requested: bool,
+    pub(super) yield_requested: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -29,6 +30,7 @@ pub(super) fn execute_model_tools(
     refs: &EntityRefs,
     occurred_at: &str,
     context: &MinimalContextView,
+    round_index: u32,
     tool_calls: &[ModelToolCall],
 ) -> ToolDispatchOutcome {
     let mut outcome = ToolDispatchOutcome::default();
@@ -40,7 +42,7 @@ pub(super) fn execute_model_tools(
         context,
     };
     for (index, call) in tool_calls.iter().enumerate() {
-        let tool_call_id = format!("tool-model-{operation_id}-{index:02}");
+        let tool_call_id = format!("tool-model-{operation_id}-r{round_index:02}-{index:02}");
         let handled = match call.tool_name.as_str() {
             "peer.list" => tool_dispatch_peer::handle_peer_list(
                 &mut outcome,

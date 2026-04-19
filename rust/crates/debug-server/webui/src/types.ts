@@ -31,6 +31,26 @@ export interface RuntimeEvent {
   payload?: unknown;
 }
 
+export interface EventArchiveSegmentRef extends JsonRecord {
+  segment?: string;
+  relative_path?: string;
+  event_count?: number;
+}
+
+export interface EventArchiveIndex extends JsonRecord {
+  session_id?: string;
+  live_stream_path?: string;
+  local_archive_dir?: string;
+  cold_archive_dir?: string;
+  live_event_count?: number;
+  local_archive_file_count?: number;
+  cold_archive_file_count?: number;
+  local_segments?: EventArchiveSegmentRef[];
+  cold_segments?: EventArchiveSegmentRef[];
+}
+
+export type EventLedgerScope = 'live' | 'local_archive' | 'cold_archive';
+
 export interface SessionMessage {
   message_id?: string;
   role?: string;
@@ -102,6 +122,19 @@ export interface FocusTurn {
   events: RuntimeEvent[];
 }
 
+export interface EventLedgerView {
+  index: EventArchiveIndex | null;
+  scope: EventLedgerScope;
+  segment: string | null;
+  events: RuntimeEvent[];
+  selectedOperationId: string | null;
+  liveTurn?: FocusTurn | null;
+  matchedDigest?: DigestRecord | null;
+  matchedReasoningView?: ReasoningViewRecord | null;
+  matchedClosures?: ClosureTraceRecord[];
+  matchedToolRecords?: ToolExecutionRecord[];
+}
+
 export type DashboardCardId = 'provider' | 'context' | 'system' | 'operation';
 
 export interface RefreshState {
@@ -109,6 +142,11 @@ export interface RefreshState {
   projection: ProjectionView;
   events: RuntimeEvent[];
   sessionEvents: RuntimeEvent[];
+  eventArchiveIndex: EventArchiveIndex | null;
+  eventLedgerScope: EventLedgerScope;
+  eventLedgerSegment: string | null;
+  eventLedgerEvents: RuntimeEvent[];
+  eventLedgerSelectedOperationId: string | null;
   lastRun: JsonRecord | null;
   currentContext: JsonRecord | null;
   recentContexts: ContextSnapshotRecord[];

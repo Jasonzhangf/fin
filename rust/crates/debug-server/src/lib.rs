@@ -44,6 +44,8 @@ const API_RECENT_TOOL_RECORDS_PATH: &str = "/api/recent_tool_records.json";
 const API_RECENT_CLOSURES_PATH: &str = "/api/recent_closures.json";
 const API_SESSION_MESSAGES_PATH: &str = "/api/session_messages.json";
 const API_SESSION_EVENTS_PATH: &str = "/api/session_events.json";
+const API_SESSION_EVENT_ARCHIVE_INDEX_PATH: &str = "/api/session_event_archive_index.json";
+const API_SESSION_EVENTS_SEGMENT_PATH: &str = "/api/session_events_segment.json";
 const API_QQBOT_STATE_PATH: &str = "/api/qqbot_state.json";
 const API_QQBOT_EVENTS_PATH: &str = "/api/qqbot_events.jsonl";
 const API_CHAT_SEND_PATH: &str = "/api/chat/send";
@@ -309,10 +311,11 @@ fn response_for_request(
     runtime_home: &Path,
     handler: &(impl DebugActionHandler + Sync),
 ) -> HttpResponse {
-    match (request.method.as_str(), request.path.as_str()) {
+    let route_path = session_view::request_path(&request.path);
+    match (request.method.as_str(), route_path) {
         ("GET", INDEX_HTML_PATH) => html_response(web_assets::INDEX_HTML),
         ("GET", path) if web_app::javascript_for_path(path).is_some() => {
-            javascript_response(web_app::javascript_for_path(request.path.as_str()).unwrap_or(""))
+            javascript_response(web_app::javascript_for_path(route_path).unwrap_or(""))
         }
         ("GET", STYLES_CSS_PATH) => css_response(web_styles::STYLES_CSS),
         ("GET", API_BINDING_PATH) => match handler.read_binding(runtime_home) {
@@ -370,6 +373,12 @@ fn response_for_request(
             "application/json; charset=utf-8",
         ),
         ("GET", API_SESSION_EVENTS_PATH) => session_events_response(runtime_home),
+        ("GET", API_SESSION_EVENT_ARCHIVE_INDEX_PATH) => {
+            session_event_archive_index_response(runtime_home)
+        }
+        ("GET", API_SESSION_EVENTS_SEGMENT_PATH) => {
+            session_events_segment_response(runtime_home, request.path.as_str())
+        }
         ("GET", API_QQBOT_STATE_PATH) => file_response(
             &runtime_home.join("runtime/peers/qqbot/state.json"),
             "application/json; charset=utf-8",
@@ -417,12 +426,7 @@ fn last_run_artifact_response(
 }
 
 fn session_events_response(runtime_home: &Path) -> HttpResponse {
-    let Some(path) = (match session_view::sibling_artifact_path(
-        runtime_home,
-        "session_messages_path",
-        "conversation/messages.json",
-        "events/stream.jsonl",
-    ) {
+    let Some(path) = (match session_view::session_event_stream_path(runtime_home) {
         Ok(value) => value,
         Err(DebugDataError::Io { .. }) => return not_found_response("session_events_path"),
         Err(err) => return internal_error_response(&err.to_string()),
@@ -432,6 +436,45 @@ fn session_events_response(runtime_home: &Path) -> HttpResponse {
 
     match session_view::read_json_lines(&path) {
         Ok(events) => json_response(200, &events),
+        Err(err) => internal_error_response(&err.to_string()),
+    }
+}
+
+fn session_event_archive_index_response(runtime_home: &Path) -> HttpResponse {
+    let Some(index) = (match session_view::read_event_archive_index(runtime_home) {
+        Ok(value) => value,
+        Err(DebugDataError::Io { .. }) => return not_found_response("session_event_archive_index"),
+        Err(err) => return internal_error_response(&err.to_string()),
+    }) else {
+        return not_found_response("session_event_archive_index");
+    };
+    json_response(200, &index)
+}
+
+fn session_events_segment_response(runtime_home: &Path, request_path: &str) -> HttpResponse {
+    let Some(tier) = session_view::query_value(request_path, "tier") else {
+        return bad_request_response("tier is required");
+    };
+    let Some(segment) = session_view::query_value(request_path, "segment") else {
+        return bad_request_response("segment is required");
+    };
+    let Some(path) = (match session_view::event_archive_segment_path(runtime_home, tier, segment) {
+        Ok(value) => value,
+        Err(DebugDataError::Io { source, .. })
+            if source.kind() == std::io::ErrorKind::InvalidInput =>
+        {
+            return bad_request_response("invalid archive segment request");
+        }
+        Err(DebugDataError::Io { .. }) => return not_found_response("session_event_segment"),
+        Err(err) => return internal_error_response(&err.to_string()),
+    }) else {
+        return not_found_response("session_event_segment");
+    };
+    match session_view::read_json_lines(&path) {
+        Ok(events) => json_response(200, &events),
+        Err(DebugDataError::Io { source, .. }) if source.kind() == std::io::ErrorKind::NotFound => {
+            not_found_response("session_event_segment")
+        }
         Err(err) => internal_error_response(&err.to_string()),
     }
 }

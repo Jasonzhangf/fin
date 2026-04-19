@@ -1,4 +1,5 @@
-use crate::{ClosureRun, RuntimeError};
+use crate::{ClosureRun, RuntimeError, session_record_journal};
+use fin_config::RuntimeRetentionConfig;
 use fin_contracts::EventEnvelope;
 use fin_contracts::{
     ClosureTraceRecord, ContextSnapshotRecord, DigestRecord, ReasoningViewRecord,
@@ -9,38 +10,20 @@ use serde_json::Value;
 use serde_json::json;
 use std::{
     fs,
-    io::Write,
     path::{Path, PathBuf},
 };
 
-const RECENT_CONTEXT_LIMIT: usize = 8;
-const RECENT_DIGEST_LIMIT: usize = 8;
-const RECENT_REASONING_LIMIT: usize = 16;
-const RECENT_TOOL_RECORD_LIMIT: usize = 32;
-const RECENT_CLOSURE_LIMIT: usize = 16;
-const SESSION_MESSAGE_LIMIT: usize = 128;
-const REMINDER_PENDING_LIMIT: usize = 128;
-
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
-struct PendingReminderRecord {
-    reminder_id: String,
-    #[serde(default)]
-    session_id: Option<String>,
-    #[serde(default)]
-    task_id: Option<String>,
-    #[serde(default)]
-    operation_id: Option<String>,
-    #[serde(default)]
-    trace_id: Option<String>,
-    wait_minutes: u64,
-    reminder: String,
-    wake_role: String,
-    scheduled_at: String,
-    #[serde(default)]
-    status: String,
-    #[serde(default)]
-    fired_at: Option<String>,
-}
+#[path = "session_materializer_events.rs"]
+mod session_materializer_events;
+#[path = "session_materializer_support.rs"]
+mod session_materializer_support;
+use session_materializer_events::{persist_event_stream, session_archive_coords};
+use session_materializer_support::{
+    PendingReminderRecord, parse_scheduled_reminder_payload, parse_turn_index,
+};
+pub(crate) use session_materializer_support::{
+    create_dir_all, read_json_or_empty, trim_head, write_bytes, write_json_file,
+};
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SessionMessageRecord {
@@ -76,6 +59,7 @@ impl SessionMaterializer {
         &self,
         runtime_home: &Path,
         run: &ClosureRun,
+        retention: &RuntimeRetentionConfig,
     ) -> Result<SessionMaterializationReceipt, RuntimeError> {
         let session_id = run
             .progress
@@ -102,16 +86,29 @@ impl SessionMaterializer {
             "conversation",
             "reasoning",
             "tools",
+            "provider",
+            "rounds",
+            "steps",
+            "turns",
             "closures",
             "collab",
             "tasks",
+            "tasks/routing",
             "topics",
             "artifacts/candidates",
         ] {
             create_dir_all(&session_dir.join(relative))?;
         }
 
-        write_json_lines(&session_dir.join("events/stream.jsonl"), &run.events)?;
+        persist_event_stream(
+            runtime_home,
+            &session_dir,
+            year,
+            month,
+            &session_id,
+            &run.events,
+            retention,
+        )?;
         write_json_file(&session_dir.join("progress/latest.json"), &run.progress)?;
         write_json_file(
             &session_dir.join("control/latest.json"),
@@ -119,17 +116,26 @@ impl SessionMaterializer {
         )?;
         write_json_file(&session_dir.join("notes/latest.json"), &run.note)?;
         write_json_file(&session_dir.join("digests/latest.json"), &run.digest)?;
-        persist_recent_digests(&session_dir, &run.digest)?;
-        persist_context_snapshots(runtime_home, &session_dir, &run.context_snapshot)?;
-        persist_reasoning_views(runtime_home, &session_dir, &run.reasoning_view)?;
-        persist_tool_records(runtime_home, &session_dir, &run.tool_records)?;
-        persist_closure_traces(runtime_home, &session_dir, &run.closure_trace)?;
-        persist_scheduled_reminders(runtime_home, &run.events)?;
+        persist_recent_digests(&session_dir, &run.digest, retention)?;
+        persist_context_snapshots(runtime_home, &session_dir, &run.context_snapshot, retention)?;
+        persist_reasoning_views(runtime_home, &session_dir, &run.reasoning_view, retention)?;
+        persist_tool_records(runtime_home, &session_dir, &run.tool_records, retention)?;
+        persist_closure_traces(runtime_home, &session_dir, &run.closure_trace, retention)?;
+        let journal_paths = session_record_journal::persist_extended_records(
+            runtime_home,
+            &session_dir,
+            year,
+            month,
+            &session_id,
+            run,
+            retention,
+        )?;
+        persist_scheduled_reminders(runtime_home, &run.events, retention)?;
         write_json_file(
             &runtime_home.join("runtime/current/current_control_feedback.json"),
             &run.control_feedback,
         )?;
-        persist_session_messages(&session_dir, run)?;
+        persist_session_messages(&session_dir, run, retention)?;
 
         let session_recent_contexts_path =
             format!("sessions/{year}/{month}/{session_id}/context/recent_contexts.json");
@@ -162,12 +168,28 @@ impl SessionMaterializer {
                 "current_control_feedback_path": "runtime/current/current_control_feedback.json",
                 "current_reasoning_view_path": "runtime/current/current_reasoning_view.json",
                 "current_closure_trace_path": "runtime/current/current_closure_trace.json",
+                "current_turn_record_path": "runtime/current/current_turn.json",
+                "current_step_records_path": "runtime/current/current_step_records.json",
+                "current_provider_requests_path": "runtime/current/current_provider_requests.json",
+                "current_provider_responses_path": "runtime/current/current_provider_responses.json",
+                "current_rounds_path": "runtime/current/current_rounds.json",
+                "current_routing_decision_path": "runtime/current/current_routing_decision.json",
+                "current_routing_action_path": "runtime/current/current_routing_action.json",
+                "current_event_archive_index_path": "runtime/current/current_event_archive_index.json",
                 "session_control_feedback_path": format!("sessions/{year}/{month}/{session_id}/control/latest.json"),
                 "session_recent_contexts_path": session_recent_contexts_path,
                 "session_recent_digests_path": session_recent_digests_path,
                 "session_recent_reasoning_path": session_recent_reasoning_path,
                 "session_recent_tool_records_path": session_recent_tool_records_path,
                 "session_recent_closures_path": session_recent_closures_path,
+                "session_recent_provider_requests_path": journal_paths.session_recent_provider_requests_path,
+                "session_recent_provider_responses_path": journal_paths.session_recent_provider_responses_path,
+                "session_recent_rounds_path": journal_paths.session_recent_rounds_path,
+                "session_recent_step_records_path": journal_paths.session_recent_step_records_path,
+                "session_recent_turns_path": journal_paths.session_recent_turns_path,
+                "session_recent_routing_decisions_path": journal_paths.session_recent_routing_decisions_path,
+                "session_recent_routing_actions_path": journal_paths.session_recent_routing_actions_path,
+                "session_event_archive_index_path": format!("sessions/{year}/{month}/{session_id}/events/archive_index.json"),
                 "session_messages_path": session_messages_path,
             }))?
             .as_slice(),
@@ -190,10 +212,33 @@ impl SessionMaterializer {
     }
 }
 
+pub fn append_framework_events(
+    runtime_home: &Path,
+    session_dir: &Path,
+    events: &[EventEnvelope<Value>],
+    retention: &RuntimeRetentionConfig,
+) -> Result<(), RuntimeError> {
+    if events.is_empty() {
+        return Ok(());
+    }
+    let (year, month, session_id) = session_archive_coords(session_dir)?;
+    create_dir_all(&session_dir.join("events"))?;
+    persist_event_stream(
+        runtime_home,
+        session_dir,
+        &year,
+        &month,
+        &session_id,
+        events,
+        retention,
+    )
+}
+
 fn persist_context_snapshots(
     runtime_home: &Path,
     session_dir: &Path,
     snapshot: &ContextSnapshotRecord,
+    retention: &RuntimeRetentionConfig,
 ) -> Result<(), RuntimeError> {
     write_json_file(
         &runtime_home.join("runtime/current/current_context.json"),
@@ -203,15 +248,19 @@ fn persist_context_snapshots(
     let recent_path = session_dir.join("context/recent_contexts.json");
     let mut recent = read_json_or_empty::<ContextSnapshotRecord>(&recent_path)?;
     recent.push(snapshot.clone());
-    trim_head(&mut recent, RECENT_CONTEXT_LIMIT);
+    trim_head(&mut recent, retention.recent_context_limit);
     write_json_file(&recent_path, &recent)
 }
 
-fn persist_recent_digests(session_dir: &Path, digest: &DigestRecord) -> Result<(), RuntimeError> {
+fn persist_recent_digests(
+    session_dir: &Path,
+    digest: &DigestRecord,
+    retention: &RuntimeRetentionConfig,
+) -> Result<(), RuntimeError> {
     let recent_path = session_dir.join("digests/recent_digests.json");
     let mut recent = read_json_or_empty::<DigestRecord>(&recent_path)?;
     recent.push(digest.clone());
-    trim_head(&mut recent, RECENT_DIGEST_LIMIT);
+    trim_head(&mut recent, retention.recent_digest_limit);
     write_json_file(&recent_path, &recent)
 }
 
@@ -219,6 +268,7 @@ fn persist_reasoning_views(
     runtime_home: &Path,
     session_dir: &Path,
     reasoning_view: &ReasoningViewRecord,
+    retention: &RuntimeRetentionConfig,
 ) -> Result<(), RuntimeError> {
     write_json_file(
         &runtime_home.join("runtime/current/current_reasoning_view.json"),
@@ -227,7 +277,7 @@ fn persist_reasoning_views(
     let recent_path = session_dir.join("reasoning/recent_reasoning_views.json");
     let mut recent = read_json_or_empty::<ReasoningViewRecord>(&recent_path)?;
     recent.push(reasoning_view.clone());
-    trim_head(&mut recent, RECENT_REASONING_LIMIT);
+    trim_head(&mut recent, retention.recent_reasoning_limit);
     write_json_file(&recent_path, &recent)?;
     write_json_file(&session_dir.join("reasoning/latest.json"), reasoning_view)
 }
@@ -236,6 +286,7 @@ fn persist_tool_records(
     runtime_home: &Path,
     session_dir: &Path,
     tool_records: &[ToolExecutionRecord],
+    retention: &RuntimeRetentionConfig,
 ) -> Result<(), RuntimeError> {
     write_json_file(
         &runtime_home.join("runtime/current/current_tool_records.json"),
@@ -244,7 +295,7 @@ fn persist_tool_records(
     let recent_path = session_dir.join("tools/recent_tool_records.json");
     let mut recent = read_json_or_empty::<ToolExecutionRecord>(&recent_path)?;
     recent.extend(tool_records.iter().cloned());
-    trim_head(&mut recent, RECENT_TOOL_RECORD_LIMIT);
+    trim_head(&mut recent, retention.recent_tool_record_limit);
     write_json_file(&recent_path, &recent)?;
     write_json_file(&session_dir.join("tools/latest.json"), tool_records)
 }
@@ -253,6 +304,7 @@ fn persist_closure_traces(
     runtime_home: &Path,
     session_dir: &Path,
     closure_trace: &ClosureTraceRecord,
+    retention: &RuntimeRetentionConfig,
 ) -> Result<(), RuntimeError> {
     write_json_file(
         &runtime_home.join("runtime/current/current_closure_trace.json"),
@@ -261,12 +313,16 @@ fn persist_closure_traces(
     let recent_path = session_dir.join("closures/recent_closures.json");
     let mut recent = read_json_or_empty::<ClosureTraceRecord>(&recent_path)?;
     recent.push(closure_trace.clone());
-    trim_head(&mut recent, RECENT_CLOSURE_LIMIT);
+    trim_head(&mut recent, retention.recent_closure_limit);
     write_json_file(&recent_path, &recent)?;
     write_json_file(&session_dir.join("closures/latest.json"), closure_trace)
 }
 
-fn persist_session_messages(session_dir: &Path, run: &ClosureRun) -> Result<(), RuntimeError> {
+fn persist_session_messages(
+    session_dir: &Path,
+    run: &ClosureRun,
+    retention: &RuntimeRetentionConfig,
+) -> Result<(), RuntimeError> {
     let path = session_dir.join("conversation/messages.json");
     let mut messages = read_json_or_empty::<SessionMessageRecord>(&path)?;
     let session_id = run
@@ -298,13 +354,14 @@ fn persist_session_messages(session_dir: &Path, run: &ClosureRun) -> Result<(), 
         trace_id: Some(run.context_snapshot.trace_id.clone()),
         closure_id: Some(run.digest.closure_id.clone()),
     });
-    trim_head(&mut messages, SESSION_MESSAGE_LIMIT);
+    trim_head(&mut messages, retention.session_message_limit);
     write_json_file(&path, &messages)
 }
 
 fn persist_scheduled_reminders(
     runtime_home: &Path,
     events: &[EventEnvelope<Value>],
+    retention: &RuntimeRetentionConfig,
 ) -> Result<(), RuntimeError> {
     let reminders = events
         .iter()
@@ -332,121 +389,11 @@ fn persist_scheduled_reminders(
     if !changed {
         return Ok(());
     }
-    trim_head(&mut pending, REMINDER_PENDING_LIMIT);
+    trim_head(&mut pending, retention.reminder_pending_limit);
     write_json_file(&pending_path, &pending)?;
     write_json_file(
         &runtime_home.join("runtime/current/current_reminders.json"),
         &pending,
     )?;
     Ok(())
-}
-
-fn parse_scheduled_reminder_payload(payload: &Value) -> Option<PendingReminderRecord> {
-    let object = payload.as_object()?;
-    let reminder_id = object.get("reminder_id")?.as_str()?.trim().to_string();
-    if reminder_id.is_empty() {
-        return None;
-    }
-    let reminder = object.get("reminder")?.as_str()?.trim().to_string();
-    if reminder.is_empty() {
-        return None;
-    }
-    let wait_minutes = object.get("wait_minutes")?.as_u64()?;
-    if wait_minutes == 0 {
-        return None;
-    }
-    let scheduled_at = object.get("scheduled_at")?.as_str()?.trim().to_string();
-    if scheduled_at.is_empty() {
-        return None;
-    }
-    Some(PendingReminderRecord {
-        reminder_id,
-        session_id: object
-            .get("session_id")
-            .and_then(Value::as_str)
-            .map(str::to_string),
-        task_id: object
-            .get("task_id")
-            .and_then(Value::as_str)
-            .map(str::to_string),
-        operation_id: object
-            .get("operation_id")
-            .and_then(Value::as_str)
-            .map(str::to_string),
-        trace_id: object
-            .get("trace_id")
-            .and_then(Value::as_str)
-            .map(str::to_string),
-        wait_minutes,
-        reminder,
-        wake_role: object
-            .get("wake_role")
-            .and_then(Value::as_str)
-            .filter(|value| !value.trim().is_empty())
-            .unwrap_or("system")
-            .to_string(),
-        scheduled_at,
-        status: "pending".into(),
-        fired_at: None,
-    })
-}
-
-fn trim_head<T>(items: &mut Vec<T>, limit: usize) {
-    if items.len() > limit {
-        let drain_count = items.len() - limit;
-        items.drain(0..drain_count);
-    }
-}
-
-fn read_json_or_empty<T: for<'de> Deserialize<'de>>(path: &Path) -> Result<Vec<T>, RuntimeError> {
-    match fs::read_to_string(path) {
-        Ok(content) => Ok(serde_json::from_str(&content)?),
-        Err(err) if err.kind() == std::io::ErrorKind::NotFound => Ok(Vec::new()),
-        Err(source) => Err(RuntimeError::Io {
-            path: path.display().to_string(),
-            source,
-        }),
-    }
-}
-
-fn write_json_file<T: Serialize + ?Sized>(path: &Path, value: &T) -> Result<(), RuntimeError> {
-    write_bytes(path, serde_json::to_vec_pretty(value)?.as_slice())
-}
-
-fn write_json_lines<T: Serialize>(path: &Path, values: &[T]) -> Result<(), RuntimeError> {
-    let mut file = fs::File::create(path).map_err(|source| RuntimeError::Io {
-        path: path.display().to_string(),
-        source,
-    })?;
-    for value in values {
-        let line = serde_json::to_string(value)?;
-        writeln!(file, "{line}").map_err(|source| RuntimeError::Io {
-            path: path.display().to_string(),
-            source,
-        })?;
-    }
-    file.flush().map_err(|source| RuntimeError::Io {
-        path: path.display().to_string(),
-        source,
-    })
-}
-
-fn write_bytes(path: &Path, bytes: &[u8]) -> Result<(), RuntimeError> {
-    fs::write(path, bytes).map_err(|source| RuntimeError::Io {
-        path: path.display().to_string(),
-        source,
-    })
-}
-
-fn create_dir_all(path: &Path) -> Result<(), RuntimeError> {
-    fs::create_dir_all(path).map_err(|source| RuntimeError::Io {
-        path: path.display().to_string(),
-        source,
-    })
-}
-
-fn parse_turn_index(operation_id: &str) -> Option<u64> {
-    operation_id
-        .rsplit_once('-')
-        .and_then(|(_, tail)| tail.parse::<u64>().ok())
 }
