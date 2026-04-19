@@ -52,6 +52,19 @@ Updated: 2026-04-18
   - 不能把完整推理历史塞回 `messages.json`
   - 不能在 CLI wrapper 层私自发明 control plane 语义
 
+## 2026-04-19 receipt 标准化第一步已落地
+
+- 已新增：
+  - `scripts/build-receipt-index.py`
+  - `docs/closeout/m1-receipt-standardization.md`
+- 已实际生成：
+  - `~/.fin/harness/reports/0.1.0001/receipt-index.json`
+  - `~/.fin/harness/runs/m1-closeout-20260419-163831/runtime-home/harness/reports/0.1.0001/receipt-index.json`
+- 当前冻结策略：
+  - 先统一 `receipt-index.json` 作为目录页
+  - 原始 receipt 继续保留各自真源
+  - 不直接一口气重写所有 receipt schema
+
 ## 2026-04-19 review-driven truth fixes
 
 - 已按 review 修正三项 P0 truth 问题：

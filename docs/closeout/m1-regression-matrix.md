@@ -33,7 +33,7 @@ cargo test -p fin-runtime -p fin-cli -p fin-debug-server --manifest-path rust/Ca
 | Status probe | 非中断状态查询，不产生新 closure | `web_debug::tests::status_probe_returns_latest_framework_state_without_new_closure` | 已覆盖 | 手工验证 `/status` 时消息与 digest hash 不变 |
 | Event archive / control plane | archive、tick、supervisor、heartbeat、daemon state 可读 | `supervisor_cycle_tests`、`supervisor_heartbeat_tests`、`daemon_state_tests`、`scheduler_tick_tests` | 已覆盖核心路径 | 在 4040 上检查 inspector/status 显示最新控制面 truth |
 | Web debug truth | conversation/debug 同源，读取 session truth | `fin-debug-server` tests、`session_view` / `chat_api` tests | 已覆盖基础 API | 手工验证 UI 刷新来自 session 文件而非自造状态 |
-| Installed-binary smoke | 安装态读取配置、写 runtime home、基础命令可跑 | `install-dev` 已真实跑通；已有 summary receipt | 已通过 | 后续继续标准化 closeout receipts |
+| Installed-binary smoke | 安装态读取配置、写 runtime home、基础命令可跑 | `install-dev` 已真实跑通；已有 summary receipt + `receipt-index.json` | 已通过 | 后续继续把 receipt 生成固化到默认流程 |
 
 ## 3. 当前重点已存在测试
 

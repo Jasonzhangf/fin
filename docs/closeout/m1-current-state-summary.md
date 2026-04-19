@@ -198,6 +198,11 @@ Web 不持有业务真相，只持有：
 
 统一整理成更稳定、可重复引用的 receipt 体系。
 
+当前第一步已落地：
+
+- `scripts/build-receipt-index.py`
+- `harness/reports/<build>/receipt-index.json`
+
 ### B. 推理主链 review 固化
 
 把当前单 agent 推理主链收成一份固定真源清单：
