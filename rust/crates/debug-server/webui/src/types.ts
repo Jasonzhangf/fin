@@ -109,6 +109,17 @@ export interface ClosureTraceRecord extends JsonRecord {
   assistant_response?: string;
 }
 
+export interface TurnRecord extends JsonRecord {
+  turn_id?: string;
+  operation_id?: string;
+  status?: string;
+  user_input?: string;
+  assistant_visible_output?: string | null;
+  progress_summary?: string | null;
+  created_at?: string;
+  completed_at?: string | null;
+}
+
 export interface FocusTurn {
   operationId: string;
   traceId?: string | null;
@@ -154,6 +165,13 @@ export interface RefreshState {
   recentReasoningViews: ReasoningViewRecord[];
   recentToolRecords: ToolExecutionRecord[];
   recentClosures: ClosureTraceRecord[];
+  recentTurns: TurnRecord[];
+  currentExecutionState: JsonRecord | null;
+  currentPendingInputs: JsonRecord[];
+  currentPauseCheckpoint: JsonRecord | null;
+  currentInterruptedSegment: JsonRecord | null;
+  currentSegmentMerge: JsonRecord | null;
+  currentRoutingDecision: JsonRecord | null;
   messages: SessionMessage[];
   focusTurns: FocusTurn[];
   selectedOperationId: string | null;

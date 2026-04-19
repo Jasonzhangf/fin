@@ -123,6 +123,49 @@ button, textarea, input { font: inherit; }
 .rail-digest-card:hover {
   border-color: rgba(103, 160, 255, 0.36);
 }
+.rail-inline-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid rgba(86, 114, 157, 0.18);
+  border-radius: 16px;
+  background: rgba(8, 17, 30, 0.78);
+}
+.rail-inline-panel-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+}
+.rail-inline-kicker {
+  color: var(--accent-strong);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.rail-inline-summary {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+.rail-inline-facts {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 8px;
+}
+.rail-inline-detail-btn {
+  flex-shrink: 0;
+  padding: 7px 10px;
+  border: 1px solid rgba(79, 140, 255, 0.28);
+  border-radius: 10px;
+  background: rgba(79, 140, 255, 0.1);
+  color: var(--accent-strong);
+  cursor: pointer;
+  font-size: 11px;
+  font-weight: 700;
+}
 .rail-digest-header {
   display: flex;
   align-items: flex-start;
@@ -869,6 +912,49 @@ button, textarea, input { font: inherit; }
   background: transparent;
 }
 .dashboard-digest-card:hover { border-color: rgba(103, 160, 255, 0.4); }
+.dashboard-inline-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 0 16px 16px;
+  border-top: 1px solid rgba(86, 114, 157, 0.16);
+}
+.dashboard-inline-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  padding-top: 12px;
+}
+.dashboard-inline-title {
+  color: #eef5ff;
+  font-size: 14px;
+  font-weight: 700;
+}
+.dashboard-inline-detail-btn {
+  flex-shrink: 0;
+  padding: 7px 10px;
+  border: 1px solid rgba(79, 140, 255, 0.28);
+  border-radius: 10px;
+  background: rgba(79, 140, 255, 0.1);
+  color: var(--accent-strong);
+  cursor: pointer;
+  font-size: 11px;
+  font-weight: 700;
+}
+.dashboard-inline-focus {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.dashboard-inline-summary-grid {
+  margin-bottom: 0;
+}
+.dashboard-inline-sections {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
 .dashboard-digest-header {
   display: flex;
   justify-content: space-between;

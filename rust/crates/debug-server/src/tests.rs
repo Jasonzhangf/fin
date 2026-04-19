@@ -368,6 +368,30 @@ fn response_for_recent_closures_reads_runtime_artifact_via_last_run() {
 }
 
 #[test]
+fn response_for_recent_turns_reads_runtime_artifact_via_last_run() {
+    tests_archive::assert_runtime_artifact_response(
+        "turns",
+        API_RECENT_TURNS_PATH,
+        "session_recent_turns_path",
+        "sessions/2026/04/session-1/turns/recent_turns.json",
+        br#"[{"turn_id":"turn-op-1","operation_id":"op-1","status":"completed"}]"#,
+        "turn-op-1",
+    );
+}
+
+#[test]
+fn response_for_current_execution_state_reads_runtime_artifact_via_last_run() {
+    tests_archive::assert_runtime_artifact_response(
+        "execution-state",
+        API_CURRENT_EXECUTION_STATE_PATH,
+        "current_execution_state_path",
+        "runtime/current/current_execution_state.json",
+        br#"{"state_id":"exec-state-1","status":"paused","pending_input_count":2}"#,
+        "paused",
+    );
+}
+
+#[test]
 fn response_for_qqbot_state_reads_peer_state_file() {
     let runtime_home = std::env::temp_dir().join(format!(
         "fin-debug-qqbot-{}",

@@ -1,7 +1,7 @@
 import type { JsonRecord, RefreshState } from './types.js';
 import { StructuredTreeRenderer } from './tree.js';
 
-export type SidebarSectionId = 'project' | 'session' | 'skills' | 'plugins';
+export type SidebarSectionId = 'project' | 'session' | 'execution' | 'skills' | 'plugins';
 
 interface SidebarSection {
   id: SidebarSectionId;
@@ -18,13 +18,14 @@ export function renderSidebar(
   rootEl: HTMLElement,
   state: RefreshState,
   tree: StructuredTreeRenderer,
+  expandedSectionId: SidebarSectionId | null,
   openedSectionId: SidebarSectionId | null,
 ): void {
   const sections = buildSidebarSections(state);
   const openedSection = sections.find((section) => section.id === openedSectionId) ?? null;
 
   rootEl.innerHTML = `
-    ${sections.map((section) => renderSidebarSection(section, tree)).join('')}
+    ${sections.map((section) => renderSidebarSection(section, tree, section.id === expandedSectionId)).join('')}
     ${openedSection ? renderSidebarModal(openedSection, tree) : ''}
   `;
 }
@@ -34,6 +35,11 @@ function buildSidebarSections(state: RefreshState): SidebarSection[] {
   const project = asRecord(context.project);
   const rolePrompt = asRecord(context.role_prompt);
   const tools = asRecord(context.tools);
+  const execution = asRecord(state.currentExecutionState);
+  const pauseCheckpoint = asRecord(state.currentPauseCheckpoint);
+  const interruptedSegment = asRecord(state.currentInterruptedSegment);
+  const segmentMerge = asRecord(state.currentSegmentMerge);
+  const routingDecision = asRecord(state.currentRoutingDecision);
   const promptModules = asRecordArray(rolePrompt.prompt_modules);
   const skillSummary = scalar(
     promptModules.find((module) => scalar(module.module_id) === 'stable_core.loaded_global_skill_index')?.summary,
@@ -42,9 +48,15 @@ function buildSidebarSections(state: RefreshState): SidebarSection[] {
   const activeLayerSummary = promptLayers.length
     ? promptLayers.map((layer) => `${scalar(layer.layer_id)}:${arrayCount(layer.module_ids)}`).join(' · ')
     : '-';
-  const recentTurns = [...state.focusTurns].slice(-5).reverse();
+  const recentFocusTurns = [...state.focusTurns].slice(-5).reverse();
+  const recentTurnRecords = [...state.recentTurns].slice(-5).reverse();
+  const pendingInputs = Array.isArray(state.currentPendingInputs) ? state.currentPendingInputs : [];
   const projectRoot = scalar(project.project_root ?? project.cwd ?? state.binding?.runtime_home);
-  const selectedOperation = state.selectedOperationId ?? recentTurns[0]?.operationId ?? '-';
+  const selectedOperation = state.selectedOperationId ?? recentFocusTurns[0]?.operationId ?? '-';
+  const executionStatus = scalar(execution.status);
+  const activeStep = scalar(execution.active_step_id);
+  const pendingCount = pendingInputs.length || Number(execution.pending_input_count ?? 0);
+  const routingDisposition = scalar(routingDecision.disposition);
 
   return [
     {
@@ -66,21 +78,63 @@ function buildSidebarSections(state: RefreshState): SidebarSection[] {
       kicker: 'Session',
       title: scalar(state.binding?.session_id ?? 'tentative'),
       summary: shortText(
-        `task=${scalar(state.binding?.task_id)} · messages=${state.messages.length} · turns=${state.focusTurns.length}`,
+        `task=${scalar(state.binding?.task_id)} · state=${executionStatus} · turns=${state.recentTurns.length || state.focusTurns.length}`,
         92,
       ),
       facts: [
         ['active turn', shortText(selectedOperation, 24)],
+        ['routing', shortText(routingDisposition, 28)],
         ['recent digests', String(state.recentDigests.length)],
         ['reasoning', String(state.recentReasoningViews.length)],
         ['closures', String(state.recentClosures.length)],
       ],
-      list: recentTurns.map((turn) => ({
-        title: shortText(turn.userMessage?.content ?? turn.assistantMessage?.content ?? turn.operationId, 54),
-        meta: shortText(turn.operationId, 36),
-      })),
+      list: recentTurnRecords.length
+        ? recentTurnRecords.map((turn) => ({
+          title: shortText(scalar(turn.user_input ?? turn.assistant_visible_output ?? turn.operation_id), 54),
+          meta: shortText(`${scalar(turn.operation_id)} · ${scalar(turn.status)}`, 48),
+        }))
+        : recentFocusTurns.map((turn) => ({
+          title: shortText(turn.userMessage?.content ?? turn.assistantMessage?.content ?? turn.operationId, 54),
+          meta: shortText(turn.operationId, 36),
+        })),
       detailTitle: 'Session Detail',
-      detailSubtitle: '当前 session 与最近 turn 摘要',
+      detailSubtitle: '当前 session、routing 与最近 turn 摘要',
+    },
+    {
+      id: 'execution',
+      kicker: 'Execution',
+      title: executionStatus !== '-' ? executionStatus : 'idle',
+      summary: shortText(
+        `pending=${pendingCount} · active_step=${activeStep} · resume=${scalar(execution.resume_from_step_id)}`,
+        92,
+      ),
+      facts: [
+        ['active step', shortText(activeStep, 28)],
+        ['resume from', shortText(scalar(execution.resume_from_step_id), 28)],
+        ['pending', String(pendingCount)],
+        ['interrupt', shortText(scalar(interruptedSegment.status ?? segmentMerge.strategy), 24)],
+      ],
+      list: [
+        ...pendingInputs.slice(0, 3).map((item) => {
+          const pending = asRecord(item);
+          return {
+            title: shortText(scalar(pending.message), 54),
+            meta: shortText(`pending · ${scalar(pending.input_kind)} · ${scalar(pending.enqueue_reason)}`, 54),
+          };
+        }),
+        ...[
+          scalar(pauseCheckpoint.checkpoint_id) !== '-' ? {
+            title: shortText(`checkpoint ${scalar(pauseCheckpoint.checkpoint_id)}`, 54),
+            meta: shortText(`pause · ${scalar(pauseCheckpoint.reason)} · ${scalar(pauseCheckpoint.paused_at)}`, 60),
+          } : null,
+          scalar(segmentMerge.merge_id) !== '-' ? {
+            title: shortText(`merge ${scalar(segmentMerge.merge_id)}`, 54),
+            meta: shortText(`${scalar(segmentMerge.strategy)} · resumed=${scalar(segmentMerge.resumed_operation_id)}`, 60),
+          } : null,
+        ].filter((item): item is { title: string; meta: string } => Boolean(item)),
+      ],
+      detailTitle: 'Execution Detail',
+      detailSubtitle: '运行状态、pending queue、pause / interrupt / merge 摘要',
     },
     {
       id: 'skills',
@@ -101,9 +155,9 @@ function buildSidebarSections(state: RefreshState): SidebarSection[] {
     },
     {
       id: 'plugins',
-      kicker: 'Plugins & Tools',
-      title: 'Tool plane / plugin surface',
-      summary: '首页只显示工具平面 digest；完整 guard 列表点开查看。',
+      kicker: 'Capabilities',
+      title: 'Tool plane / capability surface',
+      summary: '首页只显示能力平面 digest；完整 guard 列表点开查看。',
       facts: [
         ['model tools', String(arrayCount(tools.model_tools))],
         ['framework', String(arrayCount(tools.framework_tools))],
@@ -114,24 +168,29 @@ function buildSidebarSections(state: RefreshState): SidebarSection[] {
         title: shortText(guard, 54),
         meta: 'guard',
       })),
-      detailTitle: 'Plugins & Tools',
-      detailSubtitle: 'tool counts / hard guards / plugin surface 摘要',
+      detailTitle: 'Capabilities & Tools',
+      detailSubtitle: 'tool counts / hard guards / capability surface 摘要',
     },
   ];
 }
 
-function renderSidebarSection(section: SidebarSection, tree: StructuredTreeRenderer): string {
+function renderSidebarSection(
+  section: SidebarSection,
+  tree: StructuredTreeRenderer,
+  expanded: boolean,
+): string {
   return `
     <section class="rail-section">
       <div class="rail-section-kicker">${tree.escapeHtml(section.kicker)}</div>
       <button
         class="rail-digest-card"
         type="button"
-        data-open-rail-section="${tree.escapeHtml(section.id)}"
+        data-toggle-rail-section="${tree.escapeHtml(section.id)}"
+        aria-expanded="${expanded ? 'true' : 'false'}"
       >
         <div class="rail-digest-header">
           <div class="rail-card-title">${tree.escapeHtml(section.title)}</div>
-          <span class="rail-digest-open">Open</span>
+          <span class="rail-digest-open">${expanded ? 'Collapse' : 'Expand'}</span>
         </div>
         <div class="rail-card-summary">${tree.escapeHtml(section.summary)}</div>
         <div class="rail-digest-facts">
@@ -143,6 +202,46 @@ function renderSidebarSection(section: SidebarSection, tree: StructuredTreeRende
           `).join('')}
         </div>
       </button>
+      ${expanded ? renderSidebarExpanded(section, tree) : ''}
+    </section>
+  `;
+}
+
+function renderSidebarExpanded(section: SidebarSection, tree: StructuredTreeRenderer): string {
+  return `
+    <section class="rail-inline-panel">
+      <div class="rail-inline-panel-header">
+        <div>
+          <div class="rail-inline-kicker">Quick View</div>
+          <div class="rail-inline-title">${tree.escapeHtml(section.detailTitle)}</div>
+        </div>
+        <button
+          class="rail-inline-detail-btn"
+          type="button"
+          data-open-rail-detail="${tree.escapeHtml(section.id)}"
+        >
+          View detail
+        </button>
+      </div>
+      <div class="rail-inline-summary">${tree.escapeHtml(section.detailSubtitle)}</div>
+      <div class="rail-inline-facts">
+        ${section.facts.map(([label, value]) => `
+          <article class="rail-fact-pill">
+            <span class="rail-fact-label">${tree.escapeHtml(label)}</span>
+            <span class="rail-fact-value">${tree.escapeHtml(value)}</span>
+          </article>
+        `).join('')}
+      </div>
+      ${section.list?.length ? `
+        <section class="rail-inline-list">
+          ${section.list.slice(0, 4).map((item) => `
+            <article class="rail-inline-item">
+              <div class="rail-inline-title">${tree.escapeHtml(item.title)}</div>
+              <div class="rail-inline-meta">${tree.escapeHtml(item.meta)}</div>
+            </article>
+          `).join('')}
+        </section>
+      ` : ''}
     </section>
   `;
 }

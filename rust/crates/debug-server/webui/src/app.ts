@@ -1,27 +1,17 @@
 import { setStatusPill, syncRichnessButtons } from './app_ui.js';
+import { loadRefreshState } from './app_refresh.js';
 import { ChatPane, type PendingAssistantState } from './chat.js';
-import { resolveEventLedgerState } from './event_ledger_state.js';
-import { buildFocusTurns, FocusPane } from './focus.js';
+import { FocusPane } from './focus.js';
 import { InspectorPane } from './inspector.js';
 import { renderSidebar, type SidebarSectionId } from './sidebar.js';
 import { formatLocalTimestamp } from './time.js';
 import { StructuredTreeRenderer } from './tree.js';
 import type {
-  ClosureTraceRecord,
   ConversationRichness,
-  ContextSnapshotRecord,
   DashboardCardId,
   DebugBinding,
-  DebugSnapshot,
-  DigestRecord,
-  EventArchiveIndex,
   EventLedgerScope,
-  JsonRecord,
-  ReasoningViewRecord,
   RefreshState,
-  RuntimeEvent,
-  SessionMessage,
-  ToolExecutionRecord,
 } from './types.js';
 
 class DebugApp {
@@ -66,7 +56,9 @@ class DebugApp {
   private pendingTimer: number | null = null;
   private watchSource: EventSource | null = null;
   private openedChatDetailKey: string | null = null;
+  private expandedRailSectionId: SidebarSectionId | null = 'session';
   private openedRailSectionId: SidebarSectionId | null = null;
+  private expandedCardId: DashboardCardId | null = 'operation';
   private state: RefreshState = {
     binding: null,
     projection: {},
@@ -84,6 +76,13 @@ class DebugApp {
     recentReasoningViews: [],
     recentToolRecords: [],
     recentClosures: [],
+    recentTurns: [],
+    currentExecutionState: null,
+    currentPendingInputs: [],
+    currentPauseCheckpoint: null,
+    currentInterruptedSegment: null,
+    currentSegmentMerge: null,
+    currentRoutingDecision: null,
     messages: [],
     focusTurns: [],
     selectedOperationId: null,
@@ -203,90 +202,7 @@ class DebugApp {
 
     this.refreshInFlight = true;
     try {
-      const [
-        binding,
-        recentContexts,
-        recentDigests,
-        recentReasoningViews,
-        recentToolRecords,
-        recentClosures,
-        messages,
-        sessionEvents,
-        eventArchiveIndex,
-        lastRun,
-        currentContext,
-      ] = await Promise.all([
-        this.fetchJson<DebugBinding>('/api/binding.json').catch(() => null),
-        this.fetchJson<ContextSnapshotRecord[]>('/api/recent_contexts.json').catch(() => []),
-        this.fetchJson<DigestRecord[]>('/api/recent_digests.json').catch(() => []),
-        this.fetchJson<ReasoningViewRecord[]>('/api/recent_reasoning_views.json').catch(() => []),
-        this.fetchJson<ToolExecutionRecord[]>('/api/recent_tool_records.json').catch(() => []),
-        this.fetchJson<ClosureTraceRecord[]>('/api/recent_closures.json').catch(() => []),
-        this.fetchJson<SessionMessage[]>('/api/session_messages.json').catch(() => []),
-        this.fetchJson<RuntimeEvent[]>('/api/session_events.json').catch(() => []),
-        this.fetchJson<EventArchiveIndex>('/api/session_event_archive_index.json').catch(() => null),
-        this.fetchJson<JsonRecord>('/api/last_run.json').catch(() => null),
-        this.fetchJson<JsonRecord>('/api/current_context.json').catch(() => null),
-      ]);
-      const liveEvents = Array.isArray(sessionEvents) ? sessionEvents : [];
-      let eventLedgerScope = this.state.eventLedgerScope;
-      let eventLedgerSegment = this.state.eventLedgerSegment;
-      let eventLedgerEvents = liveEvents;
-      if (eventLedgerScope !== 'live' && eventLedgerSegment) {
-        const tier = eventLedgerScope === 'local_archive' ? 'local' : 'cold';
-        eventLedgerEvents = await this.fetchJson<RuntimeEvent[]>(
-          `/api/session_events_segment.json?tier=${tier}&segment=${encodeURIComponent(eventLedgerSegment)}`,
-        ).catch(() => []);
-      }
-      const resolvedLedgerState = resolveEventLedgerState(
-        eventArchiveIndex,
-        eventLedgerScope,
-        eventLedgerSegment,
-        Array.isArray(eventLedgerEvents) ? eventLedgerEvents : [],
-        this.state.eventLedgerSelectedOperationId,
-        this.state.selectedOperationId,
-      );
-      eventLedgerScope = resolvedLedgerState.scope;
-      eventLedgerSegment = resolvedLedgerState.segment;
-      const eventLedgerSelectedOperationId = resolvedLedgerState.selectedOperationId;
-
-      const focusTurns = buildFocusTurns(
-        messages,
-        recentContexts,
-        recentDigests,
-        recentReasoningViews,
-        recentToolRecords,
-        recentClosures,
-        liveEvents,
-      );
-      const selectedOperationId = focusTurns.some((turn) => turn.operationId === this.state.selectedOperationId)
-        ? this.state.selectedOperationId
-        : (focusTurns.length ? focusTurns[focusTurns.length - 1].operationId : null);
-
-      this.state = {
-        binding,
-        projection: {},
-        events: [],
-        sessionEvents: liveEvents,
-        eventArchiveIndex,
-        eventLedgerScope,
-        eventLedgerSegment,
-        eventLedgerEvents: Array.isArray(eventLedgerEvents) ? eventLedgerEvents : [],
-        eventLedgerSelectedOperationId,
-        lastRun,
-        currentContext,
-        recentContexts: Array.isArray(recentContexts) ? recentContexts : [],
-        recentDigests: Array.isArray(recentDigests) ? recentDigests : [],
-        recentReasoningViews: Array.isArray(recentReasoningViews) ? recentReasoningViews : [],
-        recentToolRecords: Array.isArray(recentToolRecords) ? recentToolRecords : [],
-        recentClosures: Array.isArray(recentClosures) ? recentClosures : [],
-        messages: Array.isArray(messages) ? messages : [],
-        focusTurns,
-        selectedOperationId,
-        conversationRichness: this.state.conversationRichness,
-        openedCard: this.state.openedCard,
-        openedSectionKey: this.state.openedSectionKey,
-      };
+      this.state = await loadRefreshState(this.fetchJson.bind(this), this.state);
       this.render();
       this.lastUpdatedEl.textContent = `updated ${formatLocalTimestamp(new Date().toISOString())}`;
       this.setStatus('connected', true);
@@ -300,7 +216,13 @@ class DebugApp {
 
   private render(): void {
     this.syncRichnessButtons();
-    renderSidebar(this.sidebarEl, this.state, this.tree, this.openedRailSectionId);
+    renderSidebar(
+      this.sidebarEl,
+      this.state,
+      this.tree,
+      this.expandedRailSectionId,
+      this.openedRailSectionId,
+    );
     this.chatPane.render(
       this.state.binding,
       this.state.messages,
@@ -313,7 +235,7 @@ class DebugApp {
       this.openedChatDetailKey,
     );
     this.focusPane.render(this.state);
-    this.inspectorPane.render(this.state);
+    this.inspectorPane.render(this.state, this.expandedCardId, this.state.openedCard);
   }
 
   private syncRichnessButtons(): void {
@@ -369,6 +291,20 @@ class DebugApp {
     const target = event.target;
     if (!(target instanceof HTMLElement)) return;
 
+    const detailTrigger = target.closest<HTMLElement>('[data-open-rail-detail]');
+    const detailSectionId = detailTrigger?.dataset.openRailDetail;
+    if (
+      detailSectionId === 'project'
+      || detailSectionId === 'session'
+      || detailSectionId === 'execution'
+      || detailSectionId === 'skills'
+      || detailSectionId === 'plugins'
+    ) {
+      this.openedRailSectionId = detailSectionId;
+      this.render();
+      return;
+    }
+
     const closeButton = target.closest<HTMLElement>('[data-close-rail-detail]');
     if (closeButton) {
       this.openedRailSectionId = null;
@@ -383,16 +319,17 @@ class DebugApp {
       return;
     }
 
-    const trigger = target.closest<HTMLElement>('[data-open-rail-section]');
-    const sectionId = trigger?.dataset.openRailSection;
+    const trigger = target.closest<HTMLElement>('[data-toggle-rail-section]');
+    const sectionId = trigger?.dataset.toggleRailSection;
     if (
       sectionId !== 'project'
       && sectionId !== 'session'
+      && sectionId !== 'execution'
       && sectionId !== 'skills'
       && sectionId !== 'plugins'
     ) return;
 
-    this.openedRailSectionId = sectionId;
+    this.expandedRailSectionId = this.expandedRailSectionId === sectionId ? null : sectionId;
     this.render();
   }
 
@@ -451,8 +388,21 @@ class DebugApp {
       return;
     }
 
-    const card = target.closest<HTMLElement>('[data-open-card]');
-    const cardId = card?.dataset.openCard;
+    const detailTrigger = target.closest<HTMLElement>('[data-open-card-detail]');
+    const detailCardId = detailTrigger?.dataset.openCardDetail;
+    if (
+      detailCardId === 'provider'
+      || detailCardId === 'context'
+      || detailCardId === 'system'
+      || detailCardId === 'operation'
+    ) {
+      this.state.openedCard = detailCardId;
+      this.render();
+      return;
+    }
+
+    const card = target.closest<HTMLElement>('[data-toggle-card], [data-open-card]');
+    const cardId = card?.dataset.toggleCard ?? card?.dataset.openCard;
     if (
       cardId !== 'provider'
       && cardId !== 'context'
@@ -460,8 +410,7 @@ class DebugApp {
       && cardId !== 'operation'
     ) return;
 
-    this.state.openedCard = this.state.openedCard === cardId ? null : cardId as DashboardCardId;
-    this.state.openedSectionKey = null;
+    this.expandedCardId = this.expandedCardId === cardId ? null : cardId as DashboardCardId;
     this.render();
   }
 
@@ -482,11 +431,6 @@ class DebugApp {
     }
     if (this.openedRailSectionId) {
       this.openedRailSectionId = null;
-      this.render();
-      return;
-    }
-    if (this.state.openedSectionKey) {
-      this.state.openedSectionKey = null;
       this.render();
       return;
     }

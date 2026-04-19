@@ -1,5 +1,19 @@
 import { renderEventLedger } from './event_ledger.js';
 import { buildEventLedgerView } from './event_ledger_view_state.js';
+import {
+  arrayCount,
+  asRecord,
+  findEvent,
+  firstArrayItem,
+  layerDigest,
+  modulesForLayer,
+  promptLayerById,
+  scalar,
+  shortPath,
+  shortText,
+  timelineLevel,
+  toolCount,
+} from './inspector_helpers.js';
 import { formatLocalTimestamp } from './time.js';
 import { renderInspectorSection } from './section_renderers.js';
 import { StructuredTreeRenderer } from './tree.js';
@@ -29,14 +43,18 @@ export class InspectorPane {
     private readonly tree: StructuredTreeRenderer,
   ) {}
 
-  render(state: RefreshState): void {
+  render(
+    state: RefreshState,
+    expandedCardId: DashboardCardId | null,
+    detailCardId: DashboardCardId | null,
+  ): void {
     const selected = state.focusTurns.find((turn) => turn.operationId === state.selectedOperationId);
     const cards = this.buildCards(selected, state);
-    const openedCard = cards.find((card) => card.id === state.openedCard) ?? null;
+    const openedCard = cards.find((card) => card.id === detailCardId) ?? null;
 
     this.rootEl.innerHTML = `
       <section class="dashboard-shell dashboard-stack">
-        ${cards.map((card) => this.renderDigestCard(card)).join('')}
+        ${cards.map((card) => this.renderDigestCard(card, card.id === expandedCardId)).join('')}
       </section>
       ${openedCard ? this.renderDetailModal(openedCard) : ''}
     `;
@@ -284,21 +302,21 @@ export class InspectorPane {
     ];
   }
 
-  private renderDigestCard(card: CardSpec): string {
+  private renderDigestCard(card: CardSpec, expanded: boolean): string {
     return `
-      <article class="dashboard-card">
+      <article class="dashboard-card ${expanded ? 'expanded' : ''}">
         <button
           class="dashboard-digest-card"
           type="button"
-          data-open-card="${this.tree.escapeHtml(card.id)}"
-          aria-expanded="false"
+          data-toggle-card="${this.tree.escapeHtml(card.id)}"
+          aria-expanded="${expanded ? 'true' : 'false'}"
         >
           <div class="dashboard-digest-header">
             <div>
               <h3>${this.tree.escapeHtml(card.title)}</h3>
               <p class="muted">${this.tree.escapeHtml(card.subtitle)}</p>
             </div>
-            <span class="dashboard-digest-open">Expand</span>
+            <span class="dashboard-digest-open">${expanded ? 'Collapse' : 'Expand'}</span>
           </div>
           <div class="dashboard-digest-lines">
             ${card.digestLines.slice(0, 3).map(([label, value]) => `
@@ -309,7 +327,46 @@ export class InspectorPane {
             `).join('')}
           </div>
         </button>
+        ${expanded ? this.renderExpandedCard(card) : ''}
       </article>
+    `;
+  }
+
+  private renderExpandedCard(card: CardSpec): string {
+    return `
+      <section class="dashboard-inline-panel">
+        <div class="dashboard-inline-header">
+          <div>
+            <div class="section-kicker">Quick View</div>
+            <div class="dashboard-inline-title">${this.tree.escapeHtml(card.title)}</div>
+          </div>
+          <button
+            class="dashboard-inline-detail-btn"
+            type="button"
+            data-open-card-detail="${this.tree.escapeHtml(card.id)}"
+          >
+            Open detail
+          </button>
+        </div>
+        ${card.focusAreas.length ? `
+          <div class="dashboard-inline-focus">
+            ${card.focusAreas.slice(0, 5).map((focus) => `
+              <span class="detail-focus-chip">${this.tree.escapeHtml(focus)}</span>
+            `).join('')}
+          </div>
+        ` : ''}
+        <div class="detail-modal-summary dashboard-inline-summary-grid">
+          ${card.digestLines.map(([label, value]) => `
+            <article class="summary-chip">
+              <span class="summary-chip-label">${this.tree.escapeHtml(label)}</span>
+              <span class="summary-chip-value">${this.tree.escapeHtml(value)}</span>
+            </article>
+          `).join('')}
+        </div>
+        <div class="dashboard-inline-sections">
+          ${card.sections.slice(0, 2).map(([label, value], index) => this.renderInlineSection(card.id, label, value, index === 0)).join('')}
+        </div>
+      </section>
     `;
   }
 
@@ -402,81 +459,4 @@ export class InspectorPane {
   private empty(text: string): string {
     return `<div class="empty-state compact"><div class="empty-text">${this.tree.escapeHtml(text)}</div></div>`;
   }
-}
-
-function findEvent(events: RuntimeEvent[], eventType: string): RuntimeEvent | undefined {
-  return events.find((event) => event.event_type === eventType);
-}
-
-function asRecord(value: unknown): JsonRecord {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) return {};
-  return value as JsonRecord;
-}
-
-function scalar(value: unknown): string {
-  if (value === null || value === undefined) return '-';
-  if (typeof value === 'string') return value || '-';
-  return JSON.stringify(value);
-}
-
-function shortText(value: string, limit: number): string {
-  const text = value.trim();
-  if (!text) return '-';
-  return text.length <= limit ? text : `${text.slice(0, limit)}…`;
-}
-
-function shortPath(value: unknown): string {
-  const text = scalar(value);
-  if (text === '-') return text;
-  const parts = text.split('/').filter(Boolean);
-  return parts.length <= 3 ? text : `…/${parts.slice(-3).join('/')}`;
-}
-
-function promptLayerById(layers: JsonRecord[], layerId: string): JsonRecord {
-  return layers.find((layer) => scalar(layer.layer_id) === layerId) ?? {};
-}
-
-function modulesForLayer(modules: JsonRecord[], layer: JsonRecord): JsonRecord[] {
-  const moduleIds = Array.isArray(layer.module_ids)
-    ? layer.module_ids.map((item) => String(item))
-    : [];
-  if (!moduleIds.length) return [];
-  const order = new Map(moduleIds.map((moduleId, index) => [moduleId, index]));
-  return modules
-    .filter((module) => order.has(scalar(module.module_id)))
-    .sort((left, right) => {
-      const leftIndex = order.get(scalar(left.module_id)) ?? 0;
-      const rightIndex = order.get(scalar(right.module_id)) ?? 0;
-      return leftIndex - rightIndex;
-    });
-}
-
-function layerDigest(layer: JsonRecord, modules: JsonRecord[]): string {
-  if (!countKeys(layer)) return 'inactive';
-  const title = scalar(layer.title);
-  const summary = scalar(layer.summary);
-  return `${title} · modules=${modules.length} · ${summary}`;
-}
-
-function countKeys(value: JsonRecord): number {
-  return Object.keys(value).length;
-}
-
-function arrayCount(value: unknown): number {
-  return Array.isArray(value) ? value.length : 0;
-}
-
-function firstArrayItem(value: unknown): unknown {
-  return Array.isArray(value) && value.length ? value[0] : undefined;
-}
-
-function toolCount(value: JsonRecord): number {
-  return arrayCount(value.model_tools) + arrayCount(value.framework_tools);
-}
-
-function timelineLevel(eventType?: string): string {
-  if (!eventType) return 'neutral';
-  if (eventType.includes('failed') || eventType.includes('timeout')) return 'error';
-  if (eventType.includes('completed') || eventType.includes('finalized')) return 'ok';
-  return 'neutral';
 }
