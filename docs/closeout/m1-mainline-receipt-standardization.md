@@ -47,6 +47,7 @@ fin.receipt.mainline.v1
 - `history_context`：证明多轮历史确实进入了下一轮 context，而不是只有 UI 对话在增长
 - `auto_tool_roundtrip`：证明同一 operation 内发生了真正的自动工具往返，而不是只解析了一次 tool call 就停
 - `control_boundary`：证明 session durable artifacts 已经记录控制面边界事实（如 heartbeat / daemon / scheduler / queue / interrupt 等），便于后续 pause/resume/queue 稳定化
+  - 当前已升级为 **async control-plane receipt**，要求能看见 `wait_external -> reminder_fired -> heartbeat_due/stale_lease` 这类异步恢复链，而不只是 pause/queue/resume 的静态残留物
 
 ---
 
@@ -148,13 +149,20 @@ fin.receipt.mainline.v1
 1. 至少存在一组 durable control-plane artifacts
 2. 摘要里必须明确哪些 control families 实际存在
 3. 若 queue / interrupt 当前为空，必须如实反映为空，而不是补结论
+4. stronger async receipt 至少要能证明以下事实中的关键子集已经真实发生：
+   - `waiting_external`
+   - `reminder_scheduled`
+   - `reminder_fired`
+   - `supervisor_heartbeat_due`
+   - `stale_lease`
 
-这类 receipt 当前先回答：
+这类 receipt 当前要回答：
 
 - 该 session 是否已经有 durable control-plane evidence
 - 当前 evidence 来自哪些 families
 - 是否真实发生过 pause / queue / resume / scheduler drive / segment merge
-- 后续 wait / interrupt / queue 强样本还缺什么
+- 是否真实发生过 `wait_external -> reminder_fired -> heartbeat_due/stale_lease` 的异步控制面推进
+- 当前异步控制面还缺什么
 
 ---
 
@@ -165,7 +173,7 @@ fin.receipt.mainline.v1
 1. 先把真实 receipt family 的 schema 与生成入口固定
 2. 先产出有真实样本的 `history_context`
 3. `auto_tool_roundtrip` 没样本时就老实标 `missing`
-4. `control_boundary` 先收当前 session 已有 durable control artifacts
+4. `control_boundary` 先收当前 session 已有 durable control artifacts，并持续提升到 async control-plane 级别
 
 不要为了“看起来完整”而伪造 tool-loop 或 pause/queue 证据。
 
@@ -203,7 +211,7 @@ harness/reports/<build-version>/mainline-receipts.json
 
 下一步若继续推进，顺序固定为：
 
-1. 继续补 queue / interrupt / pending / resume 的强 control-boundary 样本
+1. 继续补 queue / interrupt / pending / resume + async wait/reminder/heartbeat 的强 control-boundary 样本
 2. 再把 mainline receipt 纳入统一 receipt index
 3. 最后再考虑更多 installed-binary / control-plane receipt family
 

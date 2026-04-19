@@ -65,6 +65,30 @@ Updated: 2026-04-18
   - 原始 receipt 继续保留各自真源
   - 不直接一口气重写所有 receipt schema
 
+## 2026-04-19 async control-boundary receipt 已落地
+
+- `fin control-boundary-demo <user.toml>` 已扩展为真实 async control-plane 样本生成器，当前固定链路：
+  - `/new`
+  - seed
+  - `/pause`
+  - queued inputs x2
+  - `/resume-run`
+  - `wait.remind`
+  - `reminder_fired`
+  - `supervisor_heartbeat_due`
+  - `stale_lease`
+- 已实际生成 closeout session：
+  - `session-20260419191817`
+- `mainline-receipts.json` 中 `control_boundary` 现已验证：
+  - `recent_tick_sources = [resume_run, reminder_fired, supervisor_heartbeat_due]`
+  - `waiting_external_observed = true`
+  - `reminder_scheduled_observed = true`
+  - `reminder_fired_observed = true`
+  - `heartbeat_due_observed = true`
+  - `stale_lease_observed = true`
+- 后续规则：
+  - 需要 control-plane 证据时，优先看 async receipt，不再用“有 heartbeat 文件”冒充完整 control-boundary
+
 ## 2026-04-19 review-driven truth fixes
 
 - 已按 review 修正三项 P0 truth 问题：

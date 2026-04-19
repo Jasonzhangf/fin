@@ -215,6 +215,9 @@ def build_control_boundary(session_id: str, session_dir: Path, runtime_home: Pat
         "queue_pending_inputs": session_dir / "queue" / "pending_inputs.json",
         "interrupts_recent_segments": session_dir / "interrupts" / "recent_segments.json",
         "interrupts_recent_merges": session_dir / "interrupts" / "recent_merges.json",
+        "events_stream": session_dir / "events" / "stream.jsonl",
+        "session_messages": session_dir / "conversation" / "messages.json",
+        "runtime_pending_reminders": runtime_home / "runtime" / "reminders" / "pending.json",
         "runtime_current_execution_state": runtime_home / "runtime" / "current" / "current_execution_state.json",
     }
     present = {name: path for name, path in candidate_paths.items() if path.exists()}
@@ -246,6 +249,16 @@ def build_control_boundary(session_id: str, session_dir: Path, runtime_home: Pat
         "supervisor_pending_before": None,
         "supervisor_pending_after": None,
         "supervisor_blocked_kind": None,
+        "recent_tick_sources": [],
+        "recent_supervisor_sources": [],
+        "recent_heartbeat_statuses": [],
+        "waiting_external_observed": False,
+        "reminder_scheduled_observed": False,
+        "reminder_fired_observed": False,
+        "heartbeat_due_observed": False,
+        "stale_lease_observed": False,
+        "system_reminder_messages": 0,
+        "fired_reminder_records": 0,
         "heartbeat_status": None,
         "daemon_state": None,
         "daemon_recovery_action": None,
@@ -256,11 +269,17 @@ def build_control_boundary(session_id: str, session_dir: Path, runtime_home: Pat
     merges = read_json(candidate_paths["interrupts_recent_merges"]) or []
     pause_checkpoint = read_json(candidate_paths["pause_checkpoint"]) or {}
     scheduler_decision = read_json(candidate_paths["scheduler_latest_decision"]) or {}
+    recent_ticks = read_json(candidate_paths["scheduler_recent_ticks"]) or []
     scheduler_tick = read_json(candidate_paths["scheduler_latest_tick"]) or {}
+    recent_cycles = read_json(candidate_paths["supervisor_recent_cycles"]) or []
     supervisor_cycle = read_json(candidate_paths["supervisor_latest_cycle"]) or {}
     heartbeat = read_json(candidate_paths["supervisor_latest_heartbeat"]) or {}
+    recent_heartbeats = read_json(candidate_paths["supervisor_recent_heartbeats"]) or []
     daemon_state = read_json(candidate_paths["daemon_latest_state"]) or {}
     recovery = read_json(candidate_paths["daemon_latest_recovery_action"]) or {}
+    messages = read_json(candidate_paths["session_messages"]) or []
+    reminders = read_json(candidate_paths["runtime_pending_reminders"]) or []
+    events = read_jsonl(candidate_paths["events_stream"])
     execution_state = read_json(candidate_paths["execution_state"]) or read_json(
         candidate_paths["runtime_current_execution_state"]
     ) or {}
@@ -288,6 +307,43 @@ def build_control_boundary(session_id: str, session_dir: Path, runtime_home: Pat
     summary["supervisor_pending_before"] = supervisor_cycle.get("pending_input_count_before")
     summary["supervisor_pending_after"] = supervisor_cycle.get("pending_input_count_after")
     summary["supervisor_blocked_kind"] = supervisor_cycle.get("blocked_kind")
+    summary["recent_tick_sources"] = [
+        item.get("source") for item in recent_ticks if item.get("source")
+    ]
+    summary["recent_supervisor_sources"] = [
+        item.get("source") for item in recent_cycles if item.get("source")
+    ]
+    summary["recent_heartbeat_statuses"] = [
+        item.get("status") for item in recent_heartbeats if item.get("status")
+    ]
+    summary["waiting_external_observed"] = any(
+        event.get("event_type") == "operation.completed"
+        and (event.get("payload") or {}).get("status") == "waiting_external"
+        for event in events
+    )
+    summary["reminder_scheduled_observed"] = any(
+        event.get("event_type") == "system.reminder_scheduled" for event in events
+    )
+    summary["reminder_fired_observed"] = (
+        "reminder_fired" in summary["recent_tick_sources"]
+        or "reminder_fired" in summary["recent_supervisor_sources"]
+    )
+    summary["heartbeat_due_observed"] = (
+        "supervisor_heartbeat_due" in summary["recent_tick_sources"]
+        or "supervisor_heartbeat_due" in summary["recent_supervisor_sources"]
+        or any(item.get("due_for_tick") for item in recent_heartbeats if isinstance(item, dict))
+    )
+    summary["stale_lease_observed"] = any(
+        item.get("stale_lease") for item in recent_heartbeats if isinstance(item, dict)
+    )
+    summary["system_reminder_messages"] = sum(
+        1
+        for item in messages
+        if item.get("role") == "system" and "Reminder" in (item.get("content") or "")
+    )
+    summary["fired_reminder_records"] = sum(
+        1 for item in reminders if item.get("status") == "fired"
+    )
     summary["heartbeat_status"] = heartbeat.get("status")
     summary["daemon_state"] = daemon_state.get("lifecycle_state")
     summary["daemon_recovery_action"] = recovery.get("action_kind")
