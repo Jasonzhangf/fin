@@ -247,6 +247,14 @@ fn response_for_app_ui_js_serves_compiled_module() {
 }
 
 #[test]
+fn response_for_app_refresh_js_serves_compiled_module() {
+    let response = response_for_path("/app_refresh.js", Path::new("/tmp/unused"));
+    let body = String::from_utf8(response.body).expect("js should be utf8");
+    assert_eq!(response.status_code, 200);
+    assert!(body.contains("loadRefreshState"));
+}
+
+#[test]
 fn response_for_event_ledger_summary_js_serves_compiled_module() {
     let response = response_for_path("/event_ledger_summary.js", Path::new("/tmp/unused"));
     let body = String::from_utf8(response.body).expect("js should be utf8");
@@ -276,6 +284,14 @@ fn response_for_section_renderers_js_serves_compiled_module() {
     let body = String::from_utf8(response.body).expect("js should be utf8");
     assert_eq!(response.status_code, 200);
     assert!(body.contains("renderInspectorSection"));
+}
+
+#[test]
+fn response_for_inspector_helpers_js_serves_compiled_module() {
+    let response = response_for_path("/inspector_helpers.js", Path::new("/tmp/unused"));
+    let body = String::from_utf8(response.body).expect("js should be utf8");
+    assert_eq!(response.status_code, 200);
+    assert!(body.contains("findEvent"));
 }
 
 #[test]

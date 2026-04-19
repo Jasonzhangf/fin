@@ -41,7 +41,7 @@ button, textarea, input { font: inherit; }
 }
 
 .app-shell {
-  display: grid; grid-template-columns: minmax(196px, 228px) minmax(720px, 1.08fr) minmax(460px, 620px); gap: 18px;
+  display: grid; grid-template-columns: minmax(272px, 328px) minmax(680px, 1.08fr) minmax(460px, 620px); gap: 18px;
   height: calc(100vh - 112px); padding-bottom: 24px;
 }
 .nav-shell, .chat-interface, .inspector-shell {
@@ -69,13 +69,14 @@ button, textarea, input { font: inherit; }
 }
 .nav-shell-header h2 {
   margin: 0;
-  font-size: 20px;
+  font-size: 19px;
   letter-spacing: -0.01em;
 }
 .nav-shell-header p {
   margin: 6px 0 0;
   font-size: 12px;
   line-height: 1.5;
+  max-width: 30ch;
 }
 .nav-sidebar {
   min-height: 0;
@@ -203,11 +204,13 @@ button, textarea, input { font: inherit; }
   font-size: 15px;
   font-weight: 700;
   line-height: 1.4;
+  word-break: break-word;
 }
 .rail-card-summary {
   color: var(--muted);
   font-size: 12px;
   line-height: 1.55;
+  word-break: break-word;
 }
 .rail-fact-list {
   display: flex;
