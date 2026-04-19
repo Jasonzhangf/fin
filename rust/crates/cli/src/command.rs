@@ -8,6 +8,9 @@ pub(crate) enum Command {
     HomeInit {
         path: String,
     },
+    MainlineDemo {
+        path: String,
+    },
     RuntimeDemo {
         path: String,
         input: String,
@@ -45,6 +48,7 @@ pub(crate) fn parse_command(args: &[String]) -> Result<Command, CliError> {
     match args {
         [cmd, path] if cmd == "config-check" => Ok(Command::ConfigCheck { path: path.clone() }),
         [cmd, path] if cmd == "home-init" => Ok(Command::HomeInit { path: path.clone() }),
+        [cmd, path] if cmd == "mainline-demo" => Ok(Command::MainlineDemo { path: path.clone() }),
         [cmd, path, input] if cmd == "runtime-demo" => Ok(Command::RuntimeDemo {
             path: path.clone(),
             input: input.clone(),

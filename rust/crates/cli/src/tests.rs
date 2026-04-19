@@ -80,6 +80,17 @@ fn parse_command_accepts_home_init() {
 }
 
 #[test]
+fn parse_command_accepts_mainline_demo() {
+    let args = vec!["mainline-demo".into(), "/tmp/user.toml".into()];
+    assert_eq!(
+        parse_command(&args).expect("command should parse"),
+        Command::MainlineDemo {
+            path: "/tmp/user.toml".into(),
+        }
+    );
+}
+
+#[test]
 fn parse_command_accepts_web_debug_default_port() {
     let args = vec!["web-debug".into(), "/tmp/user.toml".into()];
     assert_eq!(

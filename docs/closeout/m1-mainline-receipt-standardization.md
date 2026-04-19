@@ -177,6 +177,14 @@ scripts/build-mainline-receipts.py \
   --session-id <session-id>
 ```
 
+若不同 receipt family 需要不同 source session，可额外指定：
+
+- `--history-session-id`
+- `--tool-loop-session-id`
+- `--control-session-id`
+
+未指定时，默认都回退到 `--session-id`。
+
 输出：
 
 ```text

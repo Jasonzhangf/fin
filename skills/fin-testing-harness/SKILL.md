@@ -45,6 +45,8 @@ description: Testing and harness workflow for fin. Use for replay design, fault 
 - provider 真实/半真实测试默认使用 `~/.rcc/provider/ali-coding-plan/config.v2.json` 生成 test `user.toml`
 - 默认 provider/model 冻结为 `ali-coding-plan` / `qwen3.6-plus`，协议为 `anthropic-wire`
 - 测试 session 必须带 `test-` 命名空间，并写入 `~/.fin/harness/runs/<run-id>/...` 的隔离目录
+- mainline receipt 若需要真实 `auto_tool_roundtrip` 样本，优先用 `fin mainline-demo <user.toml>` 生成 deterministic 3-turn + 2-round tool-loop session；不要拿单轮 tool dispatch 冒充多轮 roundtrip
+- `build-mainline-receipts.py` 允许按 receipt family 指定不同 source session；当 history/context、tool-loop、control-boundary 真源不在同一 session 时，必须显式传 `--history-session-id/--tool-loop-session-id/--control-session-id`
 
 ## 4) Minimal validation matrix
 

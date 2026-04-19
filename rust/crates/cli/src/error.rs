@@ -3,7 +3,7 @@ use thiserror::Error;
 #[derive(Debug, Error)]
 pub enum CliError {
     #[error(
-        "usage: fin <config-check|home-init|runtime-demo|debug-projection|transcript-demo|web-debug|build-dev|install-dev|promote|rollback> <user.toml> [input|port|build-version]"
+        "usage: fin <config-check|home-init|mainline-demo|runtime-demo|debug-projection|transcript-demo|web-debug|build-dev|install-dev|promote|rollback> <user.toml> [input|port|build-version]"
     )]
     Usage,
     #[error("invalid port: {0}")]

@@ -262,18 +262,36 @@ def main() -> None:
     parser.add_argument("--report-dir", required=True)
     parser.add_argument("--build-version", required=True)
     parser.add_argument("--session-id", required=True)
+    parser.add_argument("--history-session-id")
+    parser.add_argument("--tool-loop-session-id")
+    parser.add_argument("--control-session-id")
     parser.add_argument("--output")
     args = parser.parse_args()
 
     runtime_home = Path(args.runtime_home).expanduser().resolve()
     report_dir = Path(args.report_dir).expanduser().resolve()
     output = Path(args.output).expanduser().resolve() if args.output else report_dir / "mainline-receipts.json"
-    session_dir = session_path(runtime_home, args.session_id)
+    default_session_dir = session_path(runtime_home, args.session_id)
+    history_session_id = args.history_session_id or args.session_id
+    tool_loop_session_id = args.tool_loop_session_id or args.session_id
+    control_session_id = args.control_session_id or args.session_id
 
     receipts = [
-        build_history_context(args.session_id, session_dir, runtime_home),
-        build_auto_tool_roundtrip(args.session_id, session_dir, runtime_home),
-        build_control_boundary(args.session_id, session_dir, runtime_home),
+        build_history_context(
+            history_session_id,
+            session_path(runtime_home, history_session_id),
+            runtime_home,
+        ),
+        build_auto_tool_roundtrip(
+            tool_loop_session_id,
+            session_path(runtime_home, tool_loop_session_id),
+            runtime_home,
+        ),
+        build_control_boundary(
+            control_session_id,
+            session_path(runtime_home, control_session_id),
+            runtime_home,
+        ),
     ]
     payload = {
         "schema_version": SCHEMA_VERSION,
@@ -282,7 +300,7 @@ def main() -> None:
         "runtime_home": str(runtime_home),
         "report_dir": str(report_dir),
         "source_session_id": args.session_id,
-        "source_session_path": rel(session_dir, runtime_home),
+        "source_session_path": rel(default_session_dir, runtime_home),
         "receipts": receipts,
     }
     output.parent.mkdir(parents=True, exist_ok=True)

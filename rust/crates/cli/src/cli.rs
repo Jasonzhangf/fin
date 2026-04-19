@@ -5,6 +5,7 @@ use crate::{
     demo::{run_demo, runtime_home_override_from_env},
     fs_utils::read_file,
     install_flow::{build_dev, promote_existing_build, rollback_install},
+    mainline_demo::run_mainline_demo,
     runtime_home::{
         ensure_runtime_home_layout, init_runtime_home, persist_runtime_demo, resolved_runtime_home,
     },
@@ -38,6 +39,31 @@ pub fn run_with_runtime_home(
             let runtime_home =
                 init_runtime_home(&user_toml, &system, runtime_home_override.as_deref())?;
             println!("home init ok: {}", runtime_home.display());
+        }
+        Command::MainlineDemo { path } => {
+            let user_toml = read_file(Path::new(&path))?;
+            let system = map_system_config(&user_toml)?;
+            let transcript = run_mainline_demo(&system)?;
+            let mut artifacts = None;
+            for run in &transcript.runs {
+                artifacts = Some(persist_runtime_demo(
+                    &user_toml,
+                    &system,
+                    run,
+                    runtime_home_override.as_deref(),
+                )?);
+            }
+            let artifacts = artifacts.ok_or(CliError::Usage)?;
+            let last_run = transcript.runs.last().ok_or(CliError::Usage)?;
+            println!(
+                "mainline demo ok: turns={} session={} task={} last_rounds={} last_events={} home={}",
+                transcript.runs.len(),
+                transcript.session_id,
+                transcript.task_id,
+                last_run.round_records.len(),
+                last_run.events.len(),
+                artifacts.runtime_home.display()
+            );
         }
         Command::RuntimeDemo { path, input } => {
             let user_toml = read_file(Path::new(&path))?;

@@ -19,6 +19,7 @@ mod fs_utils;
 mod install_flow;
 mod install_smoke;
 mod local_command_notice;
+mod mainline_demo;
 mod process_utils;
 mod reminder_scheduler;
 mod runtime_home;

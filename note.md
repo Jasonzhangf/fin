@@ -2344,3 +2344,4 @@ fin should adopt the following canonical model:
 - [2026-04-19] M1.1 receipt 第二步开始：从 `receipt-index` 继续推进推理主链 receipts，当前已有真实样本最稳的是 `session-test-real-transcript`，它能证明 history/context continuity（0001 -> 0002 -> 0003 continuity_tail 0 -> 2 -> 4）。
 - [2026-04-19] 当前 closeout runtime-home 里还没有真实 multi-round auto-tool-loop artifact；本轮先标准化 mainline receipt schema 和生成脚本，先产出 `history_context`，并把 `auto_tool_roundtrip` 明确标记为 `missing`，避免无证据硬宣称完成。
 - [2026-04-19] `control_boundary` receipt 当前先收 session durable control-plane artifacts（heartbeat / daemon state / recovery action 等）；queue/wait/interrupt 的更强样本后续再补到 closeout run，不在本轮伪造事实。
+- [2026-04-19] 已新增 `fin mainline-demo <user.toml>`：用 deterministic provider 在隔离 runtime-home 里生成 3 turn history + 第 3 turn 的真实 2-round auto tool loop，session 为 `session-<namespace>-mainline`，用于 closeout 的 `auto_tool_roundtrip` receipt，避免再用单轮 transcript 假装 tool loop 通过。
