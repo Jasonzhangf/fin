@@ -296,6 +296,7 @@ class DebugApp {
     if (
       detailSectionId === 'project'
       || detailSectionId === 'session'
+      || detailSectionId === 'tasks'
       || detailSectionId === 'execution'
       || detailSectionId === 'skills'
       || detailSectionId === 'plugins'
@@ -324,6 +325,7 @@ class DebugApp {
     if (
       sectionId !== 'project'
       && sectionId !== 'session'
+      && sectionId !== 'tasks'
       && sectionId !== 'execution'
       && sectionId !== 'skills'
       && sectionId !== 'plugins'

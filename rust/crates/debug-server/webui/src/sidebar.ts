@@ -1,7 +1,7 @@
-import type { JsonRecord, RefreshState } from './types.js';
+import type { JsonRecord, RefreshState, TurnRecord } from './types.js';
 import { StructuredTreeRenderer } from './tree.js';
 
-export type SidebarSectionId = 'project' | 'session' | 'execution' | 'skills' | 'plugins';
+export type SidebarSectionId = 'project' | 'session' | 'tasks' | 'execution' | 'skills' | 'plugins';
 
 interface SidebarSection {
   id: SidebarSectionId;
@@ -33,6 +33,7 @@ export function renderSidebar(
 function buildSidebarSections(state: RefreshState): SidebarSection[] {
   const context = asRecord(state.currentContext?.context);
   const project = asRecord(context.project);
+  const control = asRecord(context.control);
   const rolePrompt = asRecord(context.role_prompt);
   const tools = asRecord(context.tools);
   const execution = asRecord(state.currentExecutionState);
@@ -41,15 +42,20 @@ function buildSidebarSections(state: RefreshState): SidebarSection[] {
   const segmentMerge = asRecord(state.currentSegmentMerge);
   const routingDecision = asRecord(state.currentRoutingDecision);
   const promptModules = asRecordArray(rolePrompt.prompt_modules);
-  const skillSummary = scalar(
+  const loadedSkillSummary = scalar(
     promptModules.find((module) => scalar(module.module_id) === 'stable_core.loaded_global_skill_index')?.summary,
   );
+  const loadedSkillIds = parseLoadedSkillIds(loadedSkillSummary);
+  const loadedSkillCount = parseLoadedSkillCount(loadedSkillSummary);
   const promptLayers = asRecordArray(rolePrompt.prompt_layers);
   const activeLayerSummary = promptLayers.length
     ? promptLayers.map((layer) => `${scalar(layer.layer_id)}:${arrayCount(layer.module_ids)}`).join(' · ')
     : '-';
   const recentFocusTurns = [...state.focusTurns].slice(-5).reverse();
   const recentTurnRecords = [...state.recentTurns].slice(-5).reverse();
+  const currentTaskId = scalar(control.task_id ?? state.binding?.task_id);
+  const candidateTaskId = scalar(routingDecision.candidate_task_id);
+  const topicThreadId = scalar(control.topic_thread_id ?? routingDecision.candidate_topic_thread_id);
   const pendingInputs = Array.isArray(state.currentPendingInputs) ? state.currentPendingInputs : [];
   const projectRoot = scalar(project.project_root ?? project.cwd ?? state.binding?.runtime_home);
   const selectedOperation = state.selectedOperationId ?? recentFocusTurns[0]?.operationId ?? '-';
@@ -57,6 +63,26 @@ function buildSidebarSections(state: RefreshState): SidebarSection[] {
   const activeStep = scalar(execution.active_step_id);
   const pendingCount = pendingInputs.length || Number(execution.pending_input_count ?? 0);
   const routingDisposition = scalar(routingDecision.disposition);
+  const roleId = scalar(rolePrompt.role_id);
+  const taskTurns = turnsForTask(recentTurnRecords, currentTaskId);
+  const taskSummary = buildTaskSummary(currentTaskId, candidateTaskId, topicThreadId, routingDisposition);
+  const promptSourceItems = [
+    ...loadedSkillIds.map((skillId) => ({
+      title: shortText(skillId, 54),
+      meta: 'loaded global skill',
+    })),
+    ...promptLayers.slice(0, 3).map((layer) => ({
+      title: shortText(scalar(layer.title), 54),
+      meta: shortText(
+        `${scalar(layer.layer_id)} · source=${scalar(layer.source)} · modules=${arrayCount(layer.module_ids)}`,
+        60,
+      ),
+    })),
+    ...asScalarArray(rolePrompt.behavior_rules).slice(0, loadedSkillIds.length ? 2 : 4).map((rule) => ({
+      title: shortText(rule, 54),
+      meta: 'behavior rule',
+    })),
+  ];
 
   return [
     {
@@ -101,6 +127,42 @@ function buildSidebarSections(state: RefreshState): SidebarSection[] {
       detailSubtitle: '当前 session、routing 与最近 turn 摘要',
     },
     {
+      id: 'tasks',
+      kicker: 'Tasks',
+      title: currentTaskId !== '-' ? currentTaskId : 'tentative / no bound task',
+      summary: shortText(taskSummary, 92),
+      facts: [
+        ['current', shortText(currentTaskId, 28)],
+        ['candidate', shortText(candidateTaskId, 28)],
+        ['topic', shortText(topicThreadId, 28)],
+        ['confirm', routingDecision.requires_user_confirmation === true ? 'required' : 'no'],
+      ],
+      list: [
+        ...(candidateTaskId !== '-' && candidateTaskId !== currentTaskId
+          ? [{
+            title: shortText(`candidate ${candidateTaskId}`, 54),
+            meta: shortText(`routing · ${routingDisposition} · confirm=${routingDecision.requires_user_confirmation === true ? 'yes' : 'no'}`, 60),
+          }]
+          : []),
+        ...[
+          scalar(routingDecision.current_topic_summary) !== '-' ? {
+            title: shortText(scalar(routingDecision.current_topic_summary), 54),
+            meta: 'current topic summary',
+          } : null,
+          scalar(routingDecision.previous_topic_summary) !== '-' ? {
+            title: shortText(scalar(routingDecision.previous_topic_summary), 54),
+            meta: 'previous topic summary',
+          } : null,
+        ].filter((item): item is { title: string; meta: string } => Boolean(item)),
+        ...taskTurns.slice(0, 3).map((turn) => ({
+          title: shortText(scalar(turn.progress_summary ?? turn.user_input ?? turn.assistant_visible_output), 54),
+          meta: shortText(`${scalar(turn.operation_id)} · ${scalar(turn.status)}`, 54),
+        })),
+      ],
+      detailTitle: 'Task Detail',
+      detailSubtitle: 'current task / candidate task / topic continuity 摘要',
+    },
+    {
       id: 'execution',
       kicker: 'Execution',
       title: executionStatus !== '-' ? executionStatus : 'idle',
@@ -139,19 +201,21 @@ function buildSidebarSections(state: RefreshState): SidebarSection[] {
     {
       id: 'skills',
       kicker: 'Skills',
-      title: skillSummary !== '-' ? shortText(skillSummary, 36) : 'Runtime skill summary pending',
+      title: loadedSkillCount > 0 ? `${loadedSkillCount} loaded skills` : 'Prompt stack / no loaded skills',
       summary: shortText(
-        `layers=${activeLayerSummary} · behavior-rules=${arrayCount(rolePrompt.behavior_rules)} · modules=${promptModules.length}`,
+        `role=${roleId} · layers=${activeLayerSummary} · behavior-rules=${arrayCount(rolePrompt.behavior_rules)} · modules=${promptModules.length}`,
         92,
       ),
       facts: [
-        ['skill index', skillSummary !== '-' ? shortText(skillSummary, 28) : 'pending'],
+        ['role', shortText(roleId, 20)],
+        ['loaded', String(loadedSkillCount)],
         ['prompt layers', String(promptLayers.length)],
         ['modules', String(promptModules.length)],
-        ['contract', shortText(scalar(firstArrayItem(rolePrompt.output_contract)), 20)],
+        ['contract', shortText(scalar(firstArrayItem(rolePrompt.output_contract)), 24)],
       ],
+      list: promptSourceItems,
       detailTitle: 'Skills Detail',
-      detailSubtitle: 'prompt layers / modules / output contract 摘要',
+      detailSubtitle: 'loaded skills / prompt layers / behavior rules / output contract 摘要',
     },
     {
       id: 'plugins',
@@ -325,4 +389,32 @@ function shortPath(value: unknown): string {
   if (text === '-') return text;
   const parts = text.split('/').filter(Boolean);
   return parts.length <= 4 ? text : `…/${parts.slice(-4).join('/')}`;
+}
+
+function parseLoadedSkillCount(summary: string): number {
+  const match = summary.match(/^(\d+)\s+global skills loaded/);
+  return match ? Number(match[1]) : 0;
+}
+
+function parseLoadedSkillIds(summary: string): string[] {
+  const parts = summary.split(':');
+  if (parts.length < 2) return [];
+  return parts[1]
+    .split(',')
+    .map((part) => part.trim())
+    .filter((part) => part && !part.startsWith('+'));
+}
+
+function buildTaskSummary(
+  currentTaskId: string,
+  candidateTaskId: string,
+  topicThreadId: string,
+  routingDisposition: string,
+): string {
+  return `current=${currentTaskId} · candidate=${candidateTaskId} · topic=${topicThreadId} · routing=${routingDisposition}`;
+}
+
+function turnsForTask(turns: TurnRecord[], taskId: string): TurnRecord[] {
+  if (taskId === '-') return [];
+  return turns.filter((turn) => scalar(asRecord(asRecord(turn).refs).task_id) === taskId);
 }
