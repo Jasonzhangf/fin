@@ -25,7 +25,9 @@ def build_install_smoke(report_dir: Path, runtime_home: Path, build_version: str
     summary_path = report_dir / "summary.json"
     summary = read_json(summary_path)
     install_receipt_path = runtime_home / "install" / "receipts" / f"{build_version}.json"
+    install_state_path = runtime_home / "runtime" / "current" / "install_state.json"
     install_receipt = read_json(install_receipt_path)
+    install_state = read_json(install_state_path)
     if summary is None and install_receipt is None:
         return missing_receipt("install_smoke")
     verified_paths = summary.get("verified_paths", []) if summary else []
@@ -38,16 +40,22 @@ def build_install_smoke(report_dir: Path, runtime_home: Path, build_version: str
             p
             for p in [
                 rel(install_receipt_path, runtime_home) if install_receipt else None,
+                rel(install_state_path, runtime_home) if install_state else None,
             ]
             if p
         ],
         "summary": {
             "build_version": build_version,
             "binary": summary.get("binary") if summary else None,
+            "session_id": summary.get("session_id") if summary else None,
+            "task_id": summary.get("task_id") if summary else None,
+            "operation_id": summary.get("operation_id") if summary else None,
             "verified_paths_count": len(verified_paths),
+            "verified_paths": verified_paths,
             "install_action": install_receipt.get("action") if install_receipt else None,
             "current_version": install_receipt.get("current_version") if install_receipt else None,
             "git_sha": install_receipt.get("git_sha") if install_receipt else None,
+            "install_state_build_version": install_state.get("build_version") if install_state else None,
         },
     }
 

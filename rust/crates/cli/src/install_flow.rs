@@ -78,6 +78,7 @@ pub(crate) fn build_dev(
         &build_version,
         &install_log,
     )?;
+    refresh_receipt_index(&runtime_home, &build_version, &install_log)?;
 
     Ok(InstallArtifacts {
         build_version,
@@ -111,6 +112,7 @@ pub(crate) fn promote_existing_build(
         build_version,
         &install_log,
     )?;
+    refresh_receipt_index(&runtime_home, build_version, &install_log)?;
     append_log(
         &install_log,
         &format!(
@@ -196,6 +198,25 @@ fn run_source_validation(repo_root: &Path, log_path: &Path) -> Result<(), CliErr
     let mut test = ProcessCommand::new("cargo");
     test.args(["test"]).current_dir(repo_root.join("rust"));
     run_process_and_log(test, "cargo test", log_path)
+}
+
+fn refresh_receipt_index(
+    runtime_home: &Path,
+    build_version: &str,
+    log_path: &Path,
+) -> Result<(), CliError> {
+    let report_dir = runtime_home.join("harness/reports").join(build_version);
+    let repo_root = repo_root()?;
+    let mut command = ProcessCommand::new("python3");
+    command
+        .arg(repo_root.join("scripts/build-receipt-index.py"))
+        .arg("--report-dir")
+        .arg(&report_dir)
+        .arg("--runtime-home")
+        .arg(runtime_home)
+        .arg("--build-version")
+        .arg(build_version);
+    run_process_and_log(command, "build-receipt-index", log_path)
 }
 
 fn stage_build(

@@ -202,6 +202,8 @@ Web 不持有业务真相，只持有：
 
 - `scripts/build-receipt-index.py`
 - `harness/reports/<build>/receipt-index.json`
+- `install-dev / build-dev` 默认会刷新 `receipt-index.json`
+- `install_smoke` 摘要已带出 `session_id / task_id / operation_id / verified_paths`
 
 ### B. 推理主链 review 固化
 

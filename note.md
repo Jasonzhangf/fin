@@ -89,6 +89,18 @@ Updated: 2026-04-18
 - 后续规则：
   - 需要 control-plane 证据时，优先看 async receipt，不再用“有 heartbeat 文件”冒充完整 control-boundary
 
+## 2026-04-19 installed-binary smoke receipt 已进一步标准化
+
+- `install-dev / build-dev` 当前默认会调用 `scripts/build-receipt-index.py`
+- 自动刷新：
+  - `~/.fin/harness/reports/<build-version>/receipt-index.json`
+- `install_smoke` summary 现已带出：
+  - `session_id`
+  - `task_id`
+  - `operation_id`
+  - `verified_paths`
+- 这意味着 installed-binary smoke 不再只是“有个 summary.json”，而是已经能稳定挂到 build/install flow 里，作为 receipt-index 的自动一部分
+
 ## 2026-04-19 review-driven truth fixes
 
 - 已按 review 修正三项 P0 truth 问题：

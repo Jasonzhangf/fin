@@ -147,15 +147,18 @@ fn verify_smoke_artifacts(
     }
 
     let last_run = read_last_run_value(runtime_home)?;
-    let session_recent_context_path = runtime_home.join(
-        last_run["session_recent_contexts_path"]
-            .as_str()
-            .ok_or_else(|| CliError::MissingInstallTarget("session_recent_contexts_path".into()))?,
-    );
-    if !session_recent_context_path.exists() {
-        return Err(CliError::MissingInstallTarget(
-            session_recent_context_path.display().to_string(),
-        ));
+    let session_recent_context_relative = last_run["session_recent_contexts_path"]
+        .as_str()
+        .ok_or_else(|| CliError::MissingInstallTarget("session_recent_contexts_path".into()))?;
+    let session_recent_context_path = runtime_home.join(session_recent_context_relative);
+    let session_messages_relative = last_run["session_messages_path"]
+        .as_str()
+        .ok_or_else(|| CliError::MissingInstallTarget("session_messages_path".into()))?;
+    let session_messages_path = runtime_home.join(session_messages_relative);
+    for path in [&session_recent_context_path, &session_messages_path] {
+        if !path.exists() {
+            return Err(CliError::MissingInstallTarget(path.display().to_string()));
+        }
     }
 
     let report_dir = runtime_home.join("harness/reports").join(build_version);
@@ -169,14 +172,100 @@ fn verify_smoke_artifacts(
             "build_version": build_version,
             "smoke_home": smoke_home.display().to_string(),
             "binary": binary_path.display().to_string(),
+            "session_id": last_run["session_id"].as_str(),
+            "task_id": last_run["task_id"].as_str(),
+            "operation_id": last_run["operation_id"].as_str(),
             "verified_paths": [
                 "runtime/current/last_run.json",
                 "runtime/current/current_context.json",
                 "runtime/projections/current_snapshot.json",
                 "runtime/projections/current_projection.json",
-                last_run["session_recent_contexts_path"]
+                session_recent_context_relative,
+                session_messages_relative
             ]
         }))?
         .as_slice(),
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::fs_utils::write_file;
+    use std::{
+        fs,
+        time::{SystemTime, UNIX_EPOCH},
+    };
+
+    fn temp_runtime_home() -> std::path::PathBuf {
+        std::env::temp_dir().join(format!(
+            "fin-install-smoke-{}",
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .expect("time should work")
+                .as_nanos()
+        ))
+    }
+
+    #[test]
+    fn verify_smoke_artifacts_writes_session_truth_into_summary() {
+        let runtime_home = temp_runtime_home();
+        fs::create_dir_all(runtime_home.join("runtime/current")).expect("runtime current dir");
+        fs::create_dir_all(runtime_home.join("runtime/projections"))
+            .expect("runtime projections dir");
+        fs::create_dir_all(runtime_home.join("sessions/2026/04/session-test-install/conversation"))
+            .expect("conversation dir");
+        fs::create_dir_all(runtime_home.join("sessions/2026/04/session-test-install/context"))
+            .expect("context dir");
+
+        for relative in [
+            "runtime/current/current_context.json",
+            "runtime/projections/current_snapshot.json",
+            "runtime/projections/current_projection.json",
+            "sessions/2026/04/session-test-install/conversation/messages.json",
+            "sessions/2026/04/session-test-install/context/recent_contexts.json",
+        ] {
+            write_file(&runtime_home.join(relative), b"[]").expect("fixture file should write");
+        }
+        write_file(
+            &runtime_home.join("runtime/current/last_run.json"),
+            serde_json::to_vec_pretty(&json!({
+                "session_id": "session-test-install",
+                "task_id": "task-test-install",
+                "operation_id": "op-test-install-0001",
+                "session_recent_contexts_path": "sessions/2026/04/session-test-install/context/recent_contexts.json",
+                "session_messages_path": "sessions/2026/04/session-test-install/conversation/messages.json"
+            }))
+            .expect("last run json")
+            .as_slice(),
+        )
+        .expect("last run should write");
+
+        verify_smoke_artifacts(
+            &runtime_home,
+            "0.1.0001",
+            std::path::Path::new("/tmp/fake-fin"),
+            std::path::Path::new("/tmp/fake-home"),
+        )
+        .expect("verify smoke should pass");
+
+        let summary: serde_json::Value = serde_json::from_str(
+            &fs::read_to_string(runtime_home.join("harness/reports/0.1.0001/summary.json"))
+                .expect("summary should exist"),
+        )
+        .expect("summary should parse");
+        assert_eq!(summary["session_id"].as_str(), Some("session-test-install"));
+        assert_eq!(summary["task_id"].as_str(), Some("task-test-install"));
+        assert_eq!(
+            summary["operation_id"].as_str(),
+            Some("op-test-install-0001")
+        );
+        let verified = summary["verified_paths"]
+            .as_array()
+            .expect("verified paths should be array");
+        assert!(verified.iter().any(|item| {
+            item.as_str()
+                == Some("sessions/2026/04/session-test-install/conversation/messages.json")
+        }));
+    }
 }

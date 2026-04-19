@@ -9,23 +9,24 @@
 
 ## 1. M1 已知缺口（非阻塞）
 
-### 1.1 installed-binary smoke 仍缺固定自动化
+### 1.1 installed-binary smoke 自动化已补齐，剩余只是在持续使用中防回归
 
 现状：
 
 - 当前已有 repo 内 `cargo test` 基线
 - 已有一次 manual receipt：`docs/closeout/m1-receipts-2026-04-19.md`
-- 但安装态 smoke 还未形成稳定自动化门禁
+- `install-dev` / `build-dev` 当前默认会刷新 `harness/reports/<build>/receipt-index.json`
+- install smoke summary 已带出 `session_id / task_id / operation_id / verified_paths`
 
 影响：
 
-- 不阻塞 M1 功能判断
-- 阻塞“可稳定提升为 current”的最终证据完整度
+- 不再阻塞 M1 closeout
+- 后续重点变成“持续保证 receipt 不漂移”
 
 建议：
 
-- 手工 receipt 已补齐
-- 后续把它纳入统一 build/install pipeline
+- 保留 manual receipt 作为 closeout 历史证据
+- 正式 build/install 以后默认检查 `receipt-index.json` 是否存在且 `install_smoke=passed`
 
 ### 1.2 正式 build/install gate 已恢复，后续重点变为 receipt 标准化
 

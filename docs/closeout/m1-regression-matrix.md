@@ -33,7 +33,7 @@ cargo test -p fin-runtime -p fin-cli -p fin-debug-server --manifest-path rust/Ca
 | Status probe | 非中断状态查询，不产生新 closure | `web_debug::tests::status_probe_returns_latest_framework_state_without_new_closure` | 已覆盖 | 手工验证 `/status` 时消息与 digest hash 不变 |
 | Event archive / control plane | archive、tick、supervisor、heartbeat、daemon state 可读 | `supervisor_cycle_tests`、`supervisor_heartbeat_tests`、`daemon_state_tests`、`scheduler_tick_tests` | 已覆盖核心路径 | 在 4040 上检查 inspector/status 显示最新控制面 truth |
 | Web debug truth | conversation/debug 同源，读取 session truth | `fin-debug-server` tests、`session_view` / `chat_api` tests | 已覆盖基础 API | 手工验证 UI 刷新来自 session 文件而非自造状态 |
-| Installed-binary smoke | 安装态读取配置、写 runtime home、基础命令可跑 | `install-dev` 已真实跑通；已有 summary receipt + `receipt-index.json` | 已通过 | 后续继续把 receipt 生成固化到默认流程 |
+| Installed-binary smoke | 安装态读取配置、写 runtime home、基础命令可跑 | `install-dev` 已真实跑通；summary receipt + `receipt-index.json` 当前由 build/install flow 默认刷新 | 已通过 | 手工 spot-check `install_smoke=passed` 且带 `session_id/task_id/operation_id` |
 
 ## 3. 当前重点已存在测试
 
@@ -60,10 +60,10 @@ cargo test -p fin-runtime -p fin-cli -p fin-debug-server --manifest-path rust/Ca
 
 ## 4. 仍需明确补齐的最小缺口
 
-以下项目若要宣称 M1 fully closed，当前还需要继续补“自动化门禁”而不是功能证据：
+以下项目若要宣称 M1 fully closed，当前更多是“持续盯防不回退”，而不是功能缺口：
 
-1. **installed-binary smoke / install receipts 标准化**
-   - 当前 `install-dev` 已真实跑通，但 receipt 组织仍可继续固化
+1. **installed-binary smoke / install receipts 防回退**
+   - 当前 `install-dev` 已真实跑通，且 receipt-index 默认刷新；后续重点是避免 build flow 再次失去标准化产物
 
 ## 5. closeout 阶段建议的最小手工验证脚本
 
@@ -105,4 +105,4 @@ cargo test -p fin-runtime -p fin-cli -p fin-debug-server --manifest-path rust/Ca
 
 1. 当前 cargo test 基线持续为绿
 2. provider / compact / 4040 / installed-binary 的 receipts 都存在
-3. 当前自动化缺口已不再阻塞正式 build/install gate，剩余工作主要是 receipts 标准化
+3. 当前自动化缺口已不再阻塞正式 build/install gate，剩余工作主要是 receipts 一致性维护

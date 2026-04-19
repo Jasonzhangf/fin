@@ -177,11 +177,17 @@ scripts/build-receipt-index.py \
 
 ## 8. 当前标准化的边界
 
-当前这一步只做 **index 标准化**，还没有做：
+当前这一步已经做到：
+
+1. `build-receipt-index.py` 可稳定重建目录页
+2. `install-dev / build-dev` 默认会刷新 `receipt-index.json`
+3. `install_smoke` 摘要已带出 `session_id / task_id / operation_id / verified_paths`
+
+仍然还没有做：
 
 1. 所有 receipt 的统一生成器
 2. 所有 receipt 的统一 schema
-3. closeout run 自动收集
+3. closeout run 的全部 receipt 自动收集
 4. CI 自动发布 receipt index
 
 这些属于下一轮可继续固化的范围。
@@ -192,7 +198,7 @@ scripts/build-receipt-index.py \
 
 如果继续往前收，不要发散，优先顺序应固定为：
 
-1. 让 closeout 关键 run 默认生成 `receipt-index.json`
+1. 保持 closeout 关键 run 默认生成 `receipt-index.json`
 2. 补 mainline-focused receipt
 3. 再考虑把更多 receipt family 纳入统一 schema
 

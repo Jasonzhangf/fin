@@ -120,9 +120,14 @@ description: Standard build, regression, install, promote, rollback, and version
 - build / install logs：`~/.fin/logs/install/`
 - regression logs：`~/.fin/logs/regression/`
 - regression reports：`~/.fin/harness/reports/<build-id>/`
+- receipt index：`~/.fin/harness/reports/<build-id>/receipt-index.json`
 - install versions：`~/.fin/install/versions/<build-id>/`
 - current / previous / receipt：`~/.fin/install/`
 - runtime current metadata：`~/.fin/runtime/current/`
+
+补充规则：
+- `install-dev / build-dev` 完成后，默认应刷新 `receipt-index.json`
+- `install_smoke` receipt 至少应带出 `session_id / task_id / operation_id / verified_paths`
 
 ## 8) Future modular versioning guidance
 
