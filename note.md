@@ -37,6 +37,21 @@ Updated: 2026-04-18
   2. 推理主链 review 固化
   3. truth consistency 小范围修正
 
+## 2026-04-19 单 agent 推理主链 review 已固定
+
+- 已新增 `docs/closeout/m1-inference-mainline-review.md`
+- 当前主链冻结为：
+  - `entry/orchestration -> runtime truth -> materialized/session truth -> web/debug observe`
+- owning files 已在文档中明确：
+  - runtime 主链：`lib.rs` + `closure_runtime*.rs`
+  - control plane：`control_plane.rs` + `routing_actions.rs` + `scheduler.rs`
+  - materializer：`session_materializer*.rs` + `session_record_journal.rs`
+  - CLI glue：`web_debug.rs` + `status_probe.rs` + `session_commands.rs`
+- 当前固定反模式也已写清：
+  - 不能在 Web 层补 runtime 结论
+  - 不能把完整推理历史塞回 `messages.json`
+  - 不能在 CLI wrapper 层私自发明 control plane 语义
+
 ## 2026-04-19 review-driven truth fixes
 
 - 已按 review 修正三项 P0 truth 问题：

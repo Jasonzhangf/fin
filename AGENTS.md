@@ -73,6 +73,7 @@
 43. M1 收口、冻结范围、回归矩阵、M2 backlog：`docs/closeout/m1-scope-and-freeze.md`、`docs/closeout/m1-regression-matrix.md`、`docs/closeout/m1-known-gaps-and-m2-backlog.md`
 44. M1 收口 receipts：`docs/closeout/m1-receipts-2026-04-19.md`
 45. M1 当前状态总结与下一阶段最小目标：`docs/closeout/m1-current-state-summary.md`
+46. M1 单 agent 推理主链 review 与固定边界：`docs/closeout/m1-inference-mainline-review.md`
 43. system/project/daemon 与 peer 分类：`docs/architecture/30-peer-taxonomy-and-supervision.md`
 44. peer plane / execution plane / presence / binding：`docs/architecture/31-peer-plane-and-binding-model.md`
 45. peer-aware 本地推理骨架与 local-only placeholder：`docs/architecture/32-peer-aware-local-reasoning-skeleton.md`
