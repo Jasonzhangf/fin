@@ -101,6 +101,17 @@ Updated: 2026-04-18
   - `verified_paths`
 - 这意味着 installed-binary smoke 不再只是“有个 summary.json”，而是已经能稳定挂到 build/install flow 里，作为 receipt-index 的自动一部分
 
+## 2026-04-19 M2 最小入口建议已固定
+
+- 已新增 `docs/closeout/m2-entry-recommendation.md`
+- 当前推荐的 M2 第一入口不是 remote peer / channel / detached daemon，而是：
+  1. `runtime-owned control-plane hardening`
+  2. `session/task/topic formalization boundary clarification`
+- 原因：
+  - 这条线最延续 M1 已收下的 truth / control / session 主线
+  - 最不容易重新发散到分布式、鉴权、网关、后台常驻等大扩张
+  - 对后续 daemon / peer / multi-agent 都是前置基础
+
 ## 2026-04-19 M1 当前状态总收口
 
 - 当前 M1.1 stability pass 的核心目标已完成：

@@ -75,6 +75,7 @@
 45. M1 当前状态总结与下一阶段最小目标：`docs/closeout/m1-current-state-summary.md`
 46. M1 单 agent 推理主链 review 与固定边界：`docs/closeout/m1-inference-mainline-review.md`
 47. M1 receipt 标准化与 receipt-index 规则：`docs/closeout/m1-receipt-standardization.md`
+48. M2 最小入口建议：`docs/closeout/m2-entry-recommendation.md`
 43. system/project/daemon 与 peer 分类：`docs/architecture/30-peer-taxonomy-and-supervision.md`
 44. peer plane / execution plane / presence / binding：`docs/architecture/31-peer-plane-and-binding-model.md`
 45. peer-aware 本地推理骨架与 local-only placeholder：`docs/architecture/32-peer-aware-local-reasoning-skeleton.md`
