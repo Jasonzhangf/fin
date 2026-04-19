@@ -101,6 +101,17 @@ Updated: 2026-04-18
   - `verified_paths`
 - 这意味着 installed-binary smoke 不再只是“有个 summary.json”，而是已经能稳定挂到 build/install flow 里，作为 receipt-index 的自动一部分
 
+## 2026-04-19 M1 当前状态总收口
+
+- 当前 M1.1 stability pass 的核心目标已完成：
+  - receipt 标准化已落地
+  - inference mainline review 已冻结
+  - mainline receipts 三类全部 passed
+- 当前若继续推进，默认不再把目标表述成“继续补 M1 功能”，而是：
+  - 保持 regression/receipt 持续为绿
+  - 只做防回退与 truth consistency
+  - 若要扩能力，先明确是否正式切入 M2
+
 ## 2026-04-19 review-driven truth fixes
 
 - 已按 review 修正三项 P0 truth 问题：

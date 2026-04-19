@@ -177,55 +177,48 @@ Web 不持有业务真相，只持有：
 
 ---
 
-## 5. 当前最适合的下一阶段最小目标
+## 5. 当前收口结果
 
-当前最合理的下一步，不是继续扩新框架，而是：
+截至当前，原本计划中的 **M1.1 stability pass 核心目标已经完成**。
 
-## 5.1 目标：把“推理核心已可用”提升为“推理核心可稳定维护”
+已经实际收下的证据包括：
 
-也就是做 **M1.1 stability pass**。
+### 5.1 receipt 标准化
 
-只聚焦三件事：
-
-### A. receipt 标准化
-
-把现在已经存在的：
-
-- provider real smoke
-- compact rebuild
-- status probe
-- install-dev
-
-统一整理成更稳定、可重复引用的 receipt 体系。
-
-当前第一步已落地：
+当前已完成：
 
 - `scripts/build-receipt-index.py`
 - `harness/reports/<build>/receipt-index.json`
-- `install-dev / build-dev` 默认会刷新 `receipt-index.json`
-- `install_smoke` 摘要已带出 `session_id / task_id / operation_id / verified_paths`
+- `install-dev / build-dev` 默认刷新 `receipt-index.json`
+- `install_smoke` 摘要带 `session_id / task_id / operation_id / verified_paths`
 
-### B. 推理主链 review 固化
+### 5.2 推理主链 review 固化
 
-把当前单 agent 推理主链收成一份固定真源清单：
+当前已完成：
 
-1. 输入进入哪里
-2. context 如何组装
-3. provider 请求如何落盘
-4. model output 如何分块
-5. tool loop 如何继续
-6. stop / wait / interrupt / queue 的边界是什么
-7. 哪些 artifacts 是 UI/debug/replay 应消费的
+- 单 agent inference mainline review 已文档化
+- runtime / session / web 的 owning layer 已冻结
+- Web 不再被允许补 runtime 事实
 
-### C. M1 冻结后的小范围成熟化
+### 5.3 mainline receipts 已成组通过
 
-只允许继续做：
+当前 closeout run 中，三类 mainline receipt 都已 `passed`：
 
-1. truth consistency 修复
-2. regression / receipt 补强
-3. 现有控制面和推理主链的小范围清理
+1. `history_context`
+2. `auto_tool_roundtrip`
+3. `control_boundary`
 
-不切回大框架扩张。
+其中 `control_boundary` 已升级到 **async control-plane receipt**，覆盖：
+
+- `wait_external`
+- `reminder_scheduled`
+- `reminder_fired`
+- `supervisor_heartbeat_due`
+- `stale_lease`
+
+结论：
+
+> 当前 `fin` 不再只是“推理核心能跑”，而是已经进入“推理核心可验证、可回归、可冻结”的状态。
 
 ---
 
@@ -246,15 +239,14 @@ Web 不持有业务真相，只持有：
 
 ---
 
-## 7. 推荐执行顺序
+## 7. 若继续推进，推荐执行顺序
 
-下一阶段建议严格按这个顺序走：
+当前若继续推进，建议严格按这个顺序走：
 
-1. **完成当前状态总结**（本文）
-2. **固定 M1.1 最小目标**
-3. **补 receipt / regression / truth consistency**
-4. **对推理主链做一次完整 review 文档化**
-5. 再决定是否进入 M2
+1. **保持当前 receipt / regression 持续为绿**
+2. **只做 truth consistency 与防回退修复**
+3. **若要扩能力，先明确是否正式切入 M2**
+4. **进入 M2 前，先回到 architecture docs 冻结 owning layer**
 
 ---
 
@@ -262,4 +254,4 @@ Web 不持有业务真相，只持有：
 
 如果只用一句话概括当前项目状态：
 
-> `fin` 现在已经有了一个可运行、可观察、可安装、可回归的单 agent runtime 内核；下一步最重要的不是继续加能力，而是把这套内核稳定化、标准化、冻结化。
+> `fin` 现在已经有了一个可运行、可观察、可安装、可回归，并且主链 receipt 已闭合的单 agent runtime 内核；下一步最重要的不是继续补 M1 功能，而是守住冻结边界，并谨慎决定何时进入 M2。

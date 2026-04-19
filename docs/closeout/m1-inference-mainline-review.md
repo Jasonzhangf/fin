@@ -467,31 +467,22 @@ entry/orchestration -> runtime truth -> materialized/session truth -> web/debug 
    - debug server
    - web ui
 
-这条 ownership 现在已经足够清楚，下一步不该重谈架构，而该：
+这条 ownership 现在已经足够清楚，而对应的 M1.1 收口动作也已经完成核心部分：
 
-1. 继续补 receipt 标准化
-2. 补 truth consistency 小修
-3. 对这条 mainline 做 regression 固化
+1. receipt 标准化已落地
+2. mainline-focused receipts 已实际生成
+3. truth consistency 的 P0/P1 修正已收口到当前 closeout 文档
 
 ---
 
-## 8. 下一步最小动作
+## 8. 若继续推进，最小动作
 
-基于本 review，下一步最小动作建议固定为：
+基于本 review，当前若继续推进，最小动作应固定为：
 
-1. **把主链关键 receipts 归一化**
-   - provider
-   - compact
-   - status
-   - install
-
-2. **补一组 mainline-focused regression receipts**
-   - 多轮 history 是否正确进入 context
-   - tool loop follow-up input 是否符合预期
-   - wait / interrupt / queue 边界是否符合当前冻结语义
-
+1. **维持主链 receipts 持续可重建**
+2. **维持 regression 为绿**
 3. **只修 consistency，不重谈大架构**
 
 也就是说：
 
-> 当前最正确的方向是把这条单 agent 推理主链“固化并验证”，而不是继续扩框架。 
+> 当前最正确的方向是守住这条单 agent 推理主链的冻结边界，而不是重新打开架构发散。 

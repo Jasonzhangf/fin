@@ -210,17 +210,23 @@ fn build_response(binding: &DebugBinding, answer: String, suffix: &str) -> ChatS
 mod tests {
     use super::*;
     use std::{
+        sync::atomic::{AtomicU64, Ordering},
         fs,
         time::{SystemTime, UNIX_EPOCH},
     };
 
+    static TEMP_HOME_SEQ: AtomicU64 = AtomicU64::new(1);
+
     fn temp_runtime_home() -> std::path::PathBuf {
+        let seq = TEMP_HOME_SEQ.fetch_add(1, Ordering::Relaxed);
         std::env::temp_dir().join(format!(
-            "fin-qqbot-command-{}",
+            "fin-qqbot-command-{}-{}-{}",
+            std::process::id(),
             SystemTime::now()
                 .duration_since(UNIX_EPOCH)
                 .expect("time")
-                .as_nanos()
+                .as_nanos(),
+            seq,
         ))
     }
 

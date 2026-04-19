@@ -207,13 +207,19 @@ harness/reports/<build-version>/mainline-receipts.json
 
 ---
 
-## 7. 当前最小演进方向
+## 7. 当前状态与后续最小演进方向
 
-下一步若继续推进，顺序固定为：
+截至当前：
 
-1. 继续补 queue / interrupt / pending / resume + async wait/reminder/heartbeat 的强 control-boundary 样本
-2. 再把 mainline receipt 纳入统一 receipt index
-3. 最后再考虑更多 installed-binary / control-plane receipt family
+1. `history_context` 已有真实 passed receipt
+2. `auto_tool_roundtrip` 已有真实 passed receipt
+3. `control_boundary` 已有 async control-plane passed receipt
+
+若继续推进，顺序固定为：
+
+1. 保持这 3 类 mainline receipt 可稳定重建
+2. 再考虑是否把 mainline receipt 纳入统一 receipt index
+3. 最后才考虑更多 installed-binary / control-plane receipt family
 
 也就是说：
 
