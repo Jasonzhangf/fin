@@ -51,6 +51,11 @@ function buildSidebarSections(state: RefreshState): SidebarSection[] {
   const activeLayerSummary = promptLayers.length
     ? promptLayers.map((layer) => `${scalar(layer.layer_id)}:${arrayCount(layer.module_ids)}`).join(' · ')
     : '-';
+  const modelTools = asRecordArray(tools.model_tools);
+  const frameworkTools = asRecordArray(tools.framework_tools);
+  const disabledTools = asScalarArray(tools.disabled_tools);
+  const hardGuards = asScalarArray(tools.hard_guards);
+  const selectionPolicies = asScalarArray(tools.tool_selection_policy);
   const recentFocusTurns = [...state.focusTurns].slice(-5).reverse();
   const recentTurnRecords = [...state.recentTurns].slice(-5).reverse();
   const currentTaskId = scalar(control.task_id ?? state.binding?.task_id);
@@ -81,6 +86,22 @@ function buildSidebarSections(state: RefreshState): SidebarSection[] {
     ...asScalarArray(rolePrompt.behavior_rules).slice(0, loadedSkillIds.length ? 2 : 4).map((rule) => ({
       title: shortText(rule, 54),
       meta: 'behavior rule',
+    })),
+  ];
+  const capabilityItems = [
+    ...modelTools.slice(0, 4).map((tool) => capabilityItemFromTool(tool, 'model tool')),
+    ...frameworkTools.slice(0, 2).map((tool) => capabilityItemFromTool(tool, 'framework tool')),
+    ...selectionPolicies.slice(0, 2).map((policy) => ({
+      title: shortText(policy, 54),
+      meta: 'selection policy',
+    })),
+    ...disabledTools.slice(0, 2).map((toolName) => ({
+      title: shortText(toolName, 54),
+      meta: 'disabled',
+    })),
+    ...hardGuards.slice(0, 2).map((guard) => ({
+      title: shortText(guard, 54),
+      meta: 'guard',
     })),
   ];
 
@@ -220,20 +241,20 @@ function buildSidebarSections(state: RefreshState): SidebarSection[] {
     {
       id: 'plugins',
       kicker: 'Capabilities',
-      title: 'Tool plane / capability surface',
-      summary: '首页只显示能力平面 digest；完整 guard 列表点开查看。',
+      title: `${modelTools.length} model / ${frameworkTools.length} framework`,
+      summary: shortText(
+        `selection=${selectionPolicies.length} · disabled=${disabledTools.length} · guards=${hardGuards.length} · surface=runtime tools`,
+        92,
+      ),
       facts: [
-        ['model tools', String(arrayCount(tools.model_tools))],
-        ['framework', String(arrayCount(tools.framework_tools))],
-        ['disabled', String(arrayCount(tools.disabled_tools))],
-        ['guards', String(arrayCount(tools.hard_guards))],
+        ['model tools', String(modelTools.length)],
+        ['framework', String(frameworkTools.length)],
+        ['disabled', String(disabledTools.length)],
+        ['guards', String(hardGuards.length)],
       ],
-      list: asScalarArray(tools.hard_guards).slice(0, 8).map((guard) => ({
-        title: shortText(guard, 54),
-        meta: 'guard',
-      })),
+      list: capabilityItems,
       detailTitle: 'Capabilities & Tools',
-      detailSubtitle: 'tool counts / hard guards / capability surface 摘要',
+      detailSubtitle: 'model tools / framework tools / selection policy / disabled / hard guards 摘要',
     },
   ];
 }
@@ -417,4 +438,21 @@ function buildTaskSummary(
 function turnsForTask(turns: TurnRecord[], taskId: string): TurnRecord[] {
   if (taskId === '-') return [];
   return turns.filter((turn) => scalar(asRecord(asRecord(turn).refs).task_id) === taskId);
+}
+
+function capabilityItemFromTool(tool: JsonRecord, kindLabel: string): { title: string; meta: string } {
+  const toolName = scalar(tool.tool_name);
+  const purpose = scalar(tool.purpose);
+  const whenToUse = asScalarArray(tool.when_to_use);
+  const sideEffects = asScalarArray(tool.side_effects);
+  const metaParts = [
+    kindLabel,
+    purpose !== '-' ? shortText(purpose, 34) : null,
+    whenToUse.length ? `use=${shortText(whenToUse[0], 28)}` : null,
+    sideEffects.length ? `effects=${shortText(sideEffects[0], 24)}` : null,
+  ].filter((part): part is string => Boolean(part));
+  return {
+    title: shortText(toolName, 54),
+    meta: shortText(metaParts.join(' · '), 80),
+  };
 }
