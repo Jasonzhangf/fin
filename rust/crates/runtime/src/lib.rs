@@ -76,8 +76,9 @@ mod trace_records;
 mod turn_records;
 pub use activity_cards::build_activity_cards;
 pub use agent_naming::{
-    AllocatedAgentIdentity, allocate_local_agent_identity, create_named_local_worker,
-    resolve_device_name,
+    AgentAssignmentSummary, AllocatedAgentIdentity, allocate_local_agent_identity,
+    create_named_local_worker, persist_assignment_summary, read_assignment_summary,
+    resolve_agent_identity_by_worker_id, resolve_device_name,
 };
 pub use context_view::{ContextAssemblyInput, ContextViewBuilder};
 pub use control_feedback::ControlFeedbackBuilder;

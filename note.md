@@ -3364,3 +3364,9 @@ fin should adopt the following canonical model:
   - `python3 scripts/check-code-line-limit.py` ✅ (`code line-limit ok`)
 - Result:
   - repo-wide non-whitelist code files are now back under the 500-line gate.
+- Follow-up cleanup after line-limit split:
+  - exported pending runtime naming APIs through `fin_runtime::lib` to remove dead-code warnings while preserving planned control-plane surface
+  - removed leftover duplicate imports and dead local warnings from QQ activity delivery slices
+- Verification refresh:
+  - `cargo test -p fin-runtime -p fin-cli --manifest-path rust/Cargo.toml` ✅ (no warning lines emitted)
+  - `python3 scripts/check-code-line-limit.py` ✅

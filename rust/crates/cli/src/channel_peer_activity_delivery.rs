@@ -153,12 +153,14 @@ pub(crate) fn mark_delivered(
     Ok(state)
 }
 
+#[allow(dead_code)]
 #[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize)]
 struct PeerRegistry {
     #[serde(default)]
     peers: Vec<PeerRegistryEntry>,
 }
 
+#[allow(dead_code)]
 #[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize)]
 struct PeerRegistryEntry {
     peer_id: String,
@@ -181,12 +183,14 @@ struct PeerRegistryEntry {
     session_id: Option<String>,
 }
 
+#[allow(dead_code)]
 #[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize)]
 struct ChannelConversationRegistry {
     #[serde(default)]
     conversations: Vec<ChannelConversationRecord>,
 }
 
+#[allow(dead_code)]
 #[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize)]
 struct ChannelConversationRecord {
     #[serde(default)]
