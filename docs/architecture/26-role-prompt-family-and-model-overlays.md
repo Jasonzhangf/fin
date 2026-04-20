@@ -282,6 +282,11 @@ You are a very careful, thoughtful, collaborative, intelligent assistant who val
 - role prompt：告诉模型如何决策、何时用工具、何时停手
 - tool prompt spec：告诉模型工具做什么、何时可用、输入输出约束、边界与副作用
 - framework capability：必须和 model tools 分开显示与分开装配
+- tool prompt spec 必须在最终模型输入里显式展开 `use / avoid / input / output / example`
+  这些字段；只显示“工具名 + 摘要”不算真正把工具 contract 暴露给模型
+- 对显式调用策略工具，tool prompt 必须把策略说死，而不是留给模型猜：
+  - `apply_patch`：单点精确编辑优先 `replace`
+  - 多文件 / add / delete / move 才用 `patch`
 
 结论：
 

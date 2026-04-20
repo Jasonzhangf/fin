@@ -30,8 +30,10 @@ fn model_input_assembler_renders_role_tools_history_and_project_scope() {
                     kind: "agent_tool".into(),
                     summary: "list peers".into(),
                     when_to_use: vec!["need peer topology".into()],
+                    when_not_to_use: vec!["topology is already known".into()],
                     input_schema_summary: "optional limit".into(),
                     output_schema_summary: "peer list".into(),
+                    example_uses: vec!["list peers before choosing a route target".into()],
                     ..Default::default()
                 }],
                 framework_tools: vec![ToolCatalogEntry {
@@ -101,7 +103,10 @@ fn model_input_assembler_renders_role_tools_history_and_project_scope() {
     assert!(rendered.contains("Model tools"));
     assert!(rendered.contains("peer.list"));
     assert!(rendered.contains("use: need peer topology"));
+    assert!(rendered.contains("avoid: topology is already known"));
     assert!(rendered.contains("input: optional limit"));
+    assert!(rendered.contains("output: peer list"));
+    assert!(rendered.contains("example: list peers before choosing a route target"));
     assert!(rendered.contains("Framework capabilities"));
     assert!(rendered.contains("Tool selection policy"));
     assert!(rendered.contains("Recent history"));
@@ -115,4 +120,52 @@ fn model_input_assembler_renders_role_tools_history_and_project_scope() {
     assert!(rendered.contains("0.98 -> 98"));
     assert!(rendered.contains("<fin_user_response>"));
     assert!(rendered.contains("<fin_control_feedback>"));
+}
+
+#[test]
+fn model_input_assembler_renders_apply_patch_guidance_verbatim_in_tool_catalog() {
+    let rendered = ModelInputAssembler::default().assemble(
+        "patch the file",
+        &MinimalContextView {
+            role_prompt: Some(RolePromptBlock {
+                role_id: "project".into(),
+                current_prompt_summary: "summary".into(),
+                output_contract: vec!["must use fin blocks".into()],
+                ..Default::default()
+            }),
+            tools: Some(ToolCatalogBlock {
+                model_tools: vec![ToolCatalogEntry {
+                    tool_name: "apply_patch".into(),
+                    kind: "model_tool".into(),
+                    summary: "apply deterministic workspace file edits".into(),
+                    when_to_use: vec![
+                        "you need to modify files deterministically instead of only describing edits"
+                            .into(),
+                    ],
+                    when_not_to_use: vec![
+                        "you are still exploring and do not know the concrete change yet".into(),
+                    ],
+                    input_schema_summary:
+                        "mode=replace: path + old_string + new_string + replace_all? ; mode=patch: patch"
+                            .into(),
+                    output_schema_summary: "patch receipt + modified file refs".into(),
+                    example_uses: vec![
+                        "replace one exact function body in src/runtime.rs".into(),
+                        "apply a multi-file V4A patch for a small deterministic refactor".into(),
+                    ],
+                    ..Default::default()
+                }],
+                ..Default::default()
+            }),
+            ..Default::default()
+        },
+    );
+
+    assert!(rendered.contains("apply_patch"));
+    assert!(rendered.contains("mode=replace"));
+    assert!(rendered.contains("replace_all?"));
+    assert!(rendered.contains("mode=patch"));
+    assert!(rendered.contains("patch receipt + modified file refs"));
+    assert!(rendered.contains("replace one exact function body in src/runtime.rs"));
+    assert!(rendered.contains("multi-file V4A patch"));
 }

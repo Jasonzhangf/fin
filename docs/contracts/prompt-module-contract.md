@@ -90,6 +90,12 @@ example_uses: string[]
 - 但语义必须清楚区分：
   - `model_tools`：模型可直接选择
   - `framework_tools`：框架内部能力，不可伪装为模型直接调用
+- `when_to_use / when_not_to_use / input_schema_summary / output_schema_summary / example_uses`
+  不是仅供 Web 展示的“装饰字段”，而是 prompt contract 的一部分；`ModelInputAssembler`
+  必须把这些信息真实暴露给模型，避免退化回“只有工具名 + 一句 summary”的不可调用 catalog
+- 对存在显式调用策略的工具，contract 必须把策略钉死到可见字段里。例如：
+  - `apply_patch`：默认优先 `mode=replace`（单点精确改动）
+  - 仅在多文件 / add / delete / move 时使用 `mode=patch`
 
 ---
 
@@ -178,6 +184,16 @@ rendered_model_input
 - 当前 output contract 是什么
 - 当前 tools 的选择政策是什么
 - 当前 project scope / active projects 是什么
+
+另外，tool catalog 在最终 `rendered_model_input` 里至少要暴露这些子行：
+
+- `use: ...`
+- `avoid: ...`
+- `input: ...`
+- `output: ...`
+- `example: ...`
+
+否则视为 prompt contract 未被真正装配到模型输入。
 
 ---
 

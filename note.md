@@ -2687,3 +2687,12 @@ fin should adopt the following canonical model:
 - `view_image` 当前是真实可调用但边界诚实：只返回附件/本地图片的引用元数据（path/url/size/dimensions），不伪装成像素级 vision 推理。
 - `context_history.rebuild` 当前做的是 framework-owned rebuild bookkeeping：基于 `current_context.json + recent_contexts/digests/reasoning/tools` 刷新 session/runtime 的 rebuild-index，而不是让模型手工压缩历史。
 - `project.task.status/list` 现在直接读 session truth（routing/execution_state/plan/messages）给任务列表与状态，不再让模型靠记忆猜 task 状态。
+
+## 2026-04-20 prompt contract closure rule
+
+- tool prompt contract 现在明确要求：`when_to_use / when_not_to_use / input / output / example`
+  必须进入最终 `rendered_model_input`，不能只保留在结构化 context 里给 Web 看。
+- `apply_patch` 的调用策略也固定为 prompt contract 的一部分，而不是松散经验：
+  - 单点精确编辑默认 `mode=replace`
+  - 多文件 / add / delete / move 才 `mode=patch`
+- 这条规则用 runtime tests 固定，避免后续又退回“工具只有名字和一句简介，模型不会用”的状态。
