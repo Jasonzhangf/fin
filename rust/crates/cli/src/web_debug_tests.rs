@@ -189,6 +189,7 @@ fn status_probe_returns_latest_framework_state_without_new_closure() {
     assert!(response.answer.contains("agents=agents=4 ["));
     assert!(response.answer.contains("system-worker-01:idle"));
     assert!(response.answer.contains("project_supervision="));
+    assert!(response.answer.contains("project_runtime_resume="));
     assert!(
         response
             .answer

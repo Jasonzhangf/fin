@@ -4,6 +4,7 @@ use crate::{
     project_execution_handoff::{ProjectExecutionHandoffSnapshot, read_project_execution_handoffs},
     project_recovery::ProjectRecoveryExecutionReport,
     project_runtime_pickup::{ProjectRuntimePickupSnapshot, read_project_runtime_pickups},
+    project_runtime_resume::{ProjectRuntimeResumeReport, read_project_runtime_resume_report},
     project_supervision::read_project_supervision_snapshot,
     runtime_home::read_last_run_value,
     scheduler_driver::load_latest_scheduler_decision,
@@ -145,6 +146,7 @@ pub(crate) fn build_status_probe_response(
     let project_recovery = read_json_optional::<ProjectRecoveryExecutionReport>(
         &runtime_home.join("runtime/current/current_project_recovery.json"),
     )?;
+    let project_runtime_resume = read_project_runtime_resume_report(runtime_home)?;
     let project_supervision = read_project_supervision_snapshot(runtime_home)?;
     let project_execution_handoffs = read_project_execution_handoffs(runtime_home)?;
     let project_runtime_pickups = read_project_runtime_pickups(runtime_home)?;
@@ -186,6 +188,7 @@ pub(crate) fn build_status_probe_response(
             &agent_summary,
             &project_summary,
             project_recovery.as_ref(),
+            project_runtime_resume.as_ref(),
             project_supervision.as_ref(),
             project_execution_handoffs.as_ref(),
             project_runtime_pickups.as_ref(),
@@ -221,6 +224,7 @@ fn render_status_answer(
     agent_summary: &str,
     project_summary: &str,
     project_recovery: Option<&ProjectRecoveryExecutionReport>,
+    project_runtime_resume: Option<&ProjectRuntimeResumeReport>,
     project_supervision: Option<&crate::project_supervision::ProjectSupervisionSnapshot>,
     project_execution_handoffs: Option<&ProjectExecutionHandoffSnapshot>,
     project_runtime_pickups: Option<&ProjectRuntimePickupSnapshot>,
@@ -347,6 +351,9 @@ fn render_status_answer(
     let project_recovery_summary = project_recovery
         .map(|value| value.summary.as_str())
         .unwrap_or("project recovery unavailable");
+    let project_runtime_resume_summary = project_runtime_resume
+        .map(|value| value.summary.as_str())
+        .unwrap_or("project runtime resume unavailable");
     let project_supervision_summary = project_supervision
         .map(|value| value.status_summary())
         .unwrap_or_else(|| "project supervision unavailable".into());
@@ -361,7 +368,7 @@ fn render_status_answer(
         .unwrap_or_else(|| "startup summary unavailable".into());
 
     format!(
-        "status probe ({freshness})\nrequest={probe_message}\nsession={}\ntask={}\nstartup={startup_control_summary}\nagents={agent_summary}\nprojects={project_summary}\nproject_supervision={project_supervision_summary}\nproject_execution_handoffs={project_execution_handoff_summary}\nproject_runtime_pickups={project_runtime_pickup_summary}\nproject_recovery={project_recovery_summary}\nphase={phase}\nblocker={blocker}\nnext_step={next_step}\nactive_step={active_step}\nresume_from={resume_from}\npending_inputs={pending_count}\nnote={note_summary}\ncontrol={control_summary}\nrouting_action={routing_summary}\nscheduler={scheduler_summary}\ntick={tick_summary}\nsupervisor={supervisor_summary}\nheartbeat={heartbeat_summary}\ndaemon={daemon_summary}\nrecovery={recovery_summary}",
+        "status probe ({freshness})\nrequest={probe_message}\nsession={}\ntask={}\nstartup={startup_control_summary}\nagents={agent_summary}\nprojects={project_summary}\nproject_supervision={project_supervision_summary}\nproject_execution_handoffs={project_execution_handoff_summary}\nproject_runtime_pickups={project_runtime_pickup_summary}\nproject_runtime_resume={project_runtime_resume_summary}\nproject_recovery={project_recovery_summary}\nphase={phase}\nblocker={blocker}\nnext_step={next_step}\nactive_step={active_step}\nresume_from={resume_from}\npending_inputs={pending_count}\nnote={note_summary}\ncontrol={control_summary}\nrouting_action={routing_summary}\nscheduler={scheduler_summary}\ntick={tick_summary}\nsupervisor={supervisor_summary}\nheartbeat={heartbeat_summary}\ndaemon={daemon_summary}\nrecovery={recovery_summary}",
         binding.session_id.as_deref().unwrap_or("tentative"),
         binding.task_id.as_deref().unwrap_or("-"),
     )

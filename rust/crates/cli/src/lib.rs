@@ -37,6 +37,8 @@ mod process_utils;
 mod project_execution_handoff;
 mod project_recovery;
 mod project_runtime_pickup;
+#[cfg(test)]
+mod project_runtime_pickup_tests;
 mod project_runtime_resume;
 #[cfg(test)]
 mod project_runtime_resume_tests;

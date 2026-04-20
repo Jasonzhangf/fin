@@ -64,6 +64,8 @@ description: Runtime/event debugging workflow for fin. Use for multi-agent, cros
 - 若 supervision 已显示 `resume_project_task`，再查 `~/.fin/runtime/current/current_project_execution_handoffs.json`；若没有 `prepared/noop/missing_task` handoff 记录，就不要误报“框架已把 task 接续下去”
 - 若 handoff 已是 `prepared/noop`，再查 `~/.fin/runtime/current/current_project_runtime_pickups.json`；它才说明 local project runtime 当前是 `ready_to_resume / claimed_idle / running / waiting_external / paused / missing_binding`，不要只凭 handoff 就断言已经在跑
 - 若 pickup 已是 `ready_to_resume + scheduler_tick_needed`，再查 `~/.fin/runtime/projects/runtime_resume_reports.json`；这里能确认 framework 是否真的触发了 `resume seed -> supervisor cycle -> scheduler tick`，不要把“pickup 可继续”误报成“已经实际继续执行”
+- `claimed_idle/await_manual_work` 只允许表示“尚未消化 handoff、允许 framework seed resume”；若 task 已被同一 worker handoff 过且当前只是空闲等待新输入，必须用独立 pickup 状态（如 `handoff_idle/await_new_project_input`），否则会误触发重复 resume 与状态漂移
+- 当 `current_project_runtime_pickups.json` 与实时推进感受不一致时，必须同时对照 `current_project_runtime_resume.json`；pickup 代表当前待处理面，resume report 代表最近一次 framework 已执行过的恢复动作，二者不能互相冒充
 - 若怀疑这些推进动作是不是又被写回某个 UI handler，先查入口是否统一走 `attached_control_plane::run_attached_control_plane_cycle(...)`；heartbeat / reminder / startup / project_resume / daemon_state 若重新散落在入口内联，说明 control-plane 真相退化回了 handler 耦合
 - 重启/启动后的“谁已启动、谁 busy、当前资源预算”必须先查 `~/.fin/runtime/current/current_startup_control_summary.json`；不要让 QQ/Web/status 各自从 presence/project files 临时拼第二套重启摘要
 - 若 project runtime 实际继续执行后前台 session/context 看起来被串台，先查 `runtime/current/last_run.json` 是否被 project run 偷改；当前设计要求 project continuation 保护 frontstage current 视图，真实 project 结果只看对应 session artifacts

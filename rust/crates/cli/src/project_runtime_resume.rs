@@ -105,6 +105,12 @@ where
     Ok(report)
 }
 
+pub(crate) fn read_project_runtime_resume_report(
+    runtime_home: &Path,
+) -> Result<Option<ProjectRuntimeResumeReport>, CliError> {
+    read_json_optional(&runtime_home.join("runtime/current/current_project_runtime_resume.json"))
+}
+
 fn seed_claimed_idle_project_resumes(
     runtime_home: &Path,
     system: &SystemConfig,
@@ -205,6 +211,19 @@ fn read_json_or_empty<T: for<'de> Deserialize<'de>>(path: &Path) -> Result<Vec<T
     match fs::read_to_string(path) {
         Ok(content) => serde_json::from_str(&content).map_err(CliError::Serialize),
         Err(err) if err.kind() == std::io::ErrorKind::NotFound => Ok(Vec::new()),
+        Err(source) => Err(CliError::ReadFile {
+            path: path.display().to_string(),
+            source,
+        }),
+    }
+}
+
+fn read_json_optional<T: for<'de> Deserialize<'de>>(path: &Path) -> Result<Option<T>, CliError> {
+    match fs::read_to_string(path) {
+        Ok(content) => serde_json::from_str(&content)
+            .map(Some)
+            .map_err(CliError::Serialize),
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => Ok(None),
         Err(source) => Err(CliError::ReadFile {
             path: path.display().to_string(),
             source,

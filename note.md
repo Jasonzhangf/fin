@@ -3370,3 +3370,25 @@ fin should adopt the following canonical model:
 - Verification refresh:
   - `cargo test -p fin-runtime -p fin-cli --manifest-path rust/Cargo.toml` ✅ (no warning lines emitted)
   - `python3 scripts/check-code-line-limit.py` ✅
+
+## 2026-04-20 m2 step2 project runtime pickup/control truth hardening
+- Closed one M2 Step 2 control-plane gap on the `supervision -> handoff -> pickup -> status probe` chain.
+- Root issue:
+  - `project_runtime_pickup` previously reused `claimed_idle + await_manual_work` for two different facts:
+    1. framework may still seed the first resume for a claimed project task
+    2. the task was already handed off to the same worker and runtime is simply idle waiting for new project input
+  - This made pickup/status surfaces too weak and created a path for repeated resume interpretation / truth drift.
+- Code changes:
+  - Added `handoff_idle + await_new_project_input` pickup classification for already-handed-off idle project runtimes (`noop` handoff, or post-handoff idle observed by pickup classifier).
+  - Exposed `read_project_runtime_resume_report(...)` and wired `current_project_runtime_resume.json` into `status_probe`, so status now shows both:
+    - current pickup surface
+    - latest runtime-resume execution summary
+  - Split `project_runtime_pickup` tests into `project_runtime_pickup_tests.rs` to keep the 500-line gate green.
+- Verification:
+  - `cargo fmt --all --manifest-path rust/Cargo.toml` ✅
+  - `cargo test -p fin-runtime -p fin-cli --manifest-path rust/Cargo.toml` ✅
+  - `python3 scripts/check-code-line-limit.py` ✅
+- Frozen boundary after this pass:
+  - `pickup` is the current resumability surface
+  - `runtime_resume_report` is the latest executed resume action surface
+  - `status_probe` must show both rather than forcing one surface to speak for the other
