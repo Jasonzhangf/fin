@@ -34,8 +34,12 @@ mod process_utils;
 mod project_execution_handoff;
 mod project_recovery;
 mod project_runtime_pickup;
+mod project_runtime_resume;
+#[cfg(test)]
+mod project_runtime_resume_tests;
 mod project_supervision;
 mod reminder_scheduler;
+mod runtime_current_snapshot;
 mod runtime_home;
 mod scheduler_driver;
 #[cfg(test)]

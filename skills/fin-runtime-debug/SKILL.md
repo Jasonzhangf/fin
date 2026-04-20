@@ -61,6 +61,8 @@ description: Runtime/event debugging workflow for fin. Use for multi-agent, cros
 - 若需要判断 project agent 当前应“恢复 / 接续 / 观望 / 等远端”，优先查 `~/.fin/runtime/current/current_project_supervision.json`；presence 只说明当前忙闲，supervision 才说明 framework 的下一步控制意图
 - 若 supervision 已显示 `resume_project_task`，再查 `~/.fin/runtime/current/current_project_execution_handoffs.json`；若没有 `prepared/noop/missing_task` handoff 记录，就不要误报“框架已把 task 接续下去”
 - 若 handoff 已是 `prepared/noop`，再查 `~/.fin/runtime/current/current_project_runtime_pickups.json`；它才说明 local project runtime 当前是 `ready_to_resume / claimed_idle / running / waiting_external / paused / missing_binding`，不要只凭 handoff 就断言已经在跑
+- 若 pickup 已是 `ready_to_resume + scheduler_tick_needed`，再查 `~/.fin/runtime/projects/runtime_resume_reports.json`；这里能确认 framework 是否真的触发了 `resume seed -> supervisor cycle -> scheduler tick`，不要把“pickup 可继续”误报成“已经实际继续执行”
+- 若 project runtime 实际继续执行后前台 session/context 看起来被串台，先查 `runtime/current/last_run.json` 是否被 project run 偷改；当前设计要求 project continuation 保护 frontstage current 视图，真实 project 结果只看对应 session artifacts
 - 若怀疑“daemon 说要 recover_project_agents 但没真正执行”，再查 `~/.fin/runtime/projects/recovery_reports.json + runtime/current/current_project_recovery.json`；先确认 recovery skeleton 是否已跑，再查 detached daemon / spawn 缺口
 - 若怀疑“system/project agent 当前到底在忙什么”，先查 `~/.fin/runtime/agents/state/<agent_id>.json`；presence 是 framework 真源，不要只盯着 activity card 或 status 文案
 - 若需要看“当前所有 agent 的并发 busy/idle/waiting 概览”，优先查 `~/.fin/runtime/agents/presence_registry.json` 或 `runtime/current/current_agent_presence_registry.json`，不要再从 naming registry 反推忙闲

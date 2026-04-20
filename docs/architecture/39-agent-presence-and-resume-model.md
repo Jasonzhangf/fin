@@ -157,6 +157,18 @@ project agent 已注册，并且 framework 已把“该不该醒、当前醒到�
   - `idle + project_ready`
 - 当前这一步仍是 framework observation/materialization，不等同于 detached runtime 已真实执行下一轮 closure。
 
+再补一层（2026-04-20，ready_to_resume continuation bridge）：
+
+- 当前前台请求链已具备最小的 **framework-owned project resume bridge**：
+  - `current_project_runtime_pickups.json` 中若出现 `ready_to_resume + scheduler_tick_needed`
+  - 前台框架会先为该 session seed `idle` execution state（仅当 state 缺失）
+  - 然后驱动 `supervisor cycle -> scheduler tick -> run_next_pending`
+- 对 project runtime，这条链必须使用 `project` role，而不是复用 frontstage `system` role。
+- 为防止 project runtime 执行污染前台真源，当前实现会在 project run 前后保护 `runtime/current` 的 frontstage 视图；真正的 project truth 仍落在各自 session artifacts 与 project control-plane snapshots。
+- 当前边界：
+  - 已能把 `ready_to_resume` 从“观察态”推进到真实 continuation
+  - 仍然依赖前台请求链提供 provider 执行上下文，尚未升级为 detached autonomous scheduler
+
 ---
 
 ## 7. Resume / recovery relation
