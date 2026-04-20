@@ -18,9 +18,12 @@ mod agent_naming;
 mod assembler_tests;
 mod closure_runtime;
 mod context_blocks;
+mod context_project_support;
 mod context_view;
 #[cfg(test)]
 mod context_view_task_board_tests;
+#[cfg(test)]
+mod context_view_registry_tests;
 #[cfg(test)]
 mod context_view_tests;
 mod control_feedback;

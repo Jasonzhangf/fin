@@ -59,6 +59,7 @@ description: Runtime/event debugging workflow for fin. Use for multi-agent, cros
 - 若当前 active session 已切换（如 `/new` / `/resume`）但 qqbot 仍绑定旧 session，框架必须产出 `channel.peer.session_invalidated` + `channel.peer.pairing_required`；这类 mismatch 不应继续伪装成有效 paired 状态
 - 若怀疑“project agent 没被叫醒/always_on 没生效”，先查 `~/.fin/runtime/projects/registry.json + wake_queue.json + state/<project_id>.json`；先确认 framework 是否已经生成 wake intent，再怀疑 daemon/spawn
 - 若需要判断 project agent 当前应“恢复 / 接续 / 观望 / 等远端”，优先查 `~/.fin/runtime/current/current_project_supervision.json`；presence 只说明当前忙闲，supervision 才说明 framework 的下一步控制意图
+- 若怀疑 system agent 的 context 里为什么只看到当前 cwd 一个项目，先查 `~/.fin/runtime/projects/registry.json`；当前 `ProjectContextBlock.active_projects/projects` 对 system role 应优先来自 registry，而不是只靠 cwd / project_label 推一个假单项目视角
 - 若 supervision 已显示 `resume_project_task`，再查 `~/.fin/runtime/current/current_project_execution_handoffs.json`；若没有 `prepared/noop/missing_task` handoff 记录，就不要误报“框架已把 task 接续下去”
 - 若 handoff 已是 `prepared/noop`，再查 `~/.fin/runtime/current/current_project_runtime_pickups.json`；它才说明 local project runtime 当前是 `ready_to_resume / claimed_idle / running / waiting_external / paused / missing_binding`，不要只凭 handoff 就断言已经在跑
 - 若 pickup 已是 `ready_to_resume + scheduler_tick_needed`，再查 `~/.fin/runtime/projects/runtime_resume_reports.json`；这里能确认 framework 是否真的触发了 `resume seed -> supervisor cycle -> scheduler tick`，不要把“pickup 可继续”误报成“已经实际继续执行”
