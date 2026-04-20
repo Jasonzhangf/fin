@@ -3325,3 +3325,22 @@ fin should adopt the following canonical model:
   - provider request/response artifact presence
   - peer event count and reply preview
 - Validation: `cargo test -p fin-cli` ✅
+
+## 2026-04-20 real qqbot live receipt evidence
+- Real target discovered from `~/.fin/runtime/channels/qqbot/conversations.json`:
+  - `qqbot:c2c:F6A6F19355D0D62EEC06277EB445B51F`
+- Executed:
+  - `cargo run -p fin-cli -- qqbot-live-receipt ~/.fin/config/user.toml qqbot:c2c:F6A6F19355D0D62EEC06277EB445B51F qqbot-live-receipt-20260420-real`
+- Generated receipt:
+  - `~/.fin/harness/runs/qqbot-live-receipt-20260420-real/qqbot-live-receipt.json`
+- Verified fields:
+  - `status=passed`
+  - `ack_notice_present=true`
+  - `session_reply_present=true`
+  - `provider_request_present=true`
+  - `provider_response_present=true`
+  - `session_id=session-test-install-0-1-0001`
+  - `task_id=task-test-install-0-1-0001`
+  - `latest_reply_preview=OK`
+- Closeout meaning:
+  - qqbot minimal real channel closure is now evidenced not only by repo E2E but also by real runtime receipt.

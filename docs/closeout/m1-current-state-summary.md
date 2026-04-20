@@ -10,7 +10,7 @@
 
 ## 1. 一句话结论
 
-截至 2026-04-19，`fin` 已经具备：
+截至 2026-04-20，`fin` 已经具备：
 
 - **真实 provider 可用**
 - **单 agent 多轮推理闭环可用**
@@ -18,18 +18,19 @@
 - **session / turn / step / event / control plane 的 durable truth 已落地**
 - **Web debug / status probe / compact / tick / reminder / queue / interrupt 基本闭环可用**
 - **正式 build/install gate 已恢复**
-
-但按当前更新后的 M1 验收口径，**M1 仍未完成**，因为还缺：
-
-- **qqbot 作为真实 channel gateway 的实际对话闭环**
-  - 不只是 peer state / pairing / upstream probe
-  - 而是完整 `message.ingest -> conversation/session restore -> session truth -> runtime inference -> session truth -> message.emit`
-  - 用户必须能通过 qqbot 真实输入并收到系统回复
-  - 并且异步补充回复/提醒/后续进度也必须从 session truth 自动送回 channel，而不是只做一次性 request-response bridge
+- **qqbot 真实 channel gateway 对话闭环可用**
+  - 已覆盖 `message.ingest -> conversation/session restore -> session truth -> runtime inference -> session truth -> message.emit`
+  - repo 内已有 `process_inbound_message(...)` 集成 E2E
+  - 真实 runtime 已生成 live receipt：`~/.fin/harness/runs/qqbot-live-receipt-20260420-real/qqbot-live-receipt.json`
+  - 当前 live receipt 证明：
+    - `ack_notice_present = true`
+    - `session_reply_present = true`
+    - `provider_request_present = true`
+    - `provider_response_present = true`
 
 因此当前项目状态应视为：
 
-> **M1 主体内核已稳定，但仍卡在 qqbot 通道闭环这一项 blocker，尚不能宣称 M1 完成。**
+> **M1 最小闭环已经成立；当前更重要的是守住冻结边界、补齐 receipts，并把剩余 always-on / daemon / distributed 扩展留在 M2。**
 
 ---
 
@@ -188,22 +189,21 @@ Web 不持有业务真相，只持有：
 
 这些事情现在不要误判成“已经完成”：
 
-1. qqbot 真实 channel 对话闭环
-2. 真多 agent 执行面
+1. 真多 agent 执行面
+2. detached/headless daemon
 3. 跨机器 project agent 协作
-4. detached/headless daemon
-5. 真正从中间步骤恢复的 pause/resume
-6. 普通用户输入的真正并行推理
-7. 完整 session/task/topic 产品化交互
-8. 成熟 knowledge graph / wiki / memory graph
+4. 真正从中间步骤恢复的 pause/resume
+5. 普通用户输入的真正并行推理
+6. 完整 session/task/topic 产品化交互
+7. 成熟 knowledge graph / wiki / memory graph
 
-其中第 1 项当前属于 **M1 blocker**；其余仍属于 M2/backlog，不应在当前阶段重新发散。
+以上均属于 M2/backlog，不应在当前阶段重新发散。
 
 ---
 
 ## 5. 当前收口结果
 
-截至当前，原本计划中的 **M1.1 stability pass 核心目标大部分已经完成**，但 **qqbot channel gateway 闭环** 仍未收下。
+截至当前，原本计划中的 **M1.1 stability pass 核心目标已经收口**，其中 **qqbot channel gateway 闭环** 已经用 repo 内 E2E + live receipt 双重证据收下。
 
 已经实际收下的证据包括：
 
@@ -240,9 +240,27 @@ Web 不持有业务真相，只持有：
 - `supervisor_heartbeat_due`
 - `stale_lease`
 
+### 5.4 qqbot live receipt
+
+当前已新增：
+
+- 命令：`fin qqbot-live-receipt <user.toml> <qqbot-target> [run-id]`
+- live receipt：
+  - `~/.fin/harness/runs/qqbot-live-receipt-20260420-real/qqbot-live-receipt.json`
+
+receipt 当前固定验证：
+
+- target / conversation / session 绑定真相
+- latest inbound / latest delivered cursor
+- ack 已发出
+- session truth reply 已发出
+- provider request / response artifacts 存在
+
+这说明 `qqbot` 已经不再只是 peer skeleton，而是进入了 **真实 channel 闭环 + receipt 可回收** 的状态。
+
 结论：
 
-> 当前 `fin` 不再只是“推理核心能跑”，而是已经进入“推理核心可验证、可回归、可冻结”的状态；但 M1 仍需补上 qqbot 真实通道闭环，才能从“稳定内核”进入“完整最小产品闭环”。
+> 当前 `fin` 不再只是“推理核心能跑”，而是已经进入“推理核心可验证、可回归、可冻结，并且拥有真实 channel receipt”的状态。
 
 ---
 

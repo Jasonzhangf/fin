@@ -9,37 +9,37 @@
 
 ## 1. M1 已知阻塞项与风险点
 
-### 1.1 qqbot 真实 channel 对话闭环尚未完成（阻塞 M1）
+### 1.1 qqbot 真实 channel 对话闭环已完成，剩余进入 M2 生命周期强化
 
 现状：
 
 - 当前已有：
   - `runtime/peers/qqbot/state.json`
   - `runtime/peers/qqbot/events.jsonl`
-  - pairing / expire / heartbeat / upstream connectivity probe
-  - debug-server 对 qqbot state/events 的观察接口
-- 当前没有：
+  - `runtime/channels/qqbot/conversations.json`
   - `target -> session` conversation registry / restore
   - 基于 session truth 的 outbound delivery supervisor
-  - peer 进程级 crash-restart / always-on 监督
-  - “从 qqbot 发一句话 -> fin 自动恢复上下文并持续回话”的实际闭环
+  - repo 内 `process_inbound_message(...)` 集成 E2E
+  - live receipt：`~/.fin/harness/runs/qqbot-live-receipt-20260420-real/qqbot-live-receipt.json`
+- live receipt 已验证：
+  - `ack_notice_present = true`
+  - `session_reply_present = true`
+  - `provider_request_present = true`
+  - `provider_response_present = true`
 
-影响：
+结论：
 
-- 当前只能算 qqbot peer skeleton
-- 不能算完整 channel gateway
-- 因此按最新验收口径，**M1 仍未完成**
+- `qqbot` 已经不是 peer skeleton
+- 它已达到 M1 所要求的最小真实 channel 闭环
+- **M1 不再被 qqbot 阻塞**
 
-建议：
+剩余缺口：
 
-- 把 qqbot 从 “M2 channel backlog” 提升为 “M1 blocker”
-- 先做最小可用闭环：
-  - receive gateway input
-  - `target -> session` 恢复/绑定
-  - call existing runtime path
-  - persist session truth
-  - deliver new session messages back to qqbot
-  - attach bridge supervisor for crash-restart
+- peer 进程级 crash-restart / always-on 强化
+- detached daemon 级监督
+- 更细的 receipt family / closeout 文档同步
+
+这些都进入 M2 / post-closeout 稳定化，不再当作 M1 blocker。
 
 ### 1.2 installed-binary smoke 自动化已补齐，剩余只是在持续使用中防回归
 
