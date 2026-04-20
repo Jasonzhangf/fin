@@ -42,6 +42,7 @@ mod project_runtime_resume;
 mod project_runtime_resume_tests;
 mod project_supervision;
 mod provider_live_smoke;
+mod qqbot_live_receipt;
 mod reminder_scheduler;
 mod runtime_current_snapshot;
 mod runtime_home;

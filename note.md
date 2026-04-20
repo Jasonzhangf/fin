@@ -3313,3 +3313,15 @@ fin should adopt the following canonical model:
   - `rust/crates/cli/src/channel_peer_qqbot_bridge_tests.rs`
   - `rust/crates/cli/src/channel_peer_qqbot_bridge_e2e_tests.rs`
 - Verification: `cargo test -p fin-cli channel_peer_qqbot_bridge -- --nocapture` ✅
+
+## 2026-04-20 qqbot live receipt command
+- Added `fin qqbot-live-receipt <user.toml> <qqbot-target> [run-id]`.
+- Purpose: after a real QQ channel message has been processed, collect the current target/session truth into `~/.fin/harness/runs/<run-id>/qqbot-live-receipt.json`.
+- Receipt currently verifies and records:
+  - bound conversation/session identity
+  - latest inbound / latest delivered cursor
+  - ack notice presence
+  - session-visible reply presence
+  - provider request/response artifact presence
+  - peer event count and reply preview
+- Validation: `cargo test -p fin-cli` ✅

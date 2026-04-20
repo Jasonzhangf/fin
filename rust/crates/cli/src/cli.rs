@@ -8,6 +8,7 @@ use crate::{
     install_flow::{build_dev, promote_existing_build, rollback_install},
     mainline_demo::run_mainline_demo,
     provider_live_smoke::run_provider_live_smoke,
+    qqbot_live_receipt::run_qqbot_live_receipt,
     runtime_home::{init_runtime_home, persist_runtime_demo, resolved_runtime_home},
     transcript::{load_transcript_scenario, run_transcript_demo},
     web_debug_entry::serve_web_debug,
@@ -163,6 +164,25 @@ pub fn run_with_runtime_home(
                 report.turn_count,
                 report.receipt_path,
                 report.runtime_home
+            );
+        }
+        Command::QqbotLiveReceipt {
+            path,
+            target,
+            run_id,
+        } => {
+            let user_toml = read_file(Path::new(&path))?;
+            let system =
+                load_effective_system_config(&user_toml, runtime_home_override.as_deref())?;
+            let report = run_qqbot_live_receipt(
+                &system,
+                runtime_home_override.as_deref(),
+                &target,
+                run_id.as_deref(),
+            )?;
+            println!(
+                "qqbot live receipt ok: target={} session={} status={} receipt={}",
+                report.target, report.session_id, report.status, report.receipt_path
             );
         }
         Command::WebDebug { path, port } => {

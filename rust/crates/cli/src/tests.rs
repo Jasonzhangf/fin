@@ -142,6 +142,41 @@ fn parse_command_accepts_provider_live_smoke_with_transcript() {
 }
 
 #[test]
+fn parse_command_accepts_qqbot_live_receipt() {
+    let args = vec![
+        "qqbot-live-receipt".into(),
+        "/tmp/user.toml".into(),
+        "qqbot:c2c:user-1".into(),
+    ];
+    assert_eq!(
+        parse_command(&args).expect("command should parse"),
+        Command::QqbotLiveReceipt {
+            path: "/tmp/user.toml".into(),
+            target: "qqbot:c2c:user-1".into(),
+            run_id: None,
+        }
+    );
+}
+
+#[test]
+fn parse_command_accepts_qqbot_live_receipt_with_run_id() {
+    let args = vec![
+        "qqbot-live-receipt".into(),
+        "/tmp/user.toml".into(),
+        "qqbot:c2c:user-1".into(),
+        "qqbot-live-run".into(),
+    ];
+    assert_eq!(
+        parse_command(&args).expect("command should parse"),
+        Command::QqbotLiveReceipt {
+            path: "/tmp/user.toml".into(),
+            target: "qqbot:c2c:user-1".into(),
+            run_id: Some("qqbot-live-run".into()),
+        }
+    );
+}
+
+#[test]
 fn parse_command_accepts_transcript_demo() {
     let args = vec![
         "transcript-demo".into(),

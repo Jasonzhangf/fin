@@ -34,6 +34,11 @@ pub(crate) enum Command {
         path: String,
         transcript_path: Option<String>,
     },
+    QqbotLiveReceipt {
+        path: String,
+        target: String,
+        run_id: Option<String>,
+    },
     BuildDev {
         path: String,
         build_version: Option<String>,
@@ -79,6 +84,18 @@ pub(crate) fn parse_command(args: &[String]) -> Result<Command, CliError> {
             Ok(Command::ProviderLiveSmoke {
                 path: path.clone(),
                 transcript_path: Some(transcript_path.clone()),
+            })
+        }
+        [cmd, path, target] if cmd == "qqbot-live-receipt" => Ok(Command::QqbotLiveReceipt {
+            path: path.clone(),
+            target: target.clone(),
+            run_id: None,
+        }),
+        [cmd, path, target, run_id] if cmd == "qqbot-live-receipt" => {
+            Ok(Command::QqbotLiveReceipt {
+                path: path.clone(),
+                target: target.clone(),
+                run_id: Some(run_id.clone()),
             })
         }
         [cmd, path] if cmd == "web-debug" => Ok(Command::WebDebug {
