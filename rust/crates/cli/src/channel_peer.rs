@@ -5,7 +5,12 @@ use crate::{
     channel_peer_store::{append_peer_event, persist_state, read_json},
     time::local_timestamp_now,
 };
-use chrono::{DateTime, Duration, FixedOffset};
+#[path = "channel_peer_state.rs"]
+mod channel_peer_state;
+use channel_peer_state::{
+    add_minutes, release_binding_state, repair_state_defaults, session_is_expired,
+    sync_compat_fields,
+};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use std::{fs, path::Path};
@@ -390,116 +395,4 @@ pub(crate) fn record_builtin_qqbot_runtime_event(
     append_peer_event(runtime_home, &mut state, event_type, payload, now.as_str())?;
     persist_state(runtime_home, &state)?;
     Ok(state)
-}
-
-fn session_is_expired(state: &GatewayPeerState, now: &str) -> bool {
-    let Some(expires_at) = state.session_expires_at.as_deref() else {
-        return false;
-    };
-    let Some(expiry) = parse_local_ts(expires_at) else {
-        return false;
-    };
-    let Some(now_value) = parse_local_ts(now) else {
-        return false;
-    };
-    now_value >= expiry
-}
-
-#[allow(dead_code)]
-fn add_minutes(ts: &str, minutes: u64) -> Result<String, CliError> {
-    let Some(parsed) = parse_local_ts(ts) else {
-        return Ok(ts.to_string());
-    };
-    let next = parsed + Duration::minutes(minutes as i64);
-    Ok(next.format("%Y-%m-%dT%H:%M:%S%:z").to_string())
-}
-
-fn parse_local_ts(ts: &str) -> Option<DateTime<FixedOffset>> {
-    DateTime::parse_from_rfc3339(ts).ok()
-}
-
-impl GatewayPeerState {
-    fn new_unpaired(now: &str) -> Self {
-        let mut state = Self {
-            peer_id: QQBOT_PEER_ID.into(),
-            peer_kind: QQBOT_PEER_KIND.into(),
-            runtime_state: "ready_local".into(),
-            connectivity_state: "local_only".into(),
-            binding_state: "unbound".into(),
-            lifecycle_state: String::new(),
-            pairing_required: false,
-            session_valid: false,
-            started_at: now.into(),
-            updated_at: now.into(),
-            paired_at: None,
-            session_id: None,
-            session_expires_at: None,
-            session_ttl_minutes: None,
-            last_heartbeat_at: None,
-            connectivity_checked_at: None,
-            upstream_authenticated_at: None,
-            upstream_expires_at: None,
-            credential_source: None,
-            last_connectivity_error: None,
-            reconnect_count: 0,
-            next_event_sequence: default_next_event_sequence(),
-        };
-        sync_compat_fields(&mut state);
-        state
-    }
-}
-
-fn repair_state_defaults(state: &mut GatewayPeerState, now: &str) {
-    if state.runtime_state.trim().is_empty() {
-        state.runtime_state = "ready_local".into();
-    }
-    if state.connectivity_state.trim().is_empty() {
-        state.connectivity_state = "local_only".into();
-    }
-    if state.binding_state.trim().is_empty() {
-        state.binding_state = if state.session_valid {
-            "bound".into()
-        } else {
-            "unbound".into()
-        };
-    } else if state.binding_state == "pairing_required" && !state.session_valid {
-        release_binding_state(state);
-    }
-    if state.binding_state == "unbound" && !state.session_valid {
-        state.session_id = None;
-        state.session_expires_at = None;
-        state.session_ttl_minutes = None;
-    }
-    if state.started_at.trim().is_empty() {
-        state.started_at = now.into();
-    }
-    sync_compat_fields(state);
-}
-
-fn sync_compat_fields(state: &mut GatewayPeerState) {
-    state.lifecycle_state = match state.binding_state.as_str() {
-        "bound" => "paired_active".into(),
-        "expired" => "session_expired".into(),
-        "invalidated" => "binding_invalidated".into(),
-        _ => {
-            if matches!(
-                state.connectivity_state.as_str(),
-                "connected" | "connecting" | "auth_required" | "auth_failed" | "degraded"
-            ) || state.upstream_authenticated_at.is_some()
-            {
-                "idle_ready".into()
-            } else {
-                "idle_unpaired".into()
-            }
-        }
-    };
-    state.pairing_required = matches!(state.binding_state.as_str(), "pairing_required");
-    state.session_valid = matches!(state.binding_state.as_str(), "bound");
-}
-
-fn release_binding_state(state: &mut GatewayPeerState) {
-    state.binding_state = "unbound".into();
-    state.session_id = None;
-    state.session_expires_at = None;
-    state.session_ttl_minutes = None;
 }

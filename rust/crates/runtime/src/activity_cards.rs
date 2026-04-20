@@ -1,14 +1,22 @@
 use crate::{RuntimeError, tool_semantics};
+#[path = "activity_cards_helpers.rs"]
+mod activity_cards_helpers;
+#[path = "activity_cards_store.rs"]
+mod activity_cards_store;
 use fin_contracts::{
     ActivityCardsSnapshot, ActivitySourceSummary, ExecutionStateRecord, SourceActivityCardView,
     ToolExecutionRecord, ToolSemanticView, TurnRecord, UserActivityCardView,
 };
 use serde::Deserialize;
-use serde_json::Value;
-use std::{
-    cmp::Reverse,
-    fs, io,
-    path::{Path, PathBuf},
+use std::{cmp::Reverse, path::Path};
+
+use activity_cards_helpers::{
+    latest_failed_action, local_now_fallback, most_recent_actions, peer_activity, peer_state,
+    peer_summary, peer_title, shorten, should_promote, source_rank, visibility_for_state,
+};
+use activity_cards_store::{
+    pending_inbound_notice, read_json_if_exists, read_last_run_json, read_last_run_value,
+    read_last_run_vec, string_field,
 };
 
 const SYSTEM_SOURCE_ID: &str = "system-agent";
@@ -397,218 +405,4 @@ fn build_user_card(cards: &[SourceActivityCardView], generated_at: &str) -> User
             .map(|card| card.updated_at.clone())
             .unwrap_or_else(|| generated_at.to_string()),
     }
-}
-
-fn read_last_run_json(runtime_home: &Path) -> Result<Value, RuntimeError> {
-    read_json_required(&runtime_home.join("runtime/current/last_run.json"))
-}
-
-fn last_run_artifact_path(
-    runtime_home: &Path,
-    field: &str,
-) -> Result<Option<PathBuf>, RuntimeError> {
-    let last_run = read_last_run_json(runtime_home)?;
-    Ok(last_run
-        .get(field)
-        .and_then(Value::as_str)
-        .map(|relative| runtime_home.join(relative)))
-}
-
-fn read_last_run_vec<T: for<'de> Deserialize<'de>>(
-    runtime_home: &Path,
-    field: &str,
-) -> Result<Vec<T>, RuntimeError> {
-    let Some(path) = last_run_artifact_path(runtime_home, field)? else {
-        return Ok(Vec::new());
-    };
-    read_json_if_exists(&path).map(|value| value.unwrap_or_default())
-}
-
-fn read_last_run_value<T: for<'de> Deserialize<'de>>(
-    runtime_home: &Path,
-    field: &str,
-) -> Result<Option<T>, RuntimeError> {
-    let Some(path) = last_run_artifact_path(runtime_home, field)? else {
-        return Ok(None);
-    };
-    read_json_if_exists(&path)
-}
-
-fn read_json_required<T: for<'de> Deserialize<'de>>(path: &Path) -> Result<T, RuntimeError> {
-    let body = fs::read_to_string(path).map_err(|source| RuntimeError::Io {
-        path: path.display().to_string(),
-        source,
-    })?;
-    serde_json::from_str(&body).map_err(RuntimeError::Serialize)
-}
-
-fn read_json_if_exists<T: for<'de> Deserialize<'de>>(
-    path: &Path,
-) -> Result<Option<T>, RuntimeError> {
-    match fs::read_to_string(path) {
-        Ok(body) => serde_json::from_str(&body)
-            .map(Some)
-            .map_err(RuntimeError::Serialize),
-        Err(err) if err.kind() == io::ErrorKind::NotFound => Ok(None),
-        Err(source) => Err(RuntimeError::Io {
-            path: path.display().to_string(),
-            source,
-        }),
-    }
-}
-
-fn pending_inbound_notice(
-    runtime_home: &Path,
-    session_id: Option<&str>,
-) -> Result<Option<String>, RuntimeError> {
-    let Some(session_id) = session_id else {
-        return Ok(None);
-    };
-    let registry = read_json_if_exists::<ChannelConversationRegistry>(
-        &runtime_home.join("runtime/channels/qqbot/conversations.json"),
-    )?
-    .unwrap_or_default();
-    let pending = registry.conversations.iter().any(|record| {
-        record.session_id.as_deref() == Some(session_id)
-            && record.status == "bound"
-            && match (
-                record.last_inbound_at.as_deref(),
-                record.last_delivery_at.as_deref(),
-            ) {
-                (Some(inbound_at), Some(delivery_at)) => inbound_at > delivery_at,
-                (Some(_), None) => true,
-                _ => false,
-            }
-    });
-    Ok(pending.then(|| PENDING_INBOUND_NOTICE.into()))
-}
-
-fn string_field(value: &Value, key: &str) -> Option<String> {
-    value.get(key).and_then(Value::as_str).map(str::to_string)
-}
-
-fn most_recent_actions(semantics: &[ToolSemanticView], limit: usize) -> Vec<ToolSemanticView> {
-    let mut sorted = semantics.to_vec();
-    sorted.sort_by(|left, right| {
-        left.started_at
-            .cmp(&right.started_at)
-            .then_with(|| left.tool_call_id.cmp(&right.tool_call_id))
-    });
-    let reversed = sorted.into_iter().rev().collect::<Vec<_>>();
-    let non_provider = reversed
-        .iter()
-        .filter(|item| item.tool_name != "provider.call")
-        .cloned()
-        .take(limit)
-        .collect::<Vec<_>>();
-    if !non_provider.is_empty() {
-        return non_provider;
-    }
-    reversed.into_iter().take(limit).collect()
-}
-
-fn latest_failed_action(semantics: &[ToolSemanticView]) -> Option<ToolSemanticView> {
-    semantics
-        .iter()
-        .rev()
-        .find(|item| item.status == "failed")
-        .cloned()
-}
-
-fn source_rank(state: &str) -> u8 {
-    match state {
-        "failed" => 0,
-        "running" => 1,
-        "waiting" | "paused" => 2,
-        "degraded" => 3,
-        _ => 4,
-    }
-}
-
-fn visibility_for_state(state: &str) -> &'static str {
-    match state {
-        "running" | "failed" | "waiting" | "paused" => "detailed",
-        _ => "compact",
-    }
-}
-
-fn should_promote(state: &str, failure_detail: Option<&str>, waiting_detail: Option<&str>) -> bool {
-    failure_detail.is_some()
-        || waiting_detail.is_some()
-        || matches!(state, "running" | "failed" | "waiting" | "paused")
-}
-
-fn peer_title(peer: &PeerRegistryEntry) -> String {
-    match peer.peer_kind.as_str() {
-        "channel_gateway.qqbot" => "QQ Channel Peer".into(),
-        other => format!("Peer {other}"),
-    }
-}
-
-fn peer_state(peer: &PeerRegistryEntry) -> String {
-    if peer.connectivity_state.as_deref() == Some("degraded")
-        || peer.connectivity_state.as_deref() == Some("failed")
-    {
-        "failed".into()
-    } else if peer.binding_state.as_deref() == Some("invalidated") {
-        "waiting".into()
-    } else if peer.presence_state == "online" {
-        "ready".into()
-    } else {
-        peer.presence_state.clone()
-    }
-}
-
-fn peer_summary(peer: &PeerRegistryEntry) -> String {
-    let mut parts = vec![format!("presence {}", peer.presence_state)];
-    if let Some(connectivity) = peer
-        .connectivity_state
-        .as_deref()
-        .filter(|value| !value.is_empty())
-    {
-        parts.push(format!("connectivity {connectivity}"));
-    }
-    if let Some(binding) = peer
-        .binding_state
-        .as_deref()
-        .filter(|value| !value.is_empty())
-    {
-        parts.push(format!("binding {binding}"));
-    }
-    if peer.pairing_required == Some(true) {
-        parts.push("pairing required".into());
-    }
-    shorten(&parts.join(" · "), 120)
-}
-
-fn peer_activity(peer: &PeerRegistryEntry) -> String {
-    if peer.binding_state.as_deref() == Some("invalidated") {
-        "binding invalidated".into()
-    } else if peer.session_valid == Some(true) {
-        let session_id = peer.session_id.as_deref().unwrap_or("-");
-        format!("bound to session {session_id}")
-    } else if peer.binding_state.as_deref() == Some("unbound") {
-        "waiting inbound session restore".into()
-    } else if peer.session_valid == Some(false) {
-        "session released".into()
-    } else {
-        "idle".into()
-    }
-}
-
-fn shorten(value: &str, limit: usize) -> String {
-    let trimmed = value.trim();
-    let mut chars = trimmed.chars();
-    let shortened = chars.by_ref().take(limit).collect::<String>();
-    if chars.next().is_some() {
-        format!("{shortened}…")
-    } else if shortened.is_empty() {
-        "-".into()
-    } else {
-        shortened
-    }
-}
-
-fn local_now_fallback() -> String {
-    "local-now".into()
 }

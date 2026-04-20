@@ -3352,3 +3352,15 @@ fin should adopt the following canonical model:
   - M1 complete
   - qqbot no longer a blocker
   - next phase should enter M2 through debt reduction + always-on lifecycle strengthening, not random feature expansion.
+
+## 2026-04-20 m2 step1 line-limit debt closeout
+- Completed the first M2 debt-reduction pass for the 500-line gate.
+- Split oversized runtime/cli files into owning-layer slices without changing behavior:
+  - runtime: `control_plane`, `agent_naming`, `activity_cards`, `context_view_tests`, `prompt_tests`, `tests`, `tool_dispatch_tests`
+  - cli: `channel_peer`, `agent_presence`, `channel_peer_activity_delivery`, `provider_live_smoke`, `startup_wakeup`
+- New helper slices keep the same truth boundaries: store/render/test/report/state helpers moved out; public entrypoints stayed in original owning modules.
+- Verification:
+  - `cargo test -p fin-runtime -p fin-cli --manifest-path rust/Cargo.toml` ✅
+  - `python3 scripts/check-code-line-limit.py` ✅ (`code line-limit ok`)
+- Result:
+  - repo-wide non-whitelist code files are now back under the 500-line gate.
