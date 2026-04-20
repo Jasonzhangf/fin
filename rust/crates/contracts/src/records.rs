@@ -1,4 +1,4 @@
-use crate::EntityRefs;
+use crate::{EntityRefs, InputAttachmentSummary};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
@@ -393,7 +393,11 @@ pub struct PendingInputRecord {
     #[serde(flatten)]
     pub refs: EntityRefs,
     pub input_kind: String,
+    #[serde(default)]
+    pub source: String,
     pub message: String,
+    #[serde(default)]
+    pub attachments: Vec<InputAttachmentSummary>,
     pub status: String,
     pub enqueue_reason: String,
     pub enqueued_at: String,

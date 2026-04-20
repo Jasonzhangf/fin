@@ -1,8 +1,18 @@
 use crate::{
     tool_dispatch::{ToolDispatchInput, ToolDispatchOutcome},
-    tool_dispatch_extended_collab, tool_dispatch_extended_exec,
+    tool_dispatch_extended_collab, tool_dispatch_extended_exec, tool_dispatch_extended_patch,
+    tool_dispatch_extended_query,
 };
 use serde_json::Value;
+
+pub(super) fn handle_apply_patch(
+    outcome: &mut ToolDispatchOutcome,
+    input: &ToolDispatchInput<'_>,
+    tool_call_id: &str,
+    arguments: &Value,
+) -> bool {
+    tool_dispatch_extended_patch::handle_apply_patch(outcome, input, tool_call_id, arguments)
+}
 
 pub(super) fn handle_exec_command(
     outcome: &mut ToolDispatchOutcome,
@@ -11,6 +21,52 @@ pub(super) fn handle_exec_command(
     arguments: &Value,
 ) -> bool {
     tool_dispatch_extended_exec::handle_exec_command(outcome, input, tool_call_id, arguments)
+}
+
+pub(super) fn handle_view_image(
+    outcome: &mut ToolDispatchOutcome,
+    input: &ToolDispatchInput<'_>,
+    tool_call_id: &str,
+    arguments: &Value,
+) -> bool {
+    tool_dispatch_extended_query::handle_view_image(outcome, input, tool_call_id, arguments)
+}
+
+pub(super) fn handle_context_history_rebuild(
+    outcome: &mut ToolDispatchOutcome,
+    input: &ToolDispatchInput<'_>,
+    tool_call_id: &str,
+    arguments: &Value,
+) -> bool {
+    tool_dispatch_extended_query::handle_context_history_rebuild(
+        outcome,
+        input,
+        tool_call_id,
+        arguments,
+    )
+}
+
+pub(super) fn handle_project_task_status(
+    outcome: &mut ToolDispatchOutcome,
+    input: &ToolDispatchInput<'_>,
+    tool_call_id: &str,
+    arguments: &Value,
+) -> bool {
+    tool_dispatch_extended_query::handle_project_task_status(
+        outcome,
+        input,
+        tool_call_id,
+        arguments,
+    )
+}
+
+pub(super) fn handle_project_task_list(
+    outcome: &mut ToolDispatchOutcome,
+    input: &ToolDispatchInput<'_>,
+    tool_call_id: &str,
+    arguments: &Value,
+) -> bool {
+    tool_dispatch_extended_query::handle_project_task_list(outcome, input, tool_call_id, arguments)
 }
 
 pub(super) fn handle_write_stdin(

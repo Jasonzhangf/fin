@@ -1,8 +1,8 @@
 use crate::ModelInputAssembler;
 use fin_contracts::{
-    DaemonStateSummary, HistoryBlock, MinimalContextView, PeerBindingSummary, PeerContextBlock,
-    PeerDescriptorSummary, ProjectContextBlock, RolePromptBlock, ToolCatalogBlock,
-    ToolCatalogEntry,
+    CurrentInputBlock, DaemonStateSummary, HistoryBlock, InputAttachmentSummary,
+    MinimalContextView, PeerBindingSummary, PeerContextBlock, PeerDescriptorSummary,
+    ProjectContextBlock, RolePromptBlock, ToolCatalogBlock, ToolCatalogEntry,
 };
 
 #[test]
@@ -29,11 +29,15 @@ fn model_input_assembler_renders_role_tools_history_and_project_scope() {
                     tool_name: "peer.list".into(),
                     kind: "agent_tool".into(),
                     summary: "list peers".into(),
+                    when_to_use: vec!["need peer topology".into()],
+                    input_schema_summary: "optional limit".into(),
+                    output_schema_summary: "peer list".into(),
                     ..Default::default()
                 }],
                 framework_tools: vec![ToolCatalogEntry {
                     tool_name: "provider.call".into(),
                     summary: "invoke provider".into(),
+                    input_schema_summary: "compiled prompt".into(),
                     ..Default::default()
                 }],
                 tool_selection_policy: vec!["no model tools".into()],
@@ -71,6 +75,20 @@ fn model_input_assembler_renders_role_tools_history_and_project_scope() {
                 }),
                 ..Default::default()
             }),
+            current_input: Some(CurrentInputBlock {
+                input: "current ask".into(),
+                source: "channel.qqbot".into(),
+                operation_id: "op-1".into(),
+                trace_id: "trace-1".into(),
+                attachments: vec![InputAttachmentSummary {
+                    kind: "image/png".into(),
+                    name: Some("demo.png".into()),
+                    url: Some("https://example.com/demo.png".into()),
+                    width: Some(100),
+                    height: Some(50),
+                    ..Default::default()
+                }],
+            }),
             ..Default::default()
         },
     );
@@ -82,12 +100,16 @@ fn model_input_assembler_renders_role_tools_history_and_project_scope() {
     assert!(rendered.contains("model_output_contract_v1"));
     assert!(rendered.contains("Model tools"));
     assert!(rendered.contains("peer.list"));
+    assert!(rendered.contains("use: need peer topology"));
+    assert!(rendered.contains("input: optional limit"));
     assert!(rendered.contains("Framework capabilities"));
     assert!(rendered.contains("Tool selection policy"));
     assert!(rendered.contains("Recent history"));
     assert!(rendered.contains("Project scope"));
     assert!(rendered.contains("Peer scope"));
     assert!(rendered.contains("Current user input"));
+    assert!(rendered.contains("Input attachments"));
+    assert!(rendered.contains("demo.png"));
     assert!(rendered.contains("Mandatory final answer format"));
     assert!(rendered.contains("Mandatory final answer example"));
     assert!(rendered.contains("0.98 -> 98"));

@@ -135,6 +135,27 @@ Updated: 2026-04-18
   - `cargo test -p fin-runtime -p fin-cli -p fin-debug-server --manifest-path rust/Cargo.toml`
   - `(cd rust/crates/debug-server/webui && npx tsc -p tsconfig.json)`
 
+## 2026-04-19 activity-card owning layer correction
+
+- `activity cards + tool semantics` 的 builder 已从 `fin-debug-server` 下沉到 `fin-runtime`：
+  - 新真源：`fin-runtime::build_activity_cards`
+  - contract 仍留在 `fin-contracts`
+  - Web debug 与 QQ/text channel 都只消费同一份 runtime/session projection
+- 修正原因：
+  - `fin-cli` 原先通过 `fin_debug_server::build_activity_cards` 读取活动卡，形成 `CLI -> debug-server` 的反向依赖
+  - 这违反了“Web/debug 只能做观察层，不拥有运行语义”的项目硬边界
+- 当前固定规则：
+  - 活动卡结构定义放 `fin-contracts`
+  - 活动卡聚合/工具语义解释放 `fin-runtime`
+  - `fin-debug-server` / WebUI / text channel 只负责 transport + render + delivery policy
+- 本轮验证：
+  - `cargo test -p fin-runtime --manifest-path rust/Cargo.toml`
+  - `cargo test -p fin-debug-server --manifest-path rust/Cargo.toml`
+  - `cargo test -p fin-cli channel_peer_activity_delivery --manifest-path rust/Cargo.toml`
+  - `cargo build -p fin-cli --manifest-path rust/Cargo.toml`
+  - `npx tsc -p rust/crates/debug-server/webui/tsconfig.json`
+  - live `http://127.0.0.1:4040/api/activity_cards.json` 返回 `200`
+
 ## 2026-04-18 compact rebuild implementation snapshot
 
 - `/compact` 不再走 `session select/rebind` 占位逻辑。
@@ -2404,3 +2425,265 @@ fin should adopt the following canonical model:
 - [2026-04-19] `control_boundary` receipt 当前先收 session durable control-plane artifacts（heartbeat / daemon state / recovery action 等）；queue/wait/interrupt 的更强样本后续再补到 closeout run，不在本轮伪造事实。
 - [2026-04-19] 已新增 `fin mainline-demo <user.toml>`：用 deterministic provider 在隔离 runtime-home 里生成 3 turn history + 第 3 turn 的真实 2-round auto tool loop，session 为 `session-<namespace>-mainline`，用于 closeout 的 `auto_tool_roundtrip` receipt，避免再用单轮 transcript 假装 tool loop 通过。
 - [2026-04-19] 已新增 `fin control-boundary-demo <user.toml>`：复用真实 web_debug control path 生成 `/new -> seed -> /pause -> queued x2 -> /resume-run -> /status` 的 stronger control-boundary session，能稳定产出 `execution_state / pause_checkpoint / pending queue / interrupted segment / segment merge / scheduler latest+tick / supervisor latest / heartbeat / daemon state`，用于 mainline `control_boundary` receipt。
+
+## 2026-04-19 finger decommission + fin builtin qqbot peer
+
+- 已显式停掉残留 live 旧链进程：
+  - `5839 rust/target/debug/fin-cli web-debug ... 4056`
+  - `5856 node ~/code/finger/dist/cli/index.js gateway-bridge start qqbot --stdio`
+- 已禁用并移走旧自启动：
+  - `com.finger.dual-daemon`
+  - `com.finger.daily.project.analysis`
+  - `com.finger.daily.user.analysis`
+  - `com.finger.email.check`
+  - `com.finger.news.digest`
+  - `com.finger.weibo.timeline`
+  - `com.finger.zombie.cleanup`
+  - `ai.openclaw.gateway`
+  - 证据日志：`~/.fin/logs/finger-decommission-20260419_212053.log`
+- `fin` 已移除 qqbot 对 `finger gateway-bridge` 与 legacy finger config 的运行时依赖：
+  - 新增 fin-owned runner 资产：`rust/crates/cli/assets/qqbot_peer_runner.mjs`
+  - `web-debug` 当前实际拉起：`node ~/.fin/runtime/peers/qqbot/bin/qqbot-peer-runner.mjs`
+  - `channel_peer_connectivity` 不再回退读取 `~/.finger/...`，改为 `env -> user.toml[channels.qqbot]`
+- 已把 legacy qqbot 凭据一次性迁入 `~/.fin/config/user.toml`：
+  - `[channels.qqbot]`
+  - `app_id = "1903323793"`
+  - `client_secret = "***"`（本地真实值已写入，笔记中脱敏）
+- live 验证：
+  - 4040 实例进程：
+    - `40097 rust/target/debug/fin-cli web-debug ~/.fin/config/user.toml 4040`
+    - `40261 node ~/.fin/runtime/peers/qqbot/bin/qqbot-peer-runner.mjs`
+  - `/qqbot connect` 返回：`credential_source=user_toml:/Users/fanzhang/.fin/config/user.toml`
+  - `runtime/peers/qqbot/events.jsonl` 已记录：
+    - `channel.peer.bridge_spawned`（bridge_impl=`fin_builtin_runner`）
+    - `channel.peer.bridge_start_requested`
+    - `channel.peer.bridge_ready`
+    - `channel.peer.upstream_authenticated`
+- 当前剩余事实：
+  - built-in peer 启动 / upstream auth / session binding 已通
+  - 还没在本轮用真实 QQ 消息再次验证“单条外部输入 -> 单条 fin 回复”
+  - 所以本轮结论是：**finger 已移除，fin builtin qqbot peer 已取代旧桥；真实 QQ roundtrip 还需一条外部消息做最终收口**
+
+## 2026-04-19 text channel activity cards freeze
+
+- 纯文字 channel 架构已冻结为双层卡体系：
+  - `source-owned progress cards`
+  - `system-owned user activity card`
+- owning scope：
+  - 每个 source（system/project/peer）各自维护一张当前卡
+  - 用户前台会话由 `system agent` 维护一张总卡
+- 更新规则：
+  - 有变化才更新，无变化静默
+  - 最长 1 分钟允许一次最小心跳
+  - 渠道不支持编辑时走“紧凑重绘”，逻辑上仍视为同一张卡
+- 可见性：
+  - `hidden / compact / detailed / verbose`
+  - 并允许 active / failed / waiting-too-long 自动提升
+- verbose：
+  - 允许 source card 分片
+  - 总卡只引用摘要，不承载 verbose 明细
+- 工具渲染：
+  - 统一按“用户关心做了什么”语义化解释
+  - WebUI 与文字 channel 共用同一套 tool semantic render truth
+
+## 2026-04-19 activity card builder + shared tool semantics landed
+
+- 已新增共享 contract：
+  - `fin-contracts::ActivityCardsSnapshot`
+  - `ToolSemanticView / SourceActivityCardView / UserActivityCardView`
+- 已在 `fin-debug-server` 落地统一 builder：
+  - `build_activity_cards(runtime_home)` 从 `last_run + session artifacts + current_execution_state + runtime/peers/registry.json` 聚合 source/user cards
+  - 当前最小 source 已覆盖 `system-agent` 与 peer registry（含 qqbot peer）
+- 已在 `fin-debug-server` 落地统一工具语义层：
+  - `tool_semantics::semantic_views(...)`
+  - 把 `ToolExecutionRecord` 规范化为 `category / verb / object / summary / detail`
+- 已新增 API：
+  - `GET /api/activity_cards.json`
+- Web 状态层已接入 `activityCards` 读取，但本轮**不改你正在调整的具体展示**；先保证 Web / text channel 后续都能消费同一份后端真源
+- 验证：
+  - `cargo test -p fin-contracts -p fin-debug-server -p fin-cli --quiet`
+  - `python3 scripts/check-code-line-limit.py`
+
+## 2026-04-19 qqbot text channel delivery policy landed
+
+- 已新增 `rust/crates/cli/src/channel_peer_activity_delivery.rs`
+  - 持久化真源：`~/.fin/runtime/peers/qqbot/activity_delivery_state.json`
+  - 负责：
+    - 绑定当前会话对应的用户 target
+    - 基于 `previous delivered card view vs current card view` 做 diff
+    - 生成 compact text redraw
+    - 在 active 状态下按 60s 规则允许最小 heartbeat delivery
+- `qqbot bridge` 现在的最小闭环：
+  - 收到用户消息后先绑定 target
+  - 正常 assistant reply 会尝试**嵌入一份 compact activity card**
+  - 后台 activity loop 每 5s 检查一次，但只有：
+    - card diff 非空，或
+    - active 状态且距离上次发送 >= 60s
+    才会发送新的 compact redraw
+- 当前实现边界：
+  - 非编辑渠道不做“逐行 delta”，而是发送 compact redraw 文本
+  - delivery 只以 `user_card + source_cards` 的 signature 作为比较真源
+  - 还没有做更细的 verbose/source 分片投递策略
+- 事件：
+  - `channel.peer.activity_card_embedded`
+  - `channel.peer.activity_card_send_requested`
+  - `channel.peer.activity_card_send_failed`
+  - `channel.peer.activity_card_prepare_failed`
+
+## 2026-04-19 qqbot channel conversation/session restore + attached keepalive
+
+- 用户纠正后的 blocker 已确认：问题不是 activity card 是否刷新，而是 qqbot 之前只是单次 bridge，没有真正的 `target -> session` 会话恢复、session truth 驱动的自动回复，以及 bridge 异常后的保活。
+- 本轮已补 `~/.fin/runtime/channels/qqbot/conversations.json` 作为 channel conversation 真源：记录 `target / session_id / last_inbound_message_id / last_delivered_message_id`，用于 target 级 session restore、重复消息去重、outbound cursor 推进。
+- qqbot ingress 现已改成：`message.ingest -> conversation resolve/restore -> session binding -> runtime inference -> session messages delivery`；正常 reply 不再直接依赖 handler 返回文本，而是从 session `conversation/messages.json` 读取新增 assistant/system 消息并发送。
+- 后台 activity loop 现先扫描 conversations 做 pending outbound delivery，再做 activity-card heartbeat/diff；因此 reminder / queued follow-up / 后续 system notice 也能通过同一条 session-truth 通道自动外发。
+- built-in qqbot bridge 已从“单 child 挂在 web_debug”升级为 attached supervisor：runner 进程退出后会产出 `bridge_process_exited / bridge_restart_scheduled` 并按固定 backoff 自动重启。当前仍是 attached keepalive，不是最终 detached dual-daemon；但已补最小 crash-restart 能力。
+- debug 观察新增：`GET /api/qqbot_conversations.json`。定位 qqbot“有对话但无上下文/无自动回复”时，先查 conversations registry，再查 session messages，再查 bridge events。
+
+## 2026-04-19 qqbot pairing default changed to persistent
+
+- 用户确认：channel peer 的默认 pairing 过期没有意义，只会制造“agent 像死了”的假故障。
+- 已改为：`/qqbot pair` 默认持久绑定（`session_expires_at=null`, `session_ttl_minutes=null`）；只有显式传 TTL 才会做限时绑定，显式 `/qqbot expire` 仍保留。
+- 已实测 live 4040：`/qqbot pair` 返回 `expires_at=persistent`，并且 `~/.fin/runtime/peers/qqbot/state.json` 已落成 `session_expires_at=null`。
+
+## 2026-04-19 qqbot replay cursor + attachment ingress + stable activity signature
+
+- conversation 首次绑定到已有 session 时，delivery cursor 现在会初始化到该 session 当前最后一条可发送的 assistant/system message；这样后续只会发“新产生的回复”，不会把旧历史整段补发。
+- qqbot 附件现在走白名单摘要链路：`channel ingress attachments -> ChatSendRequest.attachments -> DemoRequest.attachment_summaries -> ContextAssemblyInput -> current_input.attachments -> model input assembler`。当前是 metadata 进入上下文，不做图片下载/视觉解析。
+- 已做真实闭环验证：本地 `/api/chat/send` 传入附件 `demo-proof.png` 后，模型直接回复 `demo-proof.png`，并且 `~/.fin/runtime/current/current_context.json` 可见结构化 `attachments`。
+- activity card diff 签名已改成忽略 `updated_at` / `generated_at` 这类易变字段，避免纯文字 channel 每 5 秒把同一张卡重复当成 diff；当前无变化时只剩 60s heartbeat。
+
+## 2026-04-20 pending queue attachment persistence + qqbot runner EPIPE hardening
+
+- pending input 现在不再只存 `message`，而是持久化 `source + attachments`；因此当 channel 消息在 `running/paused/waiting_external` 阶段被排队后，后续 `/tick` / `/resume-run` 驱动时，可以把原始 channel 来源与附件 metadata 一起恢复回 `current_input`。
+- 已补回归：scheduler driver 会把 queued input 的 `source/attachments` 传给下一轮推理；`paused session` 场景会把 `channel_ingress` 的附件写入 `queue/pending_inputs.json`。
+- qqbot builtin runner 已加 `stdout EPIPE / ERR_STREAM_DESTROYED` 防护：检测到 stdio 断裂时直接置 `stopping=true`、清理连接并 `exit(0)`，避免 Node 因未处理 `process.stdout` error 崩成 noisy crash。
+- 当前证据层级：队列恢复已由 Rust 测试覆盖；runner 防护已确认写入生成的 `~/.fin/runtime/peers/qqbot/bin/qqbot-peer-runner.mjs`，但尚未做一次专门的 pipe-break live 注入验证。
+
+## 2026-04-20 qqbot activity heartbeat spam closeout
+
+- 真源确认：重复刷屏不是多进程，也不是 signature 抖动；是 `channel.peer.activity_card_send_requested(reason=heartbeat)` 在 `ready/idle` 无变化时仍每 60s 投递。
+- 修复口径：
+  - heartbeat 只允许 `running/paused`；
+  - `pairing_required / binding_mismatch / no active session` 时 `prepare_periodic_delivery` 直接静默，并清空 `activity_delivery_state.target/session_id`；
+  - activity card 的 peer stage 不再把 `pairing_required` 渲染成旧的 `bound to session ...`。
+- 验证：
+  - Rust tests：`cargo test -p fin-cli channel_peer --manifest-path rust/Cargo.toml --quiet`，`cargo test -p fin-runtime activity_cards --manifest-path rust/Cargo.toml --quiet`
+  - live：重启 4040 后，`~/.fin/runtime/peers/qqbot/activity_delivery_state.json` 已变为 `target=null, session_id=null`，并且 events tail 不再新增 `reason=heartbeat`。
+
+## 2026-04-20 qqbot text card attention pass
+
+- 用户反馈：qqbot 文字卡“没有注意力”，不利于扫读当前焦点。
+- 本轮调整只改 compact text render，不改 runtime truth：
+  - 顶部改为 `🌐 Global status`
+  - 第二行直接显示当前 focus source 标题
+  - 第三行显示高注意力状态摘要（`🔄/⏳/✅/❌`）
+  - `sources:` / `stage:` / `detail:` / `source:` 改为 `👥 / 📍 / ⏳/❌ / 🧩`
+  - 默认不再把 session/task/focus id 这类低价值标识堆到第一屏
+- 验证：`cargo test -p fin-cli channel_peer_activity_delivery --manifest-path rust/Cargo.toml --quiet`
+
+## 2026-04-20 qqbot text card semantic action pass
+
+- 继续把文字卡从“内部状态串”往“人类可扫读进度卡”收敛：
+  - `phase=inference_completed next_step=...` 映射为自然语义（如“本轮推理完成，正在整理结果 / 准备继续下一步”）
+  - `bound to session ... / pairing required / binding invalidated` 映射为中文状态
+  - 最近动作按语义渲染：`搜索 / 查看 / 修改 / 计划 / 命令 / 模型 / 推理`
+- 作用：qqbot 卡片现在更像 finger 的“当前在做什么”提示，而不是把 provider/tool 内部字段直接甩给用户。
+- 验证：
+  - `cargo test -p fin-cli channel_peer_activity_delivery --manifest-path rust/Cargo.toml --quiet`
+  - `cargo build -p fin-cli --manifest-path rust/Cargo.toml`
+
+## 2026-04-20 qqbot text card checklist pass
+
+- 继续强化“注意力”：
+  - focus source 下方新增最近动作 checklist，前缀固定 `✅`
+  - source 行只保留“谁在做什么”，不再把动作细节塞进同一行
+  - `provider.call` 会优先提取 prompt 前半段，避免把 `输入 → 输出` 整段丢给用户
+- 当前卡片结构更接近：
+  - 标题 / 焦点 / 状态
+  - 活跃源
+  - 当前阶段
+  - focus source
+  - 最近动作 checklist
+
+## 2026-04-20 qqbot attachment-only ingress fix
+
+- 真源：图片消息已进入 `channel.peer.message_ingested`，但因 `content_preview=""` 且 `attachment_count=1`，随后被 `channel.peer.message_rejected(reason=empty_text_payload)` 直接拒绝，所以没有进入推理。
+- 修复：qqbot inbound 现在对“空文本 + 有附件”不再 reject，而是框架生成一条附件说明型 fallback message 进入正常推理链；“空文本 + 无附件”仍然拒绝。
+- 验证：
+  - `cargo test -p fin-cli channel_peer_qqbot_bridge --manifest-path rust/Cargo.toml --quiet`
+  - `cargo build -p fin-cli --manifest-path rust/Cargo.toml`
+
+## 2026-04-20 qqbot text-channel sanitize + progress restore
+
+- 用户指出：文字通道回复里仍带 `<fin_user_response>` 标签和 `**markdown**` 噪音，并且没有 progress update。
+- 真源：
+  - outbound 发送时直接使用 session 原始 assistant content，未做 text-channel sanitize；
+  - qqbot peer 处于 `pairing_required/session_valid=false` 时，activity delivery loop 不会继续发 progress cards。
+- 修复：
+  - `deliver_pending_messages_for_target` 发送前统一做 text-channel sanitize：去掉 `fin_*` 标签块、`**/__/\`` 等 markdown 强调噪音；
+  - inbound 恢复到已有 session 后，自动把 qqbot peer pairing 恢复为 `bound`，让 activity delivery 恢复工作。
+- 验证：
+  - `cargo test -p fin-cli channel_peer_qqbot_bridge --manifest-path rust/Cargo.toml --quiet`
+  - `cargo build -p fin-cli --manifest-path rust/Cargo.toml`
+## 2026-04-20 qqbot inbound ack + no-silent-failure
+
+- 框架规则补齐：qqbot ingress 一旦完成去重判定，就先发一条用户可见回执“已收到，正在处理。”，不能等模型跑完才首条可见反馈。
+- 所有已进入 ingress 的异常/拒绝路径必须用户可见：未绑定会话、空 payload、处理异常、以及“本轮没有新可发送回复”都要显式回复，不能只记 event。
+- 诊断增强：runner 现在会把每个 gateway dispatch 的 `eventType/messageId/timestamp` 打到 stderr，并对未处理事件名显式记录，便于定位“connected 但没 ingress”的真源。
+
+## 2026-04-20 qqbot pairing semantic correction
+
+- 用户指出真问题：当前实现把“上游 bot 已登录/已鉴权”和“当前 session 绑定”混成一个 `pairing_required` 状态，导致 session mismatch/expire 后看起来像要重新配对/重新鉴权。
+- 修正后口径：
+  - `connectivity_state + upstream_authenticated_at` 表示 bot 是否已登录服务器；
+  - `binding_state + session_valid` 只表示当前是否绑定到活动 session。
+- 当前实现中，session mismatch/expire 只会释放到 `binding_state=unbound`，不会再打回 `pairing_required`；已登录 peer 等下一条真实 inbound 时可基于 conversations 自动恢复 session 绑定。
+
+## 2026-04-20 progress semantic cleanup
+
+- 用户纠正：文字卡 / progress 不应把用户上两轮提示词、provider base URL 这种内部输入细节当成“模型进度”展示。
+- 修正后规则：
+  - `provider.call` 的语义展示只保留模型标识（例如 `ali-coding-plan.qwen3.6-plus`），不显示 endpoint/base URL；
+  - progress recent actions 优先显示真实工具调用；如果存在非 provider 工具，不再让 `provider.call` 占据 recent items；
+  - provider 类动作只作为“模型已调用/已返回”的弱提示，不再回显 prompt 文本。
+
+## 2026-04-20 tool catalog parity fix
+
+- 用户指出模型报告的可用工具列表不完整；真源确认是 `runtime::tool_catalog` 漏掉了若干工具，而不是模型自己漏报。
+- 当前已补回的可调用 model tools：
+  - `update_plan`
+  - `session.list`
+- 当前已显式暴露但标为 disabled/planned 的工具族：
+  - `apply_patch`
+  - `view_image`
+  - `context_history.rebuild`
+  - `project.task.status / project.task.list`
+- 固定规则：
+  - tool catalog 必须与 runtime dispatcher 保持一致；
+  - 不能让“文档/记忆里存在但 runtime catalog 不可见”的工具静默消失；
+  - 未接线工具应进入 disabled/planned 认知面，而不是伪装成不存在。
+
+## 2026-04-20 apply_patch tool enabled
+
+- `runtime::tool_catalog` 现在把 `apply_patch` 提升为可调用 model tool，不再只停留在 disabled/planned；tool catalog 与 dispatcher 真源重新对齐。
+- `apply_patch` 当前按 Hermes 思路支持两种模式：
+  - `mode=replace`：`path + old_string + new_string + replace_all?`
+  - `mode=patch`：V4A patch 文本（`*** Begin Patch` ...）
+- runtime 会把 patch 成功结果写成 `ToolExecutionRecord + tool.apply_patch_completed`，并在有 `runtime_home` 时落 `runtime/tools/patch_receipts/*.json`，供 Web/QQ/debug 统一消费。
+- patch 写入被限制在当前 `project.cwd / project_root` scope 内；相对路径没有 workspace scope 时直接失败，避免模型越界写盘。
+- 验证：
+  - `cargo test -p fin-runtime tool_dispatch --manifest-path rust/Cargo.toml --quiet`
+  - `cargo test -p fin-runtime context_view --manifest-path rust/Cargo.toml --quiet`
+  - `cargo build -p fin-cli --manifest-path rust/Cargo.toml --quiet`
+
+## 2026-04-20 tool prompt + query tools closure
+
+- prompt 层已强化 `apply_patch` 使用规则：模型现在明确被告知“有界单点编辑优先用 replace 模式，只有多文件/增删改移动才用 patch 模式”，并且工具列表渲染不再只显示工具名摘要，而是带 `use/avoid/input/output/example`。
+- runtime 现已补齐并接线的查询/辅助 model tools：
+  - `view_image`
+  - `context_history.rebuild`
+  - `project.task.status`
+  - `project.task.list`
+- `view_image` 当前是真实可调用但边界诚实：只返回附件/本地图片的引用元数据（path/url/size/dimensions），不伪装成像素级 vision 推理。
+- `context_history.rebuild` 当前做的是 framework-owned rebuild bookkeeping：基于 `current_context.json + recent_contexts/digests/reasoning/tools` 刷新 session/runtime 的 rebuild-index，而不是让模型手工压缩历史。
+- `project.task.status/list` 现在直接读 session truth（routing/execution_state/plan/messages）给任务列表与状态，不再让模型靠记忆猜 task 状态。

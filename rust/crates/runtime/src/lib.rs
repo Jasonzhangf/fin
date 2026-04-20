@@ -10,6 +10,9 @@ use fin_provider::{InferenceProvider, PreparedRequest, ProviderRequest, Provider
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use thiserror::Error;
+mod activity_cards;
+#[cfg(test)]
+mod activity_cards_tests;
 #[cfg(test)]
 mod assembler_tests;
 mod closure_runtime;
@@ -39,11 +42,21 @@ mod tool_dispatch_extended_collab;
 mod tool_dispatch_extended_collab_coordination;
 mod tool_dispatch_extended_collab_mailbox;
 mod tool_dispatch_extended_exec;
+mod tool_dispatch_extended_patch;
+mod tool_dispatch_extended_patch_v4a;
+mod tool_dispatch_extended_query;
+mod tool_dispatch_extended_query_history;
+mod tool_dispatch_extended_query_image;
+mod tool_dispatch_extended_query_task;
 mod tool_dispatch_peer;
 #[cfg(test)]
+mod tool_dispatch_query_tests;
+#[cfg(test)]
 mod tool_dispatch_tests;
+mod tool_semantics;
 mod trace_records;
 mod turn_records;
+pub use activity_cards::build_activity_cards;
 pub use context_view::{ContextAssemblyInput, ContextViewBuilder};
 pub use control_feedback::ControlFeedbackBuilder;
 pub use control_plane::{

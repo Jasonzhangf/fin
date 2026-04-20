@@ -27,6 +27,18 @@ fn context_with_runtime_home(runtime_home: &Path) -> MinimalContextView {
     }
 }
 
+fn context_with_runtime_home_and_cwd(runtime_home: &Path, cwd: &Path) -> MinimalContextView {
+    MinimalContextView {
+        project: Some(ProjectContextBlock {
+            runtime_home: Some(runtime_home.display().to_string()),
+            cwd: Some(cwd.display().to_string()),
+            project_root: Some(cwd.display().to_string()),
+            ..ProjectContextBlock::default()
+        }),
+        ..MinimalContextView::default()
+    }
+}
+
 fn refs() -> EntityRefs {
     EntityRefs {
         session_id: Some("session-tool-dispatch".into()),
@@ -107,6 +119,104 @@ fn exec_command_and_write_stdin_replay_session_work() {
 }
 
 #[test]
+fn apply_patch_replace_mode_updates_file_and_writes_receipt() {
+    let runtime_home = temp_runtime_home("apply-patch-replace");
+    fs::create_dir_all(&runtime_home).expect("runtime_home");
+    let workspace = runtime_home.join("workspace");
+    fs::create_dir_all(&workspace).expect("workspace");
+    let file_path = workspace.join("sample.txt");
+    fs::write(&file_path, "alpha\nbeta\n").expect("seed file");
+    let context = context_with_runtime_home_and_cwd(&runtime_home, &workspace);
+
+    let result = execute_model_tools(
+        "op-apply-patch-replace",
+        "trace-apply-patch-replace",
+        &refs(),
+        "2026-04-20T12:00:00+08:00",
+        &context,
+        1,
+        &[ModelToolCall {
+            tool_name: "apply_patch".into(),
+            arguments: json!({
+                "path": "sample.txt",
+                "old_string": "beta",
+                "new_string": "gamma",
+            }),
+        }],
+    );
+    let record = result
+        .tool_records
+        .iter()
+        .find(|item| item.tool_name == "apply_patch")
+        .expect("apply_patch record");
+    assert_eq!(record.status, "completed");
+    assert_eq!(
+        fs::read_to_string(&file_path).expect("patched file"),
+        "alpha\ngamma\n"
+    );
+    assert!(
+        result
+            .events
+            .iter()
+            .any(|(event_type, _)| event_type == "tool.apply_patch_completed")
+    );
+    assert!(
+        record
+            .artifact_refs
+            .iter()
+            .any(|value| value.contains("sample.txt"))
+    );
+}
+
+#[test]
+fn apply_patch_patch_mode_supports_update_and_add() {
+    let runtime_home = temp_runtime_home("apply-patch-v4a");
+    fs::create_dir_all(&runtime_home).expect("runtime_home");
+    let workspace = runtime_home.join("workspace");
+    fs::create_dir_all(&workspace).expect("workspace");
+    let file_path = workspace.join("src.txt");
+    fs::write(&file_path, "before\nstay\n").expect("seed file");
+    let context = context_with_runtime_home_and_cwd(&runtime_home, &workspace);
+
+    let result = execute_model_tools(
+        "op-apply-patch-v4a",
+        "trace-apply-patch-v4a",
+        &refs(),
+        "2026-04-20T12:00:01+08:00",
+        &context,
+        1,
+        &[ModelToolCall {
+            tool_name: "apply_patch".into(),
+            arguments: json!({
+                "mode": "patch",
+                "patch": "*** Begin Patch\n*** Update File: src.txt\n@@\n-before\n+after\n*** Add File: added.txt\n+hello\n+world\n*** End Patch\n",
+            }),
+        }],
+    );
+    let record = result
+        .tool_records
+        .iter()
+        .find(|item| item.tool_name == "apply_patch")
+        .expect("apply_patch record");
+    assert_eq!(record.status, "completed");
+    assert_eq!(
+        fs::read_to_string(&file_path).expect("updated file"),
+        "after\nstay\n"
+    );
+    assert_eq!(
+        fs::read_to_string(workspace.join("added.txt")).expect("added file"),
+        "hello\nworld\n"
+    );
+    assert!(
+        record
+            .output_summary
+            .as_deref()
+            .unwrap_or_default()
+            .contains("created=1")
+    );
+}
+
+#[test]
 fn mailbox_send_then_poll_consume_produces_expected_events() {
     let runtime_home = temp_runtime_home("mailbox");
     fs::create_dir_all(&runtime_home).expect("runtime_home");
@@ -171,4 +281,91 @@ fn mailbox_send_then_poll_consume_produces_expected_events() {
     let inbox_text = fs::read_to_string(&inbox_path).expect("inbox text");
     let inbox: Vec<serde_json::Value> = serde_json::from_str(&inbox_text).expect("inbox json");
     assert!(inbox.is_empty());
+}
+
+#[test]
+fn update_plan_persists_runtime_plan_artifact() {
+    let runtime_home = temp_runtime_home("plan");
+    fs::create_dir_all(&runtime_home).expect("runtime_home");
+    let session_dir = runtime_home.join("sessions/2026/04/session-tool-dispatch");
+    fs::create_dir_all(&session_dir).expect("session_dir");
+    let context = context_with_runtime_home(&runtime_home);
+
+    let result = execute_model_tools(
+        "op-plan",
+        "trace-plan",
+        &refs(),
+        "2026-04-20T10:00:00+08:00",
+        &context,
+        1,
+        &[ModelToolCall {
+            tool_name: "update_plan".into(),
+            arguments: json!({
+                "explanation": "close current runtime gap",
+                "steps": [
+                    {"step":"inspect tool catalog","status":"completed"},
+                    {"step":"patch runtime","status":"in_progress"},
+                    {"step":"run tests","status":"pending"}
+                ]
+            }),
+        }],
+    );
+    let record = result
+        .tool_records
+        .iter()
+        .find(|item| item.tool_name == "update_plan")
+        .expect("update_plan record");
+    assert_eq!(record.status, "completed");
+    assert!(
+        result
+            .events
+            .iter()
+            .any(|(event_type, _)| event_type == "plan.updated")
+    );
+    let runtime_plan: serde_json::Value = serde_json::from_str(
+        &fs::read_to_string(runtime_home.join("runtime/current/current_plan_update.json"))
+            .expect("runtime plan"),
+    )
+    .expect("runtime plan json");
+    assert_eq!(
+        runtime_plan["steps"].as_array().map(|items| items.len()),
+        Some(3)
+    );
+}
+
+#[test]
+fn session_list_returns_recent_session_ids() {
+    let runtime_home = temp_runtime_home("session-list");
+    fs::create_dir_all(runtime_home.join("sessions/2026/04/session-a")).expect("session-a");
+    fs::create_dir_all(runtime_home.join("sessions/2026/04/session-b")).expect("session-b");
+    fs::create_dir_all(runtime_home.join("sessions/2026/05/session-c")).expect("session-c");
+    let context = context_with_runtime_home(&runtime_home);
+
+    let result = execute_model_tools(
+        "op-sessions",
+        "trace-sessions",
+        &refs(),
+        "2026-04-20T10:01:00+08:00",
+        &context,
+        1,
+        &[ModelToolCall {
+            tool_name: "session.list".into(),
+            arguments: json!({ "limit": 2 }),
+        }],
+    );
+    let record = result
+        .tool_records
+        .iter()
+        .find(|item| item.tool_name == "session.list")
+        .expect("session.list record");
+    assert_eq!(record.status, "completed");
+    let output = record.output_summary.as_deref().unwrap_or_default();
+    assert!(output.contains("sessions=2"));
+    assert!(output.contains("session-c"));
+    assert!(
+        result
+            .events
+            .iter()
+            .any(|(event_type, _)| event_type == "session.list_completed")
+    );
 }

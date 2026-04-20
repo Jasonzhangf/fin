@@ -6,7 +6,8 @@ use crate::{
 };
 use fin_contracts::{
     ContextControlBlock, CurrentInputBlock, DigestRecord, EntityRefs, HistoryBlock,
-    KnowledgeArtifactBlock, MinimalContextView, ReasoningViewRecord, ToolExecutionRecord,
+    InputAttachmentSummary, KnowledgeArtifactBlock, MinimalContextView, ReasoningViewRecord,
+    ToolExecutionRecord,
 };
 use std::collections::BTreeSet;
 
@@ -30,6 +31,7 @@ pub struct ContextAssemblyInput {
     pub runtime_home: Option<String>,
     pub cwd: Option<String>,
     pub selected_paths: Vec<String>,
+    pub attachment_summaries: Vec<InputAttachmentSummary>,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -135,6 +137,7 @@ impl ContextViewBuilder {
                 source: input.source,
                 operation_id: input.operation_id,
                 trace_id: input.trace_id,
+                attachments: input.attachment_summaries,
             }),
         }
     }

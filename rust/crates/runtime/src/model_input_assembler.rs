@@ -2,7 +2,7 @@ use crate::{
     context_blocks::{render_peer_lines, render_project_lines, render_role_prompt_lines},
     prompt_assembly::{exact_control_feedback_schema_example, mandatory_response_format_lines},
 };
-use fin_contracts::MinimalContextView;
+use fin_contracts::{InputAttachmentSummary, MinimalContextView, ToolCatalogEntry};
 
 #[derive(Debug, Clone, Default)]
 pub struct ModelInputAssembler;
@@ -40,7 +40,7 @@ impl ModelInputAssembler {
             let model_tools = tools
                 .model_tools
                 .iter()
-                .map(|tool| format!("{} ({})", tool.tool_name, tool.summary))
+                .map(render_tool_entry)
                 .collect::<Vec<_>>();
             if !model_tools.is_empty() {
                 sections.push(format!("Model tools:\n- {}", model_tools.join("\n- ")));
@@ -48,7 +48,7 @@ impl ModelInputAssembler {
             let framework_tools = tools
                 .framework_tools
                 .iter()
-                .map(|tool| format!("{} ({})", tool.tool_name, tool.summary))
+                .map(render_tool_entry)
                 .collect::<Vec<_>>();
             if !framework_tools.is_empty() {
                 sections.push(format!(
@@ -102,6 +102,12 @@ impl ModelInputAssembler {
             }
         }
         sections.push(format!("Current user input:\n{input}"));
+        if let Some(current_input) = &context.current_input {
+            let lines = render_attachments(current_input.attachments.as_slice());
+            if !lines.is_empty() {
+                sections.push(format!("Input attachments:\n- {}", lines.join("\n- ")));
+            }
+        }
         if context.role_prompt.is_some() {
             sections.push(format!(
                 "Mandatory final answer format:\n- {}",
@@ -115,4 +121,56 @@ impl ModelInputAssembler {
 
         sections.join("\n\n")
     }
+}
+
+fn render_attachments(items: &[InputAttachmentSummary]) -> Vec<String> {
+    items
+        .iter()
+        .map(|item| {
+            let mut parts = Vec::new();
+            let label = item
+                .name
+                .as_deref()
+                .or(item.content_type.as_deref())
+                .or(item.url.as_deref())
+                .unwrap_or("attachment");
+            parts.push(label.to_string());
+            if let Some(kind) = (!item.kind.trim().is_empty()).then_some(item.kind.as_str()) {
+                parts.push(format!("kind={kind}"));
+            }
+            if let Some(size_bytes) = item.size_bytes {
+                parts.push(format!("size={}B", size_bytes));
+            }
+            if let (Some(width), Some(height)) = (item.width, item.height) {
+                parts.push(format!("dimensions={}x{}", width, height));
+            }
+            if let Some(url) = item.url.as_deref() {
+                parts.push(format!("url={url}"));
+            }
+            if let Some(path) = item.local_path.as_deref() {
+                parts.push(format!("path={path}"));
+            }
+            parts.join(" · ")
+        })
+        .collect()
+}
+
+fn render_tool_entry(tool: &ToolCatalogEntry) -> String {
+    let mut lines = vec![format!("{} — {}", tool.tool_name, tool.summary)];
+    if !tool.when_to_use.is_empty() {
+        lines.push(format!("use: {}", tool.when_to_use.join(" | ")));
+    }
+    if !tool.when_not_to_use.is_empty() {
+        lines.push(format!("avoid: {}", tool.when_not_to_use.join(" | ")));
+    }
+    if !tool.input_schema_summary.trim().is_empty() {
+        lines.push(format!("input: {}", tool.input_schema_summary));
+    }
+    if !tool.output_schema_summary.trim().is_empty() {
+        lines.push(format!("output: {}", tool.output_schema_summary));
+    }
+    if !tool.example_uses.is_empty() {
+        lines.push(format!("example: {}", tool.example_uses.join(" | ")));
+    }
+    lines.join("\n  ")
 }

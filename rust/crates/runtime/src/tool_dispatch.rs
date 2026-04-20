@@ -44,6 +44,18 @@ pub(super) fn execute_model_tools(
     for (index, call) in tool_calls.iter().enumerate() {
         let tool_call_id = format!("tool-model-{operation_id}-r{round_index:02}-{index:02}");
         let handled = match call.tool_name.as_str() {
+            "update_plan" => tool_dispatch_control::handle_update_plan(
+                &mut outcome,
+                &dispatch_input,
+                &tool_call_id,
+                &call.arguments,
+            ),
+            "session.list" => tool_dispatch_control::handle_session_list(
+                &mut outcome,
+                &dispatch_input,
+                &tool_call_id,
+                &call.arguments,
+            ),
             "peer.list" => tool_dispatch_peer::handle_peer_list(
                 &mut outcome,
                 &dispatch_input,
@@ -69,6 +81,36 @@ pub(super) fn execute_model_tools(
                 &call.arguments,
             ),
             "reasoning.stop" => tool_dispatch_control::handle_reasoning_stop(
+                &mut outcome,
+                &dispatch_input,
+                &tool_call_id,
+                &call.arguments,
+            ),
+            "apply_patch" => tool_dispatch_extended::handle_apply_patch(
+                &mut outcome,
+                &dispatch_input,
+                &tool_call_id,
+                &call.arguments,
+            ),
+            "view_image" => tool_dispatch_extended::handle_view_image(
+                &mut outcome,
+                &dispatch_input,
+                &tool_call_id,
+                &call.arguments,
+            ),
+            "context_history.rebuild" => tool_dispatch_extended::handle_context_history_rebuild(
+                &mut outcome,
+                &dispatch_input,
+                &tool_call_id,
+                &call.arguments,
+            ),
+            "project.task.status" => tool_dispatch_extended::handle_project_task_status(
+                &mut outcome,
+                &dispatch_input,
+                &tool_call_id,
+                &call.arguments,
+            ),
+            "project.task.list" => tool_dispatch_extended::handle_project_task_list(
                 &mut outcome,
                 &dispatch_input,
                 &tool_call_id,

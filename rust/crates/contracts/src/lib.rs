@@ -2,16 +2,21 @@ use fin_shared::require_non_empty;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
+mod activity_cards;
 mod context;
 mod daemon;
 mod feedback;
 mod records;
 
+pub use activity_cards::{
+    ActivityCardsSnapshot, ActivitySourceSummary, SourceActivityCardView, ToolSemanticView,
+    UserActivityCardView,
+};
 pub use context::{
     ContextControlBlock, CurrentInputBlock, DaemonStateSummary, HistoryBlock,
-    KnowledgeArtifactBlock, MinimalContextView, PeerBindingSummary, PeerContextBlock,
-    PeerDescriptorSummary, ProjectContextBlock, ProjectRef, PromptLayerSummary, PromptModuleEntry,
-    RolePromptBlock, ToolCatalogBlock, ToolCatalogEntry,
+    InputAttachmentSummary, KnowledgeArtifactBlock, MinimalContextView, PeerBindingSummary,
+    PeerContextBlock, PeerDescriptorSummary, ProjectContextBlock, ProjectRef, PromptLayerSummary,
+    PromptModuleEntry, RolePromptBlock, ToolCatalogBlock, ToolCatalogEntry,
 };
 pub use daemon::{DaemonRecoveryActionRecord, DaemonStateRecord};
 pub use feedback::ControlFeedback;

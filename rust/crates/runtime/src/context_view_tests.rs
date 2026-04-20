@@ -1,6 +1,6 @@
 use crate::{ContextAssemblyInput, ContextViewBuilder, WorkerRuntime};
 use fin_config::{ConfigMapper, ProviderProtocol, UserConfig, UserProviderConfig};
-use fin_contracts::{DigestRecord, EntityRefs};
+use fin_contracts::{DigestRecord, EntityRefs, InputAttachmentSummary};
 use std::collections::BTreeMap;
 
 fn worker_runtime() -> WorkerRuntime {
@@ -65,6 +65,15 @@ fn context_view_builder_populates_rich_blocks() {
             runtime_home: Some("/tmp/fin".into()),
             cwd: Some(cwd.clone()),
             selected_paths: vec!["src".into(), "docs".into()],
+            attachment_summaries: vec![InputAttachmentSummary {
+                attachment_id: Some("att-1".into()),
+                kind: "image/png".into(),
+                name: Some("demo.png".into()),
+                url: Some("https://example.com/demo.png".into()),
+                width: Some(128),
+                height: Some(64),
+                ..InputAttachmentSummary::default()
+            }],
         },
     );
 
@@ -193,7 +202,7 @@ fn context_view_builder_populates_rich_blocks() {
     );
     assert_eq!(
         context.tools.as_ref().map(|v| v.model_tools.len()),
-        Some(11)
+        Some(18)
     );
     assert_eq!(
         context.tools.as_ref().map(|v| v.framework_tools.len()),
@@ -204,11 +213,81 @@ fn context_view_builder_populates_rich_blocks() {
             .tools
             .as_ref()
             .map(|v| v.tool_selection_policy.len()),
-        Some(6)
+        Some(8)
     );
     assert_eq!(
         context.tools.as_ref().map(|v| v.disabled_tools.len()),
-        Some(6)
+        Some(3)
+    );
+    assert!(
+        context
+            .tools
+            .as_ref()
+            .map(|v| v
+                .model_tools
+                .iter()
+                .any(|tool| tool.tool_name == "update_plan"))
+            .unwrap_or(false)
+    );
+    assert!(
+        context
+            .tools
+            .as_ref()
+            .map(|v| v
+                .model_tools
+                .iter()
+                .any(|tool| tool.tool_name == "session.list"))
+            .unwrap_or(false)
+    );
+    assert!(
+        context
+            .tools
+            .as_ref()
+            .map(|v| v
+                .model_tools
+                .iter()
+                .any(|tool| tool.tool_name == "apply_patch"))
+            .unwrap_or(false)
+    );
+    assert!(
+        context
+            .tools
+            .as_ref()
+            .map(|v| v
+                .model_tools
+                .iter()
+                .any(|tool| tool.tool_name == "view_image"))
+            .unwrap_or(false)
+    );
+    assert!(
+        context
+            .tools
+            .as_ref()
+            .map(|v| v
+                .model_tools
+                .iter()
+                .any(|tool| tool.tool_name == "context_history.rebuild"))
+            .unwrap_or(false)
+    );
+    assert!(
+        context
+            .tools
+            .as_ref()
+            .map(|v| v
+                .model_tools
+                .iter()
+                .any(|tool| tool.tool_name == "project.task.status"))
+            .unwrap_or(false)
+    );
+    assert!(
+        context
+            .tools
+            .as_ref()
+            .map(|v| v
+                .model_tools
+                .iter()
+                .any(|tool| tool.tool_name == "project.task.list"))
+            .unwrap_or(false)
     );
     assert!(
         context
@@ -294,6 +373,10 @@ fn context_view_builder_populates_rich_blocks() {
     assert_eq!(
         context.current_input.as_ref().map(|v| v.input.as_str()),
         Some("current input")
+    );
+    assert_eq!(
+        context.current_input.as_ref().map(|v| v.attachments.len()),
+        Some(1)
     );
     assert_eq!(
         context.peer.as_ref().map(|v| v.active_peer_ids.len()),
