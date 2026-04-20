@@ -6,8 +6,12 @@ use crate::{
     execution_state::{load_pending_inputs, pause_execution, resume_execution},
     local_command_notice::append_notice_messages,
     runtime_home::{
-        SessionMessageRecord, read_last_run_value, read_recent_digests,
-        read_recent_reasoning_views, read_recent_tool_records, read_session_messages,
+        read_recent_digests, read_recent_reasoning_views, read_recent_tool_records,
+        read_session_messages,
+    },
+    session_binding::{
+        ensure_session_layout, find_session_dir, infer_session_task_id, read_json_or_empty,
+        rebind_last_run, relative_to_runtime, trim_head, write_json,
     },
     time::local_timestamp_now,
 };
@@ -15,23 +19,16 @@ use chrono::{Datelike, Local};
 use fin_config::SystemConfig;
 use fin_contracts::{ContextSnapshotRecord, EntityRefs};
 use fin_debug_server::{ChatSendRequest, ChatSendResponse, DebugBinding};
-use fin_runtime::{ContextAssemblyInput, ContextViewBuilder, WorkerRuntime};
-use serde::Serialize;
-use serde_json::{Value, json};
-use std::{
-    fs,
-    path::{Path, PathBuf},
-};
+use fin_runtime::{ContextAssemblyInput, ContextViewBuilder, create_named_local_worker};
+use serde_json::json;
+use std::path::Path;
 
 const RECENT_CONTEXT_LIMIT: usize = 8;
-
-#[path = "session_command_support.rs"]
-mod session_command_support;
-use session_command_support::*;
 
 pub(crate) fn try_handle_local_command(
     runtime_home: &Path,
     system: &SystemConfig,
+    user_toml_path: Option<&Path>,
     request: &ChatSendRequest,
     binding: &DebugBinding,
 ) -> Result<Option<ChatSendResponse>, CliError> {
@@ -39,7 +36,9 @@ pub(crate) fn try_handle_local_command(
     if !message.starts_with('/') {
         return Ok(None);
     }
-    if let Some(response) = try_handle_channel_peer_command(runtime_home, request, binding)? {
+    if let Some(response) =
+        try_handle_channel_peer_command(runtime_home, user_toml_path, request, binding)?
+    {
         return Ok(Some(response));
     }
     let mut parts = message.split_whitespace();
@@ -220,10 +219,10 @@ fn handle_compact(
     let recent_tool_records =
         read_recent_tool_records(&session_dir.join("tools/recent_tool_records.json"))?;
 
-    let worker = WorkerRuntime::from_system(
+    let worker = create_named_local_worker(
         system,
-        "agent-system",
-        "worker-system-compact",
+        runtime_home,
+        Some("system-compact"),
         "cli.local_command",
         None,
     )?;
@@ -255,6 +254,7 @@ fn handle_compact(
                 .ok()
                 .map(|path| path.display().to_string()),
             selected_paths: Vec::new(),
+            attachment_summaries: Vec::new(),
         },
     );
     let snapshot = ContextSnapshotRecord {

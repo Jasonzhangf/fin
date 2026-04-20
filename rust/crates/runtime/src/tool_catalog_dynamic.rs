@@ -57,6 +57,12 @@ pub(super) fn build_dynamic_tool_catalog_block(
             "context_history.rebuild"
             | "project.task.status"
             | "project.task.list"
+            | "project.task.create"
+            | "project.task.claim"
+            | "project.task.submit"
+            | "project.task.review"
+            | "agent.presence.list"
+            | "project.supervision.list"
             | "update_plan"
             | "session.list" => {
                 if !has_runtime_home {
@@ -152,6 +158,10 @@ fn apply_role_tool_bias(block: &mut ToolCatalogBlock, role_id: &str) {
                 "update_plan",
                 "project.task.status",
                 "project.task.list",
+                "project.task.create",
+                "project.task.review",
+                "agent.presence.list",
+                "project.supervision.list",
                 "session.list",
             ] {
                 if let Some(tool) = find_tool_mut(block, tool_name) {
@@ -168,11 +178,16 @@ fn apply_role_tool_bias(block: &mut ToolCatalogBlock, role_id: &str) {
                     .into(),
             );
             for tool_name in [
+                "agent.assign",
                 "update_plan",
                 "apply_patch",
                 "context_history.rebuild",
                 "project.task.status",
                 "project.task.list",
+                "project.task.create",
+                "project.task.claim",
+                "project.task.submit",
+                "project.task.review",
                 "exec_command",
             ] {
                 if let Some(tool) = find_tool_mut(block, tool_name) {

@@ -1,5 +1,6 @@
 use crate::{
     CliError,
+    channel_peer_activity_delivery::clear_target,
     channel_peer_connectivity::{apply_probe_failure, apply_probe_success, probe_qqbot_upstream},
     channel_peer_store::{append_peer_event, persist_state, read_json},
     time::local_timestamp_now,
@@ -11,8 +12,6 @@ use std::{fs, path::Path};
 
 const QQBOT_PEER_ID: &str = "peer-channel-gateway-qqbot-local";
 const QQBOT_PEER_KIND: &str = "channel_gateway.qqbot";
-#[allow(dead_code)]
-const DEFAULT_PAIRING_TTL_MINUTES: u64 = 30;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub(crate) struct GatewayPeerState {
@@ -95,13 +94,13 @@ pub(crate) fn ensure_builtin_qqbot_peer(runtime_home: &Path) -> Result<GatewayPe
             }),
         ));
         transition_events.push((
-            "channel.peer.pairing_required",
+            "channel.peer.binding_unbound",
             json!({
                 "runtime_state": state.runtime_state.clone(),
                 "connectivity_state": state.connectivity_state.clone(),
                 "binding_state": state.binding_state.clone(),
                 "reason": "initial_bootstrap",
-                "pairing_required": true,
+                "pairing_required": false,
             }),
         ));
     }
@@ -121,17 +120,18 @@ pub(crate) fn ensure_builtin_qqbot_peer(runtime_home: &Path) -> Result<GatewayPe
             }),
         ));
         transition_events.push((
-            "channel.peer.pairing_required",
+            "channel.peer.binding_unbound",
             json!({
                 "runtime_state": state.runtime_state.clone(),
                 "connectivity_state": state.connectivity_state.clone(),
-                "binding_state": "pairing_required",
+                "binding_state": "unbound",
                 "reason": "session_expired",
-                "pairing_required": true,
+                "pairing_required": false,
             }),
         ));
-        state.binding_state = "pairing_required".into();
+        release_binding_state(&mut state);
         sync_compat_fields(&mut state);
+        clear_target(runtime_home)?;
     }
 
     persist_state(runtime_home, &state)?;
@@ -172,7 +172,7 @@ pub(crate) fn ensure_builtin_qqbot_binding(
         "binding_state": state.binding_state.clone(),
         "reason": "binding_mismatch",
         "expected_session_id": expected_session_id,
-        "previous_session_id": bound_session_id,
+        "previous_session_id": bound_session_id.clone(),
     });
     append_peer_event(
         runtime_home,
@@ -181,24 +181,26 @@ pub(crate) fn ensure_builtin_qqbot_binding(
         invalidated_payload,
         now.as_str(),
     )?;
-    let pairing_required_payload = json!({
+    let binding_unbound_payload = json!({
         "runtime_state": state.runtime_state.clone(),
         "connectivity_state": state.connectivity_state.clone(),
-        "binding_state": "pairing_required",
+        "binding_state": "unbound",
         "reason": "binding_mismatch",
-        "pairing_required": true,
+        "pairing_required": false,
         "expected_session_id": expected_session_id,
+        "previous_session_id": bound_session_id,
     });
     append_peer_event(
         runtime_home,
         &mut state,
-        "channel.peer.pairing_required",
-        pairing_required_payload,
+        "channel.peer.binding_unbound",
+        binding_unbound_payload,
         now.as_str(),
     )?;
-    state.binding_state = "pairing_required".into();
+    release_binding_state(&mut state);
     sync_compat_fields(&mut state);
     persist_state(runtime_home, &state)?;
+    clear_target(runtime_home)?;
     Ok(state)
 }
 
@@ -210,14 +212,16 @@ pub(crate) fn complete_builtin_qqbot_pairing(
 ) -> Result<GatewayPeerState, CliError> {
     let mut state = ensure_builtin_qqbot_peer(runtime_home)?;
     let now = local_timestamp_now();
-    let ttl = ttl_minutes.unwrap_or(DEFAULT_PAIRING_TTL_MINUTES).max(1);
-    let expires_at = add_minutes(now.as_str(), ttl)?;
+    let ttl = ttl_minutes.map(|value| value.max(1));
+    let expires_at = ttl
+        .map(|minutes| add_minutes(now.as_str(), minutes))
+        .transpose()?;
 
     state.binding_state = "bound".into();
     state.paired_at = Some(now.clone());
     state.session_id = Some(session_id.trim().to_string());
-    state.session_ttl_minutes = Some(ttl);
-    state.session_expires_at = Some(expires_at.clone());
+    state.session_ttl_minutes = ttl;
+    state.session_expires_at = expires_at.clone();
     state.updated_at = now.clone();
     sync_compat_fields(&mut state);
     let pairing_payload = json!({
@@ -269,10 +273,11 @@ pub(crate) fn record_builtin_qqbot_heartbeat(
 #[allow(dead_code)]
 pub(crate) fn probe_builtin_qqbot_connectivity(
     runtime_home: &Path,
+    user_toml_path: Option<&Path>,
 ) -> Result<GatewayPeerState, CliError> {
     let mut state = ensure_builtin_qqbot_peer(runtime_home)?;
     let now = local_timestamp_now();
-    match probe_qqbot_upstream() {
+    match probe_qqbot_upstream(user_toml_path) {
         Ok(result) => {
             let payload = apply_probe_success(&mut state, result);
             append_peer_event(
@@ -329,22 +334,60 @@ pub(crate) fn force_expire_builtin_qqbot_session(
         expired_payload,
         now.as_str(),
     )?;
-    let pairing_required_payload = json!({
+    let binding_unbound_payload = json!({
         "runtime_state": state.runtime_state.clone(),
         "connectivity_state": state.connectivity_state.clone(),
-        "binding_state": "pairing_required",
+        "binding_state": "unbound",
         "reason": reason,
-        "pairing_required": true,
+        "pairing_required": false,
     });
     append_peer_event(
         runtime_home,
         &mut state,
-        "channel.peer.pairing_required",
-        pairing_required_payload,
+        "channel.peer.binding_unbound",
+        binding_unbound_payload,
         now.as_str(),
     )?;
-    state.binding_state = "pairing_required".into();
+    release_binding_state(&mut state);
     sync_compat_fields(&mut state);
+    persist_state(runtime_home, &state)?;
+    clear_target(runtime_home)?;
+    Ok(state)
+}
+
+pub(crate) fn active_builtin_qqbot_session(
+    runtime_home: &Path,
+) -> Result<Option<String>, CliError> {
+    let state = ensure_builtin_qqbot_peer(runtime_home)?;
+    if state.session_valid {
+        Ok(state.session_id)
+    } else {
+        Ok(None)
+    }
+}
+
+pub(crate) fn record_builtin_qqbot_runtime_event(
+    runtime_home: &Path,
+    event_type: &str,
+    runtime_state: Option<&str>,
+    connectivity_state: Option<&str>,
+    binding_state: Option<&str>,
+    payload: Value,
+) -> Result<GatewayPeerState, CliError> {
+    let mut state = ensure_builtin_qqbot_peer(runtime_home)?;
+    let now = local_timestamp_now();
+    if let Some(value) = runtime_state {
+        state.runtime_state = value.to_string();
+    }
+    if let Some(value) = connectivity_state {
+        state.connectivity_state = value.to_string();
+    }
+    if let Some(value) = binding_state {
+        state.binding_state = value.to_string();
+        sync_compat_fields(&mut state);
+    }
+    state.updated_at = now.clone();
+    append_peer_event(runtime_home, &mut state, event_type, payload, now.as_str())?;
     persist_state(runtime_home, &state)?;
     Ok(state)
 }
@@ -382,7 +425,7 @@ impl GatewayPeerState {
             peer_kind: QQBOT_PEER_KIND.into(),
             runtime_state: "ready_local".into(),
             connectivity_state: "local_only".into(),
-            binding_state: "pairing_required".into(),
+            binding_state: "unbound".into(),
             lifecycle_state: String::new(),
             pairing_required: false,
             session_valid: false,
@@ -416,11 +459,16 @@ fn repair_state_defaults(state: &mut GatewayPeerState, now: &str) {
     if state.binding_state.trim().is_empty() {
         state.binding_state = if state.session_valid {
             "bound".into()
-        } else if state.pairing_required {
-            "pairing_required".into()
         } else {
-            "unpaired".into()
+            "unbound".into()
         };
+    } else if state.binding_state == "pairing_required" && !state.session_valid {
+        release_binding_state(state);
+    }
+    if state.binding_state == "unbound" && !state.session_valid {
+        state.session_id = None;
+        state.session_expires_at = None;
+        state.session_ttl_minutes = None;
     }
     if state.started_at.trim().is_empty() {
         state.started_at = now.into();
@@ -433,8 +481,25 @@ fn sync_compat_fields(state: &mut GatewayPeerState) {
         "bound" => "paired_active".into(),
         "expired" => "session_expired".into(),
         "invalidated" => "binding_invalidated".into(),
-        _ => "idle_unpaired".into(),
+        _ => {
+            if matches!(
+                state.connectivity_state.as_str(),
+                "connected" | "connecting" | "auth_required" | "auth_failed" | "degraded"
+            ) || state.upstream_authenticated_at.is_some()
+            {
+                "idle_ready".into()
+            } else {
+                "idle_unpaired".into()
+            }
+        }
     };
-    state.pairing_required = !matches!(state.binding_state.as_str(), "bound");
+    state.pairing_required = matches!(state.binding_state.as_str(), "pairing_required");
     state.session_valid = matches!(state.binding_state.as_str(), "bound");
+}
+
+fn release_binding_state(state: &mut GatewayPeerState) {
+    state.binding_state = "unbound".into();
+    state.session_id = None;
+    state.session_expires_at = None;
+    state.session_ttl_minutes = None;
 }

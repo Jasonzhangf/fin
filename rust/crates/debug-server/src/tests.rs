@@ -215,11 +215,27 @@ fn response_for_root_serves_html_shell() {
 }
 
 #[test]
+fn response_for_activity_cards_ui_js_serves_compiled_module() {
+    let response = response_for_path("/activity_cards_ui.js", Path::new("/tmp/unused"));
+    let body = String::from_utf8(response.body).expect("js should be utf8");
+    assert_eq!(response.status_code, 200);
+    assert!(body.contains("activityFocusSource"));
+}
+
+#[test]
 fn response_for_chat_js_serves_compiled_module() {
     let response = response_for_path("/chat.js", Path::new("/tmp/unused"));
     let body = String::from_utf8(response.body).expect("js should be utf8");
     assert_eq!(response.status_code, 200);
     assert!(body.contains("export class ChatPane"));
+}
+
+#[test]
+fn response_for_chat_cards_js_serves_compiled_module() {
+    let response = response_for_path("/chat_cards.js", Path::new("/tmp/unused"));
+    let body = String::from_utf8(response.body).expect("js should be utf8");
+    assert_eq!(response.status_code, 200);
+    assert!(body.contains("buildTurnCards"));
 }
 
 #[test]

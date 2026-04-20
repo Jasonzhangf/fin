@@ -116,6 +116,8 @@ pub(super) fn build_project_block(
         agent_presence_summary: registry.agent_presence_summary,
         supervision_actions: registry.supervision_actions,
         project_supervision_summary: registry.project_supervision_summary,
+        assignment_queue_summary: registry.assignment_queue_summary,
+        mailbox_summary: registry.mailbox_summary,
     }
 }
 pub(super) fn build_peer_block(
@@ -472,6 +474,12 @@ pub(super) fn render_project_lines(project: &ProjectContextBlock) -> Vec<String>
     }
     if let Some(project_supervision_summary) = &project.project_supervision_summary {
         lines.push(format!("project_supervision={project_supervision_summary}"));
+    }
+    if let Some(assignment_queue_summary) = &project.assignment_queue_summary {
+        lines.push(format!("assignments={assignment_queue_summary}"));
+    }
+    if let Some(mailbox_summary) = &project.mailbox_summary {
+        lines.push(format!("mailbox={mailbox_summary}"));
     }
     lines
 }

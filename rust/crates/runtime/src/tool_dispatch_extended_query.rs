@@ -1,7 +1,7 @@
 use crate::tool_dispatch::{ToolDispatchInput, ToolDispatchOutcome};
 use crate::{
-    tool_dispatch_extended_query_history, tool_dispatch_extended_query_image,
-    tool_dispatch_extended_query_task,
+    tool_dispatch_extended_query_control, tool_dispatch_extended_query_history,
+    tool_dispatch_extended_query_image, tool_dispatch_extended_query_task,
 };
 use serde_json::Value;
 
@@ -49,6 +49,34 @@ pub(super) fn handle_project_task_list(
     arguments: &Value,
 ) -> bool {
     tool_dispatch_extended_query_task::handle_project_task_list(
+        outcome,
+        input,
+        tool_call_id,
+        arguments,
+    )
+}
+
+pub(super) fn handle_agent_presence_list(
+    outcome: &mut ToolDispatchOutcome,
+    input: &ToolDispatchInput<'_>,
+    tool_call_id: &str,
+    arguments: &Value,
+) -> bool {
+    tool_dispatch_extended_query_control::handle_agent_presence_list(
+        outcome,
+        input,
+        tool_call_id,
+        arguments,
+    )
+}
+
+pub(super) fn handle_project_supervision_list(
+    outcome: &mut ToolDispatchOutcome,
+    input: &ToolDispatchInput<'_>,
+    tool_call_id: &str,
+    arguments: &Value,
+) -> bool {
+    tool_dispatch_extended_query_control::handle_project_supervision_list(
         outcome,
         input,
         tool_call_id,

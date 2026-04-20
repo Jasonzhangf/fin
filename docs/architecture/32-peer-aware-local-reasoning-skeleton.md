@@ -4,7 +4,7 @@
 
 目标不是现在就实现 remote peer 执行，而是先保证：
 
-1. prompt 已经知道 system/project/gateway/router 的职责差异
+1. prompt 已经知道 system/project 的职责差异，并知道 gateway/router 是 peer/component 类型而不是独立 prompt role
 2. context 已经有 peer/topology/binding/daemon/channel 的固定位置
 3. 当前仍在本地单 runtime 闭环时，也不会把未来 peer 语义彻底写死在 project-only 结构里
 
@@ -31,47 +31,43 @@ single-runtime local closure
 
 原因：
 - 如果 prompt/context 里没有 peer 位置，后续接 peer plane 时一定会回头重写上下文结构
-- 如果 system/project/gateway/router 不先分 role，后续多 agent 协作会退化成“单 prompt 猜路由”
+- 如果 system/project 不先分 role、同时不把 gateway/router 明确为框架组件类型，后续多 agent 协作会退化成“单 prompt 猜路由”
 
 ---
 
-## 2. 本轮冻结：role family 最小扩展
+## 2. 本轮冻结：两类 prompt role + 多类 peer/component
 
-本地 runtime 现在至少要认识这些 role 语义：
+本地 runtime 当前只保留两类 prompt role：
 
-- `system` / `system_agent`
-- `project_agent`
+- `system`
+- `project`
+
+同时，框架还要认识这些 **peer/component 类型**，但它们不是独立 prompt role：
+
 - `capability_router` / `peer_router`
 - `channel_gateway`
-- `worker`
-- `reviewer` / `analyzer`
-- `project`（当前单项目默认角色）
+- `capability_peer` / `channel_peer` / `agent_peer`
 
 冻结规则：
 
-### 2.1 system_agent
+### 2.1 system
 - 用户入口与总编排者
 - prompt 要显式强调：
   - peer discovery / binding
   - daemon-backed recovery
   - session truth ownership
 
-### 2.2 project_agent
-- 只负责 bound task execution
+### 2.2 project
+- 负责 bound task execution 与项目内闭环
 - prompt 要显式强调：
   - system agent 持有用户 session truth
-  - 自己只回传 progress / artifact / result
+  - 自己回传 progress / artifact / result
+  - execution / review / diagnosis / handoff 是同一 project role 内部的 workflow emphasis
 
-### 2.3 capability_router / peer_router
-- 不是执行 peer，而是路由决策 role
-- prompt 要显式强调：
-  - descriptor / capability / presence / binding 优先于 prompt 猜测
-
-### 2.4 channel_gateway
-- 只做 ingress / egress / delivery
-- prompt 要显式强调：
-  - 不成为会话真源
-  - 不接管 task/session ownership
+### 2.3 peer/component taxonomy
+- `capability_router` / `peer_router` / `channel_gateway` 是框架组件类型，不是独立 prompt role
+- runtime/context 要显式保留这些对象的 schema 位置
+- 路由判断优先依据 descriptor / capability / presence / binding，而不是靠额外 role 文本猜测
 
 ---
 

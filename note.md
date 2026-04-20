@@ -2,6 +2,210 @@
 
 Updated: 2026-04-18
 
+## 2026-04-20 presence registry truth landed
+
+- `agent presence` 不再只有单条 `current_agent_presence.json`。
+- framework 现在会同时维护：
+  - `~/.fin/runtime/agents/presence_registry.json`
+  - `~/.fin/runtime/current/current_agent_presence_registry.json`
+- 目的：
+  - 让 system/status/debug 能看到所有 agent 的 busy/idle/waiting 并发状态
+  - 避免只靠 naming registry 知道“有哪些 agent”，却不知道它们当前在干嘛
+- 当前 `status_probe` 的 agent summary 已优先读取 presence registry，格式变为：
+  - `agents=2 [mbp.builder:idle, mbp.system:busy]`
+
+## 2026-04-20 system owner-loop query tools landed
+
+- 补齐了 system role 在多轮/异步 owner-loop 里需要的 framework query tools：
+  - `agent.presence.list`
+  - `project.supervision.list`
+- 当前语义：
+  - 首轮 provider 请求依然通过 context 直接带 `agent_presence_summary / project_supervision_summary`
+  - 但后续 turn 若 system agent 需要主动巡检 busy/idle/waiting、resume/recover intent，不再只靠首轮 summary 和记忆，而是通过 model-callable tool 直接回读：
+    - `~/.fin/runtime/current/current_agent_presence_registry.json`
+    - `~/.fin/runtime/current/current_project_supervision.json`
+- owner-loop 当前最小可执行查询面现在变为：
+  - `project.task.list`
+  - `project.task.status`
+  - `agent.presence.list`
+  - `project.supervision.list`
+  - `peer.list / peer.describe`
+- 已验证：
+  - `cargo test -p fin-runtime tool_dispatch_query_tests --manifest-path rust/Cargo.toml -- --nocapture`
+  - `cargo test -p fin-runtime prompt_tests --manifest-path rust/Cargo.toml -- --nocapture`
+  - `cargo test -p fin-runtime context_view_tests --manifest-path rust/Cargo.toml -- --nocapture`
+  - `cargo test -p fin-runtime --manifest-path rust/Cargo.toml --quiet`
+
+## 2026-04-20 task-system write tools landed
+
+- owner-loop 不再只有“看 task/presence/supervision”的 query 面。
+- 现在已补齐并接线最小 managed task write tools：
+  - `project.task.create`
+  - `project.task.claim`
+  - `project.task.submit`
+  - `project.task.review`
+- 当前语义：
+  - `create`：把复杂工作正式纳入 session task registry / board truth
+  - `claim`：把 task 绑定到当前执行 worker
+  - `submit`：worker 提交结果给 review owner
+  - `review`：review owner 执行 approve / reopen / block / cancel
+- 当前收下的最小 owner-loop 动作面：
+  - query：
+    - `project.task.list`
+    - `project.task.status`
+    - `agent.presence.list`
+    - `project.supervision.list`
+  - write：
+    - `project.task.create`
+    - `project.task.claim`
+    - `project.task.submit`
+    - `project.task.review`
+  - coordination：
+    - `agent.assign`
+- 已加的 guard：
+  - duplicate task id create -> failed
+  - wrong claimer submit -> failed
+  - non-review-owner review -> failed
+  - terminal task mutate -> failed
+- 已验证：
+  - `cargo test -p fin-runtime tool_dispatch_task_write_tests --manifest-path rust/Cargo.toml -- --nocapture`
+  - `cargo test -p fin-runtime prompt_tests --manifest-path rust/Cargo.toml -- --nocapture`
+  - `cargo test -p fin-runtime context_view_tests --manifest-path rust/Cargo.toml -- --nocapture`
+  - `cargo test -p fin-runtime --manifest-path rust/Cargo.toml --quiet`
+
+## 2026-04-20 worker pool presence truth landed
+
+- startup 默认 worker budget 现已固定为：
+  - `system_agent.local_worker_budget = 4`
+  - `project_agent.worker_budget = 4`
+- framework 不再只把 worker budget 留在配置字段里；当前会在 startup / presence materialization 时直接落成可观察的 worker pool truth：
+  - system worker -> `agent_kind=system_worker`
+  - project worker -> `agent_kind=project_worker`
+- presence registry 当前会带稳定 `worker_id`，并同步进入：
+  - `~/.fin/runtime/agents/presence_registry.json`
+  - `~/.fin/runtime/current/current_agent_presence_registry.json`
+- `agent.presence.list` 现在也会把 `worker_id` 暴露给模型，后续 `agent.assign` / mailbox / task owner-loop 可以基于同一份 worker truth 做目标选择，而不是让模型盲猜 `target_worker_id`
+- 已验证：
+  - `cargo test -p fin-cli agent_presence_tests::write_presence_updates_presence_registry --manifest-path rust/Cargo.toml -- --nocapture`
+  - `cargo test -p fin-cli startup_topology::tests::materialize_writes_always_on_project_and_wake_queue --manifest-path rust/Cargo.toml -- --nocapture`
+  - `cargo test -p fin-cli --manifest-path rust/Cargo.toml --quiet`
+  - `cargo test -p fin-runtime --manifest-path rust/Cargo.toml --quiet`
+  - `cargo fmt --all --manifest-path rust/Cargo.toml --check`
+
+## 2026-04-20 startup worker defaults moved out of code literals
+
+- `system/project` 默认 worker budget 不再直接硬编码在 `startup.rs` 的 Rust 字面量里。
+- 当前默认值真源改为独立配置文件：
+  - `rust/crates/config/defaults/runtime-startup.toml`
+- 语义：
+  - repo 内 baseline default 由配置文件声明
+  - 运行时仍优先读取 `~/.fin/config/system.toml`
+  - `system.toml` 不存在时，才回落到 embedded startup defaults config
+- 这样后续改默认 worker 数，不需要改 Rust 逻辑，只需要改 startup defaults config / runtime system config。
+
+## 2026-04-20 restart/startup updates now have framework-owned startup control summary
+
+- 每次 startup / restart refresh 后，framework 现在会额外落：
+  - `~/.fin/runtime/current/current_startup_control_summary.json`
+- 它统一回答：
+  - 当前 startup 配置预算（system workers / project workers / projects）
+  - 当前哪些资源已经启动
+  - 当前哪些资源处于 busy
+  - 当前 waiting / recoverable_offline / wake_actions 概况
+- `status probe` 现已直接显示 `startup=...`
+- activity cards 现会在“重启后暂无闭包执行但 framework 已完成 startup refresh”时回退显示 startup config/state 摘要，供 QQ/Web 共享同一份重启更新真源
+
+## 2026-04-20 project role owner-loop bias and minimal collaboration loop landed
+
+- `project role` 不再只偏 `claim/submit` 执行动作；当前动态工具偏置已补齐：
+  - `project.task.create`
+  - `project.task.review`
+  - `agent.assign`
+- 这样 project agent 才符合“单项目 owner / dispatcher / reviewer”的设计，不会退化成纯 worker。
+- 当前最小协作闭环已验证：
+  - system/owner `project.task.create`
+  - system/owner `agent.assign`
+  - worker `project.task.claim`
+  - worker `project.task.submit`
+  - owner `project.task.review`
+- 这条链说明：system/project/worker 当前已可在同一 runtime truth 上完成最小 managed-task 闭环；后续缺的主要是 detached execution / remote peer 真执行，不是 task truth 本身。
+
+## 2026-04-20 daemon project recovery skeleton landed
+
+- `recover_project_agents` 不再只是 daemon observation result。
+- attached daemon 当前已具备最小执行骨架：
+  - `derive recovery action`
+  - `materialize startup topology`
+  - `filter recoverable offline projects`
+  - `execute wake queue`
+  - `rematerialize startup truth`
+- 新增 recovery report：
+  - `~/.fin/runtime/projects/recovery_reports.json`
+  - `~/.fin/runtime/current/current_project_recovery.json`
+- 当前语义：
+  - local recoverable project -> 推进到 `idle/project_ready`
+  - remote recoverable project -> 推进到 `waiting/await_remote_connect`
+
+## 2026-04-20 project supervision snapshot landed
+
+- framework 新增 `project supervision snapshot`：
+  - `~/.fin/runtime/projects/supervision.json`
+  - `~/.fin/runtime/projects/supervision/<project_id>.json`
+  - `~/.fin/runtime/current/current_project_supervision.json`
+- 它不是第二套 presence，而是 framework 对每个 project agent 的“下一步控制判断”：
+  - `ready`
+  - `resume_ready`
+  - `busy`
+  - `waiting`
+  - `recover_needed`
+- 对应的最小动作：
+  - `observe_ready`
+  - `resume_project_task`
+  - `monitor_running_task`
+  - `await_remote_connect`
+  - `recover_project_agent`
+- 另外 wake request 现在会携带 `resume_task_id`，project agent 被唤醒时可以知道应接续哪个 task
+
+## 2026-04-20 project execution handoff skeleton landed
+
+- framework 不再只把 `resume_project_task` 停留在 supervision intent。
+- 对本地且 `resume_ready` 的 project，当前会继续 materialize：
+  - `~/.fin/runtime/projects/execution_handoffs.json`
+  - `~/.fin/runtime/projects/execution_handoffs/<project_id>.json`
+  - `~/.fin/runtime/current/current_project_execution_handoffs.json`
+- runtime 新增 `handoff_project_task(...)`：
+  - task 已 terminal -> skip
+  - same worker 已 claim -> noop
+  - 否则把 task 推到 `claimed` 并刷新 task registry / board
+- status probe 现会直接暴露 `project_execution_handoffs=prepared/noop/missing_task` 摘要。
+- 当前边界：
+  - 已有 handoff/claim 真源
+  - 还没有 detached/local project runtime 自动 pickup 该 task 执行
+
+## 2026-04-20 project runtime pickup truth landed
+
+- framework 新增 `project runtime pickup snapshot`：
+  - `~/.fin/runtime/projects/runtime_pickups.json`
+  - `~/.fin/runtime/projects/runtime_pickups/<project_id>.json`
+  - `~/.fin/runtime/current/current_project_runtime_pickups.json`
+- 它基于：
+  - `current_project_execution_handoffs.json`
+  - session `control/execution_state.json`
+  - session `queue/pending_inputs.json`
+- 当前最小 pickup state：
+  - `running`
+  - `waiting_external`
+  - `paused`
+  - `ready_to_resume`
+  - `claimed_idle`
+  - `missing_binding`
+  - `missing_session`
+- status probe 现已直接暴露 `project_runtime_pickups=` 摘要。
+- project agent presence 现在也会从单纯的 `resume_ready` 再推进到更贴近运行事实的 busy/waiting/idle。
+- 边界：
+  - 已经知道“是否具备继续跑的条件”
+  - 还没有真正 detached/local runtime 自动执行下一轮 provider closure
+
 ## 2026-04-19 build/install gate recovery
 
 - 已完成正式 gate recovery：
@@ -155,6 +359,12 @@ Updated: 2026-04-18
   - `cargo build -p fin-cli --manifest-path rust/Cargo.toml`
   - `npx tsc -p rust/crates/debug-server/webui/tsconfig.json`
   - live `http://127.0.0.1:4040/api/activity_cards.json` 返回 `200`
+
+## 2026-04-20 qqbot/web-debug/channel delivery corrections
+
+- `serve_web_debug` 不能把 TOML 内容当路径传给 QQ bridge；必须把原始 `user.toml` 路径一路传下去，否则 bridge 会错误回退到默认配置或 env。
+- `deliver_pending_messages_for_target` 遇到被清洗为空的 assistant/system 消息时，不能写桥接请求，也不能把 delivered cursor 往前推进。
+- activity-card heartbeat 的 active 判定需要把 `waiting` 视为活跃态，否则长等待场景会失去最小心跳更新。
 
 ## 2026-04-18 compact rebuild implementation snapshot
 
@@ -1133,7 +1343,7 @@ This direction keeps:
 
 ### 66) Step 1 lands role/runtime policy without touching provider execution semantics
 - Step 1 只落 `contracts/config/runtime` 的 role/runtime policy 最小真边界：`AgentId`/`RoleId`/`ProviderPath`/`ProviderStrategy`、system policy mapping、`RuntimePolicySnapshot`/`WorkerRuntime`。
-- user config 继续保持简单，只填 provider 必要信息；system policy 自动映射出 `default role -> explicit provider.model priority path`，不引入 user/system merge 歧义。
+- user config 继续保持简单，只填 provider 必要信息；system policy 自动映射出 `project role -> explicit provider.model priority path`，不引入 user/system merge 歧义。
 - envelope 字段与 provider execution/event 链重构保持到 Step 2/3，避免在 Step 1 提前引发 debug-server/cli/provider 的大面积返工。
 
 
@@ -1471,15 +1681,13 @@ fin should adopt the following canonical model:
 在新冻结的 peer 模型下，当前本地 runtime 推理部分还缺以下几类东西：
 
 ### A. Role / Prompt 缺口
-- 当前 role family 只有：
+- 当前 prompt role 真源已纠偏为只有：
   - `system`
-  - `worker`
-  - `reviewer/analyzer`
-  - 默认 `project`
-- 还缺明确的：
-  - `project_agent`
+  - `project`
+- `worker/reviewer/analyzer` 不再作为独立 role 扩展；这些语义应回收到 `project` role 的 workflow emphasis / tool policy 中。
+- 仍需明确的不是新 role，而是框架组件类型：
   - `capability_router` 或 `peer_router`
-  - `channel_gateway`（即使不直接推理，也应有 prompt/contract 位）
+  - `channel_gateway`（即使不直接推理，也应有 contract/schema 位）
 - 当前 `system` prompt 仍偏“单机总控”，还没有显式声明：
   - peer discovery
   - presence/binding ownership
@@ -2696,3 +2904,412 @@ fin should adopt the following canonical model:
   - 单点精确编辑默认 `mode=replace`
   - 多文件 / add / delete / move 才 `mode=patch`
 - 这条规则用 runtime tests 固定，避免后续又退回“工具只有名字和一句简介，模型不会用”的状态。
+
+## 2026-04-20 runtime multi-round tool loop closure
+
+- 单次 closure 内原先虽然存在 auto tool loop，但每轮 provider 请求没有使用“重建后的 round context + 动态 tool catalog + 已执行工具结果”，本质上只是拿一段 follow-up 字符串继续问模型；现在已修成真正的每轮 round context rebuild。
+- 当前 round context 重建规则：
+  - 根据本轮前累计 `ToolExecutionRecord` 重建 `history.recent_tool_activity`
+  - 把上一轮 assistant 回复与工具 artifact 合入 continuity / knowledge 视图
+  - 重新生成 `current_input`
+  - 重新生成动态 tool catalog（按 round/runtime_home/project scope/peer scope/exec session 状态调整 `use/avoid/policy`）
+- follow-up input 现在只注入**已执行工具结果**，不再把 `provider.call` 混进“工具结果”；并明确告诉模型这些是 authoritative client facts。
+- round truth 修正：第 2 轮及之后的 `RoundRecord / tool_dispatch step` 不再吃累计 dispatch state，而是只记录当轮 dispatch 结果；累计 stop/yield/reminder 只留给 closure 级聚合。
+- 已补测试证明：
+  - 第二轮 provider request 的 `rendered_input` 里能看到执行后的 tool result 注入
+  - dynamic tool catalog 会根据 runtime_home / exec session / peer capability 状态变化
+
+## 2026-04-20 system/project agent same-runtime rule
+
+- `system agent` 与 `project agent` 当前正式冻结为：**同一套 runtime / operation-event / session truth / tool dispatch 基础设施**，区别不在基础设施分叉，而在 `role prompt + dynamic tool policy + workflow emphasis`。
+- prompt role 真源现在只保留两类：
+  - `system`
+  - `project`
+- 历史 `default` 只保留为向后兼容 alias，并映射到 `project`；`worker/reviewer` 不再是独立 role。
+- role-aware dynamic tool policy 已进入 runtime 真源：
+  - `system`：优先 orchestration / peer visibility / coordination / health
+  - `project`：优先 project-scoped closure / docs-code-test-debug，并在同一 role 内承担 execution / review / handoff 模式
+- 已补测试证明：
+  - 同一 `SystemConfig` 可直接启动 `system` 与 `project` 两种 `WorkerRuntime`
+  - `default` 兼容请求会被解析到 `project`
+  - 二者共享 provider/runtime 基础设施，但 role id 与 tool policy 不同
+- 2026-04-20 纠偏：只有 `system` 和 `project` 两类角色；`project agent` 需要多人执行时，直接 spawn 多个 worker runtime。worker 是执行体，不是角色。
+- 2026-04-20 新增本地 worker skeleton：project 侧可以直接对 `target_worker_id` 做 `agent.assign` 和 `mailbox.send`，worker 侧用 `worker_id` 做 `mailbox.poll`；框架内部统一映射到 `local-<worker_id>` peer id。
+- 2026-04-20 `ContextViewBuilder` 已开始消费 `runtime/peers/state/*.json`：ensured local worker peers 会回流到 `context.peer`，所以多 worker 不再只是底层落盘，也进入后续推理/观察视图。
+- 2026-04-20 agent naming 最小真源已接入：
+  - `agent_id = <device_name>.<agent_name>`
+  - `device_name` 优先取 `user.toml -> runtime.device_name`，否则退回系统默认名
+  - 本地自动命名走 `~/.fin/runtime/agents/name_pool.json`
+  - 分配结果写入 `runtime/agents/registry.json` 与 `runtime/current/current_agent_registry.json`
+  - 当前 `create_named_local_worker(...)` 已接到 CLI demo 和 `/compact` 的本地 worker 创建路径
+- 2026-04-20 status probe 已开始直读 agent registry truth：
+  - `status` 现在会优先读 `runtime/current/current_agent_registry.json`
+  - 其次回退 `runtime/agents/registry.json`
+  - 目的是让 Web / QQ / CLI 看到统一的 `device_name.agent_name`，不再只暴露匿名 worker_id
+
+
+## 2026-04-20 system agent identity / boundary discussion snapshot
+
+### A. Agent vs model vs user boundary correction
+- 之前把 `system agent` review 错误地往 `model overlay / provider family` 方向拉了，这条路已经判定为错误。
+- 当前冻结的新边界：
+  - 对用户：用户面对的永远是 `Agent`，不是模型，不应该感知到底层 provider/model。
+  - 对模型：模型只接收 framework 赋予的 `role + request + context + tools`，不应认为自己是某个模型，也不应认为自己正在“直接和用户聊天”。
+  - 对系统：`provider/model` 只属于 backend/runtime adapter/debug truth，不属于 agent identity truth。
+- 因此 prompt system 后续必须改成 `Agent-first`，而不是 `Model-first`。
+- `system/project role` 是 agent 身份真源；provider/model 名称、family overlay、transport quirks 不得进入 agent 自我认知层。
+
+### B. System agent role re-clarification
+- `system agent` 是整个 fin 系统的大脑、指挥家、协调者、leader。
+- 它是：
+  - 唯一用户入口 frontstage
+  - 用户与任务网络之间的协调层
+  - 多 task / 多 agent / 多 peer 的统一编排者
+  - 任务目标整理者、owner 分配者、计划维护者、状态汇总者、统一汇报者
+- 它不是：
+  - 长时间做具体执行的 worker
+  - 长时间沉入单个 project 细节的 executor
+  - 直接和用户裸聊的“模型”
+  - 直接替代 project agent 的实现者
+
+### C. System agent responsibilities (current discussion draft)
+- 接收用户指令、变更、优先级调整、状态询问、中断/恢复请求。
+- 整理用户目标，判断：
+  - 是否延续当前 task/topic/session
+  - 是否需要新 task / revive 旧 task
+  - 是否影响其他并行任务
+- 把用户目标编译成系统内 task language：objective / owner / priority / next action。
+- 把工作分派给：
+  - 本地或远端 project agent
+  - capability peer
+  - 其他 peer/worker
+- 统一收集异步反馈：progress / update_plan / note / result / failure / timeout / waiting / health。
+- 在任务之间穿梭协调，最终统一向用户汇报。
+
+### D. System vs project role split (discussion consensus)
+- `system agent` 负责：
+  - why / what / who / when
+  - task ownership
+  - routing / delegation / recovery / coordination
+  - overall user-facing reporting
+- `project agent` 负责：
+  - how
+  - project-scoped exploration / implementation / verification / delivery
+- 统一原则：
+  - `system = control plane first`
+  - `project = execution plane first`
+
+### E. System agent direct-execution budget
+- `system agent` 允许做小范围直接执行。
+- 允许条件：
+  - 简单任务
+  - 一个 closure（一次完整推理闭环）大概率就能完成
+  - 不需要长等待 / 长探索 / 项目级持续执行
+- 允许的中间态：
+  - 可以做 1~2 次 bounded probing/self-execution 作为快速探测
+- 当前讨论冻结的硬预算：
+  - 若连续 2~3 个 closure 之后仍然看不到明显收口，就不应继续自己做
+  - 必须升级为：`形成目标 -> 建计划 -> 指定 owner -> 委派`
+- 若当前没有明确执行路径：
+  - `system agent` 可以 spawn 一个 `project role worker/runtime` 去探索或执行
+  - 不新增新的 prompt role；仍然只有 `system` 与 `project` 两类 role
+
+### F. Important modeling correction: closure != task
+- Jason 的意图是要把 `system agent` 的直接执行控制得很紧，这一点保留。
+- 但系统建模上当前倾向保留区分：
+  - `closure` = 一次完整推理闭环（输入 -> 推理/工具 -> 停止）
+  - `task` = 更高层的目标线程，可跨多个 closure，并且后续可转 delegated path
+- 因此：
+  - `system agent` 的直接执行预算按 `closure` 控制
+  - `task` 不等于一次 closure
+
+### G. Current non-final but important wording direction
+- prompt / runtime 语义里不应把模型表述成“你在和用户直接聊天”。
+- 更接近的框架语义应是：
+  - current request
+  - frontstage request
+  - routed work item
+  - interaction ledger
+- `system agent` 即使自己处理简单任务，也必须保持控制面身份：
+  - 这是“为了减少调度成本而亲自处理一个低复杂度小任务”
+  - 不是退化成长期 executor
+
+### H. Next discussion items after this note snapshot
+- 继续讨论：`system agent` 如何判断“继续自做 / 升级委派”的具体触发信号。
+- 候选信号包括：
+  - closure 次数
+  - tool loop 深度
+  - wait/reminder
+  - plan emergence
+  - owner clarity
+  - need for project-scoped context
+  - need for parallel subtask split
+  - health/risk escalation
+- 等这些讨论完成后，再统一提炼成正式 architecture / prompt working doc，一次性修改真源与实现。
+
+
+## 2026-04-20 startup topology / project registry / presence 落盘
+
+### A. Startup topology 进入 system-only config
+- 当前已把 startup topology 落到 `runtime.startup`：
+  - `system_agent.local_worker_budget`
+  - `system_agent.auto_resume`
+  - `project_agents[]`
+- `project_agents[]` 当前最小字段：
+  - `project_id`
+  - `mode=local|remote`
+  - `project_root?`
+  - `endpoint?`
+  - `agent_name?`
+  - `worker_budget`
+  - `always_on`
+  - `auto_resume`
+  - `auto_connect`
+- 这是 system-only 配置，不属于 user.toml。
+
+### B. Effective system config 规则补齐
+- 之前 CLI 一直只从 user.toml 动态 map system config，导致 `~/.fin/config/system.toml` 就算生成了也不会真的生效。
+- 当前已补 effective system config 读取：
+  - 先用 `user.toml` 映射 baseline
+  - 再读取 `~/.fin/config/system.toml`
+  - 保留 user-owned 字段（provider/default_provider/runtime.device_name）
+  - 其余 system-only 字段继续从 system.toml 生效
+- 这样 startup topology 才不是“写得出来但永远不生效”的假配置。
+
+### C. Project registry / wake queue 真源
+- 当前 framework 已落以下路径：
+  - `~/.fin/runtime/projects/registry.json`
+  - `~/.fin/runtime/projects/state/<project_id>.json`
+  - `~/.fin/runtime/projects/wake_queue.json`
+  - `~/.fin/runtime/current/current_startup_topology.json`
+- 语义：
+  - registry：当前已注册 project agent 列表与派生状态
+  - state：单 project 的最新摘要
+  - wake_queue：framework 生成的唤醒 intent
+
+### D. Wake policy（当前最小版）
+- `always_on=true` 且当前 presence 不是 `busy/idle/waiting`：
+  - framework 直接生成 `always_on_startup`
+- 若某 project 存在 unfinished work 且 agent 当前不在线：
+  - framework 生成 `unfinished_work_detected`
+- 这对应 Jason 已确认的“recovery-first，不要立刻重置任务”。
+
+### E. Agent presence 真源
+- 当前 framework 已落：
+  - `~/.fin/runtime/agents/state/<agent_id>.json`
+  - `~/.fin/runtime/current/current_agent_presence.json`
+- system entry agent：
+  - Web/debug 启动时先 seed 为 ready/idle
+  - 收到请求时标记 `busy`
+  - 成功/失败后写回 `idle`
+- startup config 中声明的 project agent：
+  - 当前先 seed 为 `offline + await_startup_wake`
+  - 后续等 daemon/supervisor 真连接后，在同一 truth 上更新，不再造第二套 presence
+
+### F. 当前阶段边界
+- 已完成的是 framework-owned skeleton：
+  - startup config
+  - project registry
+  - wake queue
+  - agent presence
+- 继续推进后，当前还多了一步真实执行：
+  - framework 会执行 wake queue
+  - local project agent 会被推到 `idle/project_ready`
+  - remote project agent 会被推到 `waiting/await_remote_connect`
+  - 同时把 managed project peer 写入 `runtime/peers/state + runtime/peers/registry`
+- 还没完成的：
+  - detached daemon 真正拉起 project agent
+  - remote reconnect / lease / supervisor takeover
+- 也就是说，当前阶段先把“应该唤醒谁、谁在线、谁离线、谁在忙”变成可观测事实，再接自治恢复。
+
+## 2026-04-20 project runtime auto-pickup / auto-resume 补口
+
+### A. 已补 framework-owned auto-resume seed
+- 之前 local project runtime 在 handoff=`prepared|noop` 且 task 已 claimed 时，如果 queue 为空，会停在：
+  - `pickup_state=claimed_idle`
+  - `next_action=await_manual_work`
+- 当前已在 `project_runtime_resume` 补 framework-owned seed：
+  - 对 `claimed_idle + await_manual_work + project.auto_resume=true` 的 local project runtime，
+  - framework 自动注入一个 synthetic pending input：
+    - `input_kind=framework_resume`
+    - `source=project.resume`
+    - `message=continue work`
+    - `enqueue_reason=resume`
+- 然后重新 materialize pickup，再由 scheduler/supervisor 正常推进下一轮。
+
+### B. 归属与边界
+- 没把 side effect 塞进 `project_runtime_pickup` 的 snapshot materialization。
+- 仍保持：
+  - `pickup` 负责观测快照
+  - `project_runtime_resume` 负责控制动作
+- 这样不会把“读状态”变成“隐式推进状态”的双语义函数。
+
+### C. 新增验证
+- 新增测试：
+  - `project_runtime_resume_tests::drive_ready_project_runtime_resumes_seeds_claimed_idle_project_queue`
+- 验证内容：
+  - 初始 queue 为空
+  - handoff 已 prepared
+  - task 已 claimed
+  - framework 自动 seed pending input
+  - scheduler 成功 drive 一轮
+  - queue 最终被 drain 回空
+
+### D. 当前证据
+- `cargo test -p fin-cli --manifest-path rust/Cargo.toml project_runtime_resume --quiet` ✅
+- `cargo test -p fin-cli --manifest-path rust/Cargo.toml attached_control_plane --quiet` ✅
+- `cargo fmt --all --manifest-path rust/Cargo.toml --check` ✅
+
+### E. 后续纠正
+- 上面这 2 个失败后来已经定位并修复，不再视为“未知既有失败”：
+  - 一部分是真正的 credentials precedence bug
+  - 另一部分是 QQ 相关测试并行修改全局 env/HOME 导致的测试污染
+
+## 2026-04-20 qqbot credentials precedence fix
+
+### A. 根因
+- `resolve_qqbot_credentials(...)` 之前是：
+  - 先 `resolve_from_env()`
+  - 再 `resolve_from_user_toml(...)`
+- 这会导致：
+  - 调用方已经显式传了 `user.toml` 路径，
+  - 但只要进程环境里残留 `FIN_QQBOT_CLIENT_SECRET/QQBOT_CLIENT_SECRET`，
+  - 解析就会被全局 env 抢走。
+- 结果：
+  - 显式配置文件不是唯一真源，
+  - 测试与真实 bridge/connectivity 行为都会受外部环境污染。
+
+### B. 修正后的规则
+- 若调用方显式传入存在的 `user.toml` 路径：
+  - **优先 user.toml**
+  - user.toml 内若使用 `*_env` 字段，再按文件里的 env 引用读取
+  - 若文件里没有 qqbot credentials，再回退到全局 env
+- 若调用方没有显式传路径：
+  - 仍保持 env first，再 fallback 到默认 `~/.fin/config/user.toml`
+
+### C. 新增测试
+- `explicit_user_toml_wins_over_global_env_credentials`
+- 固定住：
+  - 全局 env 存在时
+  - 显式 `user.toml` 仍必须赢
+
+### D. 当前证据（已更新）
+- `cargo test -p fin-cli --manifest-path rust/Cargo.toml channel_peer_connectivity --quiet` ✅
+- `cargo test -p fin-cli --manifest-path rust/Cargo.toml --quiet` ✅ `97 passed`
+- `cargo test -p fin-runtime --manifest-path rust/Cargo.toml --quiet` ✅
+- `cargo test -p fin-config --manifest-path rust/Cargo.toml --quiet` ✅
+- `cargo fmt --all --manifest-path rust/Cargo.toml --check` ✅
+
+### E. 额外修正：env test pollution
+- 除了 precedence bug，本轮还发现 QQ 相关测试在并行修改：
+  - `HOME`
+  - `FIN_QQBOT_*`
+  - `QQBOT_*`
+- 原先 `channel_peer_tests` 与 `channel_peer_connectivity` 各自持有不同的 env lock，无法跨模块串行。
+- 当前已补统一 `test_env::env_lock()` 真源，两个测试模块共享同一把锁，避免：
+  - 默认 `~/.fin/config/user.toml` 抢进来
+  - 某个测试的 env 残留影响另一个测试
+  - poison 连锁导致误判
+
+## 2026-04-20 startup -> supervision -> handoff -> pickup -> auto-resume E2E evidence
+
+### A. 新增端到端测试
+- 新增测试：
+  - `startup_wakeup::tests::refresh_builds_resume_chain_and_auto_resume_can_drive_claimed_idle_project`
+- 这条测试不再手写 handoff/pickup 快照，而是从 framework 真链路生成：
+  - session truth
+  - startup refresh
+  - project supervision
+  - execution handoff
+  - runtime pickup
+  - project auto-resume drive
+
+### B. 当前验证的链路
+- 预置：
+  - project session 存在
+  - `context.current_context.project.primary_project.project_id = fin`
+  - execution state 标明 task 未完成（`pending_input_count=1`）
+  - queue 为空
+  - task registry 中 task=`ready`
+- framework 执行后验证：
+  - `current_project_supervision.json` => `resume_ready`
+  - `current_project_execution_handoffs.json` => `prepared`
+  - `current_project_runtime_pickups.json` => `claimed_idle`
+  - `drive_ready_project_runtime_resumes(...)` 自动注入 synthetic resume input
+  - scheduler 成功 drive 一轮并 drain queue
+
+### C. 这条测试修正了一个真源陷阱
+- 之前失败的根因不是 runtime 逻辑，而是测试数据错误：
+  - `ExecutionStateRecord` / `PendingInputRecord` 的 `refs` 是 `flatten`
+  - 测试若写成嵌套 `"refs": {...}`，`task_id/session_id` 实际不会进入真源
+- 已按真实 contract 改成顶层字段书写。
+
+### D. 当前证据（最新）
+- `cargo test -p fin-cli --manifest-path rust/Cargo.toml refresh_builds_resume_chain_and_auto_resume_can_drive_claimed_idle_project --quiet` ✅
+- `cargo test -p fin-cli --manifest-path rust/Cargo.toml --quiet` ✅ `98 passed`
+- `cargo test -p fin-runtime --manifest-path rust/Cargo.toml --quiet` ✅
+- `cargo test -p fin-config --manifest-path rust/Cargo.toml --quiet` ✅
+- `cargo fmt --all --manifest-path rust/Cargo.toml --check` ✅
+
+## 2026-04-20 collaboration context truth expansion
+
+### A. 当前识别出的缺口
+- system/project 的 `ProjectContextBlock` 之前已经有：
+  - `task_board_summary`
+  - `agent_presence_summary`
+  - `project_supervision_summary`
+- 但 owner-loop 真协调还缺两类 framework truth：
+  - assignment queue
+  - mailbox backlog
+- 没有这两类摘要，system/project 在做 dispatch / follow-up / review / unblock 时只能看到 task board，却看不到：
+  - 已派出去但未被消费的 assignment
+  - 已投递但未被 worker 消费的 mailbox 消息
+
+### B. 本轮补齐
+- `ProjectContextBlock` 新增：
+  - `assignment_queue_summary`
+  - `mailbox_summary`
+- `ContextViewBuilder -> build_project_block(...)` 现在会从 runtime_home 读取：
+  - `runtime/assignments/pending.json`
+  - `runtime/mailbox/*/inbox.json`
+- 并把它们作为 project/system 推理前可见的 framework truth 注入 context。
+
+### C. 当前语义
+- `assignment_queue_summary`
+  - 例如：`pending_assignments=2 [worker-b<-worker-system:pending, worker-c<-worker-system:pending]`
+- `mailbox_summary`
+  - 例如：`mailbox_messages=2 [local-worker-b:2]`
+- 这让 system/project 的 owner-loop 在不额外调用工具前，就能先看到协作积压面。
+
+### D. 新增验证
+- 扩展测试：
+  - `context_view_registry_tests::system_context_view_loads_active_and_registered_projects_from_runtime_registry`
+- 当前固定验证：
+  - active projects / registered projects
+  - presence summary
+  - supervision summary
+  - assignment queue summary
+  - mailbox summary
+
+### E. 当前证据
+- `cargo test -p fin-runtime --manifest-path rust/Cargo.toml context_view_registry_tests --quiet` ✅
+- `cargo test -p fin-runtime --manifest-path rust/Cargo.toml context_view_tests --quiet` ✅
+- `cargo test -p fin-runtime --manifest-path rust/Cargo.toml --quiet` ✅
+- `cargo fmt --all --manifest-path rust/Cargo.toml --check` ✅
+
+## 2026-04-20 richer testing + real provider smoke
+- Added richer regression around combined `task_board + assignment_queue + mailbox_summary` context assembly to prevent collaboration backlog truth from regressing when active task view is present.
+- Added `fin provider-live-smoke <user.toml> [transcript.json]` and `scripts/run-real-provider-smoke.sh` for isolated live provider verification under `~/.fin/harness/runs/<run-id>/...`.
+- Live smoke now verifies multi-turn session truth + current projection/current provider artifacts and records `control_feedback_origin` plus `reasoning_stop_present` in receipt.
+- Real provider evidence: `~/.fin/harness/runs/test-live-provider-20260420-2155/provider-live-smoke-report.json` with `provider=ali-coding-plan`, `model=qwen3.6-plus`, `control_feedback_origin=model_output_contract_v1`, `reasoning_stop_present=true`, `turn_count=3`.
+
+## 2026-04-20 qqbot ingress E2E truth
+- Added real repo-level qqbot E2E around `channel_peer_qqbot_bridge::process_inbound_message(...)` instead of more smoke.
+- Verified true chain: `message.ingest -> conversation/session restore -> runtime inference -> session truth -> outbound emit`.
+- New coverage proves two critical closures:
+  - fresh inbound target gets `ack + final reply`, session truth persists answer, peer events and provider request artifacts are written.
+  - existing target binding restores the old session even when built-in qqbot active pairing has moved to a newer session.
+- Test files split to respect the `<500 lines` rule:
+  - `rust/crates/cli/src/channel_peer_qqbot_bridge_tests.rs`
+  - `rust/crates/cli/src/channel_peer_qqbot_bridge_e2e_tests.rs`
+- Verification: `cargo test -p fin-cli channel_peer_qqbot_bridge -- --nocapture` ✅

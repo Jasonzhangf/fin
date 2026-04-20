@@ -4,7 +4,9 @@ use crate::{
     execution_state::{dequeue_next_pending_input, load_execution_state, load_pending_inputs},
     time::local_timestamp_now,
 };
-use fin_contracts::{EntityRefs, RoutingActionRecord, SchedulerDecisionRecord};
+use fin_contracts::{
+    EntityRefs, InputAttachmentSummary, RoutingActionRecord, SchedulerDecisionRecord,
+};
 use fin_debug_server::{ChatSendResponse, DebugBinding};
 use fin_runtime::derive_scheduler_decision;
 use serde::{Serialize, de::DeserializeOwned};
@@ -53,6 +55,8 @@ where
     F: FnMut(
         DebugBinding,
         String,
+        String,
+        Vec<InputAttachmentSummary>,
         Option<&fin_contracts::InterruptedSegmentRecord>,
     ) -> Result<ChatSendResponse, CliError>,
 {
@@ -85,6 +89,8 @@ where
         let response = run_next(
             current_binding.clone(),
             next.message,
+            next.source,
+            next.attachments,
             merge_segment.as_ref(),
         )?;
         current_binding = response.binding.clone();

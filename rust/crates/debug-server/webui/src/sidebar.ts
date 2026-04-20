@@ -1,4 +1,13 @@
 import type { JsonRecord, RefreshState, TurnRecord } from './types.js';
+import {
+  activityFocusSource,
+  activityRecentItems,
+  activitySourceCards,
+  activityStage,
+  activityState,
+  activityToolSemantics,
+  activityUserCard,
+} from './activity_cards_ui.js';
 import { StructuredTreeRenderer } from './tree.js';
 
 export type SidebarSectionId = 'project' | 'session' | 'tasks' | 'execution' | 'skills' | 'plugins';
@@ -68,6 +77,13 @@ function buildSidebarSections(state: RefreshState): SidebarSection[] {
   const activeStep = scalar(execution.active_step_id);
   const pendingCount = pendingInputs.length || Number(execution.pending_input_count ?? 0);
   const routingDisposition = scalar(routingDecision.disposition);
+  const userCard = activityUserCard(state.activityCards);
+  const focusSource = activityFocusSource(state.activityCards);
+  const sourceCards = activitySourceCards(state.activityCards);
+  const activityRecent = activityRecentItems(state.activityCards, 3);
+  const activityTools = activityToolSemantics(state.activityCards);
+  const activityStateLabel = activityState(state.activityCards);
+  const activityStageLabel = activityStage(state.activityCards);
   const roleId = scalar(rolePrompt.role_id);
   const taskTurns = turnsForTask(recentTurnRecords, currentTaskId);
   const taskSummary = buildTaskSummary(currentTaskId, candidateTaskId, topicThreadId, routingDisposition);
@@ -125,27 +141,33 @@ function buildSidebarSections(state: RefreshState): SidebarSection[] {
       kicker: 'Session',
       title: scalar(state.binding?.session_id ?? 'tentative'),
       summary: shortText(
-        `task=${scalar(state.binding?.task_id)} · state=${executionStatus} · turns=${state.recentTurns.length || state.focusTurns.length}`,
+        userCard?.header
+          ?? `task=${scalar(state.binding?.task_id)} · state=${executionStatus} · turns=${state.recentTurns.length || state.focusTurns.length}`,
         92,
       ),
       facts: [
-        ['active turn', shortText(selectedOperation, 24)],
-        ['routing', shortText(routingDisposition, 28)],
-        ['recent digests', String(state.recentDigests.length)],
+        ['focus', shortText(focusSource?.title ?? selectedOperation, 24)],
+        ['state', shortText(activityStateLabel !== 'idle' ? activityStateLabel : executionStatus, 28)],
+        ['sources', String(sourceCards.length)],
         ['reasoning', String(state.recentReasoningViews.length)],
         ['closures', String(state.recentClosures.length)],
       ],
-      list: recentTurnRecords.length
-        ? recentTurnRecords.map((turn) => ({
-          title: shortText(scalar(turn.user_input ?? turn.assistant_visible_output ?? turn.operation_id), 54),
-          meta: shortText(`${scalar(turn.operation_id)} · ${scalar(turn.status)}`, 48),
+      list: sourceCards.length
+        ? sourceCards.slice(0, 4).map((card) => ({
+          title: shortText(scalar(card.title ?? card.source_id), 54),
+          meta: shortText(`${scalar(card.state)} · ${scalar(card.current_activity ?? card.summary)}`, 72),
         }))
-        : recentFocusTurns.map((turn) => ({
-          title: shortText(turn.userMessage?.content ?? turn.assistantMessage?.content ?? turn.operationId, 54),
-          meta: shortText(turn.operationId, 36),
-        })),
+        : (recentTurnRecords.length
+          ? recentTurnRecords.map((turn) => ({
+            title: shortText(scalar(turn.user_input ?? turn.assistant_visible_output ?? turn.operation_id), 54),
+            meta: shortText(`${scalar(turn.operation_id)} · ${scalar(turn.status)}`, 48),
+          }))
+          : recentFocusTurns.map((turn) => ({
+            title: shortText(turn.userMessage?.content ?? turn.assistantMessage?.content ?? turn.operationId, 54),
+            meta: shortText(turn.operationId, 36),
+          }))),
       detailTitle: 'Session Detail',
-      detailSubtitle: '当前 session、routing 与最近 turn 摘要',
+      detailSubtitle: '当前 session frontstage / source cards / 最近 turn 摘要',
     },
     {
       id: 'tasks',
@@ -186,19 +208,27 @@ function buildSidebarSections(state: RefreshState): SidebarSection[] {
     {
       id: 'execution',
       kicker: 'Execution',
-      title: executionStatus !== '-' ? executionStatus : 'idle',
+      title: activityStateLabel !== 'idle' ? activityStateLabel : (executionStatus !== '-' ? executionStatus : 'idle'),
       summary: shortText(
-        `pending=${pendingCount} · active_step=${activeStep} · resume=${scalar(execution.resume_from_step_id)}`,
+        `${activityStageLabel !== '-' ? activityStageLabel : `pending=${pendingCount}`} · active_step=${activeStep} · resume=${scalar(execution.resume_from_step_id)}`,
         92,
       ),
       facts: [
+        ['focus source', shortText(scalar(focusSource?.title ?? focusSource?.source_id), 28)],
         ['active step', shortText(activeStep, 28)],
-        ['resume from', shortText(scalar(execution.resume_from_step_id), 28)],
         ['pending', String(pendingCount)],
         ['interrupt', shortText(scalar(interruptedSegment.status ?? segmentMerge.strategy), 24)],
       ],
       list: [
-        ...pendingInputs.slice(0, 3).map((item) => {
+        ...activityTools.slice(0, 3).map((item) => ({
+          title: shortText(scalar(item.summary ?? item.tool_name), 54),
+          meta: shortText(`${scalar(item.status)} · ${scalar(item.detail ?? item.object_label)}`, 72),
+        })),
+        ...activityRecent.slice(0, 2).map((item) => ({
+          title: shortText(item, 54),
+          meta: 'frontstage recent item',
+        })),
+        ...pendingInputs.slice(0, 2).map((item) => {
           const pending = asRecord(item);
           return {
             title: shortText(scalar(pending.message), 54),
@@ -217,7 +247,7 @@ function buildSidebarSections(state: RefreshState): SidebarSection[] {
         ].filter((item): item is { title: string; meta: string } => Boolean(item)),
       ],
       detailTitle: 'Execution Detail',
-      detailSubtitle: '运行状态、pending queue、pause / interrupt / merge 摘要',
+      detailSubtitle: 'frontstage activity / semantic tools / pending queue / pause / merge 摘要',
     },
     {
       id: 'skills',

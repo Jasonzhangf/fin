@@ -1,11 +1,15 @@
 use super::*;
 use closure_runtime_events::{EventEmissionInput, emit_runtime_events};
 use closure_runtime_rounds::{allocate_step, build_followup_input, execute_round, record_round};
+use closure_runtime_state::{merge_dispatch_outcome, next_step, operation_status, stop_source};
+use round_context::{DynamicRoundContextInput, build_round_context};
 
 #[path = "closure_runtime_events.rs"]
 mod closure_runtime_events;
 #[path = "closure_runtime_rounds.rs"]
 mod closure_runtime_rounds;
+#[path = "closure_runtime_state.rs"]
+mod closure_runtime_state;
 
 #[derive(Debug, Clone)]
 pub struct M1Runtime {
@@ -39,10 +43,21 @@ impl M1Runtime {
         let closure_id = format!("closure-{}", operation.operation_id);
         let digest_id = format!("digest-{}", operation.operation_id);
         let mut step_index = 0u32;
+        let initial_round_context = build_round_context(DynamicRoundContextInput {
+            role_id: operation.payload.role.role_id.as_str(),
+            base_context: &operation.payload.context,
+            operation_id: &operation.operation_id,
+            trace_id: &operation.trace_id,
+            round_index: 1,
+            current_input: &operation.payload.input,
+            previous_assistant_response: None,
+            recent_tool_records: &[],
+        });
         let initial_round = execute_round(
             &operation,
             provider,
             &refs,
+            &initial_round_context,
             1,
             operation.payload.input.clone(),
         )?;
@@ -50,7 +65,7 @@ impl M1Runtime {
         let mut provider_response = initial_round.provider_response;
         let mut provider_debug = initial_round.provider_debug;
         let mut parsed_output = initial_round.parsed_output;
-        let mut dispatched_tools = initial_round.dispatched_tools;
+        let mut dispatched_tools = initial_round.dispatched_tools.clone();
         let mut assistant_response_text = initial_round.assistant_response_text;
         let mut control_feedback = initial_round.control_feedback;
         let mut round_count = 1usize;
@@ -109,6 +124,7 @@ impl M1Runtime {
             &operation.submitted_at,
         )];
         tool_records.extend(dispatched_tools.tool_records.clone());
+        let mut latest_round_tool_records = initial_round.dispatched_tools.tool_records.clone();
         record_round(
             &mut step_index,
             &operation,
@@ -136,12 +152,23 @@ impl M1Runtime {
             let followup_input = build_followup_input(
                 operation.payload.input.as_str(),
                 assistant_response_text.as_str(),
-                &tool_records,
+                &latest_round_tool_records,
             );
+            let followup_round_context = build_round_context(DynamicRoundContextInput {
+                role_id: operation.payload.role.role_id.as_str(),
+                base_context: &operation.payload.context,
+                operation_id: &operation.operation_id,
+                trace_id: &operation.trace_id,
+                round_index: next_round_index,
+                current_input: &followup_input,
+                previous_assistant_response: Some(assistant_response_text.as_str()),
+                recent_tool_records: &tool_records,
+            });
             let followup_round = execute_round(
                 &operation,
                 provider,
                 &refs,
+                &followup_round_context,
                 next_round_index,
                 followup_input,
             )?;
@@ -155,16 +182,9 @@ impl M1Runtime {
                 &operation.submitted_at,
             ));
             tool_records.extend(followup_round.dispatched_tools.tool_records.clone());
-            dispatched_tools
-                .events
-                .extend(followup_round.dispatched_tools.events.clone());
-            dispatched_tools
-                .note_hints
-                .extend(followup_round.dispatched_tools.note_hints.clone());
-            dispatched_tools.reminder_scheduled |=
-                followup_round.dispatched_tools.reminder_scheduled;
-            dispatched_tools.stop_requested |= followup_round.dispatched_tools.stop_requested;
-            dispatched_tools.yield_requested |= followup_round.dispatched_tools.yield_requested;
+            let current_round_tools = followup_round.dispatched_tools.clone();
+            latest_round_tool_records = current_round_tools.tool_records.clone();
+            merge_dispatch_outcome(&mut dispatched_tools, &current_round_tools);
             prepared_request = followup_round.prepared_request;
             provider_response = followup_round.provider_response;
             provider_debug = followup_round.provider_debug;
@@ -182,7 +202,7 @@ impl M1Runtime {
                 &provider_response,
                 &parsed_output,
                 &control_feedback,
-                &dispatched_tools,
+                &current_round_tools,
                 assistant_response_text.as_str(),
                 &mut provider_request_records,
                 &mut provider_response_records,
@@ -209,32 +229,14 @@ impl M1Runtime {
 
         let closure_stopped = dispatched_tools.stop_requested;
         let closure_waiting_external = dispatched_tools.yield_requested;
-        let stop_source = if closure_waiting_external {
-            "wait.remind"
-        } else if closure_stopped {
-            "reasoning.stop"
-        } else {
-            "not_emitted"
-        };
-        let operation_status = if closure_waiting_external {
-            "waiting_external"
-        } else if closure_stopped {
-            "stopped"
-        } else {
-            "continued"
-        };
+        let stop_source = stop_source(closure_waiting_external, closure_stopped);
+        let operation_status = operation_status(closure_waiting_external, closure_stopped);
         let progress = ProgressBlock {
             progress_id: format!("progress-{}", operation.operation_id),
             refs: refs.clone(),
             phase: "inference_completed".into(),
             blocker: None,
-            next_step: Some(if dispatched_tools.reminder_scheduled {
-                "wait_for_scheduled_reminder".into()
-            } else if !closure_stopped {
-                "continue_reasoning".into()
-            } else {
-                "render_projection".into()
-            }),
+            next_step: Some(next_step(dispatched_tools.reminder_scheduled, closure_stopped).into()),
             health_hint: Some("healthy".into()),
             tool_snapshots: tool_records
                 .iter()
@@ -277,13 +279,7 @@ impl M1Runtime {
             }),
             lesson: None,
             blocker: None,
-            next_step: Some(if dispatched_tools.reminder_scheduled {
-                "wait_for_scheduled_reminder".into()
-            } else if !closure_stopped {
-                "continue_reasoning".into()
-            } else {
-                "render_projection".into()
-            }),
+            next_step: Some(next_step(dispatched_tools.reminder_scheduled, closure_stopped).into()),
             control_feedback: Some(control_feedback.clone()),
             created_at: operation.submitted_at.clone(),
         };

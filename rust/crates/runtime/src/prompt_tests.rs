@@ -44,8 +44,14 @@ fn system_worker_runtime() -> WorkerRuntime {
         runtime: fin_config::UserRuntimeConfig::default(),
     };
     let system = ConfigMapper::map_user_to_system(&user).expect("mapping should succeed");
-    WorkerRuntime::from_system(&system, "agent-system", "worker-system", "runtime", Some("system"))
-        .expect("system worker runtime")
+    WorkerRuntime::from_system(
+        &system,
+        "agent-system",
+        "worker-system",
+        "runtime",
+        Some("system"),
+    )
+    .expect("system worker runtime")
 }
 
 #[test]
@@ -128,7 +134,8 @@ fn role_prompt_is_agent_first_and_hides_provider_model_identity() {
 #[test]
 fn prompt_blocks_expose_wait_stop_and_apply_patch_rules() {
     let project_worker = worker_runtime();
-    let project_context = ContextViewBuilder.build(&project_worker, ContextAssemblyInput::default());
+    let project_context =
+        ContextViewBuilder.build(&project_worker, ContextAssemblyInput::default());
     let role_prompt = project_context.role_prompt.expect("role prompt");
 
     assert!(
@@ -176,9 +183,12 @@ fn prompt_blocks_expose_wait_stop_and_apply_patch_rules() {
     let system_worker = system_worker_runtime();
     let system_context = ContextViewBuilder.build(&system_worker, ContextAssemblyInput::default());
     let system_role_prompt = system_context.role_prompt.expect("system role prompt");
-    assert!(system_role_prompt.prompt_modules.iter().any(|item| {
-        item.module_id == "role.system.framework_state_first"
-    }));
+    assert!(
+        system_role_prompt
+            .prompt_modules
+            .iter()
+            .any(|item| { item.module_id == "role.system.framework_state_first" })
+    );
     assert!(system_role_prompt.behavior_rules.iter().any(|item| {
         item.contains("framework-owned task board")
             && item.contains("agent presence")
@@ -217,6 +227,12 @@ fn context_tool_catalog_exposes_rich_apply_patch_and_query_tool_metadata() {
         "context_history.rebuild",
         "project.task.status",
         "project.task.list",
+        "project.task.create",
+        "project.task.claim",
+        "project.task.submit",
+        "project.task.review",
+        "agent.presence.list",
+        "project.supervision.list",
     ] {
         let tool = tools
             .model_tools
@@ -271,6 +287,42 @@ fn dynamic_tool_catalog_marks_runtime_and_peer_dependent_tools_when_context_is_m
         .expect("project.task.status tool");
     assert!(
         task_status
+            .when_not_to_use
+            .iter()
+            .any(|item| item.contains("no runtime_home"))
+    );
+
+    let task_create = tools
+        .model_tools
+        .iter()
+        .find(|tool| tool.tool_name == "project.task.create")
+        .expect("project.task.create tool");
+    assert!(
+        task_create
+            .when_not_to_use
+            .iter()
+            .any(|item| item.contains("no runtime_home"))
+    );
+
+    let presence_list = tools
+        .model_tools
+        .iter()
+        .find(|tool| tool.tool_name == "agent.presence.list")
+        .expect("agent.presence.list tool");
+    assert!(
+        presence_list
+            .when_not_to_use
+            .iter()
+            .any(|item| item.contains("no runtime_home"))
+    );
+
+    let supervision_list = tools
+        .model_tools
+        .iter()
+        .find(|tool| tool.tool_name == "project.supervision.list")
+        .expect("project.supervision.list tool");
+    assert!(
+        supervision_list
             .when_not_to_use
             .iter()
             .any(|item| item.contains("no runtime_home"))
@@ -353,6 +405,12 @@ fn system_and_project_roles_share_runtime_but_receive_different_tool_policies() 
             && item.contains("supervision")
     }));
     assert!(
+        system_tools
+            .tool_selection_policy
+            .iter()
+            .any(|item| { item.contains("system role uses the same runtime/tooling foundation") })
+    );
+    assert!(
         project_tools
             .tool_selection_policy
             .iter()
@@ -371,6 +429,30 @@ fn system_and_project_roles_share_runtime_but_receive_different_tool_policies() 
             .any(|item| item.contains("system role"))
     );
 
+    let system_presence = system_tools
+        .model_tools
+        .iter()
+        .find(|tool| tool.tool_name == "agent.presence.list")
+        .expect("system agent.presence.list");
+    assert!(
+        system_presence
+            .when_to_use
+            .iter()
+            .any(|item| item.contains("system role"))
+    );
+
+    let system_task_create = system_tools
+        .model_tools
+        .iter()
+        .find(|tool| tool.tool_name == "project.task.create")
+        .expect("system project.task.create");
+    assert!(
+        system_task_create
+            .when_to_use
+            .iter()
+            .any(|item| item.contains("system role"))
+    );
+
     let project_patch = project_tools
         .model_tools
         .iter()
@@ -378,6 +460,54 @@ fn system_and_project_roles_share_runtime_but_receive_different_tool_policies() 
         .expect("project apply_patch");
     assert!(
         project_patch
+            .when_to_use
+            .iter()
+            .any(|item| item.contains("project role"))
+    );
+
+    let project_submit = project_tools
+        .model_tools
+        .iter()
+        .find(|tool| tool.tool_name == "project.task.submit")
+        .expect("project project.task.submit");
+    assert!(
+        project_submit
+            .when_to_use
+            .iter()
+            .any(|item| item.contains("project role"))
+    );
+
+    let project_create = project_tools
+        .model_tools
+        .iter()
+        .find(|tool| tool.tool_name == "project.task.create")
+        .expect("project project.task.create");
+    assert!(
+        project_create
+            .when_to_use
+            .iter()
+            .any(|item| item.contains("project role"))
+    );
+
+    let project_review = project_tools
+        .model_tools
+        .iter()
+        .find(|tool| tool.tool_name == "project.task.review")
+        .expect("project project.task.review");
+    assert!(
+        project_review
+            .when_to_use
+            .iter()
+            .any(|item| item.contains("project role"))
+    );
+
+    let project_assign = project_tools
+        .model_tools
+        .iter()
+        .find(|tool| tool.tool_name == "agent.assign")
+        .expect("project agent.assign");
+    assert!(
+        project_assign
             .when_to_use
             .iter()
             .any(|item| item.contains("project role"))

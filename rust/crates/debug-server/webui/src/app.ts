@@ -77,6 +77,7 @@ class DebugApp {
     recentToolRecords: [],
     recentClosures: [],
     recentTurns: [],
+    activityCards: null,
     currentExecutionState: null,
     currentPendingInputs: [],
     currentPauseCheckpoint: null,
@@ -232,6 +233,7 @@ class DebugApp {
       this.pendingAssistant,
       this.state.lastRun,
       this.state.currentContext,
+      this.state.activityCards,
       this.openedChatDetailKey,
     );
     this.focusPane.render(this.state);

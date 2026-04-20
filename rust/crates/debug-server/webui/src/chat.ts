@@ -1,30 +1,31 @@
 import type {
+  ActivityCardsSnapshot,
   ConversationRichness,
   DebugBinding,
   FocusTurn,
   JsonRecord,
   SessionMessage,
-  ToolExecutionRecord,
+  ToolSemanticView,
+  SourceActivityCardView,
 } from './types.js';
+import {
+  activityFocusSource,
+  activityHeader,
+  activityRecentItems,
+  activitySourceCards,
+  activityStage,
+  activityState,
+  activityStateTone,
+  activityToolSemantics,
+  activityUserCard,
+} from './activity_cards_ui.js';
+import { buildTurnCards, type TurnCard } from './chat_cards.js';
 import { formatLocalTimestamp } from './time.js';
 import { StructuredTreeRenderer } from './tree.js';
 
 export interface PendingAssistantState {
   prompt: string;
   startedAtMs: number;
-}
-
-interface TurnCard {
-  key: string;
-  tone: 'reasoning' | 'meta' | 'tool';
-  verb: string;
-  title: string;
-  body?: string;
-  extra?: string;
-  chips: string[];
-  detailTitle: string;
-  detailSubtitle: string;
-  detailValue: unknown;
 }
 
 export class ChatPane {
@@ -55,6 +56,7 @@ export class ChatPane {
     pendingAssistant: PendingAssistantState | null,
     lastRun: JsonRecord | null,
     currentContext: JsonRecord | null,
+    activityCards: ActivityCardsSnapshot | null,
     openedChatDetailKey: string | null,
   ): void {
     const sessionLabel = binding?.session_id ?? 'tentative';
@@ -85,32 +87,42 @@ export class ChatPane {
       this.tree,
     );
 
+    const frontstagePanel = this.renderFrontstagePanel(activityCards, richness);
+
     if (!messages.length) {
-      this.messagesEl.innerHTML = `
-        <div class="empty-state">
-          <div class="empty-icon">💬</div>
-          <div class="empty-text">No session messages yet. Send the first message into this bound session.</div>
-        </div>
-      `;
-      this.lastRenderedSignature = '';
+      this.messagesEl.innerHTML = [
+        frontstagePanel,
+        `
+          <div class="empty-state">
+            <div class="empty-icon">💬</div>
+            <div class="empty-text">No session messages yet. Send the first message into this bound session.</div>
+          </div>
+        `,
+      ].filter(Boolean).join('');
+      this.lastRenderedSignature = frontstagePanel;
       return;
     }
 
     const previousScrollTop = this.messagesEl.scrollTop;
     const wasNearBottom = isNearBottom(this.messagesEl);
-    const signature = messages.map((message) => `${message.message_id}:${message.created_at}`).join('|');
+    const signature = `${messages.map((message) => `${message.message_id}:${message.created_at}`).join('|')}::${activityCards?.generated_at ?? ''}`;
     const focusByOperation = new Map(focusTurns.map((turn) => [turn.operationId, turn]));
+    const semanticsByOperation = groupSemanticsByOperation(activityToolSemantics(activityCards));
+    const focusSource = activityFocusSource(activityCards);
 
     this.messagesEl.innerHTML = [
+      frontstagePanel,
       ...messages.map((message) => this.renderMessage(
         message,
         focusByOperation,
+        semanticsByOperation,
+        focusSource,
         selectedOperationId,
         richness,
         openedChatDetailKey,
       )),
       this.renderPendingAssistant(pendingAssistant),
-    ].join('');
+    ].filter(Boolean).join('');
 
     if (signature !== this.lastRenderedSignature && wasNearBottom) {
       this.messagesEl.scrollTop = this.messagesEl.scrollHeight;
@@ -120,9 +132,79 @@ export class ChatPane {
     this.lastRenderedSignature = signature;
   }
 
+
+  private renderFrontstagePanel(
+    activityCards: ActivityCardsSnapshot | null,
+    richness: ConversationRichness,
+  ): string {
+    const userCard = activityUserCard(activityCards);
+    const focusSource = activityFocusSource(activityCards);
+    const sources = activitySourceCards(activityCards);
+    const recentItems = activityRecentItems(activityCards, 3);
+    const toolItems = activityToolSemantics(activityCards).slice(0, richness === 'minimal' ? 0 : 4);
+    if (!userCard && !focusSource && !toolItems.length) return '';
+
+    const stateLabel = activityState(activityCards);
+    const tone = activityStateTone(stateLabel);
+    const stage = activityStage(activityCards);
+    const updatedAt = userCard?.updated_at ?? focusSource?.updated_at ?? activityCards?.generated_at;
+
+    return `
+      <section class="activity-frontstage activity-tone-${this.tree.escapeHtml(tone)}">
+        <div class="activity-frontstage-header">
+          <div>
+            <div class="section-kicker">Frontstage Activity</div>
+            <div class="activity-frontstage-title">${this.tree.escapeHtml(activityHeader(activityCards))}</div>
+          </div>
+          <span class="activity-state-pill ${this.tree.escapeHtml(tone)}">${this.tree.escapeHtml(stateLabel)}</span>
+        </div>
+        <div class="activity-frontstage-summary">
+          ${this.tree.escapeHtml(stage !== '-' ? stage : (focusSource?.summary ?? userCard?.focus_summary ?? 'idle'))}
+        </div>
+        <div class="activity-frontstage-chip-row">
+          <span class="activity-chip">focus · ${this.tree.escapeHtml(focusSource?.title ?? userCard?.focus_source_id ?? 'system-agent')}</span>
+          <span class="activity-chip">sources · ${this.tree.escapeHtml(String(sources.length || 1))}</span>
+          ${updatedAt ? `<span class="activity-chip">updated · ${this.tree.escapeHtml(formatLocalTimestamp(updatedAt))}</span>` : ''}
+        </div>
+        ${recentItems.length ? `
+          <div class="activity-frontstage-list">
+            ${recentItems.map((item) => `
+              <article class="activity-list-item">
+                <span class="activity-list-bullet">•</span>
+                <span>${this.tree.escapeHtml(item)}</span>
+              </article>
+            `).join('')}
+          </div>
+        ` : ''}
+        ${richness === 'minimal' ? '' : `
+          <div class="activity-source-grid">
+            ${sources.slice(0, 3).map((card) => `
+              <article class="activity-source-card ${this.tree.escapeHtml(activityStateTone(card.state))}">
+                <div class="activity-source-header">
+                  <span class="activity-source-title">${this.tree.escapeHtml(card.title ?? card.source_id ?? 'source')}</span>
+                  <span class="activity-source-state">${this.tree.escapeHtml(card.state ?? '-')}</span>
+                </div>
+                <div class="activity-source-summary">${this.tree.escapeHtml(card.current_activity ?? card.summary ?? '-')}</div>
+              </article>
+            `).join('')}
+          </div>
+        `}
+        ${toolItems.length ? `
+          <div class="activity-tool-row">
+            ${toolItems.map((item) => `
+              <span class="activity-tool-pill">${this.tree.escapeHtml(item.summary ?? item.tool_name ?? 'tool')}</span>
+            `).join('')}
+          </div>
+        ` : ''}
+      </section>
+    `;
+  }
+
   private renderMessage(
     message: SessionMessage,
     focusByOperation: Map<string, FocusTurn>,
+    semanticsByOperation: Map<string, ToolSemanticView[]>,
+    focusSource: SourceActivityCardView | null,
     selectedOperationId: string | null,
     richness: ConversationRichness,
     openedChatDetailKey: string | null,
@@ -138,8 +220,19 @@ export class ChatPane {
     const operationId = message.operation_id ?? inferOperationId(message.message_id);
     const focusTurn = operationId ? focusByOperation.get(operationId) : undefined;
     const selectedClass = operationId && operationId === selectedOperationId ? 'selected' : '';
+    const isSelected = Boolean(operationId && operationId === selectedOperationId);
     const turnLabel = operationId ? shortTurnLabel(operationId) : null;
-    const richPanel = role === 'user' ? '' : this.renderRichPanel(focusTurn, richness, openedChatDetailKey);
+    const semanticTools = operationId ? (semanticsByOperation.get(operationId) ?? []) : [];
+    const richPanel = role === 'user'
+      ? ''
+      : this.renderRichPanel(
+          focusTurn,
+          semanticTools,
+          isSelected ? focusSource : null,
+          richness,
+          openedChatDetailKey,
+          isSelected,
+        );
 
     return `
       <article class="message ${role} ${selectedClass}" data-operation-id="${this.tree.escapeHtml(operationId ?? '')}">
@@ -159,11 +252,17 @@ export class ChatPane {
 
   private renderRichPanel(
     focusTurn: FocusTurn | undefined,
+    semanticTools: ToolSemanticView[],
+    sourceCard: SourceActivityCardView | null,
     richness: ConversationRichness,
     openedChatDetailKey: string | null,
+    isSelected: boolean,
   ): string {
     if (!focusTurn || richness === 'minimal') return '';
-    const cards = buildTurnCards(focusTurn);
+    const cards = buildTurnCards(focusTurn, semanticTools, {
+      sourceCard,
+      includeMeta: richness === 'full_trace' || isSelected,
+    });
     if (!cards.length) return '';
     return `
       <section class="message-rich-panel ${richness}">
@@ -228,62 +327,6 @@ export class ChatPane {
   }
 }
 
-function buildTurnCards(focusTurn: FocusTurn): TurnCard[] {
-  const reasoning = asRecord(focusTurn.reasoningView);
-  const control = extractControlFeedback(focusTurn);
-  const provider = extractProviderMeta(focusTurn);
-  const cards: TurnCard[] = [];
-  const reasoningSummary = scalar(reasoning.summary);
-
-  if (reasoningSummary !== '-') {
-    cards.push({
-      key: detailKey(focusTurn.operationId, 'reasoning'),
-      tone: 'reasoning',
-      verb: 'Reasoning',
-      title: shortText(reasoningSummary, 220),
-      body: undefined,
-      extra: undefined,
-      chips: [],
-      detailTitle: 'Reasoning View',
-      detailSubtitle: `turn ${shortTurnLabel(focusTurn.operationId)}`,
-      detailValue: reasoning,
-    });
-  }
-
-  for (const [index, tool] of (focusTurn.toolRecords ?? []).entries()) {
-    cards.push({
-      key: detailKey(focusTurn.operationId, `tool:${tool.tool_call_id ?? index}`),
-      tone: 'tool',
-      verb: toolVerb(tool),
-      title: scalar(tool.title ?? tool.tool_name),
-      chips: compactToolChips(tool),
-      body: shortText(scalar(tool.purpose ?? tool.output_summary), 180),
-      extra: optionalShortText(joinNonEmpty([scalar(tool.input_summary), scalar(tool.output_summary)], ' → '), 180),
-      detailTitle: scalar(tool.title ?? tool.tool_name),
-      detailSubtitle: `${toolVerb(tool)} · turn ${shortTurnLabel(focusTurn.operationId)}`,
-      detailValue: tool,
-    });
-  }
-
-  const metaChips = [...compactControlChips(control), ...compactProviderChips(provider)];
-  if (provider.title !== '-' || metaChips.length) {
-    cards.push({
-      key: detailKey(focusTurn.operationId, 'meta'),
-      tone: 'meta',
-      verb: 'Meta',
-      title: provider.title !== '-' ? provider.title : 'Provider / control summary',
-      body: undefined,
-      extra: undefined,
-      chips: metaChips.slice(0, 4),
-      detailTitle: 'Provider + Control Summary',
-      detailSubtitle: `turn ${shortTurnLabel(focusTurn.operationId)}`,
-      detailValue: { provider, control },
-    });
-  }
-
-  return cards;
-}
-
 function renderComposerContextBar(
   binding: DebugBinding | null,
   projectPath: string,
@@ -311,97 +354,17 @@ function renderComposerContextBar(
     .join('');
 }
 
-function compactControlChips(control: JsonRecord): string[] {
-  const chips: string[] = [];
-  const topic = mergedTopicPercent(control);
-  if (topic >= 0) chips.push(`topic ${topic}%`);
-  pushPercentChip(chips, 'simple', control.simple_query_confidence);
-  return chips.slice(0, 2);
-}
 
-function compactProviderChips(
-  provider: { finish: string; status: string; closureStatus: string; stopSource: string },
-): string[] {
-  const chips: string[] = [];
-  if (provider.closureStatus !== '-') chips.push(`closure ${provider.closureStatus}`);
-  if (provider.stopSource !== '-') chips.push(`stop ${provider.stopSource}`);
-  if (provider.finish !== '-') chips.push(`finish ${provider.finish}`);
-  if (provider.status !== '-') chips.push(`http ${provider.status}`);
-  return chips.slice(0, 3);
-}
-
-function compactToolChips(tool: ToolExecutionRecord): string[] {
-  const chips = [scalar(tool.status)];
-  const targetKind = scalar(tool.target_kind);
-  if (targetKind !== '-') chips.push(targetKind);
-  const target = scalar(tool.target_ref);
-  if (target !== '-') chips.push(shortText(target, 36));
-  return chips.filter((item) => item !== '-').slice(0, 3);
-}
-
-function pushPercentChip(chips: string[], label: string, value: unknown): void {
-  const percent = toPercent(value);
-  if (percent >= 0) chips.push(`${label} ${percent}%`);
-}
-
-function mergedTopicPercent(control: JsonRecord): number {
-  const continuity = toPercent(control.continuity_confidence);
-  if (continuity >= 0) return continuity;
-  const shift = toPercent(control.topic_shift_confidence);
-  if (shift >= 0) return Math.max(0, 100 - shift);
-  return -1;
-}
-
-function extractControlFeedback(turn: FocusTurn): JsonRecord {
-  const eventPayload = turn.events.find((event) => event.event_type === 'control.feedback_recorded')?.payload;
-  if (eventPayload && typeof eventPayload === 'object' && !Array.isArray(eventPayload)) return eventPayload as JsonRecord;
-  const digest = asRecord(turn.digest);
-  const digestFeedback = digest.control_feedback;
-  if (digestFeedback && typeof digestFeedback === 'object' && !Array.isArray(digestFeedback)) return digestFeedback as JsonRecord;
-  return {};
-}
-
-function extractProviderMeta(turn: FocusTurn): {
-  title: string;
-  finish: string;
-  status: string;
-  closureStatus: string;
-  stopSource: string;
-} {
-  const accepted = asRecord(turn.events.find((event) => event.event_type === 'provider.operation_accepted')?.payload);
-  const completed = asRecord(
-    turn.events.find((event) => event.event_type === 'provider.completed')?.payload
-    ?? turn.events.find((event) => event.event_type === 'provider.gateway_response_received')?.payload,
-  );
-  const operationCompleted = asRecord(
-    turn.events.find((event) => event.event_type === 'operation.completed')?.payload,
-  );
-  const providerName = scalar(completed.provider_name ?? accepted.provider_name);
-  const model = scalar(completed.model ?? accepted.model);
-  return {
-    title: joinNonEmpty([providerName, model], ' / '),
-    finish: scalar(completed.stop_reason),
-    status: scalar(completed.status),
-    closureStatus: scalar(operationCompleted.status),
-    stopSource: scalar(operationCompleted.stop_source),
-  };
-}
-
-function toolVerb(tool: ToolExecutionRecord): string {
-  const name = scalar(tool.tool_name).toLowerCase();
-  if (['read', 'find', 'search', 'list', 'open', 'cat'].some((needle) => name.includes(needle))) return 'Explored';
-  if (['edit', 'write', 'patch', 'apply'].some((needle) => name.includes(needle))) return 'Edited';
-  if (['spawn', 'delegate'].some((needle) => name.includes(needle))) return 'Delegated';
-  return 'Ran';
-}
-
-function detailKey(operationId: string, kind: string): string {
-  return `${operationId}::${kind}`;
-}
-
-function asRecord(value: unknown): JsonRecord {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) return {};
-  return value as JsonRecord;
+function groupSemanticsByOperation(semantics: ToolSemanticView[]): Map<string, ToolSemanticView[]> {
+  const grouped = new Map<string, ToolSemanticView[]>();
+  for (const item of semantics) {
+    const operationId = scalar(item.operation_id);
+    if (operationId === '-') continue;
+    const existing = grouped.get(operationId) ?? [];
+    existing.push(item);
+    grouped.set(operationId, existing);
+  }
+  return grouped;
 }
 
 function scalar(value: unknown): string {
@@ -410,18 +373,9 @@ function scalar(value: unknown): string {
   return JSON.stringify(value);
 }
 
-function shortText(value: string, limit: number): string {
-  return value.length <= limit ? value : `${value.slice(0, limit)}…`;
-}
-
-function optionalShortText(value: string, limit: number): string | undefined {
-  if (value === '-') return undefined;
-  return shortText(value, limit);
-}
-
-function joinNonEmpty(items: string[], separator: string): string {
-  const valid = items.filter((item) => item && item !== '-');
-  return valid.length ? valid.join(separator) : '-';
+function asRecord(value: unknown): JsonRecord {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return {};
+  return value as JsonRecord;
 }
 
 function inferOperationId(messageId?: string): string | null {
@@ -438,19 +392,6 @@ function isNearBottom(element: HTMLElement): boolean {
 function shortTurnLabel(operationId: string): string {
   const clean = operationId.replace(/^op-/, '');
   return clean.length <= 18 ? `turn:${clean}` : `turn:${clean.slice(0, 18)}…`;
-}
-
-function toPercent(value: unknown): number {
-  if (typeof value === 'number' && Number.isFinite(value)) {
-    return Math.max(0, Math.min(100, Math.round(value)));
-  }
-  if (typeof value === 'string' && value.trim()) {
-    const parsed = Number(value);
-    if (Number.isFinite(parsed)) {
-      return Math.max(0, Math.min(100, Math.round(parsed)));
-    }
-  }
-  return -1;
 }
 
 function resolveProjectPath(currentContext: JsonRecord | null, binding: DebugBinding | null): string {

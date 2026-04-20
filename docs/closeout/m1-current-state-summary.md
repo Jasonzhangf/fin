@@ -19,13 +19,36 @@
 - **Web debug / status probe / compact / tick / reminder / queue / interrupt 基本闭环可用**
 - **正式 build/install gate 已恢复**
 
+但按当前更新后的 M1 验收口径，**M1 仍未完成**，因为还缺：
+
+- **qqbot 作为真实 channel gateway 的实际对话闭环**
+  - 不只是 peer state / pairing / upstream probe
+  - 而是完整 `message.ingest -> conversation/session restore -> session truth -> runtime inference -> session truth -> message.emit`
+  - 用户必须能通过 qqbot 真实输入并收到系统回复
+  - 并且异步补充回复/提醒/后续进度也必须从 session truth 自动送回 channel，而不是只做一次性 request-response bridge
+
 因此当前项目状态应视为：
 
-> **M1 已经从“边搭边试”进入“可冻结、可验证、可继续成熟化”的阶段。**
+> **M1 主体内核已稳定，但仍卡在 qqbot 通道闭环这一项 blocker，尚不能宣称 M1 完成。**
 
 ---
 
 ## 2. 当前已经稳定的能力边界
+
+## 2.0 agent taxonomy
+
+当前已冻结的 agent taxonomy：
+
+1. prompt role 真源只有 `system` 与 `project`
+2. `default` 仅作为历史兼容 alias，运行时解析到 `project`
+3. `worker` 不再是 role，而是 `project agent` 可派生/复用的 runtime 执行体
+
+这意味着当前 M1 的多执行体扩展方向已经固定为：
+
+- 多 worker runtime
+- supervision / mailbox / assign / merge
+
+而不是再增加新的 role family。
 
 ## 2.1 推理主链
 
@@ -165,21 +188,22 @@ Web 不持有业务真相，只持有：
 
 这些事情现在不要误判成“已经完成”：
 
-1. 真多 agent 执行面
-2. 跨机器 project agent 协作
-3. detached/headless daemon
-4. 真正从中间步骤恢复的 pause/resume
-5. 普通用户输入的真正并行推理
-6. 完整 session/task/topic 产品化交互
-7. 成熟 knowledge graph / wiki / memory graph
+1. qqbot 真实 channel 对话闭环
+2. 真多 agent 执行面
+3. 跨机器 project agent 协作
+4. detached/headless daemon
+5. 真正从中间步骤恢复的 pause/resume
+6. 普通用户输入的真正并行推理
+7. 完整 session/task/topic 产品化交互
+8. 成熟 knowledge graph / wiki / memory graph
 
-这些仍然属于 M2/backlog，不应在当前阶段重新发散。
+其中第 1 项当前属于 **M1 blocker**；其余仍属于 M2/backlog，不应在当前阶段重新发散。
 
 ---
 
 ## 5. 当前收口结果
 
-截至当前，原本计划中的 **M1.1 stability pass 核心目标已经完成**。
+截至当前，原本计划中的 **M1.1 stability pass 核心目标大部分已经完成**，但 **qqbot channel gateway 闭环** 仍未收下。
 
 已经实际收下的证据包括：
 
@@ -218,7 +242,7 @@ Web 不持有业务真相，只持有：
 
 结论：
 
-> 当前 `fin` 不再只是“推理核心能跑”，而是已经进入“推理核心可验证、可回归、可冻结”的状态。
+> 当前 `fin` 不再只是“推理核心能跑”，而是已经进入“推理核心可验证、可回归、可冻结”的状态；但 M1 仍需补上 qqbot 真实通道闭环，才能从“稳定内核”进入“完整最小产品闭环”。
 
 ---
 
@@ -255,3 +279,4 @@ Web 不持有业务真相，只持有：
 如果只用一句话概括当前项目状态：
 
 > `fin` 现在已经有了一个可运行、可观察、可安装、可回归，并且主链 receipt 已闭合的单 agent runtime 内核；下一步最重要的不是继续补 M1 功能，而是守住冻结边界，并谨慎决定何时进入 M2。
+- `context.peer` 已能把 ensured local worker peer state 回流到后续上下文，因此 project->worker 的本地协作骨架不再只是 assignments/mailbox 落盘，而是进入推理与观察真源。

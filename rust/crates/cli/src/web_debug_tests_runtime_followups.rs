@@ -85,6 +85,7 @@ fn due_reminder_auto_ticks_scheduler_and_drains_pending_queue() {
             ChatSendRequest {
                 message: "/status wake?".into(),
                 input_kind: Some("status_probe".into()),
+                attachments: Vec::new(),
             },
             &static_provider(&handler.system),
         )
@@ -179,6 +180,7 @@ fn slash_compact_rebuilds_current_context_without_provider_call() {
             ChatSendRequest {
                 message: "/compact".into(),
                 input_kind: None,
+                attachments: Vec::new(),
             },
         )
         .expect("compact command should work");

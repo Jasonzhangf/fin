@@ -1,0 +1,8 @@
+[system_agent]
+local_worker_budget = 4
+auto_resume = true
+
+[project_agent_defaults]
+worker_budget = 4
+auto_resume = true
+auto_connect = true

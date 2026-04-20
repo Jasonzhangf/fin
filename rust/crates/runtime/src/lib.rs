@@ -21,9 +21,9 @@ mod context_blocks;
 mod context_project_support;
 mod context_view;
 #[cfg(test)]
-mod context_view_task_board_tests;
-#[cfg(test)]
 mod context_view_registry_tests;
+#[cfg(test)]
+mod context_view_task_board_tests;
 #[cfg(test)]
 mod context_view_tests;
 mod control_feedback;
@@ -48,6 +48,7 @@ mod task_handoff;
 mod task_store;
 mod tool_catalog;
 mod tool_catalog_dynamic;
+mod tool_catalog_task_tools;
 mod tool_dispatch;
 mod tool_dispatch_control;
 mod tool_dispatch_extended;
@@ -58,12 +59,16 @@ mod tool_dispatch_extended_exec;
 mod tool_dispatch_extended_patch;
 mod tool_dispatch_extended_patch_v4a;
 mod tool_dispatch_extended_query;
+mod tool_dispatch_extended_query_control;
 mod tool_dispatch_extended_query_history;
 mod tool_dispatch_extended_query_image;
 mod tool_dispatch_extended_query_task;
+mod tool_dispatch_extended_task_write;
 mod tool_dispatch_peer;
 #[cfg(test)]
 mod tool_dispatch_query_tests;
+#[cfg(test)]
+mod tool_dispatch_task_write_tests;
 #[cfg(test)]
 mod tool_dispatch_tests;
 mod tool_semantics;

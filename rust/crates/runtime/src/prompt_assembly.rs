@@ -262,11 +262,13 @@ fn behavior_rules(role_id: &str, loaded_skills: &[LoadedSkill]) -> Vec<String> {
         "system" => rules.extend([
             "inspect the current backlog/task board before treating a new request in isolation".into(),
             "before routing, dispatch, reprioritization, or recovery, inspect framework-owned task board, agent presence, supervision, and peer state instead of inferring control state from chat text alone".into(),
+            "when work is complex enough for managed execution, create/update task truth first, then dispatch or review through the task system instead of relying on chat memory alone".into(),
             "prefer dispatch, review, unblock analysis, and coordinated reporting over long single-slice execution".into(),
             "if direct work does not show clear closure after 2-3 closures, escalate into plan plus delegation".into(),
         ]),
         _ => rules.extend([
             "inspect the current project task board before selecting the next execution step".into(),
+            "for managed work, use task-system truth to claim, submit, and review progress instead of free-form status only".into(),
             "prefer dispatching ready and unblocked tasks to workers when resources allow".into(),
             "prefer minimal project-scoped closure and align changes with owning-layer boundaries".into(),
         ]),

@@ -14,6 +14,7 @@ fn pause_and_resume_run_commands_toggle_execution_state() {
             ChatSendRequest {
                 message: "/new".into(),
                 input_kind: None,
+                attachments: Vec::new(),
             },
         )
         .expect("new");
@@ -24,6 +25,7 @@ fn pause_and_resume_run_commands_toggle_execution_state() {
             ChatSendRequest {
                 message: "/pause testing".into(),
                 input_kind: None,
+                attachments: Vec::new(),
             },
         )
         .expect("pause");
@@ -42,6 +44,7 @@ fn pause_and_resume_run_commands_toggle_execution_state() {
             ChatSendRequest {
                 message: "/resume-run".into(),
                 input_kind: None,
+                attachments: Vec::new(),
             },
         )
         .expect("resume run");
@@ -127,6 +130,7 @@ fn interrupt_request_runs_immediately_and_preserves_open_segment() {
             ChatSendRequest {
                 message: "/interrupt fix this now".into(),
                 input_kind: None,
+                attachments: Vec::new(),
             },
             &static_provider(&handler.system),
         )
@@ -226,6 +230,7 @@ fn resume_run_auto_drains_multiple_pending_inputs_until_queue_empty() {
             ChatSendRequest {
                 message: "/resume-run".into(),
                 input_kind: None,
+                attachments: Vec::new(),
             },
             &static_provider(&handler.system),
         )
@@ -295,7 +300,7 @@ fn tick_command_drives_pending_queue_when_scheduler_allows() {
     .expect("state");
     write_file(
             &session_dir.join("queue/pending_inputs.json"),
-            br#"[{"pending_input_id":"pending-1","session_id":"session-tick","task_id":"task-tick","input_kind":"chat","message":"tick queued task","status":"pending","enqueue_reason":"test","enqueued_at":"2026-04-19T22:40:01+08:00"}]"#,
+            br#"[{"pending_input_id":"pending-1","session_id":"session-tick","task_id":"task-tick","input_kind":"chat","source":"channel.qqbot","message":"tick queued task","attachments":[{"name":"tick-proof.png","kind":"image/png"}],"status":"pending","enqueue_reason":"test","enqueued_at":"2026-04-19T22:40:01+08:00"}]"#,
         )
         .expect("pending");
     write_file(
@@ -323,6 +328,7 @@ fn tick_command_drives_pending_queue_when_scheduler_allows() {
             ChatSendRequest {
                 message: "/tick".into(),
                 input_kind: None,
+                attachments: Vec::new(),
             },
             &static_provider(&handler.system),
         )
@@ -340,6 +346,11 @@ fn tick_command_drives_pending_queue_when_scheduler_allows() {
         .expect("latest supervisor");
     assert!(latest_supervisor.contains("\"source\": \"manual_tick\""));
     assert!(latest_supervisor.contains("\"tick_count\": 1"));
+    let current_context =
+        fs::read_to_string(home.join("runtime/current/current_context.json")).expect("context");
+    assert!(current_context.contains("\"source\": \"channel.qqbot\""));
+    assert!(current_context.contains("\"role_id\": \"system\""));
+    assert!(current_context.contains("tick-proof.png"));
     let last_run =
         fs::read_to_string(home.join("runtime/current/last_run.json")).expect("last_run");
     assert!(last_run.contains("current_scheduler_tick_path"));

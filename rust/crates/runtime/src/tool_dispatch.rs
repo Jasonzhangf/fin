@@ -116,6 +116,42 @@ pub(super) fn execute_model_tools(
                 &tool_call_id,
                 &call.arguments,
             ),
+            "project.task.create" => tool_dispatch_extended::handle_project_task_create(
+                &mut outcome,
+                &dispatch_input,
+                &tool_call_id,
+                &call.arguments,
+            ),
+            "project.task.claim" => tool_dispatch_extended::handle_project_task_claim(
+                &mut outcome,
+                &dispatch_input,
+                &tool_call_id,
+                &call.arguments,
+            ),
+            "project.task.submit" => tool_dispatch_extended::handle_project_task_submit(
+                &mut outcome,
+                &dispatch_input,
+                &tool_call_id,
+                &call.arguments,
+            ),
+            "project.task.review" => tool_dispatch_extended::handle_project_task_review(
+                &mut outcome,
+                &dispatch_input,
+                &tool_call_id,
+                &call.arguments,
+            ),
+            "agent.presence.list" => tool_dispatch_extended::handle_agent_presence_list(
+                &mut outcome,
+                &dispatch_input,
+                &tool_call_id,
+                &call.arguments,
+            ),
+            "project.supervision.list" => tool_dispatch_extended::handle_project_supervision_list(
+                &mut outcome,
+                &dispatch_input,
+                &tool_call_id,
+                &call.arguments,
+            ),
             "exec_command" => tool_dispatch_extended::handle_exec_command(
                 &mut outcome,
                 &dispatch_input,

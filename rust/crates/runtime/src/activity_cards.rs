@@ -12,6 +12,7 @@ use std::{
 };
 
 const SYSTEM_SOURCE_ID: &str = "system-agent";
+const PENDING_INBOUND_NOTICE: &str = "已收到，正在处理";
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize)]
 struct PeerRegistry {
@@ -41,6 +42,40 @@ struct PeerRegistryEntry {
     session_id: Option<String>,
 }
 
+#[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize)]
+struct ChannelConversationRegistry {
+    #[serde(default)]
+    conversations: Vec<ChannelConversationRecord>,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize)]
+struct ChannelConversationRecord {
+    #[serde(default)]
+    session_id: Option<String>,
+    #[serde(default)]
+    last_inbound_message_id: Option<String>,
+    #[serde(default)]
+    last_inbound_at: Option<String>,
+    #[serde(default)]
+    last_delivered_message_id: Option<String>,
+    #[serde(default)]
+    last_delivery_at: Option<String>,
+    #[serde(default)]
+    status: String,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize)]
+struct StartupControlSummaryRecord {
+    #[serde(default)]
+    startup_config_summary: String,
+    #[serde(default)]
+    startup_state_summary: String,
+    #[serde(default)]
+    started_resource_count: usize,
+    #[serde(default)]
+    busy_resource_count: usize,
+}
+
 pub fn build_activity_cards(runtime_home: &Path) -> Result<ActivityCardsSnapshot, RuntimeError> {
     let last_run = read_last_run_json(runtime_home)?;
     let session_id = string_field(&last_run, "session_id");
@@ -54,15 +89,20 @@ pub fn build_activity_cards(runtime_home: &Path) -> Result<ActivityCardsSnapshot
     let turns = read_last_run_vec::<TurnRecord>(runtime_home, "session_recent_turns_path")?;
     let execution_state =
         read_last_run_value::<ExecutionStateRecord>(runtime_home, "current_execution_state_path")?;
+    let startup_summary = read_json_if_exists::<StartupControlSummaryRecord>(
+        &runtime_home.join("runtime/current/current_startup_control_summary.json"),
+    )?;
     let peer_registry =
         read_json_if_exists::<PeerRegistry>(&runtime_home.join("runtime/peers/registry.json"))?
             .unwrap_or_default();
+    let pending_inbound_notice = pending_inbound_notice(runtime_home, session_id.as_deref())?;
 
     let semantics = tool_semantics::semantic_views(&tool_records);
     let system_card = build_system_card(
         session_id.as_deref(),
         task_id.as_deref(),
         execution_state.as_ref(),
+        startup_summary.as_ref(),
         semantics.as_slice(),
         turns.as_slice(),
         generated_at.as_str(),
@@ -84,7 +124,7 @@ pub fn build_activity_cards(runtime_home: &Path) -> Result<ActivityCardsSnapshot
         )
     });
 
-    Ok(ActivityCardsSnapshot {
+    let mut snapshot = ActivityCardsSnapshot {
         session_id,
         task_id,
         generated_at: generated_at.clone(),
@@ -94,23 +134,71 @@ pub fn build_activity_cards(runtime_home: &Path) -> Result<ActivityCardsSnapshot
         )),
         source_cards,
         tool_semantics: semantics,
-    })
+    };
+    if let (Some(user_card), Some(notice)) = (
+        snapshot.user_card.as_mut(),
+        pending_inbound_notice.as_deref(),
+    ) {
+        user_card.state = "waiting".into();
+        user_card.focus_summary = Some(notice.to_string());
+        user_card.stage = Some(notice.to_string());
+        user_card.waiting_detail = Some(notice.to_string());
+        if user_card
+            .recent_items
+            .first()
+            .is_none_or(|item| item.as_str() != notice)
+        {
+            user_card.recent_items.insert(0, notice.to_string());
+        }
+        if let Some(system_card) = snapshot
+            .source_cards
+            .iter_mut()
+            .find(|card| card.source_id == SYSTEM_SOURCE_ID)
+        {
+            system_card.state = "waiting".into();
+            system_card.summary = notice.to_string();
+            system_card.current_activity = Some(notice.to_string());
+            system_card.waiting_detail = Some(notice.to_string());
+            system_card.failure_detail = None;
+            system_card.recent_actions.clear();
+            system_card.auto_promoted = true;
+        }
+    }
+    Ok(snapshot)
 }
 
 fn build_system_card(
     session_id: Option<&str>,
     task_id: Option<&str>,
     execution_state: Option<&ExecutionStateRecord>,
+    startup_summary: Option<&StartupControlSummaryRecord>,
     semantics: &[ToolSemanticView],
     turns: &[TurnRecord],
     generated_at: &str,
 ) -> SourceActivityCardView {
     let recent_actions = most_recent_actions(semantics, 3);
     let latest_turn = turns.last();
+    let startup_fallback_only =
+        execution_state.is_none() && latest_turn.is_none() && recent_actions.is_empty();
     let state = execution_state
         .map(|value| value.status.clone())
         .or_else(|| latest_turn.map(|turn| turn.status.clone()))
+        .or_else(|| {
+            startup_summary.map(|summary| {
+                if summary.busy_resource_count > 0 {
+                    "running".into()
+                } else if summary.started_resource_count > 0 {
+                    "ready".into()
+                } else {
+                    "idle".into()
+                }
+            })
+        })
         .unwrap_or_else(|| "idle".into());
+    let execution_reason = execution_state
+        .and_then(|state| state.reason.as_ref())
+        .filter(|reason| !reason.trim().is_empty())
+        .cloned();
     let waiting_detail = execution_state
         .and_then(|state| state.reason.as_ref())
         .filter(|_| matches!(state.as_str(), "waiting" | "paused"))
@@ -122,7 +210,24 @@ fn build_system_card(
                 .filter(|turn| turn.status == "failed")
                 .and_then(|turn| turn.progress_summary.clone())
         });
-    let summary = if let Some(action) = recent_actions.first() {
+    let summary = if startup_fallback_only {
+        startup_summary
+            .and_then(|item| (!item.startup_config_summary.trim().is_empty()).then_some(item))
+            .map(|item| item.startup_config_summary.clone())
+            .unwrap_or_else(|| state.clone())
+    } else if matches!(state.as_str(), "running" | "waiting" | "paused") {
+        execution_reason
+            .clone()
+            .or_else(|| {
+                latest_turn.and_then(|turn| {
+                    turn.progress_summary
+                        .clone()
+                        .or_else(|| turn.assistant_visible_output.clone())
+                })
+            })
+            .or_else(|| recent_actions.first().map(|action| action.summary.clone()))
+            .unwrap_or_else(|| state.clone())
+    } else if let Some(action) = recent_actions.first() {
         action.summary.clone()
     } else if let Some(turn) = latest_turn {
         turn.progress_summary
@@ -132,9 +237,23 @@ fn build_system_card(
     } else {
         "idle".into()
     };
-    let current_activity = latest_turn
-        .and_then(|turn| turn.progress_summary.clone())
-        .or_else(|| recent_actions.first().map(|item| item.summary.clone()));
+    let current_activity = if startup_fallback_only {
+        startup_summary
+            .and_then(|item| (!item.startup_state_summary.trim().is_empty()).then_some(item))
+            .map(|item| item.startup_state_summary.clone())
+    } else if matches!(state.as_str(), "running" | "waiting" | "paused") {
+        execution_reason.clone().or_else(|| {
+            latest_turn.and_then(|turn| {
+                turn.progress_summary
+                    .clone()
+                    .or_else(|| turn.assistant_visible_output.clone())
+            })
+        })
+    } else {
+        latest_turn
+            .and_then(|turn| turn.progress_summary.clone())
+            .or_else(|| recent_actions.first().map(|item| item.summary.clone()))
+    };
 
     SourceActivityCardView {
         source_id: SYSTEM_SOURCE_ID.into(),
@@ -220,7 +339,23 @@ fn build_peer_cards(
 fn build_user_card(cards: &[SourceActivityCardView], generated_at: &str) -> UserActivityCardView {
     let focus = cards
         .iter()
-        .find(|card| card.auto_promoted)
+        .find(|card| card.source_id == SYSTEM_SOURCE_ID)
+        .or_else(|| {
+            cards.iter().find(|card| {
+                card.auto_promoted
+                    && (card.source_id == SYSTEM_SOURCE_ID || card.source_kind == "system_agent")
+            })
+        })
+        .or_else(|| {
+            cards.iter().find(|card| {
+                card.auto_promoted && !card.source_kind.starts_with("channel_gateway.")
+            })
+        })
+        .or_else(|| {
+            cards
+                .iter()
+                .find(|card| !card.source_kind.starts_with("channel_gateway."))
+        })
         .or_else(|| cards.first());
     let header = if let Some(focus_card) = focus {
         format!("system frontstage · {}", shorten(&focus_card.summary, 96))
@@ -320,6 +455,32 @@ fn read_json_if_exists<T: for<'de> Deserialize<'de>>(
             source,
         }),
     }
+}
+
+fn pending_inbound_notice(
+    runtime_home: &Path,
+    session_id: Option<&str>,
+) -> Result<Option<String>, RuntimeError> {
+    let Some(session_id) = session_id else {
+        return Ok(None);
+    };
+    let registry = read_json_if_exists::<ChannelConversationRegistry>(
+        &runtime_home.join("runtime/channels/qqbot/conversations.json"),
+    )?
+    .unwrap_or_default();
+    let pending = registry.conversations.iter().any(|record| {
+        record.session_id.as_deref() == Some(session_id)
+            && record.status == "bound"
+            && match (
+                record.last_inbound_at.as_deref(),
+                record.last_delivery_at.as_deref(),
+            ) {
+                (Some(inbound_at), Some(delivery_at)) => inbound_at > delivery_at,
+                (Some(_), None) => true,
+                _ => false,
+            }
+    });
+    Ok(pending.then(|| PENDING_INBOUND_NOTICE.into()))
 }
 
 fn string_field(value: &Value, key: &str) -> Option<String> {

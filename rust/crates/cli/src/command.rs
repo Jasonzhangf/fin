@@ -30,6 +30,10 @@ pub(crate) enum Command {
         path: String,
         port: u16,
     },
+    ProviderLiveSmoke {
+        path: String,
+        transcript_path: Option<String>,
+    },
     BuildDev {
         path: String,
         build_version: Option<String>,
@@ -67,6 +71,16 @@ pub(crate) fn parse_command(args: &[String]) -> Result<Command, CliError> {
             path: path.clone(),
             transcript_path: transcript_path.clone(),
         }),
+        [cmd, path] if cmd == "provider-live-smoke" => Ok(Command::ProviderLiveSmoke {
+            path: path.clone(),
+            transcript_path: None,
+        }),
+        [cmd, path, transcript_path] if cmd == "provider-live-smoke" => {
+            Ok(Command::ProviderLiveSmoke {
+                path: path.clone(),
+                transcript_path: Some(transcript_path.clone()),
+            })
+        }
         [cmd, path] if cmd == "web-debug" => Ok(Command::WebDebug {
             path: path.clone(),
             port: 4040,

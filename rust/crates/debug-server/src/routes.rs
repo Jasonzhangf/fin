@@ -1,16 +1,16 @@
 use crate::{
-    API_BINDING_PATH, API_CHAT_SEND_PATH, API_CURRENT_CONTEXT_PATH,
+    API_ACTIVITY_CARDS_PATH, API_BINDING_PATH, API_CHAT_SEND_PATH, API_CURRENT_CONTEXT_PATH,
     API_CURRENT_EXECUTION_STATE_PATH, API_CURRENT_INTERRUPTED_SEGMENT_PATH,
     API_CURRENT_PAUSE_CHECKPOINT_PATH, API_CURRENT_PENDING_INPUTS_PATH,
     API_CURRENT_ROUTING_DECISION_PATH, API_CURRENT_SEGMENT_MERGE_PATH, API_EVENTS_PATH,
-    API_LAST_RUN_PATH, API_PROJECTION_PATH, API_QQBOT_EVENTS_PATH, API_QQBOT_STATE_PATH,
-    API_RECENT_CLOSURES_PATH, API_RECENT_CONTEXTS_PATH, API_RECENT_DIGESTS_PATH,
-    API_RECENT_REASONING_VIEWS_PATH, API_RECENT_TOOL_RECORDS_PATH, API_RECENT_TURNS_PATH,
-    API_SESSION_EVENT_ARCHIVE_INDEX_PATH, API_SESSION_EVENTS_PATH, API_SESSION_EVENTS_SEGMENT_PATH,
-    API_SESSION_MESSAGES_PATH, API_SNAPSHOT_PATH, API_WATCH_PATH, ChatSendRequest,
-    DebugActionHandler, DebugDataError, HttpRequest, HttpResponse, INDEX_HTML_PATH,
-    STYLES_CSS_PATH, bad_request_response, css_response, file_response, html_response,
-    internal_error_response, javascript_response, json_response, not_found_response,
+    API_LAST_RUN_PATH, API_PROJECTION_PATH, API_QQBOT_CONVERSATIONS_PATH, API_QQBOT_EVENTS_PATH,
+    API_QQBOT_STATE_PATH, API_RECENT_CLOSURES_PATH, API_RECENT_CONTEXTS_PATH,
+    API_RECENT_DIGESTS_PATH, API_RECENT_REASONING_VIEWS_PATH, API_RECENT_TOOL_RECORDS_PATH,
+    API_RECENT_TURNS_PATH, API_SESSION_EVENT_ARCHIVE_INDEX_PATH, API_SESSION_EVENTS_PATH,
+    API_SESSION_EVENTS_SEGMENT_PATH, API_SESSION_MESSAGES_PATH, API_SNAPSHOT_PATH, API_WATCH_PATH,
+    ChatSendRequest, DebugActionHandler, DebugDataError, HttpRequest, HttpResponse,
+    INDEX_HTML_PATH, STYLES_CSS_PATH, bad_request_response, css_response, file_response,
+    html_response, internal_error_response, javascript_response, json_response, not_found_response,
     session_view, web_app, web_assets, web_styles, write_http_response,
 };
 use std::{net::TcpStream, path::Path};
@@ -43,6 +43,11 @@ pub(crate) fn response_for_request(
         ("GET", API_BINDING_PATH) => match handler.read_binding(runtime_home) {
             Ok(binding) => json_response(200, &binding),
             Err(message) => internal_error_response(&message),
+        },
+        ("GET", API_ACTIVITY_CARDS_PATH) => match fin_runtime::build_activity_cards(runtime_home) {
+            Ok(cards) => json_response(200, &cards),
+            Err(fin_runtime::RuntimeError::Io { .. }) => not_found_response("activity_cards"),
+            Err(err) => internal_error_response(&err.to_string()),
         },
         ("GET", API_PROJECTION_PATH) => file_response(
             &runtime_home.join("runtime/projections/current_projection.json"),
@@ -143,6 +148,10 @@ pub(crate) fn response_for_request(
         ("GET", API_QQBOT_EVENTS_PATH) => file_response(
             &runtime_home.join("runtime/peers/qqbot/events.jsonl"),
             "application/x-ndjson; charset=utf-8",
+        ),
+        ("GET", API_QQBOT_CONVERSATIONS_PATH) => file_response(
+            &runtime_home.join("runtime/channels/qqbot/conversations.json"),
+            "application/json; charset=utf-8",
         ),
         ("POST", API_CHAT_SEND_PATH) => chat_send_response(runtime_home, request, handler),
         _ => not_found_response(&request.path),

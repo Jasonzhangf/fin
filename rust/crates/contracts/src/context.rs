@@ -171,6 +171,10 @@ pub struct ProjectContextBlock {
     pub supervision_actions: Vec<String>,
     #[serde(default)]
     pub project_supervision_summary: Option<String>,
+    #[serde(default)]
+    pub assignment_queue_summary: Option<String>,
+    #[serde(default)]
+    pub mailbox_summary: Option<String>,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]

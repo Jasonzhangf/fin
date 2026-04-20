@@ -1,6 +1,6 @@
 use crate::{
     CliError,
-    agent_presence::{ensure_project_agent_presence, project_agent_id},
+    agent_presence::{ensure_project_agent_presence, ensure_system_worker_pool, project_agent_id},
 };
 use fin_config::{ProjectAgentMode, ProjectAgentStartupConfig, SystemConfig};
 use fin_contracts::ExecutionStateRecord;
@@ -72,6 +72,7 @@ pub(crate) fn materialize_startup_topology(
     let mut projects = Vec::new();
     let mut wake_queue = Vec::new();
     let scan = scan_project_tasks(runtime_home)?;
+    let _ = ensure_system_worker_pool(system, runtime_home, updated_at)?;
 
     for project in &system.runtime.startup.project_agents {
         let presence = ensure_project_agent_presence(system, runtime_home, project, updated_at)?;
@@ -321,7 +322,7 @@ mod tests {
     use fin_config::{
         ConfigMapper, ProviderProtocol, UserConfig, UserProviderConfig, UserRuntimeConfig,
     };
-    use serde_json::json;
+    use serde_json::{Value, json};
     use std::collections::BTreeMap;
 
     fn system() -> SystemConfig {
@@ -406,10 +407,34 @@ mod tests {
         let snapshot = materialize_startup_topology(&home, &system(), "2026-04-20T10:00:00+08:00")
             .expect("snapshot");
         assert_eq!(snapshot.projects.len(), 1);
+        assert_eq!(snapshot.local_worker_budget, 4);
         assert_eq!(snapshot.projects[0].unfinished_task_count, 1);
         assert_eq!(snapshot.projects[0].wake_state, "wake_requested");
         assert_eq!(snapshot.wake_queue.len(), 1);
         assert!(home.join("runtime/projects/registry.json").exists());
         assert!(home.join("runtime/projects/wake_queue.json").exists());
+
+        let presence_registry =
+            fs::read_to_string(home.join("runtime/current/current_agent_presence_registry.json"))
+                .expect("presence registry");
+        let presence_json: Value =
+            serde_json::from_str(&presence_registry).expect("presence registry json");
+        let agents = presence_json["agents"]
+            .as_array()
+            .expect("presence registry agents");
+        assert_eq!(
+            agents
+                .iter()
+                .filter(|item| item["agent_kind"] == "system_worker")
+                .count(),
+            4
+        );
+        assert_eq!(
+            agents
+                .iter()
+                .filter(|item| item["agent_kind"] == "project_worker")
+                .count(),
+            2
+        );
     }
 }

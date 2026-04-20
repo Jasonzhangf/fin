@@ -177,7 +177,11 @@ pub(crate) fn apply_probe_failure(
 }
 
 pub(crate) fn resolve_qqbot_credentials(user_toml_path: Option<&Path>) -> Option<QqbotCredentials> {
-    resolve_from_env().or_else(|| resolve_from_user_toml(user_toml_path))
+    if user_toml_path.is_some_and(|path| path.exists()) {
+        resolve_from_user_toml(user_toml_path).or_else(resolve_from_env)
+    } else {
+        resolve_from_env().or_else(|| resolve_from_user_toml(user_toml_path))
+    }
 }
 
 fn resolve_from_env() -> Option<QqbotCredentials> {
@@ -304,6 +308,7 @@ fn add_seconds(base: &str, seconds: u64) -> Result<String, CliError> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test_env::env_lock;
     use std::{
         sync::atomic::{AtomicU64, Ordering},
         time::{SystemTime, UNIX_EPOCH},
@@ -326,6 +331,7 @@ mod tests {
 
     #[test]
     fn resolves_credentials_from_user_toml() {
+        let _guard = env_lock().lock().expect("env lock");
         unsafe { std::env::remove_var("FIN_QQBOT_APP_ID") };
         unsafe { std::env::remove_var("FIN_QQBOT_CLIENT_SECRET") };
         unsafe { std::env::remove_var("QQBOT_APP_ID") };
@@ -349,6 +355,7 @@ client_secret = "secret-1"
 
     #[test]
     fn resolves_credentials_from_user_toml_env_reference() {
+        let _guard = env_lock().lock().expect("env lock");
         unsafe { std::env::remove_var("FIN_QQBOT_APP_ID") };
         unsafe { std::env::remove_var("FIN_QQBOT_CLIENT_SECRET") };
         unsafe { std::env::remove_var("QQBOT_APP_ID") };
@@ -368,5 +375,29 @@ client_secret_env = "QQBOT_SECRET_FOR_TEST"
         assert_eq!(creds.client_secret, "secret-2");
         let _ = fs::remove_file(path);
         unsafe { std::env::remove_var("QQBOT_SECRET_FOR_TEST") };
+    }
+
+    #[test]
+    fn explicit_user_toml_wins_over_global_env_credentials() {
+        let _guard = env_lock().lock().expect("env lock");
+        unsafe { std::env::set_var("FIN_QQBOT_APP_ID", "999999") };
+        unsafe { std::env::set_var("FIN_QQBOT_CLIENT_SECRET", "env-secret") };
+        let path = temp_file("explicit-over-env.toml");
+        fs::write(
+            &path,
+            r#"
+[channels.qqbot]
+app_id = "1903323793"
+client_secret = "secret-3"
+"#,
+        )
+        .expect("write toml");
+        let creds = resolve_qqbot_credentials(Some(&path)).expect("credentials");
+        assert_eq!(creds.app_id, "1903323793");
+        assert_eq!(creds.client_secret, "secret-3");
+        assert!(creds.source.starts_with("user_toml:"));
+        let _ = fs::remove_file(path);
+        unsafe { std::env::remove_var("FIN_QQBOT_APP_ID") };
+        unsafe { std::env::remove_var("FIN_QQBOT_CLIENT_SECRET") };
     }
 }

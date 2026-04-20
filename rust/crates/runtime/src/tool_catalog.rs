@@ -1,3 +1,4 @@
+use crate::tool_catalog_task_tools::build_project_task_model_tools;
 use fin_contracts::{ToolCatalogBlock, ToolCatalogEntry};
 
 pub(super) fn build_tool_catalog_block() -> ToolCatalogBlock {
@@ -198,40 +199,6 @@ pub(super) fn build_tool_catalog_block() -> ToolCatalogBlock {
                 vec!["refresh rebuild bookkeeping after a context maintenance step".into()],
             ),
             model_tool(
-                "project.task.status",
-                "inspect one task status from runtime/session truth",
-                "read the current or specified task execution state, routing state, and plan summary before deciding next action",
-                vec![
-                    "you need grounded task status before reporting progress or deciding routing".into(),
-                    "you need current task state without guessing from memory".into(),
-                ],
-                vec![
-                    "the turn does not relate to any known task".into(),
-                    "you already have fresh task status from a just-produced artifact in this same step".into(),
-                ],
-                "optional task_id".into(),
-                "task status summary + artifact refs".into(),
-                vec!["reads execution_state / routing / plan artifacts".into()],
-                vec!["inspect the current task before deciding whether to resume or switch".into()],
-            ),
-            model_tool(
-                "project.task.list",
-                "list known task ids from runtime/session truth",
-                "discover reusable task threads before deciding whether to continue, switch, or report project progress",
-                vec![
-                    "you need a grounded list of known tasks for the current runtime".into(),
-                    "the user asks which tasks exist or whether there is a prior task thread".into(),
-                ],
-                vec![
-                    "the exact target task id is already known".into(),
-                    "task discovery is irrelevant to the current turn".into(),
-                ],
-                "optional limit".into(),
-                "known task ids with session linkage summary".into(),
-                vec!["reads session task artifacts under runtime_home".into()],
-                vec!["list recent task ids before choosing a resume path".into()],
-            ),
-            model_tool(
                 "exec_command",
                 "execute one bounded shell command",
                 "run a local command for discovery or validation and capture stdout/stderr summary",
@@ -264,35 +231,41 @@ pub(super) fn build_tool_catalog_block() -> ToolCatalogBlock {
             model_tool(
                 "mailbox.send",
                 "enqueue one collaboration message",
-                "send one structured note/request to another peer mailbox",
+                "send one structured note/request to another peer mailbox or project worker runtime mailbox",
                 vec!["you need asynchronous peer collaboration handoff".into()],
                 vec!["the task can be finished locally in this turn".into()],
-                "target_peer_id + message".into(),
+                "target_peer_id or target_worker_id + message".into(),
                 "mailbox message id receipt".into(),
                 vec!["writes mailbox queue artifact".into()],
-                vec!["send blocker details to project leader mailbox".into()],
+                vec![
+                    "send blocker details to project leader mailbox".into(),
+                    "send build slice result to worker-b mailbox via target_worker_id".into(),
+                ],
             ),
             model_tool(
                 "mailbox.poll",
                 "read pending collaboration messages",
-                "pull pending messages from current peer mailbox",
+                "pull pending messages from current peer mailbox or local worker runtime mailbox",
                 vec!["you need latest async collaboration updates".into()],
                 vec!["no mailbox sync is needed for this turn".into()],
-                "optional limit".into(),
+                "optional peer_id or worker_id + optional limit".into(),
                 "pending message list".into(),
                 vec!["reads mailbox queue artifact".into()],
-                vec!["poll mailbox before deciding next delegation step".into()],
+                vec![
+                    "poll mailbox before deciding next delegation step".into(),
+                    "poll worker-b mailbox after one delegated slice completes".into(),
+                ],
             ),
             model_tool(
                 "agent.assign",
-                "request one agent peer assignment",
-                "assign a bounded subtask to an agent peer",
+                "request one project-worker assignment",
+                "assign a bounded subtask to an agent peer or one project worker runtime",
                 vec!["a bounded subtask should be delegated to another peer".into()],
                 vec!["the task requires immediate local execution".into()],
-                "peer_id + task_summary".into(),
+                "peer_id or target_worker_id + task_summary".into(),
                 "assignment receipt".into(),
                 vec!["emits assignment intent event".into()],
-                vec!["assign test-only validation to reviewer peer".into()],
+                vec!["assign log validation to worker-b via target_worker_id".into()],
             ),
             model_tool(
                 "capability.invoke",
@@ -305,7 +278,10 @@ pub(super) fn build_tool_catalog_block() -> ToolCatalogBlock {
                 vec!["emits capability invoke intent/response events".into()],
                 vec!["invoke metadata capability from remote service peer".into()],
             ),
-        ],
+        ]
+        .into_iter()
+        .chain(build_project_task_model_tools())
+        .collect(),
         framework_tools: vec![
             framework_tool(
                 "provider.call",
@@ -428,7 +404,7 @@ fn framework_tool(
     }
 }
 
-fn model_tool(
+pub(super) fn model_tool(
     name: &str,
     summary: &str,
     purpose: &str,

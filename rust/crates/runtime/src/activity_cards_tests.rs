@@ -214,6 +214,49 @@ fn build_activity_cards_collects_system_and_peer_views() {
 }
 
 #[test]
+fn build_activity_cards_falls_back_to_startup_summary_after_restart() {
+    let runtime_home = temp_runtime_home();
+    write_json(
+        &runtime_home.join("runtime/current/last_run.json"),
+        &serde_json::json!({
+            "session_id": "session-restart",
+            "task_id": "task-restart",
+            "submitted_at": "2026-04-20T23:10:00+08:00"
+        }),
+    );
+    write_json(
+        &runtime_home.join("runtime/current/current_startup_control_summary.json"),
+        &serde_json::json!({
+            "startup_config_summary": "startup config · system_workers=4 · project_workers=2 · projects=1",
+            "startup_state_summary": "startup state · started=3 [mbp.system-worker-01:idle, mbp.builder:busy] · busy=1 [mbp.builder] · waiting=0 · wake_actions=1",
+            "started_resource_count": 3,
+            "busy_resource_count": 1
+        }),
+    );
+    write_json(
+        &runtime_home.join("runtime/peers/registry.json"),
+        &serde_json::json!({"peers":[]}),
+    );
+
+    let cards = build_activity_cards(&runtime_home).expect("cards");
+    let system = cards
+        .source_cards
+        .iter()
+        .find(|card| card.source_id == "system-agent")
+        .expect("system card");
+    assert_eq!(
+        system.summary,
+        "startup config · system_workers=4 · project_workers=2 · projects=1"
+    );
+    assert!(
+        system
+            .current_activity
+            .as_deref()
+            .is_some_and(|value| value.contains("started=3"))
+    );
+}
+
+#[test]
 fn unbound_peer_card_reports_restore_state_not_stale_bound_session() {
     let runtime_home = temp_runtime_home();
     write_json(
@@ -257,7 +300,143 @@ fn unbound_peer_card_reports_restore_state_not_stale_bound_session() {
         cards
             .user_card
             .as_ref()
-            .and_then(|card| card.stage.as_deref()),
-        Some("waiting inbound session restore")
+            .map(|card| card.focus_source_id.as_deref()),
+        Some(Some("system-agent"))
     );
+}
+
+#[test]
+fn pending_inbound_notice_overrides_stale_system_recent_action() {
+    let runtime_home = temp_runtime_home();
+    let session_rel = "sessions/2026/04/session-1";
+    write_json(
+        &runtime_home.join("runtime/current/last_run.json"),
+        &serde_json::json!({
+            "session_id": "session-1",
+            "task_id": "task-1",
+            "submitted_at": "2026-04-20T14:21:56+08:00",
+            "session_recent_tool_records_path": format!("{session_rel}/tools/recent_tool_records.json"),
+            "session_recent_turns_path": format!("{session_rel}/turns/recent_turns.json"),
+            "current_execution_state_path": "runtime/current/current_execution_state.json"
+        }),
+    );
+    write_json(
+        &runtime_home.join(format!("{session_rel}/tools/recent_tool_records.json")),
+        &vec![ToolExecutionRecord {
+            tool_call_id: "tool-stop".into(),
+            operation_id: "op-prev".into(),
+            trace_id: "trace-prev".into(),
+            refs: EntityRefs::default(),
+            tool_name: "reasoning.stop".into(),
+            status: "completed".into(),
+            input_summary: Some("stop".into()),
+            output_summary: Some("stopped".into()),
+            started_at: "2026-04-20T14:21:00+08:00".into(),
+            ended_at: Some("2026-04-20T14:21:00+08:00".into()),
+            ..ToolExecutionRecord::default()
+        }],
+    );
+    write_json(
+        &runtime_home.join(format!("{session_rel}/turns/recent_turns.json")),
+        &vec![TurnRecord {
+            turn_id: "turn-prev".into(),
+            operation_id: "op-prev".into(),
+            status: "completed".into(),
+            progress_summary: Some("Stopped current_turn".into()),
+            created_at: "2026-04-20T14:21:00+08:00".into(),
+            completed_at: Some("2026-04-20T14:21:00+08:00".into()),
+            ..TurnRecord::default()
+        }],
+    );
+    write_json(
+        &runtime_home.join("runtime/current/current_execution_state.json"),
+        &serde_json::json!({
+            "state_id": "state-1",
+            "session_id": "session-1",
+            "task_id": "task-1",
+            "status": "running",
+            "pending_input_count": 0,
+            "accepts_user_input": false,
+            "reason": "active closure running",
+            "updated_at": "2026-04-20T14:21:56+08:00"
+        }),
+    );
+    write_json(
+        &runtime_home.join("runtime/peers/registry.json"),
+        &serde_json::json!({
+            "peers": [{
+                "peer_id": "peer-channel-gateway-qqbot-local",
+                "peer_kind": "channel_gateway.qqbot",
+                "presence_state": "online",
+                "runtime_state": "bridge_ready",
+                "connectivity_state": "connected",
+                "binding_state": "bound",
+                "lifecycle_state": "paired_active",
+                "updated_at": "2026-04-20T14:21:56+08:00",
+                "pairing_required": false,
+                "session_valid": true,
+                "session_id": "session-1"
+            }]
+        }),
+    );
+    write_json(
+        &runtime_home.join("runtime/channels/qqbot/conversations.json"),
+        &serde_json::json!({
+            "conversations": [{
+                "session_id": "session-1",
+                "status": "bound",
+                "last_inbound_message_id": "inbound-1",
+                "last_inbound_at": "2026-04-20T14:21:55+08:00",
+                "last_delivered_message_id": "assistant-old",
+                "last_delivery_at": "2026-04-20T14:21:54+08:00"
+            }]
+        }),
+    );
+
+    let cards = build_activity_cards(&runtime_home).expect("cards");
+    let user_card = cards.user_card.expect("user card");
+    assert_eq!(user_card.state, "waiting");
+    assert_eq!(user_card.focus_source_id.as_deref(), Some("system-agent"));
+    assert_eq!(user_card.stage.as_deref(), Some("已收到，正在处理"));
+    let system = cards
+        .source_cards
+        .iter()
+        .find(|card| card.source_id == "system-agent")
+        .expect("system");
+    assert_eq!(system.summary, "已收到，正在处理");
+    assert!(system.recent_actions.is_empty());
+}
+
+#[test]
+fn pending_inbound_notice_clears_after_delivery_time_passes_inbound() {
+    let runtime_home = temp_runtime_home();
+    write_json(
+        &runtime_home.join("runtime/current/last_run.json"),
+        &serde_json::json!({
+            "session_id": "session-1",
+            "task_id": "task-1",
+            "submitted_at": "2026-04-20T14:22:43+08:00"
+        }),
+    );
+    write_json(
+        &runtime_home.join("runtime/peers/registry.json"),
+        &serde_json::json!({"peers":[]}),
+    );
+    write_json(
+        &runtime_home.join("runtime/channels/qqbot/conversations.json"),
+        &serde_json::json!({
+            "conversations": [{
+                "session_id": "session-1",
+                "status": "bound",
+                "last_inbound_message_id": "inbound-1",
+                "last_inbound_at": "2026-04-20T14:21:55+08:00",
+                "last_delivered_message_id": "assistant-1",
+                "last_delivery_at": "2026-04-20T14:22:43+08:00"
+            }]
+        }),
+    );
+
+    let cards = build_activity_cards(&runtime_home).expect("cards");
+    let user_card = cards.user_card.expect("user card");
+    assert_ne!(user_card.stage.as_deref(), Some("已收到，正在处理"));
 }

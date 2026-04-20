@@ -85,7 +85,7 @@ fn run_supervisor_cycle_persists_cycle_and_events() {
         5_000,
         &RuntimeRetentionConfig::default(),
         8,
-        |binding, message, _merge_segment| {
+        |binding, message, _source, _attachments, _merge_segment| {
             Ok(ChatSendResponse {
                 binding,
                 answer: format!("done:{message}"),
@@ -170,7 +170,7 @@ fn run_supervisor_cycle_derives_wait_running_next_check() {
         5_000,
         &RuntimeRetentionConfig::default(),
         8,
-        |_binding, _message, _merge_segment| {
+        |_binding, _message, _source, _attachments, _merge_segment| {
             panic!("running state should not dispatch queued work");
         },
     )

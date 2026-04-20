@@ -167,3 +167,94 @@ fn drive_ready_project_runtime_resumes_ticks_ready_project_session() {
             .expect("pickup");
     assert!(pickup.contains("\"pickup_state\": \"claimed_idle\""));
 }
+
+#[test]
+fn drive_ready_project_runtime_resumes_seeds_claimed_idle_project_queue() {
+    let home = temp_runtime_home("seed");
+    let session_dir = home.join("sessions/2026/04/session-fin");
+    fs::create_dir_all(session_dir.join("conversation")).expect("conversation");
+    fs::create_dir_all(session_dir.join("context")).expect("context");
+    fs::create_dir_all(session_dir.join("queue")).expect("queue");
+    fs::create_dir_all(session_dir.join("tasks/registry")).expect("tasks");
+    write_file(&session_dir.join("conversation/messages.json"), b"[]");
+    write_file(
+        &session_dir.join("context/current_context.json"),
+        br#"{"project":{"primary_project":{"project_id":"fin"}}}"#,
+    );
+    write_file(&session_dir.join("queue/pending_inputs.json"), b"[]");
+    write_file(
+        &session_dir.join("tasks/registry/task-fin-1.json"),
+        br#"{
+  "task_id":"task-fin-1",
+  "session_id":"session-fin",
+  "title":"task",
+  "summary":"task",
+  "status":"claimed",
+  "claimed_by_worker_id":"worker-mbp-builder",
+  "created_at":"2026-04-20T23:39:00+08:00",
+  "updated_at":"2026-04-20T23:39:00+08:00"
+}"#,
+    );
+    write_file(
+        &home.join("runtime/current/current_project_execution_handoffs.json"),
+        br#"{
+  "updated_at":"2026-04-20T23:41:00+08:00",
+  "project_count":1,
+  "prepared_count":1,
+  "noop_count":0,
+  "missing_task_count":0,
+  "projects":[{
+    "project_id":"fin",
+    "agent_id":"mbp.builder",
+    "worker_id":"worker-mbp-builder",
+    "session_id":"session-fin",
+    "task_id":"task-fin-1",
+    "handoff_state":"prepared",
+    "updated_at":"2026-04-20T23:41:00+08:00",
+    "summary":"prepared",
+    "artifact_refs":[]
+  }]
+}"#,
+    );
+    write_file(&home.join("runtime/current/last_run.json"), b"{}");
+
+    let report = drive_ready_project_runtime_resumes(
+        &home,
+        &system(),
+        "project_runtime_resume",
+        "2026-04-20T23:42:00+08:00",
+        |binding, message, source, _attachments, _merge_segment| {
+            assert_eq!(message, "continue work");
+            assert_eq!(source, "project.resume");
+            Ok(ChatSendResponse {
+                binding,
+                answer: "done".into(),
+                digest_id: "digest-project-resume".into(),
+                events_count: 0,
+                response_kind: "assistant_message".into(),
+                freshness: None,
+                control_feedback: None,
+                progress: None,
+                note: None,
+                routing_action: None,
+            })
+        },
+    )
+    .expect("resume report");
+
+    assert_eq!(report.attempted_count, 1);
+    assert_eq!(report.drove_count, 1);
+
+    let pending =
+        fs::read_to_string(session_dir.join("queue/pending_inputs.json")).expect("pending inputs");
+    assert_eq!(pending.trim(), "[]");
+
+    let latest_queue =
+        fs::read_to_string(home.join("runtime/current/current_pending_inputs.json")).unwrap();
+    assert_eq!(latest_queue.trim(), "[]");
+
+    let pickup =
+        fs::read_to_string(home.join("runtime/current/current_project_runtime_pickups.json"))
+            .expect("pickup");
+    assert!(pickup.contains("\"pickup_state\": \"claimed_idle\""));
+}

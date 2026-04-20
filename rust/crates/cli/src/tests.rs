@@ -114,6 +114,34 @@ fn parse_command_accepts_web_debug_default_port() {
 }
 
 #[test]
+fn parse_command_accepts_provider_live_smoke() {
+    let args = vec!["provider-live-smoke".into(), "/tmp/user.toml".into()];
+    assert_eq!(
+        parse_command(&args).expect("command should parse"),
+        Command::ProviderLiveSmoke {
+            path: "/tmp/user.toml".into(),
+            transcript_path: None,
+        }
+    );
+}
+
+#[test]
+fn parse_command_accepts_provider_live_smoke_with_transcript() {
+    let args = vec![
+        "provider-live-smoke".into(),
+        "/tmp/user.toml".into(),
+        "/tmp/provider-live.json".into(),
+    ];
+    assert_eq!(
+        parse_command(&args).expect("command should parse"),
+        Command::ProviderLiveSmoke {
+            path: "/tmp/user.toml".into(),
+            transcript_path: Some("/tmp/provider-live.json".into()),
+        }
+    );
+}
+
+#[test]
 fn parse_command_accepts_transcript_demo() {
     let args = vec![
         "transcript-demo".into(),
@@ -191,6 +219,11 @@ fn runtime_demo_persists_home_artifacts() {
         .expect("artifacts should persist");
 
     assert!(home.join("config/user.toml").exists());
+    let system_template =
+        fs::read_to_string(home.join("config/system.template.toml")).expect("system template");
+    assert!(system_template.contains("policy.entry_role"));
+    assert!(system_template.contains("entry_role = \"system\""));
+    assert!(system_template.contains("default_role = \"project\""));
     for relative in [
         "runtime/projections/current_projection.json",
         "sessions/2026/04/session-cli-demo/events/stream.jsonl",

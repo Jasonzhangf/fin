@@ -143,7 +143,10 @@ pub(crate) fn run_mainline_demo(system: &SystemConfig) -> Result<MainlineDemoRun
             trace_id: format!("trace-{}-{:04}", ids.scope, index + 1),
             session_id: ids.session_id.clone(),
             task_id: ids.task_id.clone(),
+            agent_name: Some("cli-demo".into()),
+            role_id: None,
             input: (*input).to_string(),
+            source: "cli.user".into(),
             recent_messages: history_messages(&runs),
             recent_digests: digests,
             recent_reasoning_views: runs.iter().map(|run| run.reasoning_view.clone()).collect(),
@@ -157,6 +160,7 @@ pub(crate) fn run_mainline_demo(system: &SystemConfig) -> Result<MainlineDemoRun
                 .ok()
                 .map(|path| path.display().to_string()),
             selected_paths: Vec::new(),
+            attachment_summaries: Vec::new(),
             submitted_at: local_timestamp_for_turn(time_base, index),
         };
         runs.push(run_demo_request(system, &provider, request)?);

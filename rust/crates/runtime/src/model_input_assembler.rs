@@ -11,6 +11,18 @@ impl ModelInputAssembler {
     pub fn assemble(&self, input: &str, context: &MinimalContextView) -> String {
         let mut sections = Vec::new();
 
+        if let Some(role_prompt) = &context.role_prompt {
+            sections.push(format!(
+                "Agent prompt:\n{}",
+                render_role_prompt_lines(role_prompt).join("\n")
+            ));
+            if !role_prompt.output_contract.is_empty() {
+                sections.push(format!(
+                    "Structured output contract:\n- {}",
+                    role_prompt.output_contract.join("\n- ")
+                ));
+            }
+        }
         if let Some(summary) = context
             .summary
             .as_deref()
@@ -23,18 +35,6 @@ impl ModelInputAssembler {
                 "Continuity tail:\n- {}",
                 context.continuity_tail.join("\n- ")
             ));
-        }
-        if let Some(role_prompt) = &context.role_prompt {
-            sections.push(format!(
-                "Role prompt:\n{}",
-                render_role_prompt_lines(role_prompt).join("\n")
-            ));
-            if !role_prompt.output_contract.is_empty() {
-                sections.push(format!(
-                    "Structured output contract:\n- {}",
-                    role_prompt.output_contract.join("\n- ")
-                ));
-            }
         }
         if let Some(tools) = &context.tools {
             let model_tools = tools
@@ -69,10 +69,22 @@ impl ModelInputAssembler {
                 ));
             }
         }
+        if let Some(project) = &context.project {
+            let lines = render_project_lines(project);
+            if !lines.is_empty() {
+                sections.push(format!("Project scope:\n{}", lines.join("\n")));
+            }
+        }
+        if let Some(peer) = &context.peer {
+            let lines = render_peer_lines(peer);
+            if !lines.is_empty() {
+                sections.push(format!("Peer scope:\n{}", lines.join("\n")));
+            }
+        }
         if let Some(history) = &context.history {
             if !history.recent_messages.is_empty() {
                 sections.push(format!(
-                    "Recent history:\n- {}",
+                    "Recent interaction ledger:\n- {}",
                     history.recent_messages.join("\n- ")
                 ));
             }
@@ -89,20 +101,12 @@ impl ModelInputAssembler {
                 ));
             }
         }
-        if let Some(project) = &context.project {
-            let lines = render_project_lines(project);
-            if !lines.is_empty() {
-                sections.push(format!("Project scope:\n{}", lines.join("\n")));
-            }
-        }
-        if let Some(peer) = &context.peer {
-            let lines = render_peer_lines(peer);
-            if !lines.is_empty() {
-                sections.push(format!("Peer scope:\n{}", lines.join("\n")));
-            }
-        }
-        sections.push(format!("Current user input:\n{input}"));
+        sections.push(format!("Current request:\n{input}"));
         if let Some(current_input) = &context.current_input {
+            sections.push(format!(
+                "Request envelope:\nsource={}\noperation_id={}\ntrace_id={}",
+                current_input.source, current_input.operation_id, current_input.trace_id,
+            ));
             let lines = render_attachments(current_input.attachments.as_slice());
             if !lines.is_empty() {
                 sections.push(format!("Input attachments:\n- {}", lines.join("\n- ")));

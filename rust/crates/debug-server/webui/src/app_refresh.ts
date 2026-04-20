@@ -1,6 +1,7 @@
 import { resolveEventLedgerState } from './event_ledger_state.js';
 import { buildFocusTurns } from './focus.js';
 import type {
+  ActivityCardsSnapshot,
   ClosureTraceRecord,
   ContextSnapshotRecord,
   DebugBinding,
@@ -29,6 +30,7 @@ export async function loadRefreshState(
     recentToolRecords,
     recentClosures,
     recentTurns,
+    activityCards,
     currentExecutionState,
     currentPendingInputs,
     currentPauseCheckpoint,
@@ -48,6 +50,7 @@ export async function loadRefreshState(
     fetchJson<ToolExecutionRecord[]>('/api/recent_tool_records.json').catch(() => []),
     fetchJson<ClosureTraceRecord[]>('/api/recent_closures.json').catch(() => []),
     fetchJson<TurnRecord[]>('/api/recent_turns.json').catch(() => []),
+    fetchJson<ActivityCardsSnapshot>('/api/activity_cards.json').catch(() => null),
     fetchJson<JsonRecord>('/api/current_execution_state.json').catch(() => null),
     fetchJson<JsonRecord[]>('/api/current_pending_inputs.json').catch(() => []),
     fetchJson<JsonRecord>('/api/current_pause_checkpoint.json').catch(() => null),
@@ -113,6 +116,7 @@ export async function loadRefreshState(
     recentToolRecords: Array.isArray(recentToolRecords) ? recentToolRecords : [],
     recentClosures: Array.isArray(recentClosures) ? recentClosures : [],
     recentTurns: Array.isArray(recentTurns) ? recentTurns : [],
+    activityCards,
     currentExecutionState,
     currentPendingInputs: Array.isArray(currentPendingInputs) ? currentPendingInputs : [],
     currentPauseCheckpoint,

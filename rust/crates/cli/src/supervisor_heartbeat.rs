@@ -2,8 +2,8 @@ use crate::{CliError, supervisor_cycle::run_supervisor_cycle};
 use chrono::{DateTime, FixedOffset};
 use fin_config::RuntimeRetentionConfig;
 use fin_contracts::{
-    DebugVisibility, EntityRefs, EventEnvelope, Severity, SupervisorCycleRecord,
-    SupervisorHeartbeatRecord,
+    DebugVisibility, EntityRefs, EventEnvelope, InputAttachmentSummary, Severity,
+    SupervisorCycleRecord, SupervisorHeartbeatRecord,
 };
 use fin_debug_server::{ChatSendResponse, DebugBinding};
 use fin_runtime::append_framework_events;
@@ -54,6 +54,8 @@ where
     F: FnMut(
         DebugBinding,
         String,
+        String,
+        Vec<InputAttachmentSummary>,
         Option<&fin_contracts::InterruptedSegmentRecord>,
     ) -> Result<ChatSendResponse, CliError>,
 {

@@ -1,6 +1,6 @@
 use fin_contracts::{
-    ControlFeedback, EventEnvelope, ExecutionNote, ProgressBlock, ProjectionView,
-    ProviderEventPayload,
+    ActivityCardsSnapshot, ControlFeedback, EventEnvelope, ExecutionNote, ProgressBlock,
+    ProjectionView, ProviderEventPayload,
 };
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -21,6 +21,9 @@ mod session_view;
 mod web_app;
 mod web_assets;
 mod web_styles;
+
+#[cfg(test)]
+mod tests_activity_cards;
 
 pub use chat_api::{ChatSendRequest, ChatSendResponse, DebugBinding};
 
@@ -46,16 +49,20 @@ pub(crate) const API_RECENT_CLOSURES_PATH: &str = "/api/recent_closures.json";
 pub(crate) const API_RECENT_TURNS_PATH: &str = "/api/recent_turns.json";
 pub(crate) const API_SESSION_MESSAGES_PATH: &str = "/api/session_messages.json";
 pub(crate) const API_SESSION_EVENTS_PATH: &str = "/api/session_events.json";
-pub(crate) const API_SESSION_EVENT_ARCHIVE_INDEX_PATH: &str = "/api/session_event_archive_index.json";
+pub(crate) const API_SESSION_EVENT_ARCHIVE_INDEX_PATH: &str =
+    "/api/session_event_archive_index.json";
 pub(crate) const API_SESSION_EVENTS_SEGMENT_PATH: &str = "/api/session_events_segment.json";
 pub(crate) const API_CURRENT_EXECUTION_STATE_PATH: &str = "/api/current_execution_state.json";
 pub(crate) const API_CURRENT_PENDING_INPUTS_PATH: &str = "/api/current_pending_inputs.json";
 pub(crate) const API_CURRENT_PAUSE_CHECKPOINT_PATH: &str = "/api/current_pause_checkpoint.json";
-pub(crate) const API_CURRENT_INTERRUPTED_SEGMENT_PATH: &str = "/api/current_interrupted_segment.json";
+pub(crate) const API_CURRENT_INTERRUPTED_SEGMENT_PATH: &str =
+    "/api/current_interrupted_segment.json";
 pub(crate) const API_CURRENT_SEGMENT_MERGE_PATH: &str = "/api/current_segment_merge.json";
 pub(crate) const API_CURRENT_ROUTING_DECISION_PATH: &str = "/api/current_routing_decision.json";
+pub(crate) const API_ACTIVITY_CARDS_PATH: &str = "/api/activity_cards.json";
 pub(crate) const API_QQBOT_STATE_PATH: &str = "/api/qqbot_state.json";
 pub(crate) const API_QQBOT_EVENTS_PATH: &str = "/api/qqbot_events.jsonl";
+pub(crate) const API_QQBOT_CONVERSATIONS_PATH: &str = "/api/qqbot_conversations.json";
 pub(crate) const API_CHAT_SEND_PATH: &str = "/api/chat/send";
 pub(crate) const API_WATCH_PATH: &str = "/api/watch";
 
@@ -136,6 +143,12 @@ pub struct InMemoryProjector {
 pub struct DebugSnapshot {
     pub projection: ProjectionView,
     pub events: Vec<EventEnvelope<Value>>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ActivityCardsResponse {
+    #[serde(flatten)]
+    pub cards: ActivityCardsSnapshot,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -301,9 +314,9 @@ pub fn serve_debug_mvp_with_handler(
     })
 }
 #[cfg(test)]
-pub(crate) use routes::response_for_request;
-#[cfg(test)]
 pub(crate) use routes::response_for_path;
+#[cfg(test)]
+pub(crate) use routes::response_for_request;
 
 #[cfg(test)]
 mod tests;

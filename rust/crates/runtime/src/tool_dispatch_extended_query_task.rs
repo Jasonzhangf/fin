@@ -1,14 +1,10 @@
+use crate::task_board_snapshot::{collect_tasks, read_task_status};
 use crate::tool_dispatch::{
     ToolDispatchInput, ToolDispatchOutcome, failed_record, read_string, read_u64,
     runtime_home_from_context, short_text,
 };
-use fin_contracts::{ExecutionStateRecord, ToolExecutionRecord};
+use fin_contracts::ToolExecutionRecord;
 use serde_json::{Value, json};
-use std::{
-    collections::BTreeMap,
-    fs,
-    path::{Path, PathBuf},
-};
 
 pub(super) fn handle_project_task_status(
     outcome: &mut ToolDispatchOutcome,
@@ -56,7 +52,7 @@ pub(super) fn handle_project_task_status(
         ));
         return true;
     };
-    let detail = match build_task_status_detail(summary) {
+    let detail = match read_task_status(summary) {
         Ok(value) => value,
         Err(error) => {
             outcome.tool_records.push(failed_record(
@@ -184,158 +180,4 @@ pub(super) fn handle_project_task_list(
         .note_hints
         .push(format!("project.task.list returned {} task(s)", ids.len()));
     true
-}
-
-#[derive(Debug, Clone)]
-struct TaskSummary {
-    session_id: String,
-    session_dir: PathBuf,
-}
-
-#[derive(Debug, Clone)]
-struct TaskStatusDetail {
-    status: String,
-    pending_input_count: usize,
-    plan_step_count: usize,
-    output_summary: String,
-    artifact_refs: Vec<String>,
-}
-
-fn collect_tasks(runtime_home: &Path) -> Result<BTreeMap<String, TaskSummary>, String> {
-    let mut tasks = BTreeMap::new();
-    let sessions_root = runtime_home.join("sessions");
-    if !sessions_root.exists() {
-        return Ok(tasks);
-    }
-    for year in fs::read_dir(&sessions_root).map_err(|error| error.to_string())? {
-        let year = year.map_err(|error| error.to_string())?;
-        if !year.path().is_dir() {
-            continue;
-        }
-        for month in fs::read_dir(year.path()).map_err(|error| error.to_string())? {
-            let month = month.map_err(|error| error.to_string())?;
-            if !month.path().is_dir() {
-                continue;
-            }
-            for session in fs::read_dir(month.path()).map_err(|error| error.to_string())? {
-                let session = session.map_err(|error| error.to_string())?;
-                let session_path = session.path();
-                if !session_path.is_dir() {
-                    continue;
-                }
-                let session_id = session.file_name().to_string_lossy().to_string();
-                for task_id in task_ids_from_session(&session_path)? {
-                    tasks.entry(task_id).or_insert_with(|| TaskSummary {
-                        session_id: session_id.clone(),
-                        session_dir: session_path.clone(),
-                    });
-                }
-            }
-        }
-    }
-    Ok(tasks)
-}
-
-fn build_task_status_detail(summary: &TaskSummary) -> Result<TaskStatusDetail, String> {
-    let execution_state_path = summary.session_dir.join("control/execution_state.json");
-    let execution_state = read_json_typed::<ExecutionStateRecord>(&execution_state_path)
-        .map_err(|error| format!("failed to read execution state: {error}"))?;
-    let routing_path = summary.session_dir.join("tasks/routing/latest_action.json");
-    let routing = read_json_value(&routing_path)
-        .map_err(|error| format!("failed to read latest routing action: {error}"))?;
-    let plan_path = summary.session_dir.join("tasks/plan/latest.json");
-    let plan = read_json_value(&plan_path)
-        .map_err(|error| format!("failed to read latest plan artifact: {error}"))?;
-
-    let status = execution_state
-        .as_ref()
-        .map(|value| value.status.clone())
-        .unwrap_or_else(|| "unknown".into());
-    let pending_input_count = execution_state
-        .as_ref()
-        .map(|value| value.pending_input_count)
-        .unwrap_or(0);
-    let action_kind = routing
-        .as_ref()
-        .and_then(|value| value.get("action_kind"))
-        .and_then(Value::as_str)
-        .unwrap_or("none");
-    let plan_step_count = plan
-        .as_ref()
-        .and_then(|value| value.get("steps"))
-        .and_then(Value::as_array)
-        .map(|items| items.len())
-        .unwrap_or(0);
-    Ok(TaskStatusDetail {
-        status: status.clone(),
-        pending_input_count,
-        plan_step_count,
-        output_summary: format!(
-            "session={} status={} pending_inputs={} action={} plan_steps={}",
-            summary.session_id, status, pending_input_count, action_kind, plan_step_count
-        ),
-        artifact_refs: vec![
-            execution_state_path.display().to_string(),
-            routing_path.display().to_string(),
-            plan_path.display().to_string(),
-        ],
-    })
-}
-
-fn task_ids_from_session(session_dir: &Path) -> Result<Vec<String>, String> {
-    let mut ids = Vec::new();
-    if let Some(task_id) = read_json_value(&session_dir.join("tasks/routing/latest_action.json"))?
-        .as_ref()
-        .and_then(|value| value.get("task_id"))
-        .and_then(Value::as_str)
-        .map(str::to_string)
-    {
-        ids.push(task_id);
-    }
-    if let Some(task_id) =
-        read_json_typed::<ExecutionStateRecord>(&session_dir.join("control/execution_state.json"))?
-            .and_then(|value| value.refs.task_id)
-    {
-        if !ids.contains(&task_id) {
-            ids.push(task_id);
-        }
-    }
-    if let Ok(messages) = read_json_array(&session_dir.join("conversation/messages.json")) {
-        for task_id in messages.iter().filter_map(|item| {
-            item.get("task_id")
-                .and_then(Value::as_str)
-                .map(str::to_string)
-        }) {
-            if !ids.contains(&task_id) {
-                ids.push(task_id);
-            }
-        }
-    }
-    Ok(ids)
-}
-
-fn read_json_value(path: &Path) -> Result<Option<Value>, String> {
-    match fs::read_to_string(path) {
-        Ok(content) => serde_json::from_str::<Value>(&content)
-            .map(Some)
-            .map_err(|error| error.to_string()),
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(None),
-        Err(error) => Err(error.to_string()),
-    }
-}
-
-fn read_json_array(path: &Path) -> Result<Vec<Value>, String> {
-    Ok(read_json_value(path)?
-        .and_then(|value| value.as_array().cloned())
-        .unwrap_or_default())
-}
-
-fn read_json_typed<T: serde::de::DeserializeOwned>(path: &Path) -> Result<Option<T>, String> {
-    match fs::read_to_string(path) {
-        Ok(content) => serde_json::from_str::<T>(&content)
-            .map(Some)
-            .map_err(|error| error.to_string()),
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(None),
-        Err(error) => Err(error.to_string()),
-    }
 }

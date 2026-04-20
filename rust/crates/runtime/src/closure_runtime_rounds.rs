@@ -19,11 +19,11 @@ pub(super) fn execute_round(
     operation: &OperationEnvelope<InferenceOperationPayload>,
     provider: &impl InferenceProvider,
     refs: &EntityRefs,
+    round_context: &MinimalContextView,
     round_index: u32,
     input: String,
 ) -> Result<RoundExecution, RuntimeError> {
-    let rendered_input =
-        ModelInputAssembler::default().assemble(&input, &operation.payload.context);
+    let rendered_input = ModelInputAssembler::default().assemble(&input, round_context);
     let prepared_request = provider.prepare_request(&ProviderRequest {
         input,
         rendered_input: Some(rendered_input),
@@ -51,7 +51,7 @@ pub(super) fn execute_round(
         &operation.trace_id,
         refs,
         &operation.submitted_at,
-        &operation.payload.context,
+        round_context,
         round_index,
         &parsed_output.tool_calls,
     );
@@ -275,12 +275,15 @@ pub(super) fn build_followup_input(
 ) -> String {
     let tool_lines = tool_records
         .iter()
+        .filter(|record| record.tool_name != "provider.call")
         .rev()
-        .take(4)
+        .take(6)
         .map(|record| {
             format!(
-                "{} => {}",
+                "tool={} status={} target={} result={}",
                 record.tool_name,
+                record.status,
+                record.target_ref.as_deref().unwrap_or("unknown"),
                 record
                     .output_summary
                     .clone()
@@ -290,7 +293,7 @@ pub(super) fn build_followup_input(
         })
         .collect::<Vec<_>>();
     format!(
-        "Continue the same turn with the latest tool results.\nOriginal request: {original_input}\nLast assistant response: {assistant_response}\nRecent tool results:\n- {}",
+        "Continue the same turn with the latest tool results.\nOriginal request: {original_input}\nLast assistant response: {assistant_response}\nExecuted tool results (authoritative client facts):\n- {}\nInspect these tool results before deciding whether another tool is needed. If the task is complete, answer directly and emit reasoning.stop.",
         if tool_lines.is_empty() {
             "none".to_string()
         } else {

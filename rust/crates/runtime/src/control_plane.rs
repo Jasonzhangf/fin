@@ -1,7 +1,7 @@
 use crate::ClosureRun;
 use fin_contracts::{
-    EntityRefs, ExecutionStateRecord, InterruptedSegmentRecord, PauseCheckpointRecord,
-    PendingInputRecord, SegmentMergeRecord,
+    EntityRefs, ExecutionStateRecord, InputAttachmentSummary, InterruptedSegmentRecord,
+    PauseCheckpointRecord, PendingInputRecord, SegmentMergeRecord,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -140,7 +140,9 @@ pub fn new_pending_input(
     session_id: Option<&str>,
     next_index: usize,
     input_kind: &str,
+    source: &str,
     message: &str,
+    attachments: &[InputAttachmentSummary],
     enqueue_reason: &str,
     now: &str,
 ) -> PendingInputRecord {
@@ -151,7 +153,9 @@ pub fn new_pending_input(
         ),
         refs: refs.clone(),
         input_kind: input_kind.into(),
+        source: source.into(),
         message: message.trim().to_string(),
+        attachments: attachments.to_vec(),
         status: "pending".into(),
         enqueue_reason: enqueue_reason.into(),
         enqueued_at: now.into(),
@@ -353,6 +357,7 @@ mod tests {
                     headers: BTreeMap::new(),
                 },
             )]),
+            runtime: fin_config::UserRuntimeConfig::default(),
         };
         let system = ConfigMapper::map_user_to_system(&user).expect("mapping should succeed");
         WorkerRuntime::from_system(&system, "agent-1", "worker-1", "runtime", None)
@@ -411,7 +416,9 @@ mod tests {
                 Some("session-control"),
                 1,
                 "chat",
+                "cli.user",
                 "first",
+                &[],
                 "queued",
                 "2026-04-19T21:00:00+08:00",
             ),
@@ -420,7 +427,9 @@ mod tests {
                 Some("session-control"),
                 2,
                 "chat",
+                "cli.user",
                 "second",
+                &[],
                 "queued",
                 "2026-04-19T21:00:01+08:00",
             ),

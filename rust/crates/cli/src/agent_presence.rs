@@ -10,6 +10,8 @@ pub(crate) struct AgentPresenceRecord {
     pub(crate) agent_id: String,
     pub(crate) agent_name: String,
     pub(crate) device_name: String,
+    #[serde(default)]
+    pub(crate) worker_id: Option<String>,
     pub(crate) role_id: String,
     pub(crate) agent_kind: String,
     #[serde(default)]
@@ -69,6 +71,7 @@ pub(crate) fn ensure_entry_agent_presence(
         agent_id: identity.agent_id,
         agent_name: identity.agent_name,
         device_name: identity.device_name,
+        worker_id: Some(identity.worker_id),
         role_id: system.policy.entry_role.clone(),
         agent_kind: "system_entry".into(),
         project_id: None,
@@ -92,6 +95,7 @@ pub(crate) fn ensure_entry_agent_presence(
         source: "framework.startup".into(),
     };
     write_presence(runtime_home, &record)?;
+    ensure_system_worker_pool(system, runtime_home, updated_at)?;
     Ok(record)
 }
 
@@ -186,6 +190,7 @@ pub(crate) fn ensure_project_agent_presence(
         agent_id,
         agent_name,
         device_name,
+        worker_id: Some(format!("worker-{}", project_agent_name(project))),
         role_id: "project".into(),
         agent_kind: "project_agent".into(),
         project_id: Some(project.project_id.clone()),
@@ -209,6 +214,7 @@ pub(crate) fn ensure_project_agent_presence(
         source: "framework.startup".into(),
     };
     write_presence(runtime_home, &record)?;
+    ensure_project_worker_pool(system, runtime_home, project, updated_at)?;
     Ok(record)
 }
 
@@ -247,6 +253,108 @@ pub(crate) fn mark_project_agent_woken_local(
     record.source = "framework.startup_wakeup".into();
     write_presence(runtime_home, &record)?;
     Ok(record)
+}
+
+pub(crate) fn ensure_system_worker_pool(
+    system: &SystemConfig,
+    runtime_home: &Path,
+    updated_at: &str,
+) -> Result<Vec<AgentPresenceRecord>, CliError> {
+    let mut records = Vec::new();
+    for slot in 1..=system.runtime.startup.system_agent.local_worker_budget {
+        let requested_agent_name = format!("system-worker-{slot:02}");
+        let identity = allocate_local_agent_identity(
+            system,
+            runtime_home,
+            Some(requested_agent_name.as_str()),
+            format!("framework.worker_pool.system.{slot:02}").as_str(),
+            Some("project"),
+        )?;
+        let record = AgentPresenceRecord {
+            agent_id: identity.agent_id,
+            agent_name: identity.agent_name,
+            device_name: identity.device_name,
+            worker_id: Some(identity.worker_id),
+            role_id: "project".into(),
+            agent_kind: "system_worker".into(),
+            project_id: None,
+            status: "idle".into(),
+            current_task_id: None,
+            current_operation_id: None,
+            current_session_id: None,
+            current_phase: Some("worker_ready".into()),
+            is_reasoning: false,
+            updated_at: updated_at.into(),
+            last_heartbeat_at: Some(updated_at.into()),
+            progress_summary: "system worker pool ready".into(),
+            pending_input_count: 0,
+            waiting_reason: None,
+            mode: Some("local".into()),
+            project_root: None,
+            endpoint: None,
+            always_on: Some(true),
+            auto_resume: Some(system.runtime.startup.system_agent.auto_resume),
+            worker_budget: None,
+            source: "framework.worker_pool".into(),
+        };
+        write_presence(runtime_home, &record)?;
+        records.push(record);
+    }
+    Ok(records)
+}
+
+pub(crate) fn ensure_project_worker_pool(
+    system: &SystemConfig,
+    runtime_home: &Path,
+    project: &ProjectAgentStartupConfig,
+    updated_at: &str,
+) -> Result<Vec<AgentPresenceRecord>, CliError> {
+    let mut records = Vec::new();
+    let base = project_agent_name(project);
+    for slot in 1..=project.worker_budget {
+        let requested_agent_name = format!("{base}-worker-{slot:02}");
+        let identity = allocate_local_agent_identity(
+            system,
+            runtime_home,
+            Some(requested_agent_name.as_str()),
+            format!(
+                "framework.worker_pool.project.{}.{}",
+                project.project_id, slot
+            )
+            .as_str(),
+            Some("project"),
+        )?;
+        let record = AgentPresenceRecord {
+            agent_id: identity.agent_id,
+            agent_name: identity.agent_name,
+            device_name: identity.device_name,
+            worker_id: Some(identity.worker_id),
+            role_id: "project".into(),
+            agent_kind: "project_worker".into(),
+            project_id: Some(project.project_id.clone()),
+            status: "idle".into(),
+            current_task_id: None,
+            current_operation_id: None,
+            current_session_id: None,
+            current_phase: Some("worker_ready".into()),
+            is_reasoning: false,
+            updated_at: updated_at.into(),
+            last_heartbeat_at: Some(updated_at.into()),
+            progress_summary: format!("project worker pool ready for {}", project.project_id),
+            pending_input_count: 0,
+            waiting_reason: None,
+            mode: Some(project_mode_name(project)),
+            project_root: project.project_root.clone(),
+            endpoint: project.endpoint.clone(),
+            always_on: Some(project.always_on),
+            auto_resume: Some(project.auto_resume),
+            worker_budget: None,
+            source: "framework.worker_pool".into(),
+        };
+        write_presence(runtime_home, &record)?;
+        records.push(record);
+    }
+    Ok(records)
 }
 
 pub(crate) fn mark_project_agent_waiting_remote(

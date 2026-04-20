@@ -3,6 +3,7 @@ use fin_config::{
     ConfigMapper, ProjectAgentMode, ProjectAgentStartupConfig, ProviderProtocol, SystemConfig,
     UserConfig, UserProviderConfig, UserRuntimeConfig,
 };
+use serde_json::Value;
 use std::{
     collections::BTreeMap,
     fs,
@@ -73,4 +74,25 @@ fn write_presence_updates_presence_registry() {
     assert!(registry.contains(&entry.agent_id));
     assert!(registry.contains(&project.agent_id));
     assert!(registry.contains("\"status\": \"idle\""));
+
+    let registry_json: Value = serde_json::from_str(&registry).expect("registry json");
+    let agents = registry_json["agents"]
+        .as_array()
+        .expect("agents array in presence registry");
+    assert_eq!(
+        agents.len(),
+        8,
+        "entry + 4 system workers + project agent + 2 project workers",
+    );
+    let system_worker_count = agents
+        .iter()
+        .filter(|item| item["agent_kind"] == "system_worker")
+        .count();
+    let project_worker_count = agents
+        .iter()
+        .filter(|item| item["agent_kind"] == "project_worker")
+        .count();
+    assert_eq!(system_worker_count, 4);
+    assert_eq!(project_worker_count, 2);
+    assert!(agents.iter().all(|item| item.get("worker_id").is_some()));
 }

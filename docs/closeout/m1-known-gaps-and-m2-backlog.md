@@ -2,14 +2,46 @@
 
 本文档只记录两类内容：
 
-1. **M1 已知但非阻塞的缺口**
+1. **M1 已知阻塞项与非阻塞缺口**
 2. **明确延期到 M2 的 backlog**
 
 目的不是继续扩张，而是把“不做的东西”正式写清楚。
 
-## 1. M1 已知风险点（非阻塞）
+## 1. M1 已知阻塞项与风险点
 
-### 1.1 installed-binary smoke 自动化已补齐，剩余只是在持续使用中防回归
+### 1.1 qqbot 真实 channel 对话闭环尚未完成（阻塞 M1）
+
+现状：
+
+- 当前已有：
+  - `runtime/peers/qqbot/state.json`
+  - `runtime/peers/qqbot/events.jsonl`
+  - pairing / expire / heartbeat / upstream connectivity probe
+  - debug-server 对 qqbot state/events 的观察接口
+- 当前没有：
+  - `target -> session` conversation registry / restore
+  - 基于 session truth 的 outbound delivery supervisor
+  - peer 进程级 crash-restart / always-on 监督
+  - “从 qqbot 发一句话 -> fin 自动恢复上下文并持续回话”的实际闭环
+
+影响：
+
+- 当前只能算 qqbot peer skeleton
+- 不能算完整 channel gateway
+- 因此按最新验收口径，**M1 仍未完成**
+
+建议：
+
+- 把 qqbot 从 “M2 channel backlog” 提升为 “M1 blocker”
+- 先做最小可用闭环：
+  - receive gateway input
+  - `target -> session` 恢复/绑定
+  - call existing runtime path
+  - persist session truth
+  - deliver new session messages back to qqbot
+  - attach bridge supervisor for crash-restart
+
+### 1.2 installed-binary smoke 自动化已补齐，剩余只是在持续使用中防回归
 
 现状：
 
@@ -28,7 +60,7 @@
 - 保留 manual receipt 作为 closeout 历史证据
 - 正式 build/install 以后默认检查 `receipt-index.json` 是否存在且 `install_smoke=passed`
 
-### 1.2 正式 build/install gate 已恢复，后续重点变为 receipt 标准化
+### 1.3 正式 build/install gate 已恢复，后续重点变为 receipt 标准化
 
 现状：
 
@@ -40,7 +72,7 @@
 
 - 后续把 install/build 结果继续纳入更稳定的 closeout receipt 流程
 
-### 1.3 archive summary / truth consistency 仍需持续盯防
+### 1.4 archive summary / truth consistency 仍需持续盯防
 
 现状：
 
@@ -62,9 +94,14 @@
 包括：
 
 - project agent 真执行链
+- project -> multi-worker runtime 派生与监督
 - 跨机 agent 协作
 - remote peer 生命周期
 - distributed mailbox / eventbus
+
+约束：
+
+- 这里扩的是 worker runtime / supervision / mailbox，不是新增 role
 
 ### 2.2 detached / headless daemon
 
@@ -109,7 +146,6 @@
 
 包括：
 
-- qqbot 内置 channel peer
 - channel pairing / credential lifecycle
 - 非智能 peer capability center
 - 智能 peer 统一接入协议

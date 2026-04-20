@@ -2,6 +2,7 @@ use crate::{
     CliError,
     scheduler_driver::{drive_scheduler, load_latest_scheduler_decision},
 };
+use fin_contracts::InputAttachmentSummary;
 use fin_debug_server::{ChatSendResponse, DebugBinding};
 use serde::{Serialize, de::DeserializeOwned};
 use std::{
@@ -88,7 +89,13 @@ fn drive_scheduler_runs_pending_until_queue_is_empty() {
                 pending_input_id: "pending-1".into(),
                 refs: entity_refs(&binding(&home)),
                 input_kind: "chat".into(),
+                source: "channel.qqbot".into(),
                 message: "a".into(),
+                attachments: vec![InputAttachmentSummary {
+                    name: Some("a.png".into()),
+                    kind: "image/png".into(),
+                    ..Default::default()
+                }],
                 status: "pending".into(),
                 enqueue_reason: "test".into(),
                 enqueued_at: "2026-04-19T22:30:01+08:00".into(),
@@ -97,7 +104,9 @@ fn drive_scheduler_runs_pending_until_queue_is_empty() {
                 pending_input_id: "pending-2".into(),
                 refs: entity_refs(&binding(&home)),
                 input_kind: "chat".into(),
+                source: "cli.user".into(),
                 message: "b".into(),
+                attachments: Vec::new(),
                 status: "pending".into(),
                 enqueue_reason: "test".into(),
                 enqueued_at: "2026-04-19T22:30:02+08:00".into(),
@@ -126,12 +135,21 @@ fn drive_scheduler_runs_pending_until_queue_is_empty() {
     );
 
     let mut seen = Vec::new();
+    let mut seen_sources = Vec::new();
+    let mut seen_attachment_names = Vec::new();
     let response = drive_scheduler(
         &home,
         &binding(&home),
         16,
-        |binding, message, _merge_segment| {
+        |binding, message, source, attachments, _merge_segment| {
             seen.push(message.clone());
+            seen_sources.push(source);
+            seen_attachment_names.push(
+                attachments
+                    .iter()
+                    .filter_map(|item| item.name.clone())
+                    .collect::<Vec<_>>(),
+            );
             Ok(ChatSendResponse {
                 binding,
                 answer: format!("ran:{message}"),
@@ -149,6 +167,12 @@ fn drive_scheduler_runs_pending_until_queue_is_empty() {
     .expect("drive");
 
     assert_eq!(seen, vec!["a".to_string(), "b".to_string()]);
+    assert_eq!(
+        seen_sources,
+        vec!["channel.qqbot".to_string(), "cli.user".to_string()]
+    );
+    assert_eq!(seen_attachment_names[0], vec!["a.png".to_string()]);
+    assert!(seen_attachment_names[1].is_empty());
     assert_eq!(response.last_response.expect("response").answer, "ran:b");
     assert_eq!(response.drove_count, 2);
     assert!(!response.decisions.is_empty());
@@ -193,7 +217,9 @@ fn drive_scheduler_blocks_when_prompt_user_is_required() {
             pending_input_id: "pending-1".into(),
             refs: entity_refs(&binding(&home)),
             input_kind: "chat".into(),
+            source: "cli.user".into(),
             message: "a".into(),
+            attachments: Vec::new(),
             status: "pending".into(),
             enqueue_reason: "test".into(),
             enqueued_at: "2026-04-19T22:31:01+08:00".into(),
@@ -225,7 +251,7 @@ fn drive_scheduler_blocks_when_prompt_user_is_required() {
         &home,
         &binding(&home),
         16,
-        |_binding, _message, _merge_segment| {
+        |_binding, _message, _source, _attachments, _merge_segment| {
             called = true;
             Err(CliError::Usage)
         },

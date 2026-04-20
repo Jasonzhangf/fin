@@ -4,6 +4,7 @@ use crate::{
 };
 use fin_contracts::{ControlFeedback, ExecutionNote, ProgressBlock};
 use fin_provider::{ProviderDescriptor, StaticProviderClient};
+use std::path::PathBuf;
 use std::{
     fs,
     time::{SystemTime, UNIX_EPOCH},
@@ -158,6 +159,11 @@ fn status_probe_returns_latest_framework_state_without_new_closure() {
 }"#,
     )
     .expect("last_run should write");
+    write_file(
+        &home.join("runtime/current/current_agent_registry.json"),
+        br#"{"agents":[{"agent_id":"mac-mini.system","agent_name":"system","device_name":"mac-mini","worker_id":"worker-system","role_id":"system","source":"cli"}]}"#,
+    )
+    .expect("agent registry should write");
 
     let before_messages =
         fs::read_to_string(session_dir.join("conversation/messages.json")).expect("before");
@@ -170,6 +176,7 @@ fn status_probe_returns_latest_framework_state_without_new_closure() {
             ChatSendRequest {
                 message: "/status current?".into(),
                 input_kind: Some("status_probe".into()),
+                attachments: Vec::new(),
             },
         )
         .expect("status probe should work");
@@ -179,6 +186,14 @@ fn status_probe_returns_latest_framework_state_without_new_closure() {
     assert_eq!(response.digest_id, "digest-existing");
     assert_eq!(response.events_count, 0);
     assert!(response.answer.contains("status probe (live)"));
+    assert!(response.answer.contains("agents=agents=4 ["));
+    assert!(response.answer.contains("system-worker-01:idle"));
+    assert!(response.answer.contains("project_supervision="));
+    assert!(
+        response
+            .answer
+            .contains("project_recovery=project recovery unavailable")
+    );
     assert!(response.answer.contains("phase=running"));
     assert!(
         response
@@ -230,6 +245,7 @@ fn slash_new_creates_and_binds_new_session() {
             ChatSendRequest {
                 message: "/new".into(),
                 input_kind: None,
+                attachments: Vec::new(),
             },
         )
         .expect("new command should work");
@@ -293,6 +309,7 @@ fn paused_session_queues_new_message_instead_of_running_provider() {
             ChatSendRequest {
                 message: "new request while paused".into(),
                 input_kind: None,
+                attachments: Vec::new(),
             },
         )
         .expect("queued");
@@ -301,6 +318,67 @@ fn paused_session_queues_new_message_instead_of_running_provider() {
     let pending = fs::read_to_string(session_dir.join("queue/pending_inputs.json"))
         .expect("pending should exist");
     assert!(pending.contains("new request while paused"));
+}
+
+#[test]
+fn paused_session_persists_channel_attachments_in_pending_queue() {
+    let home = temp_runtime_home();
+    ensure_runtime_home_layout(&home).expect("runtime home should init");
+    let system = map_system_config(&sample_user_toml()).expect("system config");
+    let handler =
+        CliDebugActionHandler::new(sample_user_toml(), system).expect("handler should build");
+    let session_dir = home.join("sessions/2026/04/session-paused-attachments");
+    fs::create_dir_all(session_dir.join("conversation")).expect("conversation dir");
+    fs::create_dir_all(session_dir.join("control")).expect("control dir");
+    fs::create_dir_all(session_dir.join("queue")).expect("queue dir");
+    write_file(&session_dir.join("conversation/messages.json"), b"[]").expect("messages");
+    write_file(
+        &session_dir.join("control/execution_state.json"),
+        br#"{
+  "state_id":"exec-state-paused",
+  "session_id":"session-paused-attachments",
+  "task_id":"task-paused-attachments",
+  "status":"paused",
+  "active_turn_id":"turn-op-paused",
+  "active_step_id":"step-op-paused-05-tool_dispatch",
+  "resume_from_step_id":"step-op-paused-05-tool_dispatch",
+  "pending_input_count":0,
+  "accepts_user_input":false,
+  "reason":"manual pause",
+  "updated_at":"2026-04-18T08:10:02+08:00"
+}"#,
+    )
+    .expect("state");
+    write_file(&session_dir.join("queue/pending_inputs.json"), b"[]").expect("pending");
+    write_file(
+        &home.join("runtime/current/last_run.json"),
+        br#"{
+  "session_id":"session-paused-attachments",
+  "task_id":"task-paused-attachments",
+  "session_messages_path":"sessions/2026/04/session-paused-attachments/conversation/messages.json"
+}"#,
+    )
+    .expect("last_run");
+
+    let response = handler
+        .send_message_internal(
+            &home,
+            ChatSendRequest {
+                message: "describe image".into(),
+                input_kind: Some("channel_ingress".into()),
+                attachments: vec![fin_contracts::InputAttachmentSummary {
+                    name: Some("queued-proof.png".into()),
+                    kind: "image/png".into(),
+                    ..Default::default()
+                }],
+            },
+        )
+        .expect("queued");
+    assert_eq!(response.response_kind, "system_notice");
+    let pending = fs::read_to_string(session_dir.join("queue/pending_inputs.json"))
+        .expect("pending should exist");
+    assert!(pending.contains("channel.qqbot"));
+    assert!(pending.contains("queued-proof.png"));
 }
 
 #[path = "web_debug_tests_runtime.rs"]

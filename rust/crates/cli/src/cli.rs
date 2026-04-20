@@ -1,17 +1,16 @@
 use crate::{
     CliError,
     command::{Command, parse_command},
-    config::{default_provider_facade, load_system_config, map_system_config},
+    config::{default_provider_facade, load_effective_system_config, load_system_config},
     control_boundary_demo::run_control_boundary_demo,
     demo::{run_demo, runtime_home_override_from_env},
     fs_utils::read_file,
     install_flow::{build_dev, promote_existing_build, rollback_install},
     mainline_demo::run_mainline_demo,
-    runtime_home::{
-        ensure_runtime_home_layout, init_runtime_home, persist_runtime_demo, resolved_runtime_home,
-    },
+    provider_live_smoke::run_provider_live_smoke,
+    runtime_home::{init_runtime_home, persist_runtime_demo, resolved_runtime_home},
     transcript::{load_transcript_scenario, run_transcript_demo},
-    web_debug::{serve_web_debug, web_debug_runtime_home},
+    web_debug_entry::serve_web_debug,
 };
 use fin_debug_server::build_projection;
 use std::{path::Path, path::PathBuf};
@@ -36,14 +35,16 @@ pub fn run_with_runtime_home(
         }
         Command::HomeInit { path } => {
             let user_toml = read_file(Path::new(&path))?;
-            let system = map_system_config(&user_toml)?;
+            let system =
+                load_effective_system_config(&user_toml, runtime_home_override.as_deref())?;
             let runtime_home =
                 init_runtime_home(&user_toml, &system, runtime_home_override.as_deref())?;
             println!("home init ok: {}", runtime_home.display());
         }
         Command::ControlBoundaryDemo { path } => {
             let user_toml = read_file(Path::new(&path))?;
-            let system = map_system_config(&user_toml)?;
+            let system =
+                load_effective_system_config(&user_toml, runtime_home_override.as_deref())?;
             let run =
                 run_control_boundary_demo(&user_toml, &system, runtime_home_override.as_deref())?;
             println!(
@@ -56,7 +57,8 @@ pub fn run_with_runtime_home(
         }
         Command::MainlineDemo { path } => {
             let user_toml = read_file(Path::new(&path))?;
-            let system = map_system_config(&user_toml)?;
+            let system =
+                load_effective_system_config(&user_toml, runtime_home_override.as_deref())?;
             let transcript = run_mainline_demo(&system)?;
             let mut artifacts = None;
             for run in &transcript.runs {
@@ -81,7 +83,8 @@ pub fn run_with_runtime_home(
         }
         Command::RuntimeDemo { path, input } => {
             let user_toml = read_file(Path::new(&path))?;
-            let system = map_system_config(&user_toml)?;
+            let system =
+                load_effective_system_config(&user_toml, runtime_home_override.as_deref())?;
             let provider = default_provider_facade(&system)?;
             let run = run_demo(&system, &provider, &input)?;
             let artifacts =
@@ -97,7 +100,8 @@ pub fn run_with_runtime_home(
         }
         Command::DebugProjection { path, input } => {
             let user_toml = read_file(Path::new(&path))?;
-            let system = map_system_config(&user_toml)?;
+            let system =
+                load_effective_system_config(&user_toml, runtime_home_override.as_deref())?;
             let provider = default_provider_facade(&system)?;
             let run = run_demo(&system, &provider, &input)?;
             persist_runtime_demo(&user_toml, &system, &run, runtime_home_override.as_deref())?;
@@ -111,7 +115,8 @@ pub fn run_with_runtime_home(
             transcript_path,
         } => {
             let user_toml = read_file(Path::new(&path))?;
-            let system = map_system_config(&user_toml)?;
+            let system =
+                load_effective_system_config(&user_toml, runtime_home_override.as_deref())?;
             let provider = default_provider_facade(&system)?;
             let scenario = load_transcript_scenario(Path::new(&transcript_path))?;
             let transcript = run_transcript_demo(&system, &provider, &scenario)?;
@@ -137,24 +142,55 @@ pub fn run_with_runtime_home(
                 artifacts.runtime_home.display()
             );
         }
+        Command::ProviderLiveSmoke {
+            path,
+            transcript_path,
+        } => {
+            let user_toml = read_file(Path::new(&path))?;
+            let system =
+                load_effective_system_config(&user_toml, runtime_home_override.as_deref())?;
+            let report = run_provider_live_smoke(
+                &user_toml,
+                &system,
+                runtime_home_override.as_deref(),
+                transcript_path.as_deref().map(Path::new),
+            )?;
+            println!(
+                "provider live smoke ok: run_id={} session={} task={} turns={} report={} runtime_home={}",
+                report.run_id,
+                report.session_id,
+                report.task_id,
+                report.turn_count,
+                report.receipt_path,
+                report.runtime_home
+            );
+        }
         Command::WebDebug { path, port } => {
             let user_toml = read_file(Path::new(&path))?;
-            let system = map_system_config(&user_toml)?;
-            let runtime_home = web_debug_runtime_home(&system, runtime_home_override.as_deref());
-            ensure_runtime_home_layout(&runtime_home)?;
+            let system =
+                load_effective_system_config(&user_toml, runtime_home_override.as_deref())?;
+            let runtime_home =
+                init_runtime_home(&user_toml, &system, runtime_home_override.as_deref())?;
             let bind_addr = format!("127.0.0.1:{port}");
             println!(
                 "web debug serving: http://{bind_addr} (runtime_home={})",
                 runtime_home.display()
             );
-            serve_web_debug(user_toml, system, runtime_home, &bind_addr)?;
+            serve_web_debug(
+                Path::new(&path),
+                user_toml,
+                system,
+                runtime_home,
+                &bind_addr,
+            )?;
         }
         Command::BuildDev {
             path,
             build_version,
         } => {
             let user_toml = read_file(Path::new(&path))?;
-            let system = map_system_config(&user_toml)?;
+            let system =
+                load_effective_system_config(&user_toml, runtime_home_override.as_deref())?;
             let artifacts = build_dev(
                 &user_toml,
                 &system,
@@ -175,7 +211,8 @@ pub fn run_with_runtime_home(
             build_version,
         } => {
             let user_toml = read_file(Path::new(&path))?;
-            let system = map_system_config(&user_toml)?;
+            let system =
+                load_effective_system_config(&user_toml, runtime_home_override.as_deref())?;
             let artifacts = build_dev(
                 &user_toml,
                 &system,
@@ -196,7 +233,8 @@ pub fn run_with_runtime_home(
             build_version,
         } => {
             let user_toml = read_file(Path::new(&path))?;
-            let system = map_system_config(&user_toml)?;
+            let system =
+                load_effective_system_config(&user_toml, runtime_home_override.as_deref())?;
             promote_existing_build(
                 &user_toml,
                 &system,
@@ -214,7 +252,8 @@ pub fn run_with_runtime_home(
         }
         Command::Rollback { path } => {
             let user_toml = read_file(Path::new(&path))?;
-            let system = map_system_config(&user_toml)?;
+            let system =
+                load_effective_system_config(&user_toml, runtime_home_override.as_deref())?;
             let runtime_home = rollback_install(&system, runtime_home_override.as_deref(), None)?;
             println!("rollback ok: {}", runtime_home.display());
         }

@@ -30,6 +30,7 @@ fn worker_runtime() -> WorkerRuntime {
                 headers: BTreeMap::new(),
             },
         )]),
+        runtime: fin_config::UserRuntimeConfig::default(),
     };
     let system = ConfigMapper::map_user_to_system(&user).expect("mapping should succeed");
     WorkerRuntime::from_system(&system, "agent-1", "worker-1", "runtime", None)

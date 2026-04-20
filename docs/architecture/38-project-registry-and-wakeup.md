@@ -42,6 +42,14 @@ auto_resume = true
 auto_connect = true
 ```
 
+补充说明：
+
+- 以上数值的 baseline default 当前来自 repo 内：
+  - `rust/crates/config/defaults/runtime-startup.toml`
+- 用户运行时真正生效的 startup 配置来自：
+  - `~/.fin/config/system.toml`
+- 因此 `local_worker_budget / worker_budget` 的运行时真源是 `system.toml`，不是 Rust 字面量。
+
 冻结字段语义：
 
 - `system_agent.local_worker_budget`：system agent 可派生的本地 worker 预算
@@ -73,6 +81,19 @@ framework 当前冻结以下落盘路径：
 3. 当前 unfinished task 数量是多少
 4. 当前 presence 是什么
 5. 当前 wake_state / wake_reason 是什么
+
+另外 framework 现在还会额外落：
+
+- `~/.fin/runtime/current/current_startup_control_summary.json`
+
+它用于统一回答“重启/启动完成后当前资源状态”：
+
+1. 当前启动配置预算是什么（system workers / project workers / projects）
+2. 当前哪些资源已经启动
+3. 当前哪些资源处于 busy
+4. 当前 waiting / recoverable_offline / wake_actions 概况
+
+Web / QQ / status probe 必须读取这份 startup control summary，而不是各自推断。
 
 ---
 

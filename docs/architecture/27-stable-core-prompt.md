@@ -266,7 +266,7 @@ stable core 只写跨角色稳定纪律。
 
 role modules 才负责：
 
-- system/project/worker/reviewer 的职责差异
+- system/project 的职责差异；project 内部 execution/review/handoff 由 workflow emphasis 表达
 - decision scope
 - output emphasis
 - delegation style

@@ -43,7 +43,25 @@ M1 必须具备：
 3. provider / control / note / digest / tool / closure / turn / step 持久化
 4. Web debug 与 status probe 的同源读取
 
-### 2.4 最小 control plane
+### 2.4 channel gateway 最小闭环
+
+M1 必须至少具备一个真实用户通道闭环。
+
+当前冻结为：
+
+1. `qqbot` 作为内置 `channel gateway`
+2. 能完成真实 `message.ingest`
+3. 输入先进入 session truth
+4. 再走 runtime inference 主链
+5. 回复先写回 session truth
+6. 最后由 qqbot 完成 `message.emit`
+
+硬规则：
+
+- `qqbot` 只有 peer state / pairing / upstream connectivity probe 不算完成
+- 只有真正能通过 qqbot 对话，M1 才算闭环
+
+### 2.5 最小 control plane
 
 M1 允许的控制面范围冻结为：
 
@@ -74,7 +92,7 @@ M1 允许的控制面范围冻结为：
 5. 普通推理请求的真正并行执行
 6. 完整 session / task / topic 产品化状态机
 7. 成熟 knowledge graph / wiki / memory graph
-8. channel / gateway / remote peer 的完整生产化接入
+8. channel / gateway / remote peer 的完整生产化接入（但不包括 M1 要求的最小 qqbot 对话闭环）
 
 这些能力统一进入 M2 backlog。
 
@@ -120,6 +138,7 @@ M1 只有在以下条件都成立时才算收口：
 6. status probe / tick / supervisor / heartbeat / daemon state 可观察
 7. 关键 durable truth 能从 session artifacts 重建
 8. 自动测试与手工验证矩阵可追踪
+9. qqbot 真实输入输出对话闭环可用
 
 ## 6. closeout 期间的开发纪律
 

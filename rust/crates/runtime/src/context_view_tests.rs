@@ -203,7 +203,7 @@ fn context_view_builder_populates_rich_blocks() {
     );
     assert_eq!(
         context.tools.as_ref().map(|v| v.model_tools.len()),
-        Some(18)
+        Some(24)
     );
     assert_eq!(
         context.tools.as_ref().map(|v| v.framework_tools.len()),
@@ -288,6 +288,66 @@ fn context_view_builder_populates_rich_blocks() {
                 .model_tools
                 .iter()
                 .any(|tool| tool.tool_name == "project.task.list"))
+            .unwrap_or(false)
+    );
+    assert!(
+        context
+            .tools
+            .as_ref()
+            .map(|v| v
+                .model_tools
+                .iter()
+                .any(|tool| tool.tool_name == "project.task.create"))
+            .unwrap_or(false)
+    );
+    assert!(
+        context
+            .tools
+            .as_ref()
+            .map(|v| v
+                .model_tools
+                .iter()
+                .any(|tool| tool.tool_name == "project.task.claim"))
+            .unwrap_or(false)
+    );
+    assert!(
+        context
+            .tools
+            .as_ref()
+            .map(|v| v
+                .model_tools
+                .iter()
+                .any(|tool| tool.tool_name == "project.task.submit"))
+            .unwrap_or(false)
+    );
+    assert!(
+        context
+            .tools
+            .as_ref()
+            .map(|v| v
+                .model_tools
+                .iter()
+                .any(|tool| tool.tool_name == "project.task.review"))
+            .unwrap_or(false)
+    );
+    assert!(
+        context
+            .tools
+            .as_ref()
+            .map(|v| v
+                .model_tools
+                .iter()
+                .any(|tool| tool.tool_name == "agent.presence.list"))
+            .unwrap_or(false)
+    );
+    assert!(
+        context
+            .tools
+            .as_ref()
+            .map(|v| v
+                .model_tools
+                .iter()
+                .any(|tool| tool.tool_name == "project.supervision.list"))
             .unwrap_or(false)
     );
     assert!(

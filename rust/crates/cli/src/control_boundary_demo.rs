@@ -149,6 +149,7 @@ fn chat(message: &str) -> ChatSendRequest {
     ChatSendRequest {
         message: message.into(),
         input_kind: None,
+        attachments: Vec::new(),
     }
 }
 
@@ -156,6 +157,7 @@ fn status(message: &str) -> ChatSendRequest {
     ChatSendRequest {
         message: message.into(),
         input_kind: Some("status_probe".into()),
+        attachments: Vec::new(),
     }
 }
 

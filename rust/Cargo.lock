@@ -148,6 +148,7 @@ name = "fin-debug-server"
 version = "0.1.0"
 dependencies = [
  "fin-contracts",
+ "fin-runtime",
  "serde",
  "serde_json",
  "thiserror",

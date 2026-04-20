@@ -1,6 +1,9 @@
 use crate::{
     CliError,
-    execution_state::{load_execution_state, resume_execution},
+    execution_state::{
+        enqueue_framework_pending_input, load_execution_state, load_pending_inputs,
+        resume_execution,
+    },
     project_runtime_pickup::materialize_project_runtime_pickups,
     session_binding::build_binding_for_session,
     supervisor_cycle::run_supervisor_cycle,
@@ -39,6 +42,8 @@ where
         Option<&InterruptedSegmentRecord>,
     ) -> Result<ChatSendResponse, CliError>,
 {
+    let snapshot = materialize_project_runtime_pickups(runtime_home, system, executed_at)?;
+    seed_claimed_idle_project_resumes(runtime_home, system, &snapshot, executed_at)?;
     let snapshot = materialize_project_runtime_pickups(runtime_home, system, executed_at)?;
     let mut report = ProjectRuntimeResumeReport {
         executed_at: executed_at.into(),
@@ -98,6 +103,69 @@ where
     );
     persist_report(runtime_home, &report)?;
     Ok(report)
+}
+
+fn seed_claimed_idle_project_resumes(
+    runtime_home: &Path,
+    system: &SystemConfig,
+    snapshot: &crate::project_runtime_pickup::ProjectRuntimePickupSnapshot,
+    now: &str,
+) -> Result<(), CliError> {
+    for pickup in snapshot.projects.iter().filter(|item| {
+        item.pickup_state == "claimed_idle" && item.next_action == "await_manual_work"
+    }) {
+        let Some(session_id) = pickup.session_id.as_deref() else {
+            continue;
+        };
+        let Some(project) = system
+            .runtime
+            .startup
+            .project_agents
+            .iter()
+            .find(|item| item.project_id == pickup.project_id)
+        else {
+            continue;
+        };
+        if !project.auto_resume {
+            continue;
+        }
+        let base_binding = DebugBinding {
+            project_id: pickup.project_id.clone(),
+            project_label: pickup.project_id.clone(),
+            runtime_home: runtime_home.display().to_string(),
+            session_id: None,
+            task_id: None,
+            session_messages_path: None,
+            recent_contexts_path: None,
+            recent_digests_path: None,
+        };
+        let binding = build_binding_for_session(
+            runtime_home,
+            &base_binding,
+            session_id,
+            pickup.task_id.as_deref(),
+        )?;
+        if !load_pending_inputs(runtime_home, &binding)?.is_empty() {
+            continue;
+        }
+        let state = load_execution_state(runtime_home, &binding)?;
+        if matches!(
+            state.as_ref().map(|value| value.status.as_str()),
+            Some("running" | "waiting_external")
+        ) {
+            continue;
+        }
+        let _ = enqueue_framework_pending_input(
+            runtime_home,
+            &binding,
+            "framework_resume",
+            "project.resume",
+            "continue work",
+            "resume",
+            now,
+        )?;
+    }
+    Ok(())
 }
 
 fn ensure_resumable_state(

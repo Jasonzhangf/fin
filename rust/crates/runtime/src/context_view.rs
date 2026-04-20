@@ -2,7 +2,7 @@ use crate::{
     WorkerRuntime,
     context_blocks::{build_peer_block, build_project_block},
     prompt_assembly::build_role_prompt_block,
-    tool_catalog::build_tool_catalog_block,
+    tool_catalog_dynamic::{DynamicToolCatalogInput, build_dynamic_tool_catalog_block},
 };
 use fin_contracts::{
     ContextControlBlock, CurrentInputBlock, DigestRecord, EntityRefs, HistoryBlock,
@@ -103,7 +103,7 @@ impl ContextViewBuilder {
             .into_iter()
             .collect::<Vec<_>>();
 
-        MinimalContextView {
+        let mut context = MinimalContextView {
             continuity_tail,
             summary,
             control: Some(ContextControlBlock {
@@ -119,7 +119,7 @@ impl ContextViewBuilder {
                 stream: Some(worker.policy.stream),
             }),
             role_prompt: Some(build_role_prompt_block(worker, &recent_digests, &input)),
-            tools: Some(build_tool_catalog_block()),
+            tools: None,
             history: Some(HistoryBlock {
                 recent_messages,
                 recent_digests: digest_summaries.clone(),
@@ -130,7 +130,7 @@ impl ContextViewBuilder {
                 digest_summaries,
                 artifact_candidates,
             }),
-            project: Some(build_project_block(&input)),
+            project: Some(build_project_block(worker, &input)),
             peer: Some(build_peer_block(worker, &input)),
             current_input: Some(CurrentInputBlock {
                 input: input.input,
@@ -139,6 +139,14 @@ impl ContextViewBuilder {
                 trace_id: input.trace_id,
                 attachments: input.attachment_summaries,
             }),
-        }
+        };
+        let tool_context = context.clone();
+        context.tools = Some(build_dynamic_tool_catalog_block(&DynamicToolCatalogInput {
+            role_id: Some(worker.policy.role.role_id.as_str()),
+            context: &tool_context,
+            recent_tool_records: &input.recent_tool_records,
+            round_index: 1,
+        }));
+        context
     }
 }

@@ -1,5 +1,8 @@
 use crate::CliError;
-use fin_contracts::{EntityRefs, ExecutionStateRecord, PauseCheckpointRecord, PendingInputRecord};
+use fin_contracts::{
+    EntityRefs, ExecutionStateRecord, InputAttachmentSummary, PauseCheckpointRecord,
+    PendingInputRecord,
+};
 use fin_debug_server::{ChatSendRequest, DebugBinding};
 use fin_runtime::{
     ClosureRun, clear_waiting_state_if_due, dequeue_pending_input, failed_state, new_pending_input,
@@ -206,6 +209,49 @@ pub(crate) fn enqueue_pending_input(
     now: &str,
     enqueue_reason: &str,
 ) -> Result<Option<PendingInputRecord>, CliError> {
+    enqueue_pending_input_record(
+        runtime_home,
+        binding,
+        request.input_kind.as_deref().unwrap_or("chat"),
+        pending_input_source(request),
+        &request.message,
+        &request.attachments,
+        enqueue_reason,
+        now,
+    )
+}
+
+pub(crate) fn enqueue_framework_pending_input(
+    runtime_home: &Path,
+    binding: &DebugBinding,
+    input_kind: &str,
+    source: &str,
+    message: &str,
+    enqueue_reason: &str,
+    now: &str,
+) -> Result<Option<PendingInputRecord>, CliError> {
+    enqueue_pending_input_record(
+        runtime_home,
+        binding,
+        input_kind,
+        source,
+        message,
+        &[],
+        enqueue_reason,
+        now,
+    )
+}
+
+fn enqueue_pending_input_record(
+    runtime_home: &Path,
+    binding: &DebugBinding,
+    input_kind: &str,
+    source: &str,
+    message: &str,
+    attachments: &[InputAttachmentSummary],
+    enqueue_reason: &str,
+    now: &str,
+) -> Result<Option<PendingInputRecord>, CliError> {
     let Some(paths) = resolve_paths(runtime_home, binding)? else {
         return Ok(None);
     };
@@ -216,8 +262,10 @@ pub(crate) fn enqueue_pending_input(
         &refs,
         binding.session_id.as_deref(),
         pending.len() + 1,
-        request.input_kind.as_deref().unwrap_or("chat"),
-        &request.message,
+        input_kind,
+        source,
+        message,
+        attachments,
         enqueue_reason,
         now,
     );
@@ -377,6 +425,14 @@ fn trim_head<T>(items: &mut Vec<T>, limit: usize) {
     if items.len() > limit {
         let drain_count = items.len() - limit;
         items.drain(0..drain_count);
+    }
+}
+
+fn pending_input_source(request: &ChatSendRequest) -> &str {
+    if request.input_kind.as_deref() == Some("channel_ingress") {
+        "channel.qqbot"
+    } else {
+        "cli.user"
     }
 }
 

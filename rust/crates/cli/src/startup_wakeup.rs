@@ -4,6 +4,7 @@ use crate::{
     project_execution_handoff::materialize_project_execution_handoffs,
     project_runtime_pickup::materialize_project_runtime_pickups,
     project_supervision::materialize_project_supervision,
+    startup_control_summary::{persist_startup_control_summary, read_startup_control_summary},
     startup_topology::{ProjectWakeRequest, StartupTopologySnapshot, materialize_startup_topology},
 };
 use fin_config::{ProjectAgentMode, ProjectAgentStartupConfig, SystemConfig};
@@ -72,6 +73,8 @@ pub(crate) fn refresh_startup_control_plane(
     let supervision = materialize_project_supervision(runtime_home, &final_snapshot)?;
     let _ = materialize_project_execution_handoffs(runtime_home, &supervision, updated_at)?;
     let _ = materialize_project_runtime_pickups(runtime_home, system, updated_at)?;
+    let summary = read_startup_control_summary(runtime_home)?;
+    persist_startup_control_summary(runtime_home, &summary)?;
     Ok(final_snapshot)
 }
 
@@ -314,9 +317,11 @@ fn write_json<T: Serialize>(path: &Path, value: &T) -> Result<(), CliError> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::project_runtime_resume::drive_ready_project_runtime_resumes;
     use fin_config::{
         ConfigMapper, ProviderProtocol, UserConfig, UserProviderConfig, UserRuntimeConfig,
     };
+    use fin_debug_server::ChatSendResponse;
     use serde_json::Value;
     use std::collections::BTreeMap;
 
@@ -408,5 +413,109 @@ mod tests {
             wake_report["actions"][0]["status"].as_str(),
             Some("recorded")
         );
+    }
+
+    #[test]
+    fn refresh_builds_resume_chain_and_auto_resume_can_drive_claimed_idle_project() {
+        let home = temp_home("resume-chain");
+        let session_dir = home.join("sessions/2026/04/session-fin");
+        fs::create_dir_all(session_dir.join("conversation")).expect("conversation");
+        fs::create_dir_all(session_dir.join("context")).expect("context");
+        fs::create_dir_all(session_dir.join("control")).expect("control");
+        fs::create_dir_all(session_dir.join("queue")).expect("queue");
+        fs::create_dir_all(session_dir.join("tasks/registry")).expect("tasks");
+        fs::write(session_dir.join("conversation/messages.json"), b"[]").expect("messages");
+        fs::write(
+            session_dir.join("context/current_context.json"),
+            br#"{"project":{"primary_project":{"project_id":"fin"}}}"#,
+        )
+        .expect("context");
+        fs::write(
+            session_dir.join("control/execution_state.json"),
+            br#"{
+  "state_id":"exec-state-project",
+  "session_id":"session-fin",
+  "task_id":"task-fin-1",
+  "status":"idle",
+  "pending_input_count":1,
+  "accepts_user_input":true,
+  "updated_at":"2026-04-20T11:59:00+08:00"
+}"#,
+        )
+        .expect("state");
+        fs::write(session_dir.join("queue/pending_inputs.json"), b"[]").expect("pending");
+        fs::write(
+            session_dir.join("tasks/registry/task-fin-1.json"),
+            br#"{
+  "task_id":"task-fin-1",
+  "session_id":"session-fin",
+  "title":"task",
+  "summary":"task",
+  "status":"ready",
+  "created_at":"2026-04-20T11:58:00+08:00",
+  "updated_at":"2026-04-20T11:58:00+08:00"
+}"#,
+        )
+        .expect("task");
+
+        let system = system();
+        let snapshot = refresh_startup_control_plane(&home, &system, "2026-04-20T12:00:00+08:00")
+            .expect("startup refresh");
+        assert_eq!(snapshot.projects.len(), 1);
+        assert_eq!(snapshot.projects[0].presence_state, "idle");
+        assert_eq!(snapshot.projects[0].unfinished_task_count, 1);
+        assert_eq!(
+            snapshot.projects[0].last_active_task_id.as_deref(),
+            Some("task-fin-1")
+        );
+
+        let supervision =
+            fs::read_to_string(home.join("runtime/current/current_project_supervision.json"))
+                .expect("supervision");
+        assert!(supervision.contains("\"supervision_state\": \"resume_ready\""));
+        assert!(supervision.contains("\"desired_action\": \"resume_project_task\""));
+
+        let handoffs = fs::read_to_string(
+            home.join("runtime/current/current_project_execution_handoffs.json"),
+        )
+        .expect("handoffs");
+        assert!(handoffs.contains("\"handoff_state\": \"prepared\""));
+        assert!(handoffs.contains("\"task_id\": \"task-fin-1\""));
+
+        let pickups =
+            fs::read_to_string(home.join("runtime/current/current_project_runtime_pickups.json"))
+                .expect("pickups");
+        assert!(pickups.contains("\"pickup_state\": \"claimed_idle\""));
+        assert!(pickups.contains("\"next_action\": \"await_manual_work\""));
+
+        let report = drive_ready_project_runtime_resumes(
+            &home,
+            &system,
+            "project_runtime_resume",
+            "2026-04-20T12:01:00+08:00",
+            |binding, message, source, _attachments, _merge_segment| {
+                assert_eq!(message, "continue work");
+                assert_eq!(source, "project.resume");
+                Ok(ChatSendResponse {
+                    binding,
+                    answer: "done".into(),
+                    digest_id: "digest-project-resume".into(),
+                    events_count: 0,
+                    response_kind: "assistant_message".into(),
+                    freshness: None,
+                    control_feedback: None,
+                    progress: None,
+                    note: None,
+                    routing_action: None,
+                })
+            },
+        )
+        .expect("resume report");
+
+        assert_eq!(report.attempted_count, 1);
+        assert_eq!(report.drove_count, 1);
+        let pending =
+            fs::read_to_string(session_dir.join("queue/pending_inputs.json")).expect("pending");
+        assert_eq!(pending.trim(), "[]");
     }
 }

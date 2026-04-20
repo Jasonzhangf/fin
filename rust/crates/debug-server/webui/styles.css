@@ -542,6 +542,139 @@ button, textarea, input { font: inherit; }
   padding-top: 10px;
   border-top: 1px solid rgba(86, 114, 157, 0.18);
 }
+
+.activity-frontstage {
+  width: min(92%, 860px);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 14px 16px;
+  border: 1px solid rgba(86, 114, 157, 0.24);
+  border-radius: 18px;
+  background: linear-gradient(180deg, rgba(18, 31, 51, 0.94), rgba(11, 22, 37, 0.94));
+  box-shadow: 0 12px 28px rgba(6, 15, 28, 0.22);
+}
+.activity-frontstage.activity-tone-running {
+  border-color: rgba(61, 220, 151, 0.26);
+}
+.activity-frontstage.activity-tone-waiting {
+  border-color: rgba(79, 140, 255, 0.34);
+}
+.activity-frontstage.activity-tone-failed {
+  border-color: rgba(255, 123, 114, 0.34);
+}
+.activity-frontstage-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+.activity-frontstage-title {
+  color: #f5f9ff;
+  font-size: 16px;
+  font-weight: 700;
+  line-height: 1.45;
+}
+.activity-frontstage-summary {
+  color: #e8f0ff;
+  font-size: 13px;
+  line-height: 1.6;
+}
+.activity-frontstage-chip-row,
+.activity-tool-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.activity-chip,
+.activity-tool-pill,
+.activity-state-pill {
+  display: inline-flex;
+  align-items: center;
+  padding: 5px 10px;
+  border-radius: 999px;
+  border: 1px solid rgba(86, 114, 157, 0.24);
+  background: rgba(7, 16, 30, 0.62);
+  color: #e2ebfa;
+  font-size: 11px;
+  font-weight: 600;
+}
+.activity-state-pill.running {
+  color: var(--accent-green);
+  border-color: rgba(61, 220, 151, 0.4);
+  background: rgba(61, 220, 151, 0.12);
+}
+.activity-state-pill.waiting,
+.activity-state-pill.idle {
+  color: var(--accent-strong);
+  border-color: rgba(79, 140, 255, 0.35);
+  background: rgba(79, 140, 255, 0.12);
+}
+.activity-state-pill.failed {
+  color: var(--error);
+  border-color: rgba(255, 123, 114, 0.4);
+  background: rgba(255, 123, 114, 0.12);
+}
+.activity-frontstage-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.activity-list-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  color: #edf3ff;
+  font-size: 12px;
+  line-height: 1.55;
+}
+.activity-list-bullet {
+  color: var(--accent-strong);
+}
+.activity-source-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 8px;
+}
+.activity-source-card {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  padding: 10px 11px;
+  border: 1px solid rgba(86, 114, 157, 0.18);
+  border-radius: 12px;
+  background: rgba(8, 17, 31, 0.72);
+}
+.activity-source-card.running {
+  border-color: rgba(61, 220, 151, 0.24);
+}
+.activity-source-card.waiting,
+.activity-source-card.idle {
+  border-color: rgba(79, 140, 255, 0.22);
+}
+.activity-source-card.failed {
+  border-color: rgba(255, 123, 114, 0.26);
+}
+.activity-source-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.activity-source-title {
+  color: #eff5ff;
+  font-size: 12px;
+  font-weight: 700;
+}
+.activity-source-state {
+  color: var(--muted);
+  font-size: 11px;
+}
+.activity-source-summary {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
 .message-rich-grid {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -610,6 +743,10 @@ button, textarea, input { font: inherit; }
   background: rgba(58, 64, 75, 0.28);
   border-color: rgba(126, 137, 156, 0.16);
 }
+.turn-card.source {
+  background: rgba(21, 34, 52, 0.68);
+  border-color: rgba(79, 140, 255, 0.22);
+}
 .turn-card.meta {
   background: rgba(10, 18, 30, 0.26);
   border-color: rgba(86, 114, 157, 0.14);
@@ -646,6 +783,14 @@ button, textarea, input { font: inherit; }
 .turn-card.reasoning .turn-card-title {
   color: #d7deea;
   font-weight: 600;
+}
+.turn-card.source .turn-card-title,
+.turn-card.source .turn-card-open {
+  color: #dfeaff;
+}
+.turn-card.source .turn-card-verb {
+  color: var(--accent-strong);
+  background: rgba(79, 140, 255, 0.14);
 }
 .turn-card.meta .turn-card-title,
 .turn-card.meta .turn-card-open {
@@ -852,6 +997,7 @@ button, textarea, input { font: inherit; }
   background: linear-gradient(180deg, rgba(18, 33, 56, 0.96), rgba(11, 22, 39, 0.96));
 }
 .selected-request.empty { border-style: dashed; border-color: var(--border); }
+.frontstage-summary-block { margin-bottom: 12px; }
 .selected-request-header { display: flex; justify-content: space-between; gap: 14px; align-items: flex-start; }
 .section-kicker {
   margin-bottom: 6px; font-size: 11px; font-weight: 700; letter-spacing: 0.08em;

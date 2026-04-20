@@ -97,7 +97,7 @@ fn model_input_assembler_renders_role_tools_history_and_project_scope() {
 
     assert!(rendered.contains("Context summary"));
     assert!(rendered.contains("Continuity tail"));
-    assert!(rendered.contains("Role prompt"));
+    assert!(rendered.contains("Agent prompt"));
     assert!(rendered.contains("Structured output contract"));
     assert!(rendered.contains("model_output_contract_v1"));
     assert!(rendered.contains("Model tools"));
@@ -109,10 +109,11 @@ fn model_input_assembler_renders_role_tools_history_and_project_scope() {
     assert!(rendered.contains("example: list peers before choosing a route target"));
     assert!(rendered.contains("Framework capabilities"));
     assert!(rendered.contains("Tool selection policy"));
-    assert!(rendered.contains("Recent history"));
+    assert!(rendered.contains("Recent interaction ledger"));
     assert!(rendered.contains("Project scope"));
     assert!(rendered.contains("Peer scope"));
-    assert!(rendered.contains("Current user input"));
+    assert!(rendered.contains("Current request"));
+    assert!(rendered.contains("Request envelope"));
     assert!(rendered.contains("Input attachments"));
     assert!(rendered.contains("demo.png"));
     assert!(rendered.contains("Mandatory final answer format"));

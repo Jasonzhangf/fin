@@ -147,11 +147,20 @@ M1 阶段，`user.toml` 只暴露最小必要项，例如：
 M1 阶段可纳入 `system.toml` 的配置域包括：
 
 - runtime
+- startup topology / worker budgets
 - routing
 - digest / rebuild
 - health / heartbeat
 - projection / debug
 - provider resolved config
+
+补充冻结（2026-04-20）：
+
+- startup 默认值分两层：
+  1. repo 内 baseline defaults：`rust/crates/config/defaults/runtime-startup.toml`
+  2. 用户运行时实际生效值：`~/.fin/config/system.toml`
+- 运行时优先读取 `system.toml`；若该文件尚不存在，才回落到 embedded startup defaults。
+- 因此默认 worker budget 不应再写死在 Rust 代码字面量里。
 
 ## 5. AI Provider 模块总原则
 

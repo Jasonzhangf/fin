@@ -1,3 +1,12 @@
+import {
+  activityFocusSource,
+  activityRecentItems,
+  activitySourceCards,
+  activityStage,
+  activityState,
+  activityStateTone,
+  activityUserCard,
+} from './activity_cards_ui.js';
 import { formatLocalTimestamp } from './time.js';
 import { StructuredTreeRenderer } from './tree.js';
 import type {
@@ -21,8 +30,10 @@ export class FocusPane {
 
   render(state: RefreshState): void {
     const selected = selectTurn(state);
+    const frontstage = renderFrontstageSummary(state, this.tree);
     if (!selected) {
       this.rootEl.innerHTML = `
+        ${frontstage}
         <section class="selected-request empty">
           <div class="section-kicker">Selected Request</div>
           <h3>还没有可聚焦的请求</h3>
@@ -54,6 +65,7 @@ export class FocusPane {
     ];
 
     this.rootEl.innerHTML = `
+      ${frontstage}
       <section class="selected-request">
         <div class="selected-request-header">
           <div>
@@ -100,6 +112,58 @@ export class FocusPane {
       </article>
     `;
   }
+}
+
+
+function renderFrontstageSummary(state: RefreshState, tree: StructuredTreeRenderer): string {
+  const userCard = activityUserCard(state.activityCards);
+  const focusSource = activityFocusSource(state.activityCards);
+  const sources = activitySourceCards(state.activityCards);
+  const recentItems = activityRecentItems(state.activityCards, 3);
+  if (!userCard && !focusSource && !sources.length) return '';
+
+  const stateLabel = activityState(state.activityCards);
+  const tone = activityStateTone(stateLabel);
+  const stage = activityStage(state.activityCards);
+
+  return `
+    <section class="selected-request frontstage-summary-block ${tree.escapeHtml(tone)}">
+      <div class="selected-request-header">
+        <div>
+          <div class="section-kicker">Frontstage Summary</div>
+          <h3>${tree.escapeHtml(userCard?.header ?? focusSource?.summary ?? 'system frontstage · idle')}</h3>
+        </div>
+        <span class="request-state-pill ${tree.escapeHtml(tone === 'failed' ? 'error' : tone === 'running' ? 'ok' : 'neutral')}">
+          ${tree.escapeHtml(stateLabel)}
+        </span>
+      </div>
+      <section class="chip-grid">
+        <article class="summary-chip">
+          <span class="summary-chip-label">focus</span>
+          <span class="summary-chip-value">${tree.escapeHtml(focusSource?.title ?? userCard?.focus_source_id ?? 'system-agent')}</span>
+        </article>
+        <article class="summary-chip">
+          <span class="summary-chip-label">stage</span>
+          <span class="summary-chip-value">${tree.escapeHtml(stage)}</span>
+        </article>
+        <article class="summary-chip">
+          <span class="summary-chip-label">sources</span>
+          <span class="summary-chip-value">${tree.escapeHtml(String(sources.length || 1))}</span>
+        </article>
+      </section>
+      ${recentItems.length ? `
+        <section class="summary-columns">
+          <article class="summary-block assistant">
+            <div class="summary-block-header">
+              <span>Recent Activity</span>
+              <span class="muted">activity cards</span>
+            </div>
+            <div class="summary-block-body">${tree.escapeHtml(recentItems.join('\n'))}</div>
+          </article>
+        </section>
+      ` : ''}
+    </section>
+  `;
 }
 
 export function buildFocusTurns(

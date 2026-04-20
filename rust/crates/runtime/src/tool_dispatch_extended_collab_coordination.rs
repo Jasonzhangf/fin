@@ -15,6 +15,9 @@ use std::{
 struct AssignmentRecord {
     assignment_id: String,
     peer_id: String,
+    target_worker_id: Option<String>,
+    requested_role_id: String,
+    owner_worker_id: Option<String>,
     task_summary: String,
     created_at: String,
     status: String,
@@ -26,14 +29,20 @@ pub(super) fn handle_agent_assign(
     tool_call_id: &str,
     arguments: &Value,
 ) -> bool {
-    let Some(peer_id) =
-        read_string(arguments, "peer_id").or_else(|| read_string(arguments, "target_peer_id"))
+    let target_worker_id = read_string(arguments, "target_worker_id");
+    let Some(peer_id) = read_string(arguments, "peer_id")
+        .or_else(|| read_string(arguments, "target_peer_id"))
+        .or_else(|| {
+            target_worker_id
+                .as_ref()
+                .map(|value| format!("local-{value}"))
+        })
     else {
         outcome.tool_records.push(failed_record(
             input,
             tool_call_id.into(),
             "agent.assign",
-            "missing required argument: peer_id",
+            "missing required argument: peer_id or target_worker_id",
         ));
         return true;
     };
@@ -78,6 +87,9 @@ pub(super) fn handle_agent_assign(
     pending.push(AssignmentRecord {
         assignment_id: assignment_id.clone(),
         peer_id: peer_id.clone(),
+        target_worker_id: target_worker_id.clone(),
+        requested_role_id: "project".into(),
+        owner_worker_id: input.refs.worker_id.clone(),
         task_summary: task_summary.clone(),
         created_at: input.occurred_at.into(),
         status: "pending".into(),
@@ -103,7 +115,17 @@ pub(super) fn handle_agent_assign(
         purpose: "request bounded subtask delegation to a target agent peer".into(),
         target_kind: Some("agent_peer".into()),
         target_ref: Some(peer_id.clone()),
-        input_summary: Some(short_text(task_summary.as_str(), 120)),
+        input_summary: Some(short_text(
+            format!(
+                "peer_id={peer_id}{}; task={task_summary}",
+                target_worker_id
+                    .as_ref()
+                    .map(|value| format!(", target_worker_id={value}"))
+                    .unwrap_or_default()
+            )
+            .as_str(),
+            160,
+        )),
         output_summary: Some(format!("assignment queued: {assignment_id}")),
         status: "completed".into(),
         started_at: input.occurred_at.into(),
@@ -119,6 +141,9 @@ pub(super) fn handle_agent_assign(
             "tool_call_id": tool_call_id,
             "assignment_id": assignment_id,
             "peer_id": peer_id,
+            "target_worker_id": target_worker_id,
+            "requested_role_id": "project",
+            "owner_worker_id": input.refs.worker_id,
             "task_summary": short_text(task_summary.as_str(), 240),
         }),
     ));

@@ -41,6 +41,7 @@ mod project_runtime_resume;
 #[cfg(test)]
 mod project_runtime_resume_tests;
 mod project_supervision;
+mod provider_live_smoke;
 mod reminder_scheduler;
 mod runtime_current_snapshot;
 mod runtime_home;
@@ -70,6 +71,8 @@ mod web_debug;
 mod web_debug_entry;
 mod web_debug_support;
 
+#[cfg(test)]
+mod test_env;
 #[cfg(test)]
 mod tests;
 

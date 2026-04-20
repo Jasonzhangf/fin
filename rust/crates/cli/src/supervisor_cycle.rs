@@ -4,7 +4,10 @@ use crate::{
 };
 use chrono::{DateTime, Duration, FixedOffset};
 use fin_config::RuntimeRetentionConfig;
-use fin_contracts::{DebugVisibility, EntityRefs, EventEnvelope, Severity, SupervisorCycleRecord};
+use fin_contracts::{
+    DebugVisibility, EntityRefs, EventEnvelope, InputAttachmentSummary, Severity,
+    SupervisorCycleRecord,
+};
 use fin_debug_server::{ChatSendResponse, DebugBinding};
 use fin_runtime::append_framework_events;
 use serde::{Serialize, de::DeserializeOwned};
@@ -50,6 +53,8 @@ where
     F: FnMut(
         DebugBinding,
         String,
+        String,
+        Vec<InputAttachmentSummary>,
         Option<&fin_contracts::InterruptedSegmentRecord>,
     ) -> Result<ChatSendResponse, CliError>,
 {

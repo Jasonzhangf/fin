@@ -111,6 +111,34 @@ fn system_context_view_loads_active_and_registered_projects_from_runtime_registr
 }"#,
     )
     .expect("project supervision");
+    fs::create_dir_all(runtime_home.join("runtime/assignments")).expect("assignments dir");
+    fs::write(
+        runtime_home.join("runtime/assignments/pending.json"),
+        br#"[
+  {
+    "peer_id":"local-worker-b",
+    "target_worker_id":"worker-b",
+    "owner_worker_id":"worker-system",
+    "status":"pending"
+  },
+  {
+    "peer_id":"local-worker-c",
+    "target_worker_id":"worker-c",
+    "owner_worker_id":"worker-system",
+    "status":"pending"
+  }
+]"#,
+    )
+    .expect("pending assignments");
+    fs::create_dir_all(runtime_home.join("runtime/mailbox/local-worker-b")).expect("mailbox");
+    fs::write(
+        runtime_home.join("runtime/mailbox/local-worker-b/inbox.json"),
+        br#"[
+  {"target_peer_id":"local-worker-b"},
+  {"target_peer_id":"local-worker-b"}
+]"#,
+    )
+    .expect("mailbox inbox");
 
     let context = ContextViewBuilder.build(
         &worker,
@@ -135,8 +163,18 @@ fn system_context_view_loads_active_and_registered_projects_from_runtime_registr
             .map(|item| item.project_id.as_str()),
         Some("fin")
     );
-    assert!(project.active_projects.iter().any(|item| item.project_id == "infra"));
-    assert!(project.projects.iter().any(|item| item.project_id == "archive"));
+    assert!(
+        project
+            .active_projects
+            .iter()
+            .any(|item| item.project_id == "infra")
+    );
+    assert!(
+        project
+            .projects
+            .iter()
+            .any(|item| item.project_id == "archive")
+    );
     assert_eq!(
         project.active_agent_ids,
         vec![
@@ -158,6 +196,27 @@ fn system_context_view_loads_active_and_registered_projects_from_runtime_registr
             .as_deref()
             .unwrap_or_default()
             .contains("resume_ready=1")
+    );
+    assert!(
+        project
+            .assignment_queue_summary
+            .as_deref()
+            .unwrap_or_default()
+            .contains("pending_assignments=2")
+    );
+    assert!(
+        project
+            .assignment_queue_summary
+            .as_deref()
+            .unwrap_or_default()
+            .contains("worker-b<-worker-system:pending")
+    );
+    assert!(
+        project
+            .mailbox_summary
+            .as_deref()
+            .unwrap_or_default()
+            .contains("mailbox_messages=2")
     );
     assert!(
         project

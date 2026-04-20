@@ -239,3 +239,108 @@ fn project_task_tools_list_and_status_known_tasks() {
             .contains("status=running")
     );
 }
+
+#[test]
+fn control_query_tools_list_presence_and_supervision_truth() {
+    let runtime_home = temp_runtime_home("control-query-tools");
+    fs::create_dir_all(runtime_home.join("runtime/current")).expect("runtime current");
+    fs::write(
+        runtime_home.join("runtime/current/current_agent_presence_registry.json"),
+        br#"{
+  "agents":[
+    {"agent_id":"mbp.system","device_name":"mbp","agent_name":"system","status":"busy"},
+    {"agent_id":"mbp.fin","device_name":"mbp","agent_name":"fin","status":"idle"},
+    {"agent_id":"mbp.infra","device_name":"mbp","agent_name":"infra","status":"waiting"}
+  ]
+}"#,
+    )
+    .expect("presence registry");
+    fs::write(
+        runtime_home.join("runtime/current/current_project_supervision.json"),
+        br#"{
+  "ready_count":0,
+  "resume_ready_count":1,
+  "busy_count":1,
+  "waiting_count":1,
+  "recover_needed_count":1,
+  "projects":[
+    {"project_id":"fin","desired_action":"monitor_running_task"},
+    {"project_id":"infra","desired_action":"resume_project_task"},
+    {"project_id":"archive","desired_action":"recover_project_agent"}
+  ]
+}"#,
+    )
+    .expect("project supervision");
+    let context = context_with_runtime_home(&runtime_home);
+
+    let presence = execute_model_tools(
+        "op-agent-presence",
+        "trace-agent-presence",
+        &refs(),
+        "2026-04-20T12:00:06+08:00",
+        &context,
+        1,
+        &[ModelToolCall {
+            tool_name: "agent.presence.list".into(),
+            arguments: json!({ "limit": 5 }),
+        }],
+    );
+    let presence_record = presence
+        .tool_records
+        .iter()
+        .find(|item| item.tool_name == "agent.presence.list")
+        .expect("agent.presence.list record");
+    assert_eq!(presence_record.status, "completed");
+    assert!(
+        presence_record
+            .output_summary
+            .as_deref()
+            .unwrap_or_default()
+            .contains("agents=3")
+    );
+    assert!(
+        presence
+            .events
+            .iter()
+            .any(|(event_type, _)| event_type == "agent.presence_list_completed")
+    );
+
+    let supervision = execute_model_tools(
+        "op-project-supervision",
+        "trace-project-supervision",
+        &refs(),
+        "2026-04-20T12:00:07+08:00",
+        &context,
+        1,
+        &[ModelToolCall {
+            tool_name: "project.supervision.list".into(),
+            arguments: json!({ "desired_action": "resume_project_task" }),
+        }],
+    );
+    let supervision_record = supervision
+        .tool_records
+        .iter()
+        .find(|item| item.tool_name == "project.supervision.list")
+        .expect("project.supervision.list record");
+    assert_eq!(supervision_record.status, "completed");
+    assert!(
+        supervision_record
+            .output_summary
+            .as_deref()
+            .unwrap_or_default()
+            .contains("resume_ready=1")
+    );
+    assert!(
+        supervision_record
+            .output_summary
+            .as_deref()
+            .unwrap_or_default()
+            .contains("infra:resume_project_task")
+    );
+    assert!(
+        supervision
+            .events
+            .iter()
+            .any(|(event_type, _)| event_type == "project.supervision_list_completed")
+    );
+}
