@@ -157,6 +157,20 @@ pub struct ProjectContextBlock {
     pub scope_summary: Option<String>,
     #[serde(default)]
     pub focus_summary: Option<String>,
+    #[serde(default)]
+    pub active_task_id: Option<String>,
+    #[serde(default)]
+    pub task_board_summary: Option<String>,
+    #[serde(default)]
+    pub known_task_ids: Vec<String>,
+    #[serde(default)]
+    pub active_agent_ids: Vec<String>,
+    #[serde(default)]
+    pub agent_presence_summary: Option<String>,
+    #[serde(default)]
+    pub supervision_actions: Vec<String>,
+    #[serde(default)]
+    pub project_supervision_summary: Option<String>,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]

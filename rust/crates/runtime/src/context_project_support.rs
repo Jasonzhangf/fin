@@ -6,11 +6,17 @@ use std::{fs, path::{Path, PathBuf}};
 pub(super) struct ProjectRegistryContextSnapshot {
     pub(super) active_projects: Vec<ProjectRef>,
     pub(super) projects: Vec<ProjectRef>,
+    pub(super) active_agent_ids: Vec<String>,
+    pub(super) agent_presence_summary: Option<String>,
+    pub(super) supervision_actions: Vec<String>,
+    pub(super) project_supervision_summary: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
 struct StoredProjectRegistryEntry {
     project_id: String,
+    #[serde(default)]
+    agent_id: String,
     #[serde(default)]
     project_root: Option<String>,
     #[serde(default)]
@@ -52,6 +58,10 @@ pub(super) fn load_project_registry_context(
     ProjectRegistryContextSnapshot {
         active_projects,
         projects,
+        active_agent_ids: load_active_agent_ids(runtime_home),
+        agent_presence_summary: load_agent_presence_summary(runtime_home),
+        supervision_actions: load_project_supervision_actions(runtime_home),
+        project_supervision_summary: load_project_supervision_summary(runtime_home),
     }
 }
 
@@ -70,6 +80,119 @@ fn project_ref_from_registry(entry: &StoredProjectRegistryEntry) -> ProjectRef {
             format!("presence={}", entry.presence_state)
         }),
     }
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize)]
+struct StoredAgentPresenceRegistry {
+    #[serde(default)]
+    agents: Vec<StoredAgentPresenceEntry>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+struct StoredAgentPresenceEntry {
+    agent_id: String,
+    #[serde(default)]
+    device_name: String,
+    #[serde(default)]
+    agent_name: String,
+    #[serde(default)]
+    status: String,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize)]
+struct StoredProjectSupervisionSnapshot {
+    #[serde(default)]
+    ready_count: usize,
+    #[serde(default)]
+    resume_ready_count: usize,
+    #[serde(default)]
+    busy_count: usize,
+    #[serde(default)]
+    waiting_count: usize,
+    #[serde(default)]
+    recover_needed_count: usize,
+    #[serde(default)]
+    projects: Vec<StoredProjectSupervisionRecord>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+struct StoredProjectSupervisionRecord {
+    project_id: String,
+    desired_action: String,
+}
+
+fn load_agent_presence_summary(runtime_home: &str) -> Option<String> {
+    let path = Path::new(runtime_home).join("runtime/current/current_agent_presence_registry.json");
+    let content = fs::read_to_string(path).ok()?;
+    let registry = serde_json::from_str::<StoredAgentPresenceRegistry>(&content).ok()?;
+    if registry.agents.is_empty() {
+        return Some("agents=none".into());
+    }
+    let mut items = registry
+        .agents
+        .iter()
+        .map(|entry| {
+            if !entry.device_name.trim().is_empty() && !entry.agent_name.trim().is_empty() {
+                format!("{}.{}:{}", entry.device_name, entry.agent_name, entry.status)
+            } else {
+                format!("{}:{}", entry.agent_id, entry.status)
+            }
+        })
+        .collect::<Vec<_>>();
+    items.sort();
+    items.dedup();
+    Some(format!("agents={} [{}]", items.len(), items.join(", ")))
+}
+
+fn load_active_agent_ids(runtime_home: &str) -> Vec<String> {
+    let path = Path::new(runtime_home).join("runtime/current/current_agent_presence_registry.json");
+    let Ok(content) = fs::read_to_string(path) else {
+        return Vec::new();
+    };
+    let Ok(registry) = serde_json::from_str::<StoredAgentPresenceRegistry>(&content) else {
+        return Vec::new();
+    };
+    let mut active = registry
+        .agents
+        .into_iter()
+        .filter(|entry| matches!(entry.status.as_str(), "busy" | "idle" | "waiting"))
+        .map(|entry| entry.agent_id)
+        .filter(|agent_id| !agent_id.trim().is_empty())
+        .collect::<Vec<_>>();
+    active.sort();
+    active.dedup();
+    active
+}
+
+fn load_project_supervision_summary(runtime_home: &str) -> Option<String> {
+    let path = Path::new(runtime_home).join("runtime/current/current_project_supervision.json");
+    let content = fs::read_to_string(path).ok()?;
+    let snapshot = serde_json::from_str::<StoredProjectSupervisionSnapshot>(&content).ok()?;
+    Some(format!(
+        "ready={} resume_ready={} busy={} waiting={} recover_needed={}",
+        snapshot.ready_count,
+        snapshot.resume_ready_count,
+        snapshot.busy_count,
+        snapshot.waiting_count,
+        snapshot.recover_needed_count
+    ))
+}
+
+fn load_project_supervision_actions(runtime_home: &str) -> Vec<String> {
+    let path = Path::new(runtime_home).join("runtime/current/current_project_supervision.json");
+    let Ok(content) = fs::read_to_string(path) else {
+        return Vec::new();
+    };
+    let Ok(snapshot) = serde_json::from_str::<StoredProjectSupervisionSnapshot>(&content) else {
+        return Vec::new();
+    };
+    let mut actions = snapshot
+        .projects
+        .into_iter()
+        .map(|project| format!("{}:{}", project.project_id, project.desired_action))
+        .collect::<Vec<_>>();
+    actions.sort();
+    actions
 }
 
 pub(super) fn resolve_project_root(cwd: &str) -> Option<String> {

@@ -112,6 +112,10 @@ pub(super) fn build_project_block(
         active_task_id: task_board.active_task_id,
         task_board_summary: task_board.task_board_summary,
         known_task_ids: task_board.known_task_ids,
+        active_agent_ids: registry.active_agent_ids,
+        agent_presence_summary: registry.agent_presence_summary,
+        supervision_actions: registry.supervision_actions,
+        project_supervision_summary: registry.project_supervision_summary,
     }
 }
 pub(super) fn build_peer_block(
@@ -450,6 +454,24 @@ pub(super) fn render_project_lines(project: &ProjectContextBlock) -> Vec<String>
             "known_task_ids={}",
             project.known_task_ids.join(", ")
         ));
+    }
+    if !project.active_agent_ids.is_empty() {
+        lines.push(format!(
+            "active_agent_ids={}",
+            project.active_agent_ids.join(", ")
+        ));
+    }
+    if let Some(agent_presence_summary) = &project.agent_presence_summary {
+        lines.push(format!("agent_presence={agent_presence_summary}"));
+    }
+    if !project.supervision_actions.is_empty() {
+        lines.push(format!(
+            "supervision_actions={}",
+            project.supervision_actions.join(", ")
+        ));
+    }
+    if let Some(project_supervision_summary) = &project.project_supervision_summary {
+        lines.push(format!("project_supervision={project_supervision_summary}"));
     }
     lines
 }

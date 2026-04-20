@@ -334,6 +334,9 @@ session artifacts + runtime binding
 - 当前 project / repo / cwd / selected paths
 - 必要的 project scope 信息
 - 当前任务相关文件区域或代码区域摘要
+- 当前 task board 摘要
+- 当前 active agent / presence 摘要
+- 当前 project supervision 摘要
 
 补充冻结（2026-04-20）：
 

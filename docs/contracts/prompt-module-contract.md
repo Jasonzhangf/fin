@@ -154,6 +154,13 @@ selected_paths: string[]
 relative_selected_paths: string[]
 scope_summary: string | null
 focus_summary: string | null
+active_task_id: string | null
+task_board_summary: string | null
+known_task_ids: string[]
+active_agent_ids: string[]
+agent_presence_summary: string | null
+supervision_actions: string[]
+project_supervision_summary: string | null
 ```
 
 语义要求：
@@ -161,6 +168,9 @@ focus_summary: string | null
 - `primary_project`：当前主要 project
 - `active_projects`：当前推理涉及的活跃 projects
 - `projects`：当前 agent 已知 projects 列表
+- `active_task_id / task_board_summary / known_task_ids`：当前 task board 摘要
+- `active_agent_ids / agent_presence_summary`：framework-owned agent presence 摘要
+- `supervision_actions / project_supervision_summary`：framework-owned supervision 摘要
 
 ---
 

@@ -83,6 +83,34 @@ fn system_context_view_loads_active_and_registered_projects_from_runtime_registr
 ]"#,
     )
     .expect("project registry");
+    fs::create_dir_all(runtime_home.join("runtime/current")).expect("current dir");
+    fs::write(
+        runtime_home.join("runtime/current/current_agent_presence_registry.json"),
+        br#"{
+  "agents":[
+    {"agent_id":"mbp.system","agent_name":"system","device_name":"mbp","status":"busy"},
+    {"agent_id":"mbp.builder","agent_name":"builder","device_name":"mbp","status":"idle"},
+    {"agent_id":"mbp.infra","agent_name":"infra","device_name":"mbp","status":"waiting"}
+  ]
+}"#,
+    )
+    .expect("presence registry");
+    fs::write(
+        runtime_home.join("runtime/current/current_project_supervision.json"),
+        br#"{
+  "ready_count":0,
+  "resume_ready_count":1,
+  "busy_count":1,
+  "waiting_count":1,
+  "recover_needed_count":1,
+  "projects":[
+    {"project_id":"fin","desired_action":"monitor_running_task"},
+    {"project_id":"infra","desired_action":"resume_project_task"},
+    {"project_id":"archive","desired_action":"recover_project_agent"}
+  ]
+}"#,
+    )
+    .expect("project supervision");
 
     let context = ContextViewBuilder.build(
         &worker,
@@ -109,6 +137,34 @@ fn system_context_view_loads_active_and_registered_projects_from_runtime_registr
     );
     assert!(project.active_projects.iter().any(|item| item.project_id == "infra"));
     assert!(project.projects.iter().any(|item| item.project_id == "archive"));
+    assert_eq!(
+        project.active_agent_ids,
+        vec![
+            "mbp.builder".to_string(),
+            "mbp.infra".to_string(),
+            "mbp.system".to_string()
+        ]
+    );
+    assert!(
+        project
+            .agent_presence_summary
+            .as_deref()
+            .unwrap_or_default()
+            .contains("agents=3")
+    );
+    assert!(
+        project
+            .project_supervision_summary
+            .as_deref()
+            .unwrap_or_default()
+            .contains("resume_ready=1")
+    );
+    assert!(
+        project
+            .supervision_actions
+            .iter()
+            .any(|item| item == "infra:resume_project_task")
+    );
     assert!(
         project
             .scope_summary
