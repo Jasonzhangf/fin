@@ -3392,3 +3392,23 @@ fin should adopt the following canonical model:
   - `pickup` is the current resumability surface
   - `runtime_resume_report` is the latest executed resume action surface
   - `status_probe` must show both rather than forcing one surface to speak for the other
+
+## 2026-04-20 m2 step2 supervisor heartbeat effective-stale truth hardening
+- Closed another M2 Step 2 control-plane gap on the `supervisor_cycle -> supervisor_heartbeat -> daemon_state/status` chain.
+- Root issue:
+  - `SupervisorHeartbeatRecord.stale_lease` was previously computed from the observed pre-refresh cycle.
+  - If heartbeat then triggered a fresh supervisor cycle successfully, the heartbeat record could still say `stale_detected / stale_lease=true`.
+  - That leaked stale pre-refresh observation into daemon/status/web as if it were still the final effective state.
+- Code changes:
+  - `due_for_tick` remains an observation on the pre-refresh cycle.
+  - `stale_lease` is now recomputed from the final effective cycle after any triggered refresh.
+  - `status=triggered_cycle` is preserved when heartbeat successfully drove a refresh and the final cycle is no longer stale.
+  - The old-cycle stale fact is still preserved via `supervisor.stale_cycle_detected` event and `result_summary` diagnostic text.
+- Verification:
+  - `cargo fmt --all --manifest-path rust/Cargo.toml` ✅
+  - `cargo test -p fin-runtime -p fin-cli --manifest-path rust/Cargo.toml` ✅
+  - `python3 scripts/check-code-line-limit.py` ✅
+- Frozen boundary after this pass:
+  - `heartbeat.due_for_tick` = observed control need before refresh
+  - `heartbeat.stale_lease` = final effective stale state after refresh
+  - stale pre-refresh evidence belongs to event stream, not daemon/status final truth

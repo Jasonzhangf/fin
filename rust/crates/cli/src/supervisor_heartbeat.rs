@@ -76,7 +76,7 @@ where
         .as_ref()
         .and_then(|value| value.next_check_at.as_deref())
         .is_some_and(|value| is_timestamp_due(value, &created_at));
-    let stale_lease = observed_cycle
+    let observed_stale_lease = observed_cycle
         .as_ref()
         .and_then(lease_deadline_at)
         .as_deref()
@@ -108,6 +108,9 @@ where
         .as_ref()
         .and_then(|value| value.next_check_at.clone());
     let lease_deadline = final_cycle.as_ref().and_then(lease_deadline_at);
+    let stale_lease = lease_deadline
+        .as_deref()
+        .is_some_and(|value| is_timestamp_due(value, &created_at));
     let heartbeat = SupervisorHeartbeatRecord {
         heartbeat_id: heartbeat_id.clone(),
         created_at: created_at.clone(),
@@ -115,7 +118,7 @@ where
         source: source.into(),
         status: if stale_lease {
             "stale_detected".into()
-        } else if due_for_tick {
+        } else if triggered.is_some() || due_for_tick {
             "triggered_cycle".into()
         } else if observed_cycle.is_some() {
             "observed".into()
@@ -132,9 +135,10 @@ where
         next_check_at: next_check_at.clone(),
         lease_deadline_at: lease_deadline.clone(),
         result_summary: format!(
-            "heartbeat source={} due_for_tick={} stale_lease={} blocked_kind={} next_check={}",
+            "heartbeat source={} due_for_tick={} observed_stale_lease={} stale_lease={} blocked_kind={} next_check={}",
             source,
             due_for_tick,
+            observed_stale_lease,
             stale_lease,
             blocked_kind.as_deref().unwrap_or("-"),
             next_check_at.as_deref().unwrap_or("-"),
@@ -149,7 +153,7 @@ where
         &refs,
         serde_json::to_value(&heartbeat).map_err(CliError::Serialize)?,
     )];
-    if stale_lease {
+    if observed_stale_lease {
         events.push(heartbeat_event(
             &heartbeat_id,
             2,

@@ -172,8 +172,8 @@ fn supervisor_heartbeat_triggers_due_cycle_when_next_check_elapsed() {
 
     let heartbeat = outcome.heartbeat.expect("heartbeat");
     assert!(heartbeat.due_for_tick);
-    assert!(heartbeat.stale_lease);
-    assert_eq!(heartbeat.status, "stale_detected");
+    assert!(!heartbeat.stale_lease);
+    assert_eq!(heartbeat.status, "triggered_cycle");
     assert!(heartbeat.triggered_cycle_id.is_some());
 
     let latest_cycle =
@@ -183,7 +183,7 @@ fn supervisor_heartbeat_triggers_due_cycle_when_next_check_elapsed() {
         fs::read_to_string(session_dir.join("control/supervisor/latest_heartbeat.json"))
             .expect("heartbeat");
     assert!(latest_heartbeat.contains("\"due_for_tick\": true"));
-    assert!(latest_heartbeat.contains("\"stale_lease\": true"));
+    assert!(latest_heartbeat.contains("\"stale_lease\": false"));
     let events =
         fs::read_to_string(session_dir.join("events/stream.jsonl")).expect("events stream");
     assert!(events.contains("supervisor.heartbeat_recorded"));

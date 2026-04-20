@@ -357,6 +357,6 @@ api_key_env = "OPENAI_API_KEY"
             fs::read_to_string(session_dir.join("control/supervisor/recent_heartbeats.json"))
                 .expect("heartbeats");
         assert!(heartbeats.contains("\"due_for_tick\": true"));
-        assert!(heartbeats.contains("\"stale_lease\": true"));
+        assert!(heartbeats.contains("\"stale_lease\": false"));
     }
 }
