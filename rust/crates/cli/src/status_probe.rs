@@ -1,5 +1,13 @@
 use crate::{
-    CliError, runtime_home::read_last_run_value, scheduler_driver::load_latest_scheduler_decision,
+    CliError,
+    agent_registry_status::render_agent_registry_summary,
+    project_execution_handoff::{ProjectExecutionHandoffSnapshot, read_project_execution_handoffs},
+    project_recovery::ProjectRecoveryExecutionReport,
+    project_runtime_pickup::{ProjectRuntimePickupSnapshot, read_project_runtime_pickups},
+    project_supervision::read_project_supervision_snapshot,
+    runtime_home::read_last_run_value,
+    scheduler_driver::load_latest_scheduler_decision,
+    startup_topology::render_project_registry_summary,
 };
 use fin_contracts::{
     ControlFeedback, DaemonRecoveryActionRecord, DaemonStateRecord, ExecutionNote,
@@ -133,6 +141,14 @@ pub(crate) fn build_status_probe_response(
         &last_run,
         "current_routing_action_path",
     )?);
+    let project_recovery = read_json_optional::<ProjectRecoveryExecutionReport>(
+        &runtime_home.join("runtime/current/current_project_recovery.json"),
+    )?;
+    let project_supervision = read_project_supervision_snapshot(runtime_home)?;
+    let project_execution_handoffs = read_project_execution_handoffs(runtime_home)?;
+    let project_runtime_pickups = read_project_runtime_pickups(runtime_home)?;
+    let agent_summary = render_agent_registry_summary(runtime_home)?;
+    let project_summary = render_project_registry_summary(runtime_home)?;
 
     let freshness = probe_freshness(
         progress.as_ref(),
@@ -164,6 +180,12 @@ pub(crate) fn build_status_probe_response(
             supervisor_heartbeat.as_ref(),
             daemon_state.as_ref(),
             daemon_recovery.as_ref(),
+            &agent_summary,
+            &project_summary,
+            project_recovery.as_ref(),
+            project_supervision.as_ref(),
+            project_execution_handoffs.as_ref(),
+            project_runtime_pickups.as_ref(),
             routing_action.as_ref(),
         ),
         digest_id,
@@ -192,6 +214,12 @@ fn render_status_answer(
     supervisor_heartbeat: Option<&SupervisorHeartbeatRecord>,
     daemon_state: Option<&DaemonStateRecord>,
     daemon_recovery: Option<&DaemonRecoveryActionRecord>,
+    agent_summary: &str,
+    project_summary: &str,
+    project_recovery: Option<&ProjectRecoveryExecutionReport>,
+    project_supervision: Option<&crate::project_supervision::ProjectSupervisionSnapshot>,
+    project_execution_handoffs: Option<&ProjectExecutionHandoffSnapshot>,
+    project_runtime_pickups: Option<&ProjectRuntimePickupSnapshot>,
     routing_action: Option<&RoutingActionRecord>,
 ) -> String {
     let phase = execution_state
@@ -312,9 +340,21 @@ fn render_status_answer(
             )
         })
         .unwrap_or_else(|| "recovery unavailable".into());
+    let project_recovery_summary = project_recovery
+        .map(|value| value.summary.as_str())
+        .unwrap_or("project recovery unavailable");
+    let project_supervision_summary = project_supervision
+        .map(|value| value.status_summary())
+        .unwrap_or_else(|| "project supervision unavailable".into());
+    let project_execution_handoff_summary = project_execution_handoffs
+        .map(|value| value.status_summary())
+        .unwrap_or_else(|| "project execution handoff unavailable".into());
+    let project_runtime_pickup_summary = project_runtime_pickups
+        .map(|value| value.status_summary())
+        .unwrap_or_else(|| "project runtime pickup unavailable".into());
 
     format!(
-        "status probe ({freshness})\nrequest={probe_message}\nsession={}\ntask={}\nphase={phase}\nblocker={blocker}\nnext_step={next_step}\nactive_step={active_step}\nresume_from={resume_from}\npending_inputs={pending_count}\nnote={note_summary}\ncontrol={control_summary}\nrouting_action={routing_summary}\nscheduler={scheduler_summary}\ntick={tick_summary}\nsupervisor={supervisor_summary}\nheartbeat={heartbeat_summary}\ndaemon={daemon_summary}\nrecovery={recovery_summary}",
+        "status probe ({freshness})\nrequest={probe_message}\nsession={}\ntask={}\nagents={agent_summary}\nprojects={project_summary}\nproject_supervision={project_supervision_summary}\nproject_execution_handoffs={project_execution_handoff_summary}\nproject_runtime_pickups={project_runtime_pickup_summary}\nproject_recovery={project_recovery_summary}\nphase={phase}\nblocker={blocker}\nnext_step={next_step}\nactive_step={active_step}\nresume_from={resume_from}\npending_inputs={pending_count}\nnote={note_summary}\ncontrol={control_summary}\nrouting_action={routing_summary}\nscheduler={scheduler_summary}\ntick={tick_summary}\nsupervisor={supervisor_summary}\nheartbeat={heartbeat_summary}\ndaemon={daemon_summary}\nrecovery={recovery_summary}",
         binding.session_id.as_deref().unwrap_or("tentative"),
         binding.task_id.as_deref().unwrap_or("-"),
     )

@@ -13,11 +13,14 @@ use thiserror::Error;
 mod activity_cards;
 #[cfg(test)]
 mod activity_cards_tests;
+mod agent_naming;
 #[cfg(test)]
 mod assembler_tests;
 mod closure_runtime;
 mod context_blocks;
 mod context_view;
+#[cfg(test)]
+mod context_view_task_board_tests;
 #[cfg(test)]
 mod context_view_tests;
 mod control_feedback;
@@ -29,12 +32,19 @@ mod model_output_tests;
 mod prompt_assembly;
 #[cfg(test)]
 mod prompt_tests;
+mod round_context;
+#[cfg(test)]
+mod round_loop_runtime_tests;
 mod routing_actions;
 mod scheduler;
 mod session_materializer;
 mod session_record_journal;
 mod skill_loader;
+mod task_board_snapshot;
+mod task_handoff;
+mod task_store;
 mod tool_catalog;
+mod tool_catalog_dynamic;
 mod tool_dispatch;
 mod tool_dispatch_control;
 mod tool_dispatch_extended;
@@ -57,6 +67,10 @@ mod tool_semantics;
 mod trace_records;
 mod turn_records;
 pub use activity_cards::build_activity_cards;
+pub use agent_naming::{
+    AllocatedAgentIdentity, allocate_local_agent_identity, create_named_local_worker,
+    resolve_device_name,
+};
 pub use context_view::{ContextAssemblyInput, ContextViewBuilder};
 pub use control_feedback::ControlFeedbackBuilder;
 pub use control_plane::{
@@ -71,6 +85,7 @@ pub use session_materializer::{
     SessionMaterializationReceipt, SessionMaterializer, SessionMessageRecord,
     append_framework_events,
 };
+pub use task_handoff::{TaskHandoffReceipt, handoff_project_task};
 #[derive(Debug, Error)]
 pub enum RuntimeError {
     #[error(transparent)]
