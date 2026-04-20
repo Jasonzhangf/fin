@@ -1,3 +1,12 @@
+import {
+  activityFocusSource,
+  activityRecentItems,
+  activitySourceCards,
+  activityStage,
+  activityState,
+  activityToolSemantics,
+  activityUserCard,
+} from './activity_cards_ui.js';
 import { renderEventLedger } from './event_ledger.js';
 import { buildEventLedgerView } from './event_ledger_view_state.js';
 import {
@@ -70,6 +79,33 @@ export class InspectorPane {
       .map((event) => String(event.event_type ?? '-'))
       .join(' → ');
     const ledgerView = buildEventLedgerView(state);
+    const userCard = activityUserCard(state.activityCards);
+    const focusSource = activityFocusSource(state.activityCards);
+    const sourceCards = activitySourceCards(state.activityCards);
+    const activityRecent = activityRecentItems(state.activityCards, 3);
+    const semanticTools = activityToolSemantics(state.activityCards);
+    const semanticToolsForSelected = selected?.operationId
+      ? semanticTools.filter((item) => item.operation_id === selected.operationId)
+      : semanticTools.slice(0, 6);
+    const frontstageState = activityState(state.activityCards);
+    const frontstageStage = activityStage(state.activityCards);
+    const frontstageDigest = shortText(
+      userCard?.header
+        ?? `${focusSource?.title ?? '-'} · ${focusSource?.summary ?? userCard?.focus_summary ?? '-'}`,
+      180,
+    );
+    const focusDigest = shortText(
+      `${focusSource?.title ?? '-'} · state=${frontstageState} · stage=${frontstageStage}`,
+      180,
+    );
+    const semanticToolDigest = semanticToolsForSelected.length
+      ? shortText(
+          semanticToolsForSelected
+            .map((item) => scalar(item.summary ?? item.tool_name))
+            .join(' | '),
+          140,
+        )
+      : '-';
     const providerAccepted = asRecord(findEvent(selected?.events ?? [], 'provider.operation_accepted')?.payload);
     const providerResponse = asRecord(
       findEvent(selected?.events ?? [], 'provider.completed')?.payload
@@ -89,7 +125,6 @@ export class InspectorPane {
       : [];
     const stableCoreLayer = promptLayerById(promptLayers, 'stable_core');
     const roleBaselineLayer = promptLayerById(promptLayers, 'role_baseline');
-    const modelOverlayLayer = promptLayerById(promptLayers, 'model_overlay');
     const promptLayerDigest = promptLayers.length
       ? promptLayers
           .map((layer) => `${scalar(layer.layer_id)}:${arrayCount(layer.module_ids)}`)
@@ -115,17 +150,20 @@ export class InspectorPane {
       : '-';
     const stableCoreModules = modulesForLayer(promptModules, stableCoreLayer);
     const roleBaselineModules = modulesForLayer(promptModules, roleBaselineLayer);
-    const modelOverlayModules = modulesForLayer(promptModules, modelOverlayLayer);
-    const sessionTaskOverlay = {
+    const agentContinuityBlock = {
       current_prompt_summary: rolePromptBlock.current_prompt_summary ?? '-',
       role_id: rolePromptBlock.role_id ?? '-',
       prompt_lineage: rolePromptBlock.prompt_lineage ?? [],
       prompt_history: rolePromptBlock.prompt_history ?? [],
       behavior_rules: rolePromptBlock.behavior_rules ?? [],
       output_contract: rolePromptBlock.output_contract ?? [],
-      primary_project: projectBlock.primary_project ?? null,
-      active_projects: projectBlock.active_projects ?? [],
-      projects: projectBlock.projects ?? [],
+      portfolio: { primary_project: projectBlock.primary_project ?? null, active_projects: projectBlock.active_projects ?? [], projects: projectBlock.projects ?? [] },
+      control_plane: {
+        active_agent_ids: projectBlock.active_agent_ids ?? [],
+        agent_presence_summary: projectBlock.agent_presence_summary ?? '-',
+        supervision_actions: projectBlock.supervision_actions ?? [],
+        project_supervision_summary: projectBlock.project_supervision_summary ?? '-',
+      },
     };
     const turnContextEnvelope = {
       control: controlBlock,
@@ -168,12 +206,14 @@ export class InspectorPane {
         title: 'Provider',
         subtitle: '最新 provider 更新摘要',
         digestLines: [
+          ['frontstage', frontstageDigest],
           ['target', `${providerResponse.provider_name ?? providerAccepted.provider_name ?? '-'} / ${providerResponse.model ?? providerAccepted.model ?? request.model ?? '-'}`],
           ['result', `status=${scalar(providerResponse.status)} · finish=${scalar(providerResponse.stop_reason)} · response=${shortText(scalar(providerResponse.response_id), 48)}`],
           ['output', shortText(scalar(providerResponse.output_text), 180)],
         ],
         focusAreas: ['Request', 'Response', 'Sanitized Debug', 'Projection Summary'],
         sections: [
+          ['Frontstage', { user_card: userCard ?? {}, focus_source: focusSource ?? {}, recent_items: activityRecent }],
           ['Request', providerAccepted],
           ['Response', providerResponse],
           ['Sanitized Debug', providerDebug],
@@ -195,34 +235,26 @@ export class InspectorPane {
         title: 'Context',
         subtitle: '按真实 prompt 装配顺序显示：静态在上，增长上下文在最下',
         digestLines: [
+          ['frontstage', focusDigest],
           ['assembly', shortText(promptLayerDigest, 180)],
           ['stable core', shortText(layerDigest(stableCoreLayer, stableCoreModules), 180)],
-          ['role modules', shortText(layerDigest(roleBaselineLayer, roleBaselineModules), 180)],
-          ['model overlay', shortText(layerDigest(modelOverlayLayer, modelOverlayModules), 180)],
-          ['session/task', `lineage=${arrayCount(rolePromptBlock.prompt_lineage)} · prompt-history=${arrayCount(rolePromptBlock.prompt_history)} · projects=${arrayCount(projectBlock.projects)}`],
+          ['role baseline', shortText(layerDigest(roleBaselineLayer, roleBaselineModules), 180)],
+          ['agent continuity', `lineage=${arrayCount(rolePromptBlock.prompt_lineage)} · prompt-history=${arrayCount(rolePromptBlock.prompt_history)} · active-projects=${arrayCount(projectBlock.active_projects)} · active-agents=${arrayCount(projectBlock.active_agent_ids)} · supervision=${arrayCount(projectBlock.supervision_actions)}`],
+          ['task board', shortText(`${scalar(projectBlock.task_board_summary)} · ${scalar(projectBlock.agent_presence_summary)}`, 180)],
           ['turn envelope', `tools=${toolCount(toolBlock)} · focus=${shortText(scalar(projectBlock.focus_summary ?? projectBlock.scope_summary), 80)} · input=${shortText(scalar(context?.input ?? selected?.userMessage?.content ?? '-'), 60)}`],
           ['growing context', `messages=${arrayCount(historyBlock.recent_messages)} · digests=${arrayCount(historyBlock.recent_digests)} · reasoning=${arrayCount(historyBlock.recent_reasoning)} · tools=${arrayCount(historyBlock.recent_tool_activity)}`],
           ['profile', `role=${shortText(scalar(context?.role), 48)} · protocol=${scalar(context?.protocol_version)} · stream=${scalar(context?.stream)}`],
           ['contract', shortText(scalar(firstArrayItem(rolePromptBlock.output_contract) ?? rolePromptBlock.current_prompt_summary), 120)],
         ],
-        focusAreas: ['Stable Core Prompt', 'Role Prompt Modules', 'Model Overlay', 'Session / Task Overlay', 'Turn Context Envelope', 'Growing Conversation Context', 'Rendered Prompt Trace'],
+        focusAreas: ['Stable Core Prompt', 'Role Baseline', 'Agent Continuity', 'Turn Context Envelope', 'Growing Conversation Context', 'Rendered Input Trace'],
         sections: [
-          ['Stable Core Prompt', {
-            layer: stableCoreLayer,
-            modules: stableCoreModules,
-          }],
-          ['Role Prompt Modules', {
-            layer: roleBaselineLayer,
-            modules: roleBaselineModules,
-          }],
-          ['Model Overlay', {
-            layer: modelOverlayLayer,
-            modules: modelOverlayModules,
-          }],
-          ['Session / Task Overlay', sessionTaskOverlay],
+          ['Frontstage Context', { user_card: userCard ?? {}, focus_source: focusSource ?? {}, stage: frontstageStage, recent_items: activityRecent }],
+          ['Stable Core Prompt', { layer: stableCoreLayer, modules: stableCoreModules }],
+          ['Role Baseline', { layer: roleBaselineLayer, modules: roleBaselineModules }],
+          ['Agent Continuity', agentContinuityBlock],
           ['Turn Context Envelope', turnContextEnvelope],
           ['Growing Conversation Context', growingConversationContext],
-          ['Rendered Prompt Trace', {
+          ['Rendered Input Trace', {
             rendered_input: closureTrace.rendered_input ?? request.rendered_input ?? '-',
             user_input: closureTrace.user_input ?? currentInputBlock.input ?? selected?.userMessage?.content ?? '-',
             assistant_response: closureTrace.assistant_response ?? selected?.assistantMessage?.content ?? '-',
@@ -232,19 +264,22 @@ export class InspectorPane {
       {
         id: 'system',
         title: 'System',
-        subtitle: 'project / session / runtime 摘要',
+        subtitle: 'frontstage / project / session / runtime 摘要',
         digestLines: [
+          ['frontstage', frontstageDigest],
+          ['focus', focusDigest],
+          ['sources', `count=${sourceCards.length} · promoted=${sourceCards.filter((card) => card.auto_promoted).length} · semantic-tools=${semanticTools.length}`],
           ['scope', `${state.binding?.project_label ?? 'fin'} · session=${state.binding?.session_id ?? '-'} · task=${state.binding?.task_id ?? state.projection.task_id ?? '-'}`],
+          ['control', shortText(`${scalar(projectBlock.task_board_summary)} · ${scalar(projectBlock.project_supervision_summary)}`, 180)],
           ['runtime', shortText(state.binding?.runtime_home ?? '-', 120)],
-          ['project', shortText(scalar(projectBlock.project_root ?? projectBlock.cwd ?? '-'), 120)],
-          ['projects', `primary=${shortText(scalar(asRecord(projectBlock.primary_project).label), 40)} · active=${arrayCount(projectBlock.active_projects)} · all=${arrayCount(projectBlock.projects)}`],
           ['artifacts', `messages=${shortPath(state.binding?.session_messages_path)} · context=${shortPath(state.binding?.recent_contexts_path)} · digest=${shortPath(state.binding?.recent_digests_path)}`],
-          ['trace stores', `reasoning=${state.recentReasoningViews.length} · tools=${state.recentToolRecords.length} · closures=${state.recentClosures.length}`],
         ],
-        focusAreas: ['Binding', 'Projection', 'Paths', 'Selected Refs'],
+        focusAreas: ['Frontstage', 'Binding', 'Projection', 'Paths', 'Selected Refs'],
         sections: [
+          ['Frontstage', { user_card: userCard ?? {}, focus_source: focusSource ?? {}, source_cards: sourceCards, recent_items: activityRecent, stage: frontstageStage }],
+          ['Semantic Tools', semanticTools],
           ['Binding', state.binding ?? {}],
-          ['Projection', { note: 'UI render now consumes session artifacts as truth.', recent_contexts_count: state.recentContexts.length, recent_digests_count: state.recentDigests.length, recent_events_count: state.sessionEvents.length, recent_messages_count: state.messages.length, recent_reasoning_count: state.recentReasoningViews.length, recent_tool_record_count: state.recentToolRecords.length, recent_closure_count: state.recentClosures.length }],
+          ['Projection', { note: 'UI render now consumes session artifacts as truth.', recent_contexts_count: state.recentContexts.length, recent_digests_count: state.recentDigests.length, recent_events_count: state.sessionEvents.length, recent_messages_count: state.messages.length, recent_reasoning_count: state.recentReasoningViews.length, recent_tool_record_count: state.recentToolRecords.length, recent_closure_count: state.recentClosures.length, active_agent_ids: projectBlock.active_agent_ids ?? [], agent_presence_summary: projectBlock.agent_presence_summary ?? '-', supervision_actions: projectBlock.supervision_actions ?? [], project_supervision_summary: projectBlock.project_supervision_summary ?? '-' }],
           ['Paths', {
             runtime_home: state.binding?.runtime_home ?? '-',
             session_messages_path: state.binding?.session_messages_path ?? '-',
@@ -264,12 +299,13 @@ export class InspectorPane {
         title: 'Operation & Event',
         subtitle: '消息 / 请求 / 事件链摘要',
         digestLines: [
+          ['frontstage', focusDigest],
           ['operation', `${selected?.operationId ?? '-'} · trace=${selected?.traceId ?? '-'}`],
           ['timeline', shortText(latestEventNames || '-', 180)],
           ['ledger', `scope=${state.eventLedgerScope} · segment=${state.eventLedgerSegment ?? '-'} · op=${ledgerOperationId ?? '-'} · events=${filteredLedgerEvents.length}`],
           ['control', `continuity=${scalar(controlFeedback.continuity_confidence)} · shift=${scalar(controlFeedback.topic_shift_confidence)} · simple=${scalar(controlFeedback.simple_query_confidence)}`],
           ['reasoning', shortText(scalar(reasoningView.summary ?? notePayload.summary), 120)],
-          ['tools', `records=${toolRecords.length} · ${shortText(toolRecords.map((record) => `${scalar(record.tool_name)}:${scalar(record.status)}`).join(' | '), 120)}`],
+          ['tools', `semantic=${semanticToolsForSelected.length} · ${semanticToolDigest}`],
           ['closure', shortText(scalar(selected?.digest?.summary ?? selected?.assistantMessage?.content ?? '-'), 180)],
         ],
         focusAreas: ['Turn Messages', 'Request Structure', 'Control Feedback', 'Reasoning View', 'Tool Activity', 'Execution Note', 'Closure Trace', 'Selected Timeline', 'Event Ledger', 'Digest'],
@@ -278,7 +314,8 @@ export class InspectorPane {
           ['Request Structure', request],
           ['Control Feedback', controlFeedback],
           ['Reasoning View', reasoningView],
-          ['Tool Activity', toolRecords],
+          ['Frontstage Activity', { user_card: userCard ?? {}, focus_source: focusSource ?? {}, stage: frontstageStage, recent_items: activityRecent }],
+          ['Tool Activity', { semantic_tools: semanticToolsForSelected, tool_records: toolRecords }],
           ['Execution Note', notePayload],
           ['Closure Trace', closureTrace],
           ['Selected Timeline', { events: selected?.events ?? [] }],
