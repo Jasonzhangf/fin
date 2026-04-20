@@ -1,24 +1,20 @@
 use crate::{
     CliError,
+    attached_control_plane::run_attached_control_plane_cycle,
     channel_peer::ensure_builtin_qqbot_binding,
     chat_policy::{ChatDisposition, classify_request},
     config::default_provider_facade,
-    daemon_state::refresh_attached_daemon_state,
     demo::{DemoRequest, demo_identity, run_demo_request},
     execution_segments::{create_interrupted_segment, latest_open_segment},
-    execution_state::{clear_waiting_if_due, load_execution_state, pause_execution},
-    project_runtime_resume::drive_ready_project_runtime_resumes,
-    reminder_scheduler::inject_due_reminders,
+    execution_state::{load_execution_state, pause_execution},
     runtime_home::{
         read_last_run_value, read_recent_digests, read_recent_reasoning_views,
         read_recent_tool_records, read_session_messages,
     },
     session_binding::resolve_binding_for_session,
     session_commands::try_handle_local_command,
-    startup_wakeup::refresh_startup_control_plane,
     status_probe::build_status_probe_response,
     supervisor_cycle::run_supervisor_cycle,
-    supervisor_heartbeat::run_supervisor_heartbeat,
     time::local_timestamp_now,
     transcript::scope_from_session_id,
     turn_ids::next_turn_index,
@@ -103,13 +99,11 @@ impl CliDebugActionHandler {
         let mut existing_binding =
             initial_binding.unwrap_or(self.read_binding_internal(runtime_home)?);
         let _ = ensure_builtin_qqbot_binding(runtime_home, existing_binding.session_id.as_deref())?;
-        let _ = run_supervisor_heartbeat(
+        let _ = run_attached_control_plane_cycle(
             runtime_home,
+            &self.system,
             &existing_binding,
             "web_debug_request",
-            self.system.runtime.heartbeat_interval_ms,
-            &self.system.runtime.retention,
-            self.system.runtime.retention.recent_routing_decision_limit,
             |binding, message, source, attachments, merge_segment| {
                 self.run_chat_turn_with_provider(
                     runtime_home,
@@ -121,37 +115,6 @@ impl CliDebugActionHandler {
                     merge_segment,
                 )
             },
-        )?;
-        let fired = inject_due_reminders(runtime_home, &existing_binding)?;
-        if fired > 0 {
-            clear_waiting_if_due(runtime_home, &existing_binding, &local_timestamp_now())?;
-            existing_binding = self.read_binding_internal(runtime_home)?;
-            let _ = run_supervisor_cycle(
-                runtime_home,
-                &existing_binding,
-                "reminder_fired",
-                self.system.runtime.heartbeat_interval_ms,
-                &self.system.runtime.retention,
-                self.system.runtime.retention.recent_routing_decision_limit,
-                |binding, message, source, attachments, merge_segment| {
-                    self.run_chat_turn_with_provider(
-                        runtime_home,
-                        binding,
-                        message,
-                        &source,
-                        attachments,
-                        provider,
-                        merge_segment,
-                    )
-                },
-            )?;
-        }
-        let _ = refresh_startup_control_plane(runtime_home, &self.system, &local_timestamp_now())?;
-        let _ = drive_ready_project_runtime_resumes(
-            runtime_home,
-            &self.system,
-            "project_runtime_resume",
-            &local_timestamp_now(),
             |binding, message, source, attachments, merge_segment| {
                 self.run_project_turn_with_provider(
                     runtime_home,
@@ -163,15 +126,6 @@ impl CliDebugActionHandler {
                     merge_segment,
                 )
             },
-        )?;
-        let _ = refresh_startup_control_plane(runtime_home, &self.system, &local_timestamp_now())?;
-        let _ = refresh_attached_daemon_state(
-            runtime_home,
-            &self.system,
-            &existing_binding,
-            "web_debug_request",
-            &self.system.runtime.retention,
-            self.system.runtime.retention.recent_routing_decision_limit,
         )?;
         existing_binding = self.read_binding_internal(runtime_home)?;
         if request.is_status_probe() {

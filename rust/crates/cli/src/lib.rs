@@ -2,6 +2,9 @@ mod agent_presence;
 #[cfg(test)]
 mod agent_presence_tests;
 mod agent_registry_status;
+mod attached_control_plane;
+#[cfg(test)]
+mod attached_control_plane_tests;
 mod channel_peer;
 mod channel_peer_activity_delivery;
 mod channel_peer_activity_signature;
