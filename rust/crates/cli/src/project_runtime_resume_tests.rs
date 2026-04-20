@@ -165,7 +165,7 @@ fn drive_ready_project_runtime_resumes_ticks_ready_project_session() {
     let pickup =
         fs::read_to_string(home.join("runtime/current/current_project_runtime_pickups.json"))
             .expect("pickup");
-    assert!(pickup.contains("\"pickup_state\": \"claimed_idle\""));
+    assert!(pickup.contains("\"pickup_state\": \"handoff_idle\""));
 }
 
 #[test]
@@ -256,5 +256,5 @@ fn drive_ready_project_runtime_resumes_seeds_claimed_idle_project_queue() {
     let pickup =
         fs::read_to_string(home.join("runtime/current/current_project_runtime_pickups.json"))
             .expect("pickup");
-    assert!(pickup.contains("\"pickup_state\": \"claimed_idle\""));
+    assert!(pickup.contains("\"pickup_state\": \"handoff_idle\""));
 }

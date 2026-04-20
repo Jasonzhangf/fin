@@ -380,6 +380,10 @@ pub struct ExecutionStateRecord {
     pub active_step_id: Option<String>,
     #[serde(default)]
     pub resume_from_step_id: Option<String>,
+    #[serde(default)]
+    pub resume_checkpoint_ready: bool,
+    #[serde(default)]
+    pub resume_checkpoint_id: Option<String>,
     pub pending_input_count: usize,
     pub accepts_user_input: bool,
     #[serde(default)]
@@ -415,8 +419,33 @@ pub struct PauseCheckpointRecord {
     #[serde(default)]
     pub resume_from_step_id: Option<String>,
     #[serde(default)]
+    pub resume_checkpoint_id: Option<String>,
+    #[serde(default)]
     pub reason: Option<String>,
     pub paused_at: String,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ExecutionCheckpointRecord {
+    pub checkpoint_id: String,
+    #[serde(flatten)]
+    pub refs: EntityRefs,
+    pub trace_id: String,
+    pub source_operation_id: String,
+    pub source_turn_id: String,
+    pub source_step_id: String,
+    pub checkpoint_kind: String,
+    pub status: String,
+    pub source_round_index: u32,
+    pub next_round_index: u32,
+    pub resume_input: String,
+    #[serde(default)]
+    pub summary: Option<String>,
+    pub created_at: String,
+    #[serde(default)]
+    pub consumed_at: Option<String>,
+    #[serde(default)]
+    pub consumed_by_operation_id: Option<String>,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]

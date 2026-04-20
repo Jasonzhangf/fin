@@ -1,9 +1,11 @@
 use crate::{
     CliError,
+    execution_checkpoint::{consume_execution_checkpoint, load_open_execution_checkpoint},
     execution_segments::latest_open_segment,
     execution_state::{dequeue_next_pending_input, load_execution_state, load_pending_inputs},
     time::local_timestamp_now,
 };
+use fin_config::RuntimeRetentionConfig;
 use fin_contracts::{
     EntityRefs, InputAttachmentSummary, RoutingActionRecord, SchedulerDecisionRecord,
 };
@@ -48,6 +50,7 @@ impl SchedulerPaths {
 pub(crate) fn drive_scheduler<F>(
     runtime_home: &Path,
     binding: &DebugBinding,
+    retention: &RuntimeRetentionConfig,
     recent_limit: usize,
     mut run_next: F,
 ) -> Result<SchedulerDriveResult, CliError>
@@ -78,6 +81,31 @@ where
         let decision = scheduler_decision_for_binding(runtime_home, &current_binding)?;
         persist_scheduler_decision(runtime_home, &paths, &decision, recent_limit)?;
         decisions.push(decision.clone());
+        if decision.action_kind == "resume_checkpoint" {
+            let Some(checkpoint) = load_open_execution_checkpoint(runtime_home, &current_binding)?
+            else {
+                break;
+            };
+            let response = run_next(
+                current_binding.clone(),
+                checkpoint.resume_input.clone(),
+                format!("framework.resume_checkpoint.{}", checkpoint.checkpoint_kind),
+                Vec::new(),
+                merge_segment.as_ref(),
+            )?;
+            current_binding = response.binding.clone();
+            merge_segment = None;
+            let _ = consume_execution_checkpoint(
+                runtime_home,
+                &current_binding,
+                &checkpoint,
+                retention,
+                &local_timestamp_now(),
+            )?;
+            last_response = Some(response);
+            drove_count = drove_count.saturating_add(1);
+            continue;
+        }
         if decision.action_kind != "run_next_pending" {
             break;
         }

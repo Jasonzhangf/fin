@@ -1,10 +1,10 @@
 use fin_contracts::{
     AgentId, ClosureTraceRecord, ContextSnapshotRecord, ControlFeedback, DigestRecord, EntityRefs,
-    EventEnvelope, ExecutionNote, InferenceOperationPayload, MinimalContextView, OperationEnvelope,
-    ProgressBlock, ProviderEventPayload, ProviderPath, ProviderRequestRecord,
-    ProviderResponseRecord, ProviderStrategy, ReasoningViewRecord, RoleProfileRef, RoundRecord,
-    RoutingActionRecord, RoutingDecisionRecord, SanitizedProviderDebug, StepRecord,
-    ToolExecutionRecord, ToolSnapshot, TurnRecord,
+    EventEnvelope, ExecutionCheckpointRecord, ExecutionNote, InferenceOperationPayload,
+    MinimalContextView, OperationEnvelope, ProgressBlock, ProviderEventPayload, ProviderPath,
+    ProviderRequestRecord, ProviderResponseRecord, ProviderStrategy, ReasoningViewRecord,
+    RoleProfileRef, RoundRecord, RoutingActionRecord, RoutingDecisionRecord,
+    SanitizedProviderDebug, StepRecord, ToolExecutionRecord, ToolSnapshot, TurnRecord,
 };
 use fin_provider::{InferenceProvider, PreparedRequest, ProviderRequest, ProviderResponse};
 use serde::{Deserialize, Serialize};
@@ -28,6 +28,8 @@ mod context_view_task_board_tests;
 mod context_view_tests;
 mod control_feedback;
 mod control_plane;
+#[cfg(test)]
+mod execution_checkpoint_tests;
 mod model_input_assembler;
 mod model_output;
 #[cfg(test)]
@@ -216,6 +218,7 @@ pub struct ClosureRun {
     pub prepared_request: PreparedRequest,
     pub provider_response: ProviderResponse,
     pub assistant_response_text: String,
+    pub conversation_user_input: Option<String>,
     pub control_feedback: ControlFeedback,
     pub context_snapshot: ContextSnapshotRecord,
     pub tool_records: Vec<ToolExecutionRecord>,
@@ -230,6 +233,7 @@ pub struct ClosureRun {
     pub turn_record: TurnRecord,
     pub routing_decision: RoutingDecisionRecord,
     pub routing_action: RoutingActionRecord,
+    pub resume_checkpoint: Option<ExecutionCheckpointRecord>,
     pub closure_trace: ClosureTraceRecord,
     pub events: Vec<EventEnvelope<Value>>,
 }

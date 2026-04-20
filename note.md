@@ -3412,3 +3412,25 @@ fin should adopt the following canonical model:
   - `heartbeat.due_for_tick` = observed control need before refresh
   - `heartbeat.stale_lease` = final effective stale state after refresh
   - stale pre-refresh evidence belongs to event stream, not daemon/status final truth
+
+## 2026-04-20 fin-5.1 resumable pause/resume checkpoint closeout
+- Closed the current `fin-5.1` implementation pass around true resumable pause/resume by replacing the old `resume_as_new_closure` style continuation with a runtime-owned execution checkpoint chain.
+- Frozen supported resume boundary for this pass:
+  - checkpoint is recorded at framework-owned resume anchors (`wait.remind` waiting_external and tool-followup resume boundary)
+  - scheduler prefers `resume_checkpoint` before generic pending queue replay
+  - consumed checkpoint emits durable `execution.checkpoint_consumed`
+  - synthetic framework resume input stays in step/provider/debug truth but does **not** pollute user-facing conversation/messages truth
+- New durable truth added:
+  - `ExecutionCheckpointRecord`
+  - `ExecutionStateRecord.resume_checkpoint_ready/resume_checkpoint_id`
+  - latest checkpoint artifacts under runtime current/session control paths
+- Verification completed:
+  - `cargo fmt --all --manifest-path rust/Cargo.toml` ✅
+  - `python3 scripts/check-code-line-limit.py` ✅
+  - `cargo test -p fin-runtime -p fin-cli --manifest-path rust/Cargo.toml` ✅
+  - exact E2E: `web_debug::web_debug_tests::web_debug_tests_runtime::web_debug_tests_runtime_followups::due_reminder_prefers_execution_checkpoint_resume_without_fake_user_message` ✅
+  - exact E2E: `channel_peer_qqbot_bridge::e2e_tests::qqbot_inbound_message_runs_end_to_end_and_emits_reply_from_session_truth` ✅
+- Gate result:
+  - `rust/crates/runtime/src/closure_runtime.rs` is now exactly 500 lines and passes the line-limit gate.
+- Scope note:
+  - this pass freezes checkpoint-based precise recovery at framework-owned boundaries; provider mid-flight stack restore is still out of scope and should not be implied.

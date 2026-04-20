@@ -2,6 +2,7 @@ use crate::{
     CliError,
     scheduler_driver::{drive_scheduler, load_latest_scheduler_decision},
 };
+use fin_config::RuntimeRetentionConfig;
 use fin_contracts::InputAttachmentSummary;
 use fin_debug_server::{ChatSendResponse, DebugBinding};
 use serde::{Serialize, de::DeserializeOwned};
@@ -76,6 +77,8 @@ fn drive_scheduler_runs_pending_until_queue_is_empty() {
             active_turn_id: None,
             active_step_id: None,
             resume_from_step_id: None,
+            resume_checkpoint_ready: false,
+            resume_checkpoint_id: None,
             pending_input_count: 2,
             accepts_user_input: true,
             reason: None,
@@ -140,6 +143,7 @@ fn drive_scheduler_runs_pending_until_queue_is_empty() {
     let response = drive_scheduler(
         &home,
         &binding(&home),
+        &RuntimeRetentionConfig::default(),
         16,
         |binding, message, source, attachments, _merge_segment| {
             seen.push(message.clone());
@@ -205,6 +209,8 @@ fn drive_scheduler_blocks_when_prompt_user_is_required() {
             active_turn_id: None,
             active_step_id: None,
             resume_from_step_id: None,
+            resume_checkpoint_ready: false,
+            resume_checkpoint_id: None,
             pending_input_count: 1,
             accepts_user_input: true,
             reason: None,
@@ -250,6 +256,7 @@ fn drive_scheduler_blocks_when_prompt_user_is_required() {
     let response = drive_scheduler(
         &home,
         &binding(&home),
+        &RuntimeRetentionConfig::default(),
         16,
         |_binding, _message, _source, _attachments, _merge_segment| {
             called = true;

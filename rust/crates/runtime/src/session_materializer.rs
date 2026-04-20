@@ -2,8 +2,8 @@ use crate::{ClosureRun, RuntimeError, session_record_journal};
 use fin_config::RuntimeRetentionConfig;
 use fin_contracts::EventEnvelope;
 use fin_contracts::{
-    ClosureTraceRecord, ContextSnapshotRecord, DigestRecord, ReasoningViewRecord,
-    ToolExecutionRecord,
+    ClosureTraceRecord, ContextSnapshotRecord, DigestRecord, ExecutionCheckpointRecord,
+    ReasoningViewRecord, ToolExecutionRecord,
 };
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -121,6 +121,7 @@ impl SessionMaterializer {
         persist_reasoning_views(runtime_home, &session_dir, &run.reasoning_view, retention)?;
         persist_tool_records(runtime_home, &session_dir, &run.tool_records, retention)?;
         persist_closure_traces(runtime_home, &session_dir, &run.closure_trace, retention)?;
+        persist_execution_checkpoint(runtime_home, &session_dir, run.resume_checkpoint.as_ref())?;
         let journal_paths = session_record_journal::persist_extended_records(
             runtime_home,
             &session_dir,
@@ -175,12 +176,14 @@ impl SessionMaterializer {
                 "current_rounds_path": "runtime/current/current_rounds.json",
                 "current_routing_decision_path": "runtime/current/current_routing_decision.json",
                 "current_routing_action_path": "runtime/current/current_routing_action.json",
+                "current_execution_checkpoint_path": run.resume_checkpoint.as_ref().map(|_| "runtime/current/current_execution_checkpoint.json"),
                 "current_event_archive_index_path": "runtime/current/current_event_archive_index.json",
                 "session_control_feedback_path": format!("sessions/{year}/{month}/{session_id}/control/latest.json"),
                 "session_recent_contexts_path": session_recent_contexts_path,
                 "session_recent_digests_path": session_recent_digests_path,
                 "session_recent_reasoning_path": session_recent_reasoning_path,
                 "session_recent_tool_records_path": session_recent_tool_records_path,
+                "session_recent_execution_checkpoints_path": format!("sessions/{year}/{month}/{session_id}/control/recent_execution_checkpoints.json"),
                 "session_recent_closures_path": session_recent_closures_path,
                 "session_recent_provider_requests_path": journal_paths.session_recent_provider_requests_path,
                 "session_recent_provider_responses_path": journal_paths.session_recent_provider_responses_path,
@@ -318,6 +321,32 @@ fn persist_closure_traces(
     write_json_file(&session_dir.join("closures/latest.json"), closure_trace)
 }
 
+fn persist_execution_checkpoint(
+    runtime_home: &Path,
+    session_dir: &Path,
+    checkpoint: Option<&ExecutionCheckpointRecord>,
+) -> Result<(), RuntimeError> {
+    let runtime_path = runtime_home.join("runtime/current/current_execution_checkpoint.json");
+    let session_path = session_dir.join("control/execution_checkpoint.json");
+    let recent_path = session_dir.join("control/recent_execution_checkpoints.json");
+    match checkpoint {
+        Some(value) => {
+            write_json_file(&runtime_path, value)?;
+            write_json_file(&session_path, value)?;
+            let mut recent = read_json_or_empty::<ExecutionCheckpointRecord>(&recent_path)?;
+            recent.retain(|item| item.checkpoint_id != value.checkpoint_id);
+            recent.push(value.clone());
+            trim_head(&mut recent, 16);
+            write_json_file(&recent_path, &recent)
+        }
+        None => {
+            let _ = fs::remove_file(runtime_path);
+            let _ = fs::remove_file(session_path);
+            Ok(())
+        }
+    }
+}
+
 fn persist_session_messages(
     session_dir: &Path,
     run: &ClosureRun,
@@ -332,17 +361,19 @@ fn persist_session_messages(
         .clone()
         .unwrap_or_else(|| "session-m1".into());
     let task_id = run.context_snapshot.refs.task_id.clone();
-    messages.push(SessionMessageRecord {
-        message_id: format!("user-{}", run.context_snapshot.operation_id),
-        role: "user".into(),
-        content: run.context_snapshot.input.clone(),
-        created_at: run.context_snapshot.captured_at.clone(),
-        session_id: session_id.clone(),
-        task_id: task_id.clone(),
-        operation_id: Some(run.context_snapshot.operation_id.clone()),
-        trace_id: Some(run.context_snapshot.trace_id.clone()),
-        closure_id: Some(run.digest.closure_id.clone()),
-    });
+    if let Some(user_input) = run.conversation_user_input.as_ref() {
+        messages.push(SessionMessageRecord {
+            message_id: format!("user-{}", run.context_snapshot.operation_id),
+            role: "user".into(),
+            content: user_input.clone(),
+            created_at: run.context_snapshot.captured_at.clone(),
+            session_id: session_id.clone(),
+            task_id: task_id.clone(),
+            operation_id: Some(run.context_snapshot.operation_id.clone()),
+            trace_id: Some(run.context_snapshot.trace_id.clone()),
+            closure_id: Some(run.digest.closure_id.clone()),
+        });
+    }
     messages.push(SessionMessageRecord {
         message_id: format!("assistant-{}", run.digest.closure_id),
         role: "assistant".into(),

@@ -173,6 +173,7 @@ fn interrupted_segment_id_is_unique_by_pause_timestamp() {
         turn_id: Some("turn-op-1".into()),
         active_step_id: Some("step-op-1-05-tool_dispatch".into()),
         resume_from_step_id: Some("step-op-1-05-tool_dispatch".into()),
+        resume_checkpoint_id: None,
         reason: Some("manual pause".into()),
         paused_at: "2026-04-19T20:00:01+08:00".into(),
     };

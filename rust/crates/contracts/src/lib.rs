@@ -21,11 +21,11 @@ pub use context::{
 pub use daemon::{DaemonRecoveryActionRecord, DaemonStateRecord};
 pub use feedback::ControlFeedback;
 pub use records::{
-    ClosureTraceRecord, ExecutionStateRecord, InterruptedSegmentRecord, PauseCheckpointRecord,
-    PendingInputRecord, ProviderRequestRecord, ProviderResponseRecord, ReasoningViewRecord,
-    RoundRecord, RoutingActionRecord, RoutingDecisionRecord, SchedulerDecisionRecord,
-    SchedulerTickRecord, SegmentMergeRecord, StepRecord, SupervisorCycleRecord,
-    SupervisorHeartbeatRecord, ToolExecutionRecord, TurnRecord,
+    ClosureTraceRecord, ExecutionCheckpointRecord, ExecutionStateRecord, InterruptedSegmentRecord,
+    PauseCheckpointRecord, PendingInputRecord, ProviderRequestRecord, ProviderResponseRecord,
+    ReasoningViewRecord, RoundRecord, RoutingActionRecord, RoutingDecisionRecord,
+    SchedulerDecisionRecord, SchedulerTickRecord, SegmentMergeRecord, StepRecord,
+    SupervisorCycleRecord, SupervisorHeartbeatRecord, ToolExecutionRecord, TurnRecord,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]

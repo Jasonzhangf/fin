@@ -42,3 +42,28 @@ pub(super) fn next_step(reminder_scheduled: bool, closure_stopped: bool) -> &'st
         "render_projection"
     }
 }
+
+pub(super) fn record_auto_tool_round_limit(
+    dispatched_tools: &mut ToolDispatchOutcome,
+    parsed_output: &crate::ParsedModelOutput,
+    round_count: usize,
+    max_auto_tool_rounds: usize,
+) {
+    if dispatched_tools.stop_requested
+        || parsed_output.tool_calls.is_empty()
+        || round_count < max_auto_tool_rounds
+    {
+        return;
+    }
+    dispatched_tools.note_hints.push(format!(
+        "auto tool loop stopped at round limit ({max_auto_tool_rounds})"
+    ));
+    dispatched_tools.events.push((
+        "reasoning.auto_tool_roundtrip_limit_reached".into(),
+        serde_json::json!({
+            "round_count": round_count,
+            "max_rounds": max_auto_tool_rounds,
+            "remaining_tool_calls": parsed_output.tool_calls.len(),
+        }),
+    ));
+}

@@ -103,6 +103,7 @@ pub(crate) fn run_demo_request(
         worker_id: Some(worker.worker_id.clone()),
         ..EntityRefs::default()
     };
+    let user_visible_input = user_visible_input_for_source(&request.source, &request.input);
     let context = ContextViewBuilder.build(
         &worker,
         ContextAssemblyInput {
@@ -133,7 +134,9 @@ pub(crate) fn run_demo_request(
             context,
         },
     )?;
-    Ok(runtime.run_closure(operation, provider)?)
+    let mut run = runtime.run_closure(operation, provider)?;
+    run.conversation_user_input = user_visible_input;
+    Ok(run)
 }
 
 pub(crate) fn runtime_home_override_from_env() -> Option<PathBuf> {
@@ -173,4 +176,14 @@ pub(crate) fn sanitize_id_fragment(raw: &str) -> String {
         .collect::<String>()
         .trim_matches('-')
         .to_string()
+}
+
+fn user_visible_input_for_source(source: &str, input: &str) -> Option<String> {
+    if source.starts_with("framework.resume_checkpoint")
+        || source.starts_with("project.resume_checkpoint")
+    {
+        None
+    } else {
+        Some(input.to_string())
+    }
 }

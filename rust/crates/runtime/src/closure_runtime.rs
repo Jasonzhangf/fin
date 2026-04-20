@@ -1,11 +1,21 @@
 use super::*;
+use closure_runtime_checkpoint::build_resume_checkpoint;
 use closure_runtime_events::{EventEmissionInput, emit_runtime_events};
+use closure_runtime_finalize::{
+    append_checkpoint_recorded_event, append_finalize_step, build_final_run, build_partial_run,
+};
 use closure_runtime_rounds::{allocate_step, build_followup_input, execute_round, record_round};
-use closure_runtime_state::{merge_dispatch_outcome, next_step, operation_status, stop_source};
+use closure_runtime_state::{
+    merge_dispatch_outcome, next_step, operation_status, record_auto_tool_round_limit, stop_source,
+};
 use round_context::{DynamicRoundContextInput, build_round_context};
 
+#[path = "closure_runtime_checkpoint.rs"]
+mod closure_runtime_checkpoint;
 #[path = "closure_runtime_events.rs"]
 mod closure_runtime_events;
+#[path = "closure_runtime_finalize.rs"]
+mod closure_runtime_finalize;
 #[path = "closure_runtime_rounds.rs"]
 mod closure_runtime_rounds;
 #[path = "closure_runtime_state.rs"]
@@ -210,25 +220,26 @@ impl M1Runtime {
                 &mut step_records,
             );
         }
-        if !dispatched_tools.stop_requested
-            && !parsed_output.tool_calls.is_empty()
-            && round_count >= max_auto_tool_rounds
-        {
-            dispatched_tools.note_hints.push(format!(
-                "auto tool loop stopped at round limit ({max_auto_tool_rounds})"
-            ));
-            dispatched_tools.events.push((
-                "reasoning.auto_tool_roundtrip_limit_reached".into(),
-                serde_json::json!({
-                    "round_count": round_count,
-                    "max_rounds": max_auto_tool_rounds,
-                    "remaining_tool_calls": parsed_output.tool_calls.len(),
-                }),
-            ));
-        }
+        record_auto_tool_round_limit(
+            &mut dispatched_tools,
+            &parsed_output,
+            round_count,
+            max_auto_tool_rounds,
+        );
 
         let closure_stopped = dispatched_tools.stop_requested;
         let closure_waiting_external = dispatched_tools.yield_requested;
+        let resume_checkpoint = build_resume_checkpoint(
+            &operation,
+            &refs,
+            &turn_id,
+            round_records.last(),
+            &parsed_output,
+            &dispatched_tools,
+            assistant_response_text.as_str(),
+            &latest_round_tool_records,
+            &operation.submitted_at,
+        );
         let stop_source = stop_source(closure_waiting_external, closure_stopped);
         let operation_status = operation_status(closure_waiting_external, closure_stopped);
         let progress = ProgressBlock {
@@ -330,30 +341,18 @@ impl M1Runtime {
             &control_feedback,
         );
         let routing_action = routing_actions::derive_routing_action(&routing_decision);
-        let finalize_step = allocate_step(&mut step_index, &operation.operation_id, "finalize");
-        step_records.push(turn_records::finalize_step_record(
-            turn_records::step_record(
-                finalize_step.step_id,
-                &turn_id,
-                &operation.operation_id,
-                &operation.trace_id,
-                &refs,
-                finalize_step.step_index,
-                "finalize",
-                "completed",
-                &operation.submitted_at,
-                format!(
-                    "closure finalized with stop_source={} answer={}",
-                    stop_source,
-                    assistant_response_text.as_str()
-                ),
-                Some(format!("digests/latest.json#digest_id={digest_id}")),
-                Some(format!("turns/recent_turns.json#turn_id={turn_id}")),
-                Some("render_projection".into()),
-            ),
+        append_finalize_step(
+            &mut step_index,
+            &operation,
+            &refs,
+            &turn_id,
+            &digest_id,
+            stop_source,
+            assistant_response_text.as_str(),
             &progress,
             &note,
-        ));
+            &mut step_records,
+        );
         let turn_record = turn_records::turn_record(
             &operation.operation_id,
             &operation.trace_id,
@@ -398,28 +397,28 @@ impl M1Runtime {
             },
         )?;
 
-        let partial_run = ClosureRun {
-            operation: operation.clone(),
-            prepared_request: prepared_request.clone(),
-            provider_response: provider_response.clone(),
-            assistant_response_text: assistant_response_text.clone(),
-            control_feedback: control_feedback.clone(),
-            context_snapshot: context_snapshot.clone(),
-            tool_records: tool_records.clone(),
-            provider_request_records: provider_request_records.clone(),
-            provider_response_records: provider_response_records.clone(),
-            round_records: round_records.clone(),
-            step_records: step_records.clone(),
-            progress: progress.clone(),
-            note: note.clone(),
-            reasoning_view: reasoning_view.clone(),
-            digest: digest.clone(),
-            turn_record: turn_record.clone(),
-            routing_decision: routing_decision.clone(),
-            routing_action: routing_action.clone(),
-            closure_trace: ClosureTraceRecord::default(),
-            events: events.clone(),
-        };
+        let partial_run = build_partial_run(
+            &operation,
+            &prepared_request,
+            &provider_response,
+            assistant_response_text.as_str(),
+            &control_feedback,
+            &context_snapshot,
+            &tool_records,
+            &provider_request_records,
+            &provider_response_records,
+            &round_records,
+            &step_records,
+            &progress,
+            &note,
+            &reasoning_view,
+            &digest,
+            &turn_record,
+            &routing_decision,
+            &routing_action,
+            resume_checkpoint.as_ref(),
+            &events,
+        );
         let closure_trace = trace_records::closure_trace_record(&partial_run);
         events.push(self.event(
             "closure.trace_recorded",
@@ -441,8 +440,15 @@ impl M1Runtime {
                 "answer": assistant_response_text.clone(),
             }),
         )?);
+        append_checkpoint_recorded_event(
+            self,
+            &mut events,
+            &operation,
+            &refs,
+            resume_checkpoint.as_ref(),
+        )?;
 
-        Ok(ClosureRun {
+        Ok(build_final_run(
             operation,
             prepared_request,
             provider_response,
@@ -461,9 +467,10 @@ impl M1Runtime {
             turn_record,
             routing_decision,
             routing_action,
+            resume_checkpoint,
             closure_trace,
             events,
-        })
+        ))
     }
 
     pub(super) fn event(

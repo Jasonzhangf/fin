@@ -41,6 +41,13 @@ pub fn derive_scheduler_decision(
                     Some("routing_prompt_user".into()),
                     "latest routing action requires explicit user confirmation".into(),
                 )
+            } else if state.is_some_and(|value| value.resume_checkpoint_ready) {
+                (
+                    "resume_checkpoint",
+                    true,
+                    None,
+                    "idle with open resumable execution checkpoint".into(),
+                )
             } else if pending_input_count > 0 {
                 (
                     "run_next_pending",
@@ -106,6 +113,8 @@ mod tests {
                 active_turn_id: None,
                 active_step_id: None,
                 resume_from_step_id: None,
+                resume_checkpoint_ready: false,
+                resume_checkpoint_id: None,
                 pending_input_count: 2,
                 accepts_user_input: true,
                 reason: None,
@@ -146,6 +155,8 @@ mod tests {
                 active_turn_id: None,
                 active_step_id: None,
                 resume_from_step_id: None,
+                resume_checkpoint_ready: false,
+                resume_checkpoint_id: None,
                 pending_input_count: 1,
                 accepts_user_input: true,
                 reason: None,
@@ -173,5 +184,31 @@ mod tests {
         );
         assert_eq!(decision.action_kind, "await_user_confirmation");
         assert_eq!(decision.blocked_by.as_deref(), Some("routing_prompt_user"));
+    }
+
+    #[test]
+    fn scheduler_prefers_resume_checkpoint_before_pending_queue() {
+        let decision = derive_scheduler_decision(
+            &refs(),
+            Some(&ExecutionStateRecord {
+                state_id: "exec-3".into(),
+                refs: refs(),
+                status: "idle".into(),
+                active_turn_id: Some("turn-op-1".into()),
+                active_step_id: Some("step-op-1-04-tool_dispatch".into()),
+                resume_from_step_id: Some("step-op-1-04-tool_dispatch".into()),
+                resume_checkpoint_ready: true,
+                resume_checkpoint_id: Some("checkpoint-op-1-r02".into()),
+                pending_input_count: 2,
+                accepts_user_input: true,
+                reason: Some("checkpoint ready".into()),
+                updated_at: "2026-04-20T10:00:00+08:00".into(),
+            }),
+            2,
+            None,
+            "2026-04-20T10:00:00+08:00",
+        );
+        assert_eq!(decision.action_kind, "resume_checkpoint");
+        assert!(decision.continue_until_blocked);
     }
 }

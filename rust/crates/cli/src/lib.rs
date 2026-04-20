@@ -26,6 +26,7 @@ mod daemon_state_support;
 mod daemon_state_tests;
 mod demo;
 mod error;
+mod execution_checkpoint;
 mod execution_segments;
 mod execution_state;
 mod fs_utils;

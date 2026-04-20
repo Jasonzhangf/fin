@@ -78,7 +78,13 @@ where
     );
     let mut framework_events = vec![started_event];
 
-    let drive = drive_scheduler(runtime_home, binding, recent_limit, &mut run_next)?;
+    let drive = drive_scheduler(
+        runtime_home,
+        binding,
+        retention,
+        recent_limit,
+        &mut run_next,
+    )?;
     for (index, decision) in drive.decisions.iter().enumerate() {
         let event = tick_event(
             &tick_id,
