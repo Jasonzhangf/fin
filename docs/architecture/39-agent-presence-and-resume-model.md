@@ -169,6 +169,22 @@ project agent 已注册，并且 framework 已把“该不该醒、当前醒到�
   - 已能把 `ready_to_resume` 从“观察态”推进到真实 continuation
   - 仍然依赖前台请求链提供 provider 执行上下文，尚未升级为 detached autonomous scheduler
 
+再补一层（2026-04-20，attached control-plane wrapper）：
+
+- 上述前台 continuation 现在不再散落在 `web_debug.rs` handler 中逐段手写。
+- 当前冻结为统一 wrapper：
+  - `attached_control_plane::run_attached_control_plane_cycle(...)`
+- 它会在真正处理当前用户请求前，固定按顺序推进：
+  1. `supervisor heartbeat`
+  2. `due reminder inject`
+  3. `startup control-plane refresh`
+  4. `project runtime resume`
+  5. `attached daemon state refresh`
+- 这意味着：
+  - attached 模式下的 continuation 已经从“某个 handler 顺手做一下”
+  - 收口为 **framework-owned attached control-plane cycle**
+  - 但依然不是 detached autonomous daemon
+
 ---
 
 ## 7. Resume / recovery relation
