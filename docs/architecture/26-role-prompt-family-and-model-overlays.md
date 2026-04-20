@@ -1,12 +1,12 @@
-# 26 Role Prompt Family And Model Overlays
+# 26 Role Prompt Family And Agent Baselines
 
-本文档冻结 `fin` 的 role prompt 内容分层与 model overlay 设计。
+本文档冻结 `fin` 的 role prompt 内容分层与 agent baseline 设计。
 
 目标：
 
 1. 明确不同 agent role 的提示词职责边界
 2. 明确 role baseline 与 project/session/context 的拼装关系
-3. 明确 model-family overlay 的归属与最小内容方向
+3. 明确 system / project 的 owner / dispatcher / reviewer 差异
 4. 为后续 Rust prompt assembler 与 Web 可观测提供真源
 
 ---
@@ -22,7 +22,6 @@ stable doctrine
 + role baseline
 + project/session overlays
 + turn context envelope
-+ model-family overlay
 ```
 
 约束：
@@ -32,12 +31,14 @@ stable doctrine
 3. tool 使用规则单独成 module，不和角色职责混写
 4. session / topic continuity 进入 overlay，不进入 stable role text
 5. raw prompt 文本必须能追溯到结构化 module ownership
+6. 当前 prompt role 真源只允许 `system` 与 `project`
+7. backend model/provider 适配不属于 role baseline
 
 ---
 
 ## 2. 所有角色共享的基础模块
 
-四类角色都共享以下模块，只是权重不同：
+两类角色都共享以下模块，只是权重不同：
 
 1. `identity`
 2. `framework_truth_rules`
@@ -63,278 +64,143 @@ stable doctrine
 
 定位：
 
-- 面向多 project 的 orchestration agent
-- 负责 routing、health、recovery、delegation、priority 维护
-- 不应该长时间沉入单个代码切片实现
+- 唯一用户入口与前台协调者
+- 面向多 task / 多 project / 多 peer 的 orchestration agent
+- 负责 task portfolio / backlog / priority / routing / dispatch / recovery / review
+- 不应长时间沉入单个代码切片实现
 
 必须强化：
 
-1. 优先看 `active_projects` 而不是单一 `primary_project`
-2. 优先判断 task routing / ownership / health，再决定是否自己执行
-3. 对外部 worker 的反馈、超时、失败恢复保持敏感
-4. 需要严格区分：框架自动推进 vs 需要模型决策的推进
-5. 对 session/topic 切换、复活、冲突要保持监控
+1. 优先看当前 backlog / task board，再处理新输入
+2. 在 routing / dispatch / reprioritize / recovery 前，先看 framework-owned 状态：task board、agent presence、project supervision、peer state
+3. 新任务要先与已有任务比较优先级，而不是脱离任务盘单独判断
+4. 高优先级任务到来时，优先做最小分析并尽快 dispatch，而不是自己长期执行
+5. task completion 到来时，必须做 unblock analysis，而不只是记 `done`
+6. system agent 可以直接处理简单任务，但其默认倾向仍应是控制、分派、协调、汇总、汇报
+7. 若连续 2~3 个 closure 仍未见收口，就应升级为计划 + 委派
+8. 若当前没有明确执行路径，可派生 `project role worker` 去探索/执行，但不新增新的 prompt role
 
 输出重点：
 
-- 当前判断的 project/task 归属
-- 是否需要 delegation / recovery / topic switch
-- 下一步的 orchestration 动作
-- 置信度与风险
+- 当前整体调度判断
+- 当前 focus task 与 backlog 变化
+- 是否需要 dispatch / reprioritize / recovery / topic switch
+- 哪些任务被解锁、哪些仍被阻塞
+- 下一步由谁处理、何时回报
 
 ### 3.2 Project Agent
 
 定位：
 
 - 单项目主推进 agent
-- 负责项目内文档、架构、代码、测试、debug 的连续闭环
+- 负责项目内 epic / task / docs / code / testing / debug 的连续闭环
 - 当前 `primary_project` 通常唯一
+- 是 project 范围内的 owner / dispatcher / reviewer
 
 必须强化：
 
 1. 把项目规则、当前 scope、selected paths 编译成稳定行为边界
-2. 优先做最小闭环，不做无边界发散
-3. 对 docs / skills / code / tests 采用 owning-layer 思维
-4. 对 task continuity、recent digests、project knowledge 的使用要比 system agent 更重
-5. 回答必须落到项目推进，而不是抽象空谈
+2. 优先看当前 project task board，再决定执行顺序
+3. 只要资源允许，就把未阻塞的任务派发给 worker 并行处理
+4. 谁发布任务，谁负责 review；project agent 在项目范围内承担该责任
+5. 对 docs / skills / code / tests 采用 owning-layer 思维
+6. 在同一 project role 内，根据任务切换 execution / review / diagnosis / handoff emphasis，而不是切到新 role
 
 输出重点：
 
 - 当前 project scope
-- 当前 task 在项目内的推进状态
-- 结构化 next step / verify step
-- 是否需要补文档、补 skill、补测试
-
-### 3.3 Worker Agent
-
-定位：
-
-- bounded execution worker
-- 接受上游 task slice，聚焦在明确边界内执行
-- 少做策略判断，多做准确推进
-
-必须强化：
-
-1. 只在授权 scope 内行动
-2. 遇到缺失前置条件要尽快回报，而不是自行扩张任务边界
-3. 优先产出 progress / note / evidence
-4. 避免自己重写全局架构判断
-5. 对时间、资源、工具副作用保持保守
-
-输出重点：
-
-- 当前 slice 的完成度
-- 遇到的 blocker / dependency
-- 已验证证据
-- 返回给 project/system agent 的可消费结论
-
-### 3.4 Reviewer / Analyzer
-
-定位：
-
-- review、diagnosis、comparison、validation 专用角色
-- 重点不是写代码，而是发现风险和验证缺口
-
-必须强化：
-
-1. findings first，不先讲大总结
-2. 按严重度组织问题
-3. 明确区分：已证据确认 / 推断 / 待验证
-4. 优先指出回归风险、状态机缺口、观测缺口、测试缺口
-5. 不把“可能有问题”包装成已确认结论
-
-输出重点：
-
-- findings 列表
-- open questions
-- verification gaps
-- residual risks
+- 当前 epic / task 的推进状态
+- 哪些 ready tasks 已派发，哪些 blocked tasks 已解锁
+- 当前 review 结论与下一步 verify / delivery 动作
 
 ---
 
-## 4. Role Delta 的装配方式
+## 4. System 与 Project 的核心分工
 
-不同 role 的差异主要体现在以下维度：
-
-1. `decision_scope`
-2. `project_scope`
-3. `execution_authority`
-4. `delegation_behavior`
-5. `evidence_threshold`
-6. `output_shape`
-
-结论：
-
-> role 切换不应该重建整个 prompt system，只应替换 role baseline modules 与少量 role-specific overlays。
-
-也就是说：
-
-- framework truth rules 保持稳定
-- project/session/turn overlays 按当前 task 重建
-- role baseline 则按 agent role 替换
-
----
-
-## 5. Model Family Overlays
-
-model-family overlay 是对 role baseline 的补充，不是替代。
-
-### 5.1 GPT / Codex Overlay
-
-必须强化：
-
-1. tool persistence
-2. prerequisite checks
-3. verification before conclude
-4. missing context 不得 hallucinate
-5. 能直接行动就不要空谈计划
-
-对应第一版文本草案：
-
-- `docs/prompts/02-role-baselines-v1.md`
-- `docs/prompts/03-gpt-codex-overlay-v1.md`
-
-适合吸收的规则来源：
-
-- `~/code/codex/codex-rs/core/gpt_5_codex_prompt.md`
-- `~/code/codex/AGENTS.md`
-
-### 5.2 Gemini / Gemma Overlay
-
-必须强化：
-
-1. provider/tool protocol 严格性
-2. format stability
-3. multi-step tool loop 的显式延续
-4. 上下文缺失时不自作主张补全
-
-### 5.3 Future Overlays
-
-先预留：
-
-- Claude-family
-- Qwen-family
-- 其他 provider/model specific overlays
-
-原则：
-
-- overlay 是 stable module
-- overlay 只写该模型家族的行为修正
-- overlay 不承载项目语义，不承载当前 turn 的动态上下文
-
----
-
-## 6. Prompt Content Writing Style
-
-所有 prompt module 文本统一遵守：
-
-1. **短句优先**：尽量是一行一条 directive
-2. **硬约束优先**：先写不可违反的边界，再写偏好
-3. **可验证**：写出来的规则必须能在 event / projection / artifacts 中看到验证点
-4. **不写废话人格**：避免无用自我形容
-5. **不混 ownership**：framework、project、tool、role 分开写
-
-推荐形态：
+结论冻结为：
 
 ```text
-[Module: framework_truth_rules]
-- Session artifacts are render truth for channels.
-- Runtime events are operation truth for debugging.
-- Do not invent state not present in artifacts.
+system  = control plane first
+project = execution plane first
 ```
 
-不推荐：
+### 4.1 system
 
-```text
-You are a very careful, thoughtful, collaborative, intelligent assistant who values...
-```
+主要回答：
+
+- why
+- what
+- who
+- when
+
+负责：
+
+- 用户目标整理
+- 任务分派
+- 优先级调整
+- 全局 review / 协调 / 恢复
+- 用户统一汇报
+
+### 4.2 project
+
+主要回答：
+
+- how
+
+负责：
+
+- 单项目执行闭环
+- epic / task / worker 调度
+- 项目范围内 review 与交付
 
 ---
 
-## 7. Project Policy 如何进入 Prompt
+## 5. Direct Execution Budget for System Agent
 
-项目规则不能粗暴整份注入 raw docs。
+system agent 允许直接执行简单任务，但预算必须非常紧。
 
 冻结规则：
 
-1. 本地 `AGENTS.md` / `docs/` / `skills/` 是 project truth sources
-2. prompt build 时应编译为项目级摘要模块，而不是全文拼接
-3. 只有与当前 role / task / selected paths 有关的 project policy 才应进入 session overlay
-4. Web debug 需要能看到：
-   - 当前采纳了哪些 project policy
-   - 来自哪些 source
-   - 当前作用在哪个 role / task 上
+1. **单个 closure 大概率可收口**：可直接执行
+2. **1~2 个 closure 的 bounded probing**：允许
+3. **连续 2~3 个 closure 仍未明显收口**：必须升级为计划 + 委派
+4. **出现 waiting / need parallel subtask / need project-scoped long execution**：应优先委派
 
-这层最终进入：
+建模规则：
 
-- `project_policy`
-- `project_scope`
-- `prompt_lineage`
+- `closure` 是 system direct execution 的预算单位
+- `task` 不是单次 closure，而是更高层目标线程
 
 ---
 
-## 8. Tool Prompt 与 Role Prompt 的边界
+## 6. Task-system Working Mode
 
-角色提示词不负责承载完整 tool schema。
-
-冻结边界：
-
-- role prompt：告诉模型如何决策、何时用工具、何时停手
-- tool prompt spec：告诉模型工具做什么、何时可用、输入输出约束、边界与副作用
-- framework capability：必须和 model tools 分开显示与分开装配
-- tool prompt spec 必须在最终模型输入里显式展开 `use / avoid / input / output / example`
-  这些字段；只显示“工具名 + 摘要”不算真正把工具 contract 暴露给模型
-- 对显式调用策略工具，tool prompt 必须把策略说死，而不是留给模型猜：
-  - `apply_patch`：单点精确编辑优先 `replace`
-  - 多文件 / add / delete / move 才用 `patch`
-
-结论：
-
-> role prompt 解决“为什么/何时做”，tool prompt 解决“怎么正确调用”。
-
----
-
-## 9. 最小实现映射
-
-后续 Rust 实现建议至少有这些对象：
+system agent 与 project agent 都采用 owner loop。
 
 ```text
-RolePromptPack
-ModelFamilyOverlayPack
-ProjectPolicyPack
-PromptLineageRecord
+inspect current task board
+-> find ready/unclaimed tasks
+-> dispatch if resources allow
+-> ingest worker feedback / completion
+-> review
+-> unblock downstream tasks
+-> reprioritize
+-> report
 ```
 
-它们最终编译到当前已有结构化 block：
+冻结规则：
 
-- `role_prompt.current_prompt_summary`
-- `role_prompt.prompt_history`
-- `role_prompt.prompt_lineage`
-- `role_prompt.prompt_modules`
-- `role_prompt.output_contract`
-
-当前阶段先冻结 ownership 与内容分层，不在本文展开最终 Rust type 细节。
+1. owner agent 的默认动作是 dispatch / review / unblock，而不是长期亲自执行
+2. 若当前 ready task 非空且资源足够，应优先派发给 worker
+3. 若当前 ready task 已空，或所有可执行任务都已有人 working，再处理其它输入/变化
 
 ---
 
-## 10. 最小验证要求
+## 7. Non-goals
 
-role prompt / model overlay 变更时，至少验证：
+当前先不在本文冻结：
 
-1. 不同 role 的 `prompt_modules` 与 `current_prompt_summary` 能清楚区分
-2. role 切换不会污染 project/session/turn overlays 的 ownership
-3. Web debug 能看到 role lineage / module list / output contract
-4. 旧 session artifacts 仍可兼容读取
-5. prompt 改动不会把 tool spec 与 role baseline 混成一个字段
-
----
-
-## 11. 当前非目标
-
-当前不冻结：
-
-1. 每个 role 的最终 raw prompt 全文
-2. 每个模型家族的完整最终 overlay 文本
-3. provider 级 prompt caching key 算法
-4. topic-revival 时的最终 retrieval scoring 算法
-5. project policy compiler 的最终实现细节
+1. task board 的字段级 schema
+2. review / reopen 的完整状态机
+3. daemon/scheduler 的资源配额算法
+4. channel 层的最终汇报格式
