@@ -17,6 +17,7 @@ mod agent_naming;
 #[cfg(test)]
 mod assembler_tests;
 mod closure_runtime;
+mod context_block_render;
 mod context_blocks;
 mod context_project_support;
 mod context_view;

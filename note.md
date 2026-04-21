@@ -3503,3 +3503,32 @@ fin should adopt the following canonical model:
   - model only emits routing/control feedback
   - framework owns prompt-user gating, `/formalize`, `/stay`, task creation, and existing-task rebinding
   - tentative session truth remains first-class until framework formalization actually happens
+
+## 2026-04-21 fin-5.5 owner-loop task-board truth slice
+- Started `fin-5.5` to move managed task owner-loop from prompt-only guidance toward runtime-owned actionable truth.
+- This slice freezes one new intermediate truth:
+  - `ProjectContextBlock` now carries owner-loop relevant managed-task facts instead of only `active_task/task_board_summary`
+  - added:
+    - `task_status_counts`
+    - `ready_task_ids`
+    - `submitted_task_ids`
+    - `owner_loop_summary`
+- Runtime behavior in this slice:
+  - managed task registry truth is scanned first-class via task registry records
+  - owner-loop summary now distinguishes:
+    - `review_submitted_tasks`
+    - `dispatch_ready_tasks`
+    - `wait_for_worker_feedback`
+    - `no_actionable_managed_tasks`
+  - dynamic tool bias now reacts to owner-loop truth:
+    - submitted tasks => bias `project.task.review` / `project.task.status`
+    - ready unclaimed tasks => bias `project.task.claim` / `agent.assign`
+- Refactor:
+  - split context line renderers into `context_block_render.rs` to keep the 500-line gate green
+- Verification:
+  - `cargo fmt --all --manifest-path rust/Cargo.toml` ✅
+  - `cargo test -p fin-runtime owner_loop_truth_biases_review_before_dispatch_and_ready_before_new_work --manifest-path rust/Cargo.toml -- --nocapture` ✅
+  - `cargo test -p fin-cli -p fin-runtime --manifest-path rust/Cargo.toml` ✅
+  - `python3 scripts/check-code-line-limit.py` ✅
+- Remaining gap for `fin-5.5`:
+  - owner-loop truth is now visible and biases tool choice, but framework still does not autonomously turn that truth into actual dispatch/review control actions

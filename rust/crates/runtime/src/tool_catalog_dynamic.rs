@@ -112,6 +112,7 @@ pub(super) fn build_dynamic_tool_catalog_block(
         }
     }
     apply_role_tool_bias(&mut block, role_id);
+    apply_owner_loop_bias(&mut block, input.context, role_id);
 
     if input.round_index > 1 {
         block.tool_selection_policy.push(format!(
@@ -196,6 +197,61 @@ fn apply_role_tool_bias(block: &mut ToolCatalogBlock, role_id: &str) {
                         "project role: use this when it advances the current project task board toward a minimal verified closure",
                     );
                 }
+            }
+        }
+    }
+}
+
+fn apply_owner_loop_bias(
+    block: &mut ToolCatalogBlock,
+    context: &MinimalContextView,
+    role_id: &str,
+) {
+    let Some(project) = context.project.as_ref() else {
+        return;
+    };
+    if !project.submitted_task_ids.is_empty() {
+        block.tool_selection_policy.push(format!(
+            "owner-loop truth: submitted managed tasks exist [{}]; review these before dispatching more work or doing deep local execution",
+            project.submitted_task_ids.join(", ")
+        ));
+        if let Some(tool) = find_tool_mut(block, "project.task.review") {
+            add_use(
+                tool,
+                "owner-loop truth: submitted managed tasks are waiting for review owner decision",
+            );
+        }
+        if let Some(tool) = find_tool_mut(block, "project.task.status") {
+            add_use(
+                tool,
+                "owner-loop truth: inspect submitted task evidence before approve/reopen/block",
+            );
+        }
+        return;
+    }
+    if !project.ready_task_ids.is_empty() {
+        block.tool_selection_policy.push(format!(
+            "owner-loop truth: ready unclaimed managed tasks exist [{}]; dispatch or claim them before inventing new managed work",
+            project.ready_task_ids.join(", ")
+        ));
+        if let Some(tool) = find_tool_mut(block, "project.task.claim") {
+            add_use(
+                tool,
+                "owner-loop truth: a ready unclaimed managed task is available for execution",
+            );
+        }
+        if let Some(tool) = find_tool_mut(block, "agent.assign") {
+            add_use(
+                tool,
+                "owner-loop truth: dispatch a ready managed task to an available worker when resources allow",
+            );
+        }
+        if role_id == "system" {
+            if let Some(tool) = find_tool_mut(block, "project.task.list") {
+                add_use(
+                    tool,
+                    "owner-loop truth: system role should inspect ready tasks before prioritizing new requests in isolation",
+                );
             }
         }
     }

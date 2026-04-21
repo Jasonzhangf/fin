@@ -80,3 +80,64 @@ fn system_and_project_roles_share_runtime_but_receive_different_tool_policies() 
             .any(|item| item.contains("same project role"))
     );
 }
+
+#[test]
+fn owner_loop_truth_biases_review_before_dispatch_and_ready_before_new_work() {
+    let system_tools = crate::tool_catalog_dynamic::build_dynamic_tool_catalog_block(
+        &crate::tool_catalog_dynamic::DynamicToolCatalogInput {
+            role_id: Some("system"),
+            context: &MinimalContextView {
+                project: Some(fin_contracts::ProjectContextBlock {
+                    submitted_task_ids: vec!["task-review-a".into()],
+                    ..fin_contracts::ProjectContextBlock::default()
+                }),
+                ..MinimalContextView::default()
+            },
+            recent_tool_records: &[],
+            round_index: 1,
+        },
+    );
+    assert!(system_tools.tool_selection_policy.iter().any(|item| {
+        item.contains("submitted managed tasks exist [task-review-a]")
+            && item.contains("review these before dispatching more work")
+    }));
+    assert!(
+        system_tools
+            .model_tools
+            .iter()
+            .find(|tool| tool.tool_name == "project.task.review")
+            .is_some_and(|tool| tool
+                .when_to_use
+                .iter()
+                .any(|item| item.contains("waiting for review owner decision")))
+    );
+
+    let project_tools = crate::tool_catalog_dynamic::build_dynamic_tool_catalog_block(
+        &crate::tool_catalog_dynamic::DynamicToolCatalogInput {
+            role_id: Some("project"),
+            context: &MinimalContextView {
+                project: Some(fin_contracts::ProjectContextBlock {
+                    ready_task_ids: vec!["task-ready-a".into()],
+                    ..fin_contracts::ProjectContextBlock::default()
+                }),
+                ..MinimalContextView::default()
+            },
+            recent_tool_records: &[],
+            round_index: 1,
+        },
+    );
+    assert!(project_tools.tool_selection_policy.iter().any(|item| {
+        item.contains("ready unclaimed managed tasks exist [task-ready-a]")
+            && item.contains("dispatch or claim them before inventing new managed work")
+    }));
+    assert!(
+        project_tools
+            .model_tools
+            .iter()
+            .find(|tool| tool.tool_name == "project.task.claim")
+            .is_some_and(|tool| tool
+                .when_to_use
+                .iter()
+                .any(|item| item.contains("ready unclaimed managed task is available")))
+    );
+}

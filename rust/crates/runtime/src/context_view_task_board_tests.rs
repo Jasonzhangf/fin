@@ -109,6 +109,13 @@ fn context_view_includes_task_board_digest_in_project_block() {
             .map(|project| project.known_task_ids.as_slice()),
         Some(&["task-rich".to_string()][..])
     );
+    assert_eq!(
+        context
+            .project
+            .as_ref()
+            .map(|project| project.task_status_counts.as_slice()),
+        Some(&[][..])
+    );
 }
 
 #[test]
@@ -146,6 +153,7 @@ fn context_view_combines_task_board_and_collab_backlog_for_same_active_task() {
     fs::create_dir_all(session_dir.join("control")).expect("control");
     fs::create_dir_all(session_dir.join("tasks/plan")).expect("plan");
     fs::create_dir_all(session_dir.join("conversation")).expect("conversation");
+    fs::create_dir_all(session_dir.join("tasks/registry")).expect("registry");
     fs::create_dir_all(runtime_home.join("runtime/projects")).expect("projects");
     fs::create_dir_all(runtime_home.join("runtime/assignments")).expect("assignments");
     fs::create_dir_all(runtime_home.join("runtime/mailbox/local-worker-2")).expect("mailbox");
@@ -169,6 +177,51 @@ fn context_view_combines_task_board_and_collab_backlog_for_same_active_task() {
         br#"[{"message_id":"user-1","task_id":"task-collab"},{"message_id":"assistant-1","task_id":"task-collab"}]"#,
     )
     .expect("messages");
+    fs::write(
+        session_dir.join("tasks/registry/task-collab.json"),
+        br#"{
+  "task_id":"task-collab",
+  "session_id":"session-collab",
+  "title":"active collab task",
+  "summary":"current active task",
+  "status":"working",
+  "claimed_by_worker_id":"worker-2",
+  "artifact_refs":[],
+  "created_at":"2026-04-20T12:20:00+08:00",
+  "updated_at":"2026-04-20T12:30:00+08:00"
+}"#,
+    )
+    .expect("task collab");
+    fs::write(
+        session_dir.join("tasks/registry/task-ready-a.json"),
+        br#"{
+  "task_id":"task-ready-a",
+  "session_id":"session-collab",
+  "title":"ready task",
+  "summary":"ready for dispatch",
+  "status":"ready",
+  "artifact_refs":[],
+  "created_at":"2026-04-20T12:21:00+08:00",
+  "updated_at":"2026-04-20T12:21:00+08:00"
+}"#,
+    )
+    .expect("task ready");
+    fs::write(
+        session_dir.join("tasks/registry/task-review-a.json"),
+        br#"{
+  "task_id":"task-review-a",
+  "session_id":"session-collab",
+  "title":"submitted task",
+  "summary":"waiting review",
+  "status":"submitted",
+  "submitted_by_worker_id":"worker-2",
+  "review_owner_worker_id":"worker-1",
+  "artifact_refs":[],
+  "created_at":"2026-04-20T12:22:00+08:00",
+  "updated_at":"2026-04-20T12:31:00+08:00"
+}"#,
+    )
+    .expect("task review");
     fs::write(
         runtime_home.join("runtime/projects/registry.json"),
         br#"[
@@ -227,14 +280,31 @@ fn context_view_combines_task_board_and_collab_backlog_for_same_active_task() {
             .task_board_summary
             .as_deref()
             .unwrap_or_default()
-            .contains("pending_inputs=1")
+            .contains("managed_tasks=3")
     );
     assert!(
         project
             .task_board_summary
             .as_deref()
             .unwrap_or_default()
-            .contains("plan_steps=2")
+            .contains("submitted=1")
+    );
+    assert_eq!(
+        project.task_status_counts,
+        vec![
+            "ready=1".to_string(),
+            "submitted=1".to_string(),
+            "working=1".to_string()
+        ]
+    );
+    assert_eq!(project.ready_task_ids, vec!["task-ready-a".to_string()]);
+    assert_eq!(
+        project.submitted_task_ids,
+        vec!["task-review-a".to_string()]
+    );
+    assert_eq!(
+        project.owner_loop_summary.as_deref(),
+        Some("review_submitted_tasks count=1 [task-review-a]")
     );
     assert!(
         project

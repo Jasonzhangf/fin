@@ -164,6 +164,14 @@ pub struct ProjectContextBlock {
     #[serde(default)]
     pub known_task_ids: Vec<String>,
     #[serde(default)]
+    pub task_status_counts: Vec<String>,
+    #[serde(default)]
+    pub ready_task_ids: Vec<String>,
+    #[serde(default)]
+    pub submitted_task_ids: Vec<String>,
+    #[serde(default)]
+    pub owner_loop_summary: Option<String>,
+    #[serde(default)]
     pub active_agent_ids: Vec<String>,
     #[serde(default)]
     pub agent_presence_summary: Option<String>,

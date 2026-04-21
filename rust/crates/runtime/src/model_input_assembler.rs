@@ -1,5 +1,5 @@
 use crate::{
-    context_blocks::{render_peer_lines, render_project_lines, render_role_prompt_lines},
+    context_block_render::{render_peer_lines, render_project_lines, render_role_prompt_lines},
     prompt_assembly::{exact_control_feedback_schema_example, mandatory_response_format_lines},
 };
 use fin_contracts::{InputAttachmentSummary, MinimalContextView, ToolCatalogEntry};
