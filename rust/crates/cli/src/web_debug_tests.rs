@@ -265,7 +265,7 @@ fn slash_new_creates_and_binds_new_session() {
 }
 
 #[test]
-fn paused_session_queues_new_message_instead_of_running_provider() {
+fn paused_session_runs_parallel_user_message_and_restores_paused_state() {
     let home = temp_runtime_home();
     ensure_runtime_home_layout(&home).expect("runtime home should init");
     let system = map_system_config(&sample_user_toml()).expect("system config");
@@ -305,24 +305,28 @@ fn paused_session_queues_new_message_instead_of_running_provider() {
     .expect("last_run");
 
     let response = handler
-        .send_message_internal(
+        .send_message_internal_with_provider(
             &home,
             ChatSendRequest {
                 message: "new request while paused".into(),
                 input_kind: None,
                 attachments: Vec::new(),
             },
+            &static_provider(&handler.system),
         )
-        .expect("queued");
-    assert_eq!(response.response_kind, "system_notice");
-    assert!(response.answer.contains("input queued: status=paused"));
+        .expect("parallel paused input should execute");
+    assert_eq!(response.response_kind, "assistant_message");
+    assert!(response.answer.contains("new request while paused"));
     let pending = fs::read_to_string(session_dir.join("queue/pending_inputs.json"))
         .expect("pending should exist");
-    assert!(pending.contains("new request while paused"));
+    assert_eq!(pending.trim(), "[]");
+    let state_after =
+        fs::read_to_string(session_dir.join("control/execution_state.json")).expect("state after");
+    assert!(state_after.contains("\"status\": \"paused\""));
 }
 
 #[test]
-fn paused_session_persists_channel_attachments_in_pending_queue() {
+fn paused_session_channel_parallel_input_persists_attachments_into_context() {
     let home = temp_runtime_home();
     ensure_runtime_home_layout(&home).expect("runtime home should init");
     let system = map_system_config(&sample_user_toml()).expect("system config");
@@ -362,7 +366,7 @@ fn paused_session_persists_channel_attachments_in_pending_queue() {
     .expect("last_run");
 
     let response = handler
-        .send_message_internal(
+        .send_message_internal_with_provider(
             &home,
             ChatSendRequest {
                 message: "describe image".into(),
@@ -373,13 +377,17 @@ fn paused_session_persists_channel_attachments_in_pending_queue() {
                     ..Default::default()
                 }],
             },
+            &static_provider(&handler.system),
         )
-        .expect("queued");
-    assert_eq!(response.response_kind, "system_notice");
+        .expect("parallel channel input should execute");
+    assert_eq!(response.response_kind, "assistant_message");
     let pending = fs::read_to_string(session_dir.join("queue/pending_inputs.json"))
         .expect("pending should exist");
-    assert!(pending.contains("channel.qqbot"));
-    assert!(pending.contains("queued-proof.png"));
+    assert_eq!(pending.trim(), "[]");
+    let current_context =
+        fs::read_to_string(home.join("runtime/current/current_context.json")).expect("context");
+    assert!(current_context.contains("\"source\": \"channel.parallel_user\""));
+    assert!(current_context.contains("queued-proof.png"));
 }
 
 #[path = "web_debug_tests_runtime.rs"]

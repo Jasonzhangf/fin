@@ -1,9 +1,6 @@
 use crate::{
-    CliError,
-    process_utils::append_log,
-    runtime_home::read_last_run_value,
-    session_binding::build_binding_for_session,
-    web_debug_support::build_debug_binding,
+    CliError, process_utils::append_log, runtime_home::read_last_run_value,
+    session_binding::build_binding_for_session, web_debug_support::build_debug_binding,
 };
 use fin_config::SystemConfig;
 use fin_contracts::{

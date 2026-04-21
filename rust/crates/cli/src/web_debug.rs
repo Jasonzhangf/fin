@@ -183,12 +183,17 @@ impl CliDebugActionHandler {
                 provider,
                 state,
             ),
-            ChatDisposition::Queue { reason } => self.enqueue_request_notice(
+            ChatDisposition::Queue {
+                reason,
+                parallel_candidate,
+            } => self.enqueue_request_notice(
                 runtime_home,
                 existing_binding,
                 &request,
                 state.as_ref(),
                 &reason,
+                parallel_candidate,
+                provider,
             ),
             ChatDisposition::RunNow => self.run_chat_turn_with_provider(
                 runtime_home,

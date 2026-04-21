@@ -1,8 +1,12 @@
 use super::*;
 use crate::{
     agent_presence::{mark_entry_agent_busy, mark_entry_agent_failed, mark_entry_agent_idle},
+    execution_checkpoint::{load_open_execution_checkpoint, restore_execution_checkpoint},
     execution_segments::merge_segment_into_run,
-    execution_state::{enqueue_pending_input, finalize_after_run, mark_failed, mark_running},
+    execution_state::{
+        enqueue_pending_input, finalize_after_run, load_execution_state, mark_failed, mark_running,
+        restore_execution_state,
+    },
     runtime_current_snapshot::with_runtime_current_snapshot,
     runtime_home::persist_runtime_demo,
 };
@@ -15,14 +19,45 @@ impl CliDebugActionHandler {
         request: &ChatSendRequest,
         state: Option<&fin_contracts::ExecutionStateRecord>,
         reason: &str,
+        parallel_candidate: bool,
+        provider: &impl InferenceProvider,
     ) -> Result<ChatSendResponse, CliError> {
+        let queued_request = if parallel_candidate {
+            reclassify_as_parallel_request(request)
+        } else {
+            request.clone()
+        };
         let queued = enqueue_pending_input(
             runtime_home,
             &binding,
-            request,
+            &queued_request,
             &local_timestamp_now(),
             reason,
         )?;
+        if parallel_candidate {
+            let cycle = run_supervisor_cycle(
+                runtime_home,
+                &binding,
+                "parallel_user_input",
+                self.system.runtime.heartbeat_interval_ms,
+                &self.system.runtime.retention,
+                self.system.runtime.retention.recent_routing_decision_limit,
+                |binding, message, source, attachments, merge_segment| {
+                    self.run_chat_turn_with_provider(
+                        runtime_home,
+                        binding,
+                        message,
+                        &source,
+                        attachments,
+                        provider,
+                        merge_segment,
+                    )
+                },
+            )?;
+            if let Some(response) = cycle.tick.drive.last_response {
+                return Ok(response);
+            }
+        }
         let status = state.map(|value| value.status.as_str()).unwrap_or("queued");
         let pending_count =
             state.map_or(0, |value| value.pending_input_count) + usize::from(queued.is_some());
@@ -130,6 +165,17 @@ impl CliDebugActionHandler {
         track_entry_presence: bool,
     ) -> Result<ChatSendResponse, CliError> {
         let default_identity = demo_identity(Some("web-debug"));
+        let preserved_parallel_state = if is_parallel_source(source) {
+            load_execution_state(runtime_home, &binding)?
+                .filter(|value| matches!(value.status.as_str(), "paused" | "waiting_external"))
+        } else {
+            None
+        };
+        let preserved_parallel_checkpoint = if is_parallel_source(source) {
+            load_open_execution_checkpoint(runtime_home, &binding)?
+        } else {
+            None
+        };
         let last_run = read_last_run_value(runtime_home).ok();
         let session_id = binding
             .session_id
@@ -265,6 +311,12 @@ impl CliDebugActionHandler {
             )?
         };
         finalize_after_run(runtime_home, &binding, &run)?;
+        if let Some(base_state) = preserved_parallel_state.as_ref() {
+            restore_execution_state(runtime_home, &binding, base_state, &local_timestamp_now())?;
+        }
+        if let Some(checkpoint) = preserved_parallel_checkpoint.as_ref() {
+            restore_execution_checkpoint(runtime_home, &binding, checkpoint)?;
+        }
         if track_entry_presence {
             let _ = mark_entry_agent_idle(
                 &self.system,
@@ -293,4 +345,18 @@ impl CliDebugActionHandler {
             routing_action: Some(run.routing_action),
         })
     }
+}
+
+fn is_parallel_source(source: &str) -> bool {
+    matches!(source, "cli.parallel_user" | "channel.parallel_user")
+}
+
+fn reclassify_as_parallel_request(request: &ChatSendRequest) -> ChatSendRequest {
+    let mut queued_request = request.clone();
+    queued_request.input_kind = Some(match request.input_kind.as_deref() {
+        Some("channel_ingress") => "parallel_channel_ingress".into(),
+        Some("parallel_channel_ingress") => "parallel_channel_ingress".into(),
+        _ => "parallel_chat".into(),
+    });
+    queued_request
 }

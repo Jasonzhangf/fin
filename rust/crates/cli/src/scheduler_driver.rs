@@ -106,7 +106,10 @@ where
             drove_count = drove_count.saturating_add(1);
             continue;
         }
-        if decision.action_kind != "run_next_pending" {
+        if !matches!(
+            decision.action_kind.as_str(),
+            "run_next_pending" | "run_next_parallel"
+        ) {
             break;
         }
         let Some(next) =
@@ -154,7 +157,7 @@ fn scheduler_decision_for_binding(
     Ok(derive_scheduler_decision(
         &entity_refs(binding),
         state.as_ref(),
-        pending.len(),
+        pending.as_slice(),
         routing_action.as_ref(),
         &local_timestamp_now(),
     ))

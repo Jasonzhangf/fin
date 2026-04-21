@@ -367,3 +367,5 @@ fn tick_command_drives_pending_queue_when_scheduler_allows() {
 
 #[path = "web_debug_tests_runtime_followups.rs"]
 mod web_debug_tests_runtime_followups;
+#[path = "web_debug_tests_runtime_parallel.rs"]
+mod web_debug_tests_runtime_parallel;

@@ -4,8 +4,13 @@ use fin_debug_server::ChatSendRequest;
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum ChatDisposition {
     StatusProbe,
-    InterruptRequest { message: String },
-    Queue { reason: String },
+    InterruptRequest {
+        message: String,
+    },
+    Queue {
+        reason: String,
+        parallel_candidate: bool,
+    },
     RunNow,
 }
 
@@ -26,6 +31,7 @@ pub(crate) fn classify_request(
         return if message.is_empty() {
             ChatDisposition::Queue {
                 reason: "interrupt_request_missing_message".into(),
+                parallel_candidate: false,
             }
         } else {
             ChatDisposition::InterruptRequest {
@@ -39,6 +45,7 @@ pub(crate) fn classify_request(
         return if message.is_empty() {
             ChatDisposition::Queue {
                 reason: "interrupt_request_missing_message".into(),
+                parallel_candidate: false,
             }
         } else {
             ChatDisposition::InterruptRequest {
@@ -48,15 +55,22 @@ pub(crate) fn classify_request(
     }
 
     if let Some(state) = state {
-        if matches!(
-            state.status.as_str(),
-            "paused" | "running" | "waiting_external"
-        ) {
+        if state.status == "running" {
             return ChatDisposition::Queue {
                 reason: state
                     .reason
                     .clone()
                     .unwrap_or_else(|| format!("state={}", state.status)),
+                parallel_candidate: true,
+            };
+        }
+        if matches!(state.status.as_str(), "paused" | "waiting_external") {
+            return ChatDisposition::Queue {
+                reason: state
+                    .reason
+                    .clone()
+                    .unwrap_or_else(|| format!("state={}", state.status)),
+                parallel_candidate: true,
             };
         }
     }

@@ -39,6 +39,37 @@ pub(crate) fn load_open_execution_checkpoint(
     Ok(checkpoint.filter(|item| item.status == "open"))
 }
 
+pub(crate) fn restore_execution_checkpoint(
+    runtime_home: &Path,
+    binding: &DebugBinding,
+    checkpoint: &ExecutionCheckpointRecord,
+) -> Result<(), CliError> {
+    let Some(paths) = resolve_paths(runtime_home, binding)? else {
+        return Ok(());
+    };
+    write_json(&paths.latest_path(), checkpoint)?;
+    let mut recent = read_json_or_empty::<ExecutionCheckpointRecord>(&paths.recent_path())?;
+    if let Some(item) = recent
+        .iter_mut()
+        .rfind(|item| item.checkpoint_id == checkpoint.checkpoint_id)
+    {
+        *item = checkpoint.clone();
+    } else {
+        recent.push(checkpoint.clone());
+    }
+    write_json(&paths.recent_path(), &recent)?;
+    write_json(
+        &runtime_home.join("runtime/current/current_execution_checkpoint.json"),
+        checkpoint,
+    )?;
+    update_last_run_paths(
+        runtime_home,
+        json!({
+            "current_execution_checkpoint_path": "runtime/current/current_execution_checkpoint.json"
+        }),
+    )
+}
+
 pub(crate) fn consume_execution_checkpoint(
     runtime_home: &Path,
     binding: &DebugBinding,

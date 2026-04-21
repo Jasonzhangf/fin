@@ -3460,3 +3460,23 @@ fin should adopt the following canonical model:
   - exact E2E: `channel_peer_qqbot_bridge::e2e_tests::qqbot_inbound_message_runs_end_to_end_and_emits_reply_from_session_truth` ✅
 - Scope note:
   - this pass delivers minimal detached/headless single-agent continuity with framework-owned lease/state/recovery truth; it does not yet implement multi-process supervisor election or external service manager integration.
+
+## 2026-04-21 fin-5.3 ordinary parallel user input closeout
+- Closed the current `fin-5.3` pass by upgrading queued user input from status-only side-path to framework-scheduled ordinary parallel inference.
+- Frozen truth for this pass:
+  - `paused` / `waiting_external` / `running` new user input is classified as queueable parallel candidate.
+  - scheduler gains `run_next_parallel` and prioritizes parallel pending over `wait_external` blocking.
+  - web debug queue path now enqueues `parallel_chat` / `parallel_channel_ingress` and immediately runs a supervisor cycle when possible.
+  - ordinary parallel closure restores the previous `execution_state` after completion so it does not overwrite the waiting/paused mainline truth.
+  - waiting mainline `execution_checkpoint` is preserved and restored after parallel closure; parallel side replies must not silently delete the open checkpoint.
+- Regression updates:
+  - old paused-session tests were updated to the new truth: paused ordinary inputs now execute as parallel closures and restore paused state, rather than only returning queued notice.
+  - added waiting_external E2E covering ordinary parallel input + checkpoint preservation + scheduler decision evidence.
+- Verification completed:
+  - `cargo fmt --all --manifest-path rust/Cargo.toml` ✅
+  - `python3 scripts/check-code-line-limit.py` ✅
+  - `cargo test -p fin-cli --manifest-path rust/Cargo.toml ordinary_user_input_runs_as_parallel_inference_while_waiting_external -- --nocapture` ✅
+  - `cargo test -p fin-cli --manifest-path rust/Cargo.toml qqbot_inbound_message_runs_end_to_end_and_emits_reply_from_session_truth -- --nocapture` ✅
+  - `cargo test -p fin-cli -p fin-runtime --manifest-path rust/Cargo.toml` ✅
+- Scope note:
+  - this pass delivers framework-scheduled ordinary parallel closures inside a single-agent runtime; it does not claim true simultaneous multi-provider execution while an active closure is still mid-flight.
