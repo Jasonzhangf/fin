@@ -73,6 +73,7 @@ description: Project-local default development workflow for fin. Use for feature
 - Web debug 实例纪律必须单一；当前对外只允许引用 `4040`，禁止把历史测试端口混进当前验证与汇报
 - `ControlFeedback` / continuity / topic-shift / simple-query 判断必须由 runtime 产出单一事实，并进入 event + session artifact + note/digest；Web 只消费，不得二次推断
 - framework-owned resume/checkpoint prompt 允许进入 turn/step/provider/debug truth，但禁止写入用户可见 conversation；pause/resume 真相由 execution checkpoint + consumed event 维护，不允许 UI/adapter 伪造恢复语义
+- detached/headless always-on 的生命周期真相必须落在 framework-owned pid/lease/state/recovery artifacts；前台请求链只能消费或唤起，不能冒充 daemon supervision 真源
 - 模型输出的结构化 block 必须做 schema 识别；错 shape 的 JSON 只能当 raw provider output 观察，不能冒充有效 control feedback
 - 若模型输出的 control block 只是在 value type 上不合法但包含白名单 key，runtime 应做 mask 白名单提取与受控 coercion；未知字段一律丢弃，不允许半结构化脏数据进入 control truth
 - normal conversation 与 debug 共享同一份 session render truth；所谓 richer UI 是 richness level 的差异，不允许做两套前后端真源

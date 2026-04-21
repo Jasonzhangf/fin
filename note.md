@@ -3434,3 +3434,29 @@ fin should adopt the following canonical model:
   - `rust/crates/runtime/src/closure_runtime.rs` is now exactly 500 lines and passes the line-limit gate.
 - Scope note:
   - this pass freezes checkpoint-based precise recovery at framework-owned boundaries; provider mid-flight stack restore is still out of scope and should not be implied.
+
+## 2026-04-21 fin-5.2 headless daemon closeout
+- Closed the current `fin-5.2` pass by adding a framework-owned headless daemon entry for single-agent always-on supervision.
+- New CLI entrypoints:
+  - `fin start <user.toml>`
+  - `fin stop <user.toml>`
+  - internal `fin daemon-run <user.toml>`
+- Frozen minimal lifecycle truth for this pass:
+  - pid file: `runtime/pids/headless-daemon.pid`
+  - lease file: `runtime/leases/headless-daemon.json`
+  - daemon state: `runtime/current/current_daemon_state.json`
+  - daemon recovery action: `runtime/current/current_daemon_recovery_action.json`
+  - stop request file: `runtime/locks/headless-daemon.stop`
+- Execution boundary frozen for this pass:
+  - headless daemon discovers sessions-with-work from session truth
+  - it directly drives the framework supervisor cycle (not UI handlers pretending to tick)
+  - due reminders + execution checkpoints can continue without frontstage/web request
+  - role dispatch still reuses the same runtime: system entry sessions use entry role, project sessions use project role inferred from context truth
+- Verification completed:
+  - `cargo fmt --all --manifest-path rust/Cargo.toml` ✅
+  - `python3 scripts/check-code-line-limit.py` ✅
+  - `cargo test -p fin-cli -p fin-runtime --manifest-path rust/Cargo.toml` ✅
+  - exact E2E: `headless_daemon_tests::headless_daemon_cycle_resumes_checkpoint_without_frontstage` ✅
+  - exact E2E: `channel_peer_qqbot_bridge::e2e_tests::qqbot_inbound_message_runs_end_to_end_and_emits_reply_from_session_truth` ✅
+- Scope note:
+  - this pass delivers minimal detached/headless single-agent continuity with framework-owned lease/state/recovery truth; it does not yet implement multi-process supervisor election or external service manager integration.

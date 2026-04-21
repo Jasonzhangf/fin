@@ -69,7 +69,7 @@ impl CliDebugActionHandler {
         )
     }
 
-    pub(super) fn run_chat_turn_with_provider(
+    pub(crate) fn run_chat_turn_with_provider(
         &self,
         runtime_home: &Path,
         binding: DebugBinding,

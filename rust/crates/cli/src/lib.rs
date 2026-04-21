@@ -30,6 +30,9 @@ mod execution_checkpoint;
 mod execution_segments;
 mod execution_state;
 mod fs_utils;
+mod headless_daemon;
+#[cfg(test)]
+mod headless_daemon_tests;
 mod install_flow;
 mod install_smoke;
 mod local_command_notice;

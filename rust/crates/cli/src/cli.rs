@@ -5,6 +5,7 @@ use crate::{
     control_boundary_demo::run_control_boundary_demo,
     demo::{run_demo, runtime_home_override_from_env},
     fs_utils::read_file,
+    headless_daemon::{run_headless_daemon, start_headless_daemon, stop_headless_daemon},
     install_flow::{build_dev, promote_existing_build, rollback_install},
     mainline_demo::run_mainline_demo,
     provider_live_smoke::run_provider_live_smoke,
@@ -25,6 +26,60 @@ pub fn run_with_runtime_home(
     runtime_home_override: Option<PathBuf>,
 ) -> Result<(), CliError> {
     match parse_command(&args)? {
+        Command::Start { path } => {
+            let user_toml = read_file(Path::new(&path))?;
+            let system =
+                load_effective_system_config(&user_toml, runtime_home_override.as_deref())?;
+            let report =
+                start_headless_daemon(&user_toml, &system, runtime_home_override.as_deref())?;
+            println!(
+                "headless daemon {}: daemon_id={} pid={} runtime_home={}",
+                report.status,
+                report.daemon_id,
+                report
+                    .pid
+                    .map(|value| value.to_string())
+                    .unwrap_or_else(|| "-".into()),
+                report.runtime_home.display()
+            );
+        }
+        Command::Stop { path } => {
+            let user_toml = read_file(Path::new(&path))?;
+            let system =
+                load_effective_system_config(&user_toml, runtime_home_override.as_deref())?;
+            let report =
+                stop_headless_daemon(&user_toml, &system, runtime_home_override.as_deref())?;
+            println!(
+                "headless daemon {}: daemon_id={} pid={} runtime_home={}",
+                report.status,
+                report.daemon_id,
+                report
+                    .pid
+                    .map(|value| value.to_string())
+                    .unwrap_or_else(|| "-".into()),
+                report.runtime_home.display()
+            );
+        }
+        Command::DaemonRun { path } => {
+            let user_toml = read_file(Path::new(&path))?;
+            let system =
+                load_effective_system_config(&user_toml, runtime_home_override.as_deref())?;
+            let provider = default_provider_facade(&system)?;
+            let report = run_headless_daemon(
+                &user_toml,
+                &system,
+                &provider,
+                runtime_home_override.as_deref(),
+            )?;
+            println!(
+                "headless daemon run ok: daemon_id={} cycles={} processed_sessions={} drove={} runtime_home={}",
+                report.daemon_id,
+                report.cycles_completed,
+                report.processed_sessions,
+                report.drove_count,
+                report.runtime_home.display()
+            );
+        }
         Command::ConfigCheck { path } => {
             let system = load_system_config(Path::new(&path))?;
             println!(

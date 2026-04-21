@@ -80,6 +80,39 @@ fn parse_command_accepts_home_init() {
 }
 
 #[test]
+fn parse_command_accepts_start() {
+    let args = vec!["start".into(), "/tmp/user.toml".into()];
+    assert_eq!(
+        parse_command(&args).expect("command should parse"),
+        Command::Start {
+            path: "/tmp/user.toml".into(),
+        }
+    );
+}
+
+#[test]
+fn parse_command_accepts_stop() {
+    let args = vec!["stop".into(), "/tmp/user.toml".into()];
+    assert_eq!(
+        parse_command(&args).expect("command should parse"),
+        Command::Stop {
+            path: "/tmp/user.toml".into(),
+        }
+    );
+}
+
+#[test]
+fn parse_command_accepts_daemon_run() {
+    let args = vec!["daemon-run".into(), "/tmp/user.toml".into()];
+    assert_eq!(
+        parse_command(&args).expect("command should parse"),
+        Command::DaemonRun {
+            path: "/tmp/user.toml".into(),
+        }
+    );
+}
+
+#[test]
 fn parse_command_accepts_control_boundary_demo() {
     let args = vec!["control-boundary-demo".into(), "/tmp/user.toml".into()];
     assert_eq!(

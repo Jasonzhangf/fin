@@ -2,6 +2,15 @@ use crate::CliError;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum Command {
+    Start {
+        path: String,
+    },
+    Stop {
+        path: String,
+    },
+    DaemonRun {
+        path: String,
+    },
     ConfigCheck {
         path: String,
     },
@@ -58,6 +67,9 @@ pub(crate) enum Command {
 
 pub(crate) fn parse_command(args: &[String]) -> Result<Command, CliError> {
     match args {
+        [cmd, path] if cmd == "start" => Ok(Command::Start { path: path.clone() }),
+        [cmd, path] if cmd == "stop" => Ok(Command::Stop { path: path.clone() }),
+        [cmd, path] if cmd == "daemon-run" => Ok(Command::DaemonRun { path: path.clone() }),
         [cmd, path] if cmd == "config-check" => Ok(Command::ConfigCheck { path: path.clone() }),
         [cmd, path] if cmd == "home-init" => Ok(Command::HomeInit { path: path.clone() }),
         [cmd, path] if cmd == "control-boundary-demo" => {
