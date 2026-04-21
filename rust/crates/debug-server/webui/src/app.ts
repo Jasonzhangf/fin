@@ -341,6 +341,13 @@ class DebugApp {
     const target = event.target;
     if (!(target instanceof HTMLElement)) return;
 
+    const focusOperation = target.closest<HTMLElement>('[data-focus-operation]');
+    const focusOperationId = focusOperation?.dataset.focusOperation?.trim() ?? null;
+    if (focusOperationId) {
+      this.selectOperationFromInspector(focusOperationId);
+      return;
+    }
+
     const ledgerScopeButton = target.closest<HTMLElement>('[data-event-ledger-scope]');
     if (ledgerScopeButton) {
       const scope = ledgerScopeButton.dataset.eventLedgerScope;
@@ -418,12 +425,28 @@ class DebugApp {
     this.render();
   }
 
+  private selectOperationFromInspector(operationId: string): void {
+    this.state.eventLedgerSelectedOperationId = operationId;
+    if (this.state.focusTurns.some((turn) => turn.operationId === operationId)) {
+      this.state.selectedOperationId = operationId;
+    }
+    this.render();
+    this.scrollMessageIntoView(operationId);
+  }
+
   private onInspectorLedgerScope(scope: EventLedgerScope, segment: string | null): void {
     this.state.eventLedgerScope = scope;
     this.state.eventLedgerSegment = segment;
     this.state.eventLedgerSelectedOperationId = null;
     this.render();
     void this.refresh();
+  }
+
+  private scrollMessageIntoView(operationId: string): void {
+    window.requestAnimationFrame(() => {
+      const message = this.messagesEl.querySelector<HTMLElement>(`.message[data-operation-id="${CSS.escape(operationId)}"]`);
+      message?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    });
   }
 
   private onKeyDown(event: KeyboardEvent): void {

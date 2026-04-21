@@ -258,7 +258,7 @@ function renderFrameworkTimelineEvent(value: JsonRecord, tree: StructuredTreeRen
   const operationId = scalar(value.operation_id) !== '-' ? scalar(value.operation_id) : scalar(value.operationId);
   const selected = value.isSelectedOperation === true;
   return `
-    <article class="timeline-item ${tree.escapeHtml(tone)} compact-timeline-item framework-timeline-item ${tree.escapeHtml(`framework-${tone}`)} ${selected ? 'selected-operation' : ''}">
+    <article class="timeline-item ${tree.escapeHtml(tone)} compact-timeline-item framework-timeline-item ${tree.escapeHtml(`framework-${tone}`)} ${selected ? 'selected-operation' : ''}" ${operationId !== '-' ? `data-focus-operation="${tree.escapeHtml(operationId)}"` : ''}>
       <div class="timeline-item-header">
         <span class="timeline-name">${tree.escapeHtml(eventType)}</span>
         <span class="timeline-time">${tree.escapeHtml(scalar(value.occurred_at) !== '-' ? scalar(value.occurred_at) : scalar(value.timestamp))}</span>
