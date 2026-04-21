@@ -54,6 +54,7 @@ export interface FrameworkTimelineEventView {
   summary: string;
   tone: 'ok' | 'subtle' | 'error';
   operationId?: string;
+  isSelectedOperation: boolean;
 }
 
 export interface FrameworkSessionTimelineView {
@@ -139,6 +140,7 @@ export function buildFrameworkSessionTimelineView(
         summary: flowEventSummary(event),
         tone: frameworkTimelineTone(String(event.event_type ?? '-')),
         operationId: event.operation_id,
+        isSelectedOperation: Boolean(selectedOperationId) && String(event.operation_id ?? '') === selectedOperationId,
       })),
   };
 }

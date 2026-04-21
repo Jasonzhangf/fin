@@ -1497,6 +1497,23 @@ button, textarea, input { font: inherit; }
 .framework-timeline-item.framework-subtle {
   border-color: rgba(79, 140, 255, 0.24);
 }
+.framework-timeline-item.selected-operation {
+  border-color: rgba(103, 195, 255, 0.6);
+  box-shadow: inset 0 0 0 1px rgba(103, 195, 255, 0.28);
+}
+.timeline-focus-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 7px;
+  border-radius: 999px;
+  background: rgba(103, 195, 255, 0.14);
+  border: 1px solid rgba(103, 195, 255, 0.34);
+  color: #d7f3ff;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
 .timeline-item-header, .event-header, .context-header { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
 .timeline-seq {
   min-width: 28px; color: var(--accent-strong);
