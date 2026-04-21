@@ -19,6 +19,12 @@ export function renderInspectorSection(
   if (cardId === 'operation' && label === 'Closure Trace') {
     return renderClosureTrace(asRecord(value), tree);
   }
+  if (cardId === 'operation' && label === 'Closed Loop Receipt') {
+    return renderClosedLoopReceipt(asRecord(value), tree);
+  }
+  if (cardId === 'operation' && label === 'Framework Flow') {
+    return renderFrameworkFlow(asRecord(value), tree);
+  }
   return tree.renderPanelValue(value);
 }
 
@@ -122,6 +128,95 @@ function renderClosureTrace(value: JsonRecord, tree: StructuredTreeRenderer): st
   `;
 }
 
+function renderClosedLoopReceipt(value: JsonRecord, tree: StructuredTreeRenderer): string {
+  if (!Object.keys(value).length) return tree.renderPanelValue(value);
+  const milestones = asArray(value.milestones).map((item) => asRecord(item));
+  return `
+    <div class="semantic-stack">
+      ${renderSummaryGrid([
+        ['path', scalar(value.pathKind)],
+        ['stage', scalar(value.stage)],
+        ['session', scalar(value.sessionId)],
+        ['task', scalar(value.taskId)],
+        ['created', scalar(value.createdTasks)],
+        ['assignments', scalar(value.assignments)],
+        ['reviews', scalar(value.reviewed)],
+      ], tree)}
+      ${renderMetaRows([
+        ['last action', scalar(value.lastAction)],
+        ['next handoff', scalar(value.nextHandoff)],
+        ['blocker', scalar(value.blocker)],
+      ], tree)}
+      ${milestones.length ? `
+        <section class="semantic-panel">
+          <div class="semantic-panel-title">Milestones</div>
+          <div class="timeline-list compact-timeline-list">
+            ${milestones.map((milestone) => `
+              <article class="timeline-item ${tree.escapeHtml(scalar(milestone.tone) === 'ok' ? 'ok' : 'subtle')} compact-timeline-item">
+                <div class="timeline-item-header">
+                  <span class="timeline-name">${tree.escapeHtml(scalar(milestone.label))}</span>
+                  <span class="timeline-time">${tree.escapeHtml(scalar(milestone.time))}</span>
+                </div>
+                <div class="timeline-meta"><span>${tree.escapeHtml(scalar(milestone.summary))}</span></div>
+              </article>
+            `).join('')}
+          </div>
+        </section>
+      ` : ''}
+    </div>
+  `;
+}
+
+function renderFrameworkFlow(value: JsonRecord, tree: StructuredTreeRenderer): string {
+  if (!Object.keys(value).length) return tree.renderPanelValue(value);
+  const lanes = asArray(value.lanes).map((item) => asRecord(item));
+  return `
+    <div class="semantic-stack">
+      ${renderSummaryGrid([
+        ['path', scalar(value.pathKind)],
+        ['stage', scalar(value.stage)],
+        ['latest event', scalar(value.latestEvent)],
+        ['latest at', scalar(value.latestAt)],
+        ['event count', scalar(value.eventCount)],
+      ], tree)}
+      <section class="flow-lane-grid">
+        ${lanes.map((lane) => renderFlowLaneCard(lane, tree)).join('')}
+      </section>
+    </div>
+  `;
+}
+
+function renderFlowLaneCard(value: JsonRecord, tree: StructuredTreeRenderer): string {
+  const events = asArray(value.events).map((item) => asRecord(item));
+  const tone = flowLaneTone(scalar(value.tone));
+  return `
+    <article class="flow-lane-card ${tree.escapeHtml(tone)}">
+      <div class="flow-lane-header">
+        <div>
+          <div class="flow-lane-title">${tree.escapeHtml(scalar(value.title))}</div>
+          <div class="flow-lane-summary">${tree.escapeHtml(scalar(value.summary))}</div>
+        </div>
+        <span class="flow-lane-pill ${tree.escapeHtml(tone)}">${tree.escapeHtml(scalar(value.status))}</span>
+      </div>
+      <div class="flow-lane-meta">
+        <span>${tree.escapeHtml(scalar(value.lastAt))}</span>
+        <span>${tree.escapeHtml(`${events.length} events`)}</span>
+      </div>
+      <div class="flow-lane-events">
+        ${events.length ? events.map((event) => `
+          <article class="flow-lane-event">
+            <div class="flow-lane-event-head">
+              <span class="flow-lane-event-name">${tree.escapeHtml(scalar(event.label))}</span>
+              <span class="flow-lane-event-time">${tree.escapeHtml(scalar(event.time))}</span>
+            </div>
+            <div class="flow-lane-event-summary">${tree.escapeHtml(scalar(event.summary))}</div>
+          </article>
+        `).join('') : '<div class="empty-state compact"><div class="empty-text">No events</div></div>'}
+      </div>
+    </article>
+  `;
+}
+
 function renderSummaryGrid(lines: Array<[string, string]>, tree: StructuredTreeRenderer): string {
   const valid = lines.filter(([, value]) => value !== '-');
   if (!valid.length) return '';
@@ -191,6 +286,12 @@ function toolStatusTone(status: string): string {
   if (status.includes('complete') || status.includes('success')) return 'good';
   if (status.includes('running') || status.includes('active')) return 'info';
   return 'plain';
+}
+
+function flowLaneTone(tone: string): string {
+  if (tone === 'error') return 'error';
+  if (tone === 'ok') return 'ok';
+  return 'neutral';
 }
 
 function scalar(value: unknown): string {
