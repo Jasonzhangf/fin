@@ -1,40 +1,12 @@
-import {
-  activityFocusSource,
-  activityRecentItems,
-  activitySourceCards,
-  activityStage,
-  activityState,
-  activityToolSemantics,
-  activityUserCard,
-} from './activity_cards_ui.js';
+import { activityFocusSource, activityRecentItems, activitySourceCards, activityStage, activityState, activityToolSemantics, activityUserCard } from './activity_cards_ui.js';
 import { renderEventLedger } from './event_ledger.js';
 import { buildEventLedgerView } from './event_ledger_view_state.js';
-import { buildClosedLoopReceiptView, buildFrameworkFlowView } from './framework_flow_view.js';
-import {
-  arrayCount,
-  asRecord,
-  findEvent,
-  firstArrayItem,
-  layerDigest,
-  modulesForLayer,
-  promptLayerById,
-  scalar,
-  shortPath,
-  shortText,
-  timelineLevel,
-  toolCount,
-} from './inspector_helpers.js';
+import { buildClosedLoopReceiptView, buildFrameworkFlowView, buildFrameworkSessionTimelineView } from './framework_flow_view.js';
+import { arrayCount, asRecord, findEvent, firstArrayItem, layerDigest, modulesForLayer, promptLayerById, scalar, shortPath, shortText, timelineLevel, toolCount } from './inspector_helpers.js';
 import { formatLocalTimestamp } from './time.js';
 import { renderInspectorSection } from './section_renderers.js';
 import { StructuredTreeRenderer } from './tree.js';
-import type {
-  DashboardCardId,
-  EventLedgerView,
-  FocusTurn,
-  JsonRecord,
-  RefreshState,
-  RuntimeEvent,
-} from './types.js';
+import type { DashboardCardId, EventLedgerView, FocusTurn, JsonRecord, RefreshState, RuntimeEvent } from './types.js';
 
 interface CardSpec {
   id: DashboardCardId;
@@ -75,6 +47,10 @@ export class InspectorPane {
     const ledgerView = buildEventLedgerView(state);
     const loopReceipt = buildClosedLoopReceiptView(selected?.events ?? [], state.binding);
     const frameworkFlow = buildFrameworkFlowView(selected?.events ?? []);
+    const sessionFrameworkTimeline = buildFrameworkSessionTimelineView(
+      state.sessionEvents,
+      selected?.operationId ?? null,
+    );
     const userCard = activityUserCard(state.activityCards);
     const focusSource = activityFocusSource(state.activityCards);
     const sourceCards = activitySourceCards(state.activityCards);
@@ -264,6 +240,7 @@ export class InspectorPane {
         digestLines: [
           ['frontstage', frontstageDigest],
           ['focus', focusDigest],
+          ['framework', `${sessionFrameworkTimeline?.stage ?? '-'} · events=${sessionFrameworkTimeline?.eventCount ?? 0} · ops=${sessionFrameworkTimeline?.uniqueOperationCount ?? 0}`],
           ['sources', `count=${sourceCards.length} · promoted=${sourceCards.filter((card) => card.auto_promoted).length} · semantic-tools=${semanticTools.length}`],
           ['scope', `${state.binding?.project_label ?? 'fin'} · session=${state.binding?.session_id ?? '-'} · task=${state.binding?.task_id ?? state.projection.task_id ?? '-'}`],
           ['control', shortText(`${scalar(projectBlock.task_board_summary)} · ${scalar(projectBlock.project_supervision_summary)}`, 180)],
@@ -273,6 +250,7 @@ export class InspectorPane {
         focusAreas: ['Frontstage', 'Binding', 'Projection', 'Paths', 'Selected Refs'],
         sections: [
           ['Frontstage', { user_card: userCard ?? {}, focus_source: focusSource ?? {}, source_cards: sourceCards, recent_items: activityRecent, stage: frontstageStage }],
+          ['Framework Session Timeline', sessionFrameworkTimeline ?? {}],
           ['Semantic Tools', semanticTools],
           ['Binding', state.binding ?? {}],
           ['Projection', { note: 'UI render now consumes session artifacts as truth.', recent_contexts_count: state.recentContexts.length, recent_digests_count: state.recentDigests.length, recent_events_count: state.sessionEvents.length, recent_messages_count: state.messages.length, recent_reasoning_count: state.recentReasoningViews.length, recent_tool_record_count: state.recentToolRecords.length, recent_closure_count: state.recentClosures.length, active_agent_ids: projectBlock.active_agent_ids ?? [], agent_presence_summary: projectBlock.agent_presence_summary ?? '-', supervision_actions: projectBlock.supervision_actions ?? [], project_supervision_summary: projectBlock.project_supervision_summary ?? '-' }],

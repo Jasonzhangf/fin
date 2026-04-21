@@ -28,6 +28,9 @@ export function renderInspectorSection(
   if (cardId === 'operation' && label === 'Framework Timeline') {
     return renderFrameworkTimeline(asRecord(value), tree);
   }
+  if (cardId === 'system' && label === 'Framework Session Timeline') {
+    return renderFrameworkTimeline(asRecord(value), tree);
+  }
   return tree.renderPanelValue(value);
 }
 
@@ -194,11 +197,20 @@ function renderFrameworkFlow(value: JsonRecord, tree: StructuredTreeRenderer): s
 function renderFrameworkTimeline(value: JsonRecord, tree: StructuredTreeRenderer): string {
   const events = asArray(value.events).map((item) => asRecord(item));
   if (!events.length) return tree.renderPanelValue(value);
-  const frameworkEvents = events.filter((event) => isFrameworkEvent(scalar(event.event_type)));
-  const blocker = firstBlocker(frameworkEvents);
+  const frameworkEvents = events.filter((event) => isFrameworkEvent(scalar(event.event_type) !== '-' ? scalar(event.event_type) : scalar(event.eventType)));
+  const blocker = scalar(value.blocker) !== '-' ? scalar(value.blocker) : firstBlocker(frameworkEvents);
   return `
     <div class="semantic-stack">
       ${blocker ? `<section class="alert-strip error"><strong>Current blocker:</strong> ${tree.escapeHtml(blocker)}</section>` : ''}
+      ${renderSummaryGrid([
+        ['path', scalar(value.pathKind)],
+        ['stage', scalar(value.stage)],
+        ['latest event', scalar(value.latestEvent)],
+        ['latest at', scalar(value.latestAt)],
+        ['events', scalar(value.eventCount)],
+        ['ops', scalar(value.uniqueOperationCount)],
+        ['selected op events', scalar(value.selectedOperationEventCount)],
+      ], tree)}
       <section class="semantic-panel">
         <div class="semantic-panel-title">Framework Timeline</div>
         <div class="timeline-list compact-timeline-list">
@@ -241,8 +253,9 @@ function renderFlowLaneCard(value: JsonRecord, tree: StructuredTreeRenderer): st
 }
 
 function renderFrameworkTimelineEvent(value: JsonRecord, tree: StructuredTreeRenderer): string {
-  const eventType = scalar(value.event_type);
+  const eventType = scalar(value.event_type) !== '-' ? scalar(value.event_type) : scalar(value.eventType);
   const tone = frameworkTimelineTone(eventType);
+  const operationId = scalar(value.operation_id) !== '-' ? scalar(value.operation_id) : scalar(value.operationId);
   return `
     <article class="timeline-item ${tree.escapeHtml(tone)} compact-timeline-item framework-timeline-item ${tree.escapeHtml(`framework-${tone}`)}">
       <div class="timeline-item-header">
@@ -251,6 +264,7 @@ function renderFrameworkTimelineEvent(value: JsonRecord, tree: StructuredTreeRen
       </div>
       <div class="timeline-meta">
         <span>${tree.escapeHtml(frameworkTimelineSummary(value))}</span>
+        ${operationId !== '-' ? `<span>op=${tree.escapeHtml(operationId)}</span>` : ''}
       </div>
     </article>
   `;

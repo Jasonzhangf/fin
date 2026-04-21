@@ -47,6 +47,27 @@ export interface FrameworkFlowView {
   lanes: FlowLaneView[];
 }
 
+export interface FrameworkTimelineEventView {
+  eventType: string;
+  label: string;
+  time?: string;
+  summary: string;
+  tone: 'ok' | 'subtle' | 'error';
+  operationId?: string;
+}
+
+export interface FrameworkSessionTimelineView {
+  pathKind: string;
+  stage: string;
+  latestEvent: string;
+  latestAt?: string;
+  blocker: string;
+  eventCount: number;
+  uniqueOperationCount: number;
+  selectedOperationEventCount: number;
+  events: FrameworkTimelineEventView[];
+}
+
 export function buildClosedLoopReceiptView(events: RuntimeEvent[], binding: DebugBinding | null): ClosedLoopReceiptView | null {
   const milestones = buildClosedLoopMilestones(events);
   if (!milestones.length) return null;
@@ -80,6 +101,45 @@ export function buildFrameworkFlowView(events: RuntimeEvent[]): FrameworkFlowVie
     latestAt: latest?.occurred_at ?? latest?.timestamp,
     eventCount: filtered.length,
     lanes: buildFlowLanes(filtered, pathKind, stage),
+  };
+}
+
+export function buildFrameworkSessionTimelineView(
+  events: RuntimeEvent[],
+  selectedOperationId: string | null,
+): FrameworkSessionTimelineView | null {
+  const filtered = events.filter(isFrameworkFlowEvent);
+  if (!filtered.length) return null;
+  const pathKind = detectLoopPath(events);
+  const stage = detectLoopStage(events, pathKind);
+  const latest = filtered[filtered.length - 1];
+  const operationIds = new Set(
+    filtered
+      .map((event) => String(event.operation_id ?? '').trim())
+      .filter((value) => value.length > 0),
+  );
+  return {
+    pathKind,
+    stage,
+    latestEvent: humanizeEventName(String(latest?.event_type ?? '-')),
+    latestAt: latest?.occurred_at ?? latest?.timestamp,
+    blocker: detectCurrentBlocker(events),
+    eventCount: filtered.length,
+    uniqueOperationCount: operationIds.size,
+    selectedOperationEventCount: selectedOperationId
+      ? filtered.filter((event) => String(event.operation_id ?? '') === selectedOperationId).length
+      : 0,
+    events: filtered
+      .slice(-24)
+      .reverse()
+      .map((event) => ({
+        eventType: String(event.event_type ?? '-'),
+        label: humanizeEventName(String(event.event_type ?? '-')),
+        time: event.occurred_at ?? event.timestamp,
+        summary: flowEventSummary(event),
+        tone: frameworkTimelineTone(String(event.event_type ?? '-')),
+        operationId: event.operation_id,
+      })),
   };
 }
 
@@ -330,6 +390,17 @@ export function humanizeEventName(eventType: string): string {
     'supervisor.cycle_completed': 'supervisor completed',
   };
   return map[eventType] ?? eventType;
+}
+
+export function frameworkTimelineTone(eventType: string): 'ok' | 'subtle' | 'error' {
+  if (eventType.includes('blocked')) return 'error';
+  if (
+    eventType.includes('review')
+    || eventType.includes('submit')
+    || eventType.includes('claim')
+    || eventType.includes('completed')
+  ) return 'ok';
+  return 'subtle';
 }
 
 function asRecord(value: unknown): Record<string, unknown> {
