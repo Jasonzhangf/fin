@@ -7,45 +7,45 @@ use std::{
 };
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
-pub(crate) struct StoredTaskRecord {
-    pub(crate) task_id: String,
-    pub(crate) session_id: String,
-    pub(crate) title: String,
-    pub(crate) summary: String,
+pub struct StoredTaskRecord {
+    pub task_id: String,
+    pub session_id: String,
+    pub title: String,
+    pub summary: String,
     #[serde(default)]
-    pub(crate) epic_id: Option<String>,
-    pub(crate) status: String,
+    pub epic_id: Option<String>,
+    pub status: String,
     #[serde(default)]
-    pub(crate) creator_worker_id: Option<String>,
+    pub creator_worker_id: Option<String>,
     #[serde(default)]
-    pub(crate) creator_role_id: Option<String>,
+    pub creator_role_id: Option<String>,
     #[serde(default)]
-    pub(crate) review_owner_worker_id: Option<String>,
+    pub review_owner_worker_id: Option<String>,
     #[serde(default)]
-    pub(crate) claimed_by_worker_id: Option<String>,
+    pub claimed_by_worker_id: Option<String>,
     #[serde(default)]
-    pub(crate) submitted_by_worker_id: Option<String>,
+    pub submitted_by_worker_id: Option<String>,
     #[serde(default)]
-    pub(crate) reviewed_by_worker_id: Option<String>,
+    pub reviewed_by_worker_id: Option<String>,
     #[serde(default)]
-    pub(crate) latest_submission_summary: Option<String>,
+    pub latest_submission_summary: Option<String>,
     #[serde(default)]
-    pub(crate) latest_review_decision: Option<String>,
+    pub latest_review_decision: Option<String>,
     #[serde(default)]
-    pub(crate) latest_review_summary: Option<String>,
+    pub latest_review_summary: Option<String>,
     #[serde(default)]
-    pub(crate) artifact_refs: Vec<String>,
-    pub(crate) created_at: String,
-    pub(crate) updated_at: String,
+    pub artifact_refs: Vec<String>,
+    pub created_at: String,
+    pub updated_at: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct TaskMutationReceipt {
-    pub(crate) task: StoredTaskRecord,
-    pub(crate) artifact_refs: Vec<String>,
+pub struct TaskMutationReceipt {
+    pub task: StoredTaskRecord,
+    pub artifact_refs: Vec<String>,
 }
 
-pub(crate) fn list_registered_tasks(
+pub fn list_registered_tasks(
     runtime_home: &Path,
 ) -> Result<BTreeMap<String, (TaskSummary, StoredTaskRecord)>, String> {
     let mut tasks = BTreeMap::new();
@@ -103,7 +103,7 @@ pub(crate) fn list_registered_tasks(
     Ok(tasks)
 }
 
-pub(crate) fn create_task_record(
+pub fn create_task_record(
     runtime_home: &Path,
     session_id: &str,
     task: StoredTaskRecord,
@@ -111,7 +111,7 @@ pub(crate) fn create_task_record(
     persist_task_record(runtime_home, session_id, task)
 }
 
-pub(crate) fn load_task_record(
+pub fn load_task_record(
     runtime_home: &Path,
     task_id: &str,
     preferred_session_id: Option<&str>,
@@ -128,7 +128,7 @@ pub(crate) fn load_task_record(
     Ok(tasks.get(task_id).cloned())
 }
 
-pub(crate) fn update_task_record(
+pub fn update_task_record(
     runtime_home: &Path,
     session_id: &str,
     task: StoredTaskRecord,
@@ -136,7 +136,7 @@ pub(crate) fn update_task_record(
     persist_task_record(runtime_home, session_id, task)
 }
 
-pub(crate) fn session_dir_for_session_id(
+pub fn session_dir_for_session_id(
     runtime_home: &Path,
     session_id: &str,
 ) -> Result<PathBuf, String> {

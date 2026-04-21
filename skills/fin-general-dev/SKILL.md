@@ -84,6 +84,7 @@ description: Project-local default development workflow for fin. Use for feature
 - 项目进入 M1 收口模式后，默认优先做 `scope freeze -> regression matrix -> blocker fix -> receipts`；非阻塞的新框架/新模块需求先登记到 closeout/backlog 文档，不直接实现
 - 启动配置若区分 user/system 两层，真正可编辑的 system-only 字段（如 startup topology）必须从 `~/.fin/config/system.toml` 读回再生效；不能只生成模板却运行时永远忽略
 - owner-loop 若已进入 managed task path，后续状态推进必须优先使用 `project.task.create/claim/submit/review` 这组 task-system truth；不要再靠自由文本或 note 冒充 dispatch/review 真相
+- tentative session 的 runtime truth 必须允许 `session_id` 已存在而 `task_id` 仍为空；restore/materializer/last_run 路径都不得在 formalize 之前合成伪 `task_id`，formalize 后的 `topic_thread_id` 也不得被后续 last_run 覆写丢失
 
 ## 4) Minimal validation matrix
 

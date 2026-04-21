@@ -3480,3 +3480,26 @@ fin should adopt the following canonical model:
   - `cargo test -p fin-cli -p fin-runtime --manifest-path rust/Cargo.toml` ✅
 - Scope note:
   - this pass delivers framework-scheduled ordinary parallel closures inside a single-agent runtime; it does not claim true simultaneous multi-provider execution while an active closure is still mid-flight.
+
+## 2026-04-21 fin-5.4 tentative session -> formal task closeout
+- Closed the current `fin-5.4` pass by freezing the minimum framework-owned routing loop:
+  - first user turn can create a real tentative session with `session_id` but no `task_id`
+  - runtime routing now distinguishes `candidate_new_task` from `tentative_simple_chat` / `candidate_existing_task` / `candidate_topic_switch`
+  - framework-owned `/formalize` and `/stay` resolve pending routing prompts instead of letting the model silently control session/task switches
+- Root fixes in this pass:
+  - `build_binding_for_session` / `/resume` no longer synthesize fake `task_id` for tentative sessions
+  - `session_materializer` no longer writes nullable `task_id` as a misleading bound-task truth in `runtime/current/last_run.json`
+  - `session_materializer` now preserves `topic_thread_id` in `last_run` after formalization, avoiding later topic binding loss on subsequent turns
+- New verification added:
+  - tentative first turn persists `session_id` only, records routing prompt, and keeps binding/task truth unbound
+  - `/formalize` creates task registry + topic binding and switches `last_run` to formal task/topic truth
+  - `/stay` clears the pending routing prompt and allows the next normal inference to execute
+  - pending routing action can reuse an existing task and rebind session/task/topic truth correctly
+- Verification:
+  - `cargo fmt --all --manifest-path rust/Cargo.toml` ✅
+  - `cargo test -p fin-cli -p fin-runtime --manifest-path rust/Cargo.toml` ✅
+  - `python3 scripts/check-code-line-limit.py` ✅
+- Frozen boundary after this pass:
+  - model only emits routing/control feedback
+  - framework owns prompt-user gating, `/formalize`, `/stay`, task creation, and existing-task rebinding
+  - tentative session truth remains first-class until framework formalization actually happens

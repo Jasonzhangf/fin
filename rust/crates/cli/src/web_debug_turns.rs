@@ -9,6 +9,7 @@ use crate::{
     },
     runtime_current_snapshot::with_runtime_current_snapshot,
     runtime_home::persist_runtime_demo,
+    session_binding::{ensure_tentative_session_binding, rebind_last_run_binding},
 };
 
 impl CliDebugActionHandler {
@@ -165,6 +166,7 @@ impl CliDebugActionHandler {
         track_entry_presence: bool,
     ) -> Result<ChatSendResponse, CliError> {
         let default_identity = demo_identity(Some("web-debug"));
+        let binding = ensure_tentative_session_binding(runtime_home, &binding)?;
         let preserved_parallel_state = if is_parallel_source(source) {
             load_execution_state(runtime_home, &binding)?
                 .filter(|value| matches!(value.status.as_str(), "paused" | "waiting_external"))
@@ -181,7 +183,11 @@ impl CliDebugActionHandler {
             .session_id
             .clone()
             .unwrap_or(default_identity.session_id);
-        let task_id = binding.task_id.clone().unwrap_or(default_identity.task_id);
+        let task_id = binding
+            .task_id
+            .clone()
+            .or_else(|| last_run_field(&last_run, "task_id"));
+        let topic_thread_id = last_run_field(&last_run, "topic_thread_id");
         let digests = binding
             .recent_digests_path
             .as_deref()
@@ -242,7 +248,7 @@ impl CliDebugActionHandler {
                 &self.system,
                 runtime_home,
                 &session_id,
-                &task_id,
+                task_id.as_deref(),
                 &operation_id,
                 &submitted_at,
                 "received request; building context and starting inference",
@@ -258,6 +264,7 @@ impl CliDebugActionHandler {
                 trace_id: trace_id.clone(),
                 session_id: session_id.clone(),
                 task_id: task_id.clone(),
+                topic_thread_id: topic_thread_id.clone(),
                 agent_name: None,
                 role_id: Some(role_id.into()),
                 input: message,
@@ -290,7 +297,7 @@ impl CliDebugActionHandler {
                         &self.system,
                         runtime_home,
                         Some(session_id.as_str()),
-                        Some(task_id.as_str()),
+                        task_id.as_deref(),
                         Some(operation_id.as_str()),
                         &local_timestamp_now(),
                         err.to_string().as_str(),
@@ -303,12 +310,23 @@ impl CliDebugActionHandler {
         let binding = if track_entry_presence {
             self.read_binding_internal(runtime_home)?
         } else {
-            crate::session_binding::build_binding_for_session(
-                runtime_home,
-                &binding,
-                &session_id,
-                Some(task_id.as_str()),
-            )?
+            let mut updated = binding.clone();
+            if let Some((year, month, _)) =
+                crate::session_binding::find_session_dir(runtime_home, &session_id)
+            {
+                let rebound = rebind_last_run_binding(
+                    runtime_home,
+                    &session_id,
+                    task_id.as_deref(),
+                    topic_thread_id.as_deref(),
+                    year,
+                    month,
+                )?;
+                updated.session_messages_path = rebound.session_messages_path;
+                updated.recent_contexts_path = rebound.recent_contexts_path;
+                updated.recent_digests_path = rebound.recent_digests_path;
+            }
+            updated
         };
         finalize_after_run(runtime_home, &binding, &run)?;
         if let Some(base_state) = preserved_parallel_state.as_ref() {
@@ -331,10 +349,20 @@ impl CliDebugActionHandler {
         if let Some(segment) = merge_segment {
             let _ = merge_segment_into_run(runtime_home, &binding, segment, &run)?;
         }
+        let answer = if run.routing_action.prompt_user {
+            let prompt = run
+                .routing_action
+                .prompt_text
+                .as_deref()
+                .unwrap_or("当前需要 framework routing 确认。输入 /formalize 或 /stay。");
+            format!("{}\n\n[Framework] {}", run.assistant_response_text, prompt)
+        } else {
+            run.assistant_response_text.clone()
+        };
 
         Ok(ChatSendResponse {
             binding,
-            answer: run.assistant_response_text,
+            answer,
             digest_id: run.digest.digest_id,
             events_count: run.events.len(),
             response_kind: "assistant_message".into(),

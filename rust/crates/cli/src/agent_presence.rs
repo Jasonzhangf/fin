@@ -107,7 +107,7 @@ pub(crate) fn mark_entry_agent_busy(
     system: &SystemConfig,
     runtime_home: &Path,
     session_id: &str,
-    task_id: &str,
+    task_id: Option<&str>,
     operation_id: &str,
     updated_at: &str,
     progress_summary: &str,
@@ -115,7 +115,7 @@ pub(crate) fn mark_entry_agent_busy(
     let mut record = ensure_entry_agent_presence(system, runtime_home, updated_at)?;
     record.status = "busy".into();
     record.current_session_id = Some(session_id.into());
-    record.current_task_id = Some(task_id.into());
+    record.current_task_id = task_id.map(str::to_string);
     record.current_operation_id = Some(operation_id.into());
     record.current_phase = Some("reasoning".into());
     record.is_reasoning = true;

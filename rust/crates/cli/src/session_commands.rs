@@ -10,9 +10,11 @@ use crate::{
         read_session_messages,
     },
     session_binding::{
-        ensure_session_layout, find_session_dir, infer_session_task_id, read_json_or_empty,
-        rebind_last_run, relative_to_runtime, trim_head, write_json,
+        ensure_session_layout, find_session_dir, infer_session_task_id,
+        infer_session_topic_thread_id, read_json_or_empty, rebind_last_run,
+        rebind_last_run_binding, relative_to_runtime, trim_head, write_json,
     },
+    session_routing_commands::try_handle_routing_command,
     time::local_timestamp_now,
 };
 use chrono::{Datelike, Local};
@@ -39,6 +41,9 @@ pub(crate) fn try_handle_local_command(
     if let Some(response) =
         try_handle_channel_peer_command(runtime_home, user_toml_path, request, binding)?
     {
+        return Ok(Some(response));
+    }
+    if let Some(response) = try_handle_routing_command(runtime_home, message, binding)? {
         return Ok(Some(response));
     }
     let mut parts = message.split_whitespace();
@@ -136,16 +141,22 @@ fn handle_resume(
             routing_action: None,
         });
     };
-    let task_id =
-        infer_session_task_id(&session_dir).unwrap_or_else(|| format!("task-{session_id}"));
+    let task_id = infer_session_task_id(&session_dir);
     append_notice_messages(
         &session_dir.join("conversation/messages.json"),
         session_id,
-        Some(task_id.as_str()),
+        task_id.as_deref(),
         &format!("/resume {session_id}"),
         "resumed existing session binding",
     )?;
-    let rebound = rebind_last_run(runtime_home, session_id, &task_id, year, month)?;
+    let rebound = rebind_last_run_binding(
+        runtime_home,
+        session_id,
+        task_id.as_deref(),
+        infer_session_topic_thread_id(&session_dir).as_deref(),
+        year,
+        month,
+    )?;
     let _ = ensure_builtin_qqbot_binding(runtime_home, Some(session_id))?;
     Ok(ChatSendResponse {
         binding: DebugBinding {
@@ -153,12 +164,15 @@ fn handle_resume(
             project_label: binding.project_label.clone(),
             runtime_home: binding.runtime_home.clone(),
             session_id: Some(session_id.to_string()),
-            task_id: Some(task_id.clone()),
+            task_id: task_id.clone(),
             session_messages_path: rebound.session_messages_path.clone(),
             recent_contexts_path: rebound.recent_contexts_path.clone(),
             recent_digests_path: rebound.recent_digests_path.clone(),
         },
-        answer: format!("resumed session: {session_id} / {task_id}"),
+        answer: match task_id.as_deref() {
+            Some(task_id) => format!("resumed session: {session_id} / {task_id}"),
+            None => format!("resumed tentative session: {session_id}"),
+        },
         digest_id: format!("digest-local-command-resume-{session_id}"),
         events_count: 0,
         response_kind: "system_notice".into(),
@@ -304,7 +318,14 @@ fn handle_compact(
         "/compact",
         "context rebuilt from recent session artifacts",
     )?;
-    let rebound = rebind_last_run(runtime_home, session_id, &task_id, year, month)?;
+    let rebound = rebind_last_run_binding(
+        runtime_home,
+        session_id,
+        Some(task_id.as_str()),
+        infer_session_topic_thread_id(&session_dir).as_deref(),
+        year,
+        month,
+    )?;
 
     Ok(ChatSendResponse {
         binding: DebugBinding {

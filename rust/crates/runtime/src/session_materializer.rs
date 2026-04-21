@@ -150,14 +150,11 @@ impl SessionMaterializer {
             format!("sessions/{year}/{month}/{session_id}/tools/recent_tool_records.json");
         let session_recent_closures_path =
             format!("sessions/{year}/{month}/{session_id}/closures/recent_closures.json");
-        write_bytes(
-            &runtime_home.join("runtime/current/last_run.json"),
-            serde_json::to_vec_pretty(&json!({
+        let mut last_run = json!({
                 "operation_id": run.operation.operation_id,
                 "trace_id": run.operation.trace_id,
                 "turn_index": parse_turn_index(&run.operation.operation_id),
                 "session_id": session_id,
-                "task_id": run.progress.refs.task_id,
                 "digest_id": run.digest.digest_id,
                 "provider": run.prepared_request.provider_name,
                 "model": run.prepared_request.model,
@@ -194,8 +191,20 @@ impl SessionMaterializer {
                 "session_recent_routing_actions_path": journal_paths.session_recent_routing_actions_path,
                 "session_event_archive_index_path": format!("sessions/{year}/{month}/{session_id}/events/archive_index.json"),
                 "session_messages_path": session_messages_path,
-            }))?
-            .as_slice(),
+        });
+        let object = last_run.as_object_mut().expect("last_run object");
+        if let Some(task_id) = run.progress.refs.task_id.as_ref() {
+            object.insert("task_id".into(), Value::String(task_id.clone()));
+        }
+        if let Some(topic_thread_id) = run.progress.refs.topic_thread_id.as_ref() {
+            object.insert(
+                "topic_thread_id".into(),
+                Value::String(topic_thread_id.clone()),
+            );
+        }
+        write_bytes(
+            &runtime_home.join("runtime/current/last_run.json"),
+            serde_json::to_vec_pretty(&last_run)?.as_slice(),
         )?;
 
         Ok(SessionMaterializationReceipt {

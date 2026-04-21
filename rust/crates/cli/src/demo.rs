@@ -22,7 +22,8 @@ pub(crate) struct DemoRequest {
     pub(crate) operation_id: String,
     pub(crate) trace_id: String,
     pub(crate) session_id: String,
-    pub(crate) task_id: String,
+    pub(crate) task_id: Option<String>,
+    pub(crate) topic_thread_id: Option<String>,
     pub(crate) agent_name: Option<String>,
     pub(crate) role_id: Option<String>,
     pub(crate) input: String,
@@ -52,7 +53,8 @@ pub(crate) fn run_demo(
             operation_id: demo_ids.operation_id,
             trace_id: demo_ids.trace_id,
             session_id: demo_ids.session_id,
-            task_id: demo_ids.task_id,
+            task_id: Some(demo_ids.task_id),
+            topic_thread_id: None,
             agent_name: Some("cli-demo".into()),
             role_id: None,
             input: input.to_string(),
@@ -99,7 +101,8 @@ pub(crate) fn run_demo_request(
     };
     let refs = EntityRefs {
         session_id: Some(request.session_id.clone()),
-        task_id: Some(request.task_id.clone()),
+        task_id: request.task_id.clone(),
+        topic_thread_id: request.topic_thread_id.clone(),
         worker_id: Some(worker.worker_id.clone()),
         ..EntityRefs::default()
     };

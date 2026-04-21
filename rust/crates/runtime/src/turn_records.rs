@@ -193,18 +193,24 @@ pub(super) fn routing_decision_record(
     created_at: &str,
     feedback: &ControlFeedback,
 ) -> RoutingDecisionRecord {
-    let (disposition, requires_user_confirmation) =
-        if refs.task_id.is_some() || feedback.is_continuation {
-            ("continue_current_task".to_string(), false)
-        } else if feedback.is_simple_query && feedback.simple_query_confidence >= 70 {
-            ("tentative_simple_chat".to_string(), false)
-        } else if feedback.candidate_task_id.is_some() {
-            ("candidate_existing_task".to_string(), true)
-        } else if feedback.topic_shift_confidence >= 60 {
+    let has_bound_task = refs.task_id.is_some();
+    let (disposition, requires_user_confirmation) = if has_bound_task {
+        if feedback.topic_shift_confidence >= 60
+            && feedback.continuity_confidence < feedback.topic_shift_confidence
+        {
             ("candidate_topic_switch".to_string(), true)
         } else {
-            ("pending_observation".to_string(), false)
-        };
+            ("continue_current_task".to_string(), false)
+        }
+    } else if feedback.is_simple_query && feedback.simple_query_confidence >= 70 {
+        ("tentative_simple_chat".to_string(), false)
+    } else if feedback.candidate_task_id.is_some() {
+        ("candidate_existing_task".to_string(), true)
+    } else if feedback.continuity_confidence < 70 {
+        ("candidate_new_task".to_string(), true)
+    } else {
+        ("pending_observation".to_string(), false)
+    };
 
     RoutingDecisionRecord {
         decision_id: format!("routing-{operation_id}"),

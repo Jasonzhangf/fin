@@ -96,7 +96,12 @@ pub use session_materializer::{
     SessionMaterializationReceipt, SessionMaterializer, SessionMessageRecord,
     append_framework_events,
 };
+pub use task_board_snapshot::TaskSummary;
 pub use task_handoff::{TaskHandoffReceipt, handoff_project_task};
+pub use task_store::{
+    StoredTaskRecord, TaskMutationReceipt, create_task_record, load_task_record,
+    session_dir_for_session_id, update_task_record,
+};
 #[derive(Debug, Error)]
 pub enum RuntimeError {
     #[error(transparent)]

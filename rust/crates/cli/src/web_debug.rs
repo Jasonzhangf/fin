@@ -7,6 +7,7 @@ use crate::{
     demo::{DemoRequest, demo_identity, run_demo_request},
     execution_segments::{create_interrupted_segment, latest_open_segment},
     execution_state::{load_execution_state, pause_execution},
+    routing_prompt_state::{load_pending_routing_action, prompt_user_choice_response},
     runtime_home::{
         read_last_run_value, read_recent_digests, read_recent_reasoning_views,
         read_recent_tool_records, read_session_messages,
@@ -170,6 +171,9 @@ impl CliDebugActionHandler {
                 }
             }
             return Ok(response);
+        }
+        if let Some(action) = load_pending_routing_action(runtime_home, &existing_binding)? {
+            return Ok(prompt_user_choice_response(existing_binding, &action));
         }
         let state = load_execution_state(runtime_home, &existing_binding)?;
         match classify_request(&request, state.as_ref()) {

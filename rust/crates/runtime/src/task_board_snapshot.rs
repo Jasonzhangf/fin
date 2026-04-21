@@ -7,10 +7,10 @@ use std::{
 };
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(super) struct TaskSummary {
-    pub(super) task_id: String,
-    pub(super) session_id: String,
-    pub(super) session_dir: PathBuf,
+pub struct TaskSummary {
+    pub task_id: String,
+    pub session_id: String,
+    pub session_dir: PathBuf,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
