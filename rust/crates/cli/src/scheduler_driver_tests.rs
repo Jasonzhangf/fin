@@ -1,6 +1,8 @@
 use crate::{
     CliError,
-    scheduler_driver::{drive_scheduler, load_latest_scheduler_decision},
+    scheduler_driver::{
+        drive_scheduler, load_latest_owner_loop_action, load_latest_scheduler_decision,
+    },
 };
 use fin_config::RuntimeRetentionConfig;
 use fin_contracts::InputAttachmentSummary;
@@ -58,6 +60,22 @@ fn read_json_or_empty<T: DeserializeOwned>(path: &Path) -> Vec<T> {
         Err(err) if err.kind() == std::io::ErrorKind::NotFound => Vec::new(),
         Err(err) => panic!("read failed: {err}"),
     }
+}
+
+fn write_task_registry(session_dir: &Path, task_id: &str, status: &str, claimed_by: Option<&str>) {
+    write_json(
+        &session_dir.join(format!("tasks/registry/{task_id}.json")),
+        &serde_json::json!({
+            "task_id": task_id,
+            "session_id": "session-scheduler",
+            "title": task_id,
+            "summary": format!("{task_id} summary"),
+            "status": status,
+            "claimed_by_worker_id": claimed_by,
+            "created_at": "2026-04-21T10:00:00+08:00",
+            "updated_at": "2026-04-21T10:00:00+08:00"
+        }),
+    );
 }
 
 #[test]
@@ -272,4 +290,210 @@ fn drive_scheduler_blocks_when_prompt_user_is_required() {
         .expect("latest")
         .expect("decision");
     assert_eq!(latest.action_kind, "await_user_confirmation");
+}
+
+#[test]
+fn drive_scheduler_persists_owner_loop_review_decision_from_managed_tasks() {
+    let home = temp_runtime_home();
+    let session_dir = home.join("sessions/2026/04/session-scheduler");
+    fs::create_dir_all(session_dir.join("conversation")).expect("conversation dir");
+    fs::create_dir_all(session_dir.join("control")).expect("control dir");
+    fs::create_dir_all(session_dir.join("queue")).expect("queue dir");
+    fs::create_dir_all(session_dir.join("tasks/routing")).expect("routing dir");
+    fs::create_dir_all(session_dir.join("tasks/registry")).expect("registry dir");
+    write_json(
+        &session_dir.join("control/execution_state.json"),
+        &fin_contracts::ExecutionStateRecord {
+            state_id: "exec-owner-loop".into(),
+            refs: entity_refs(&binding(&home)),
+            status: "idle".into(),
+            active_turn_id: None,
+            active_step_id: None,
+            resume_from_step_id: None,
+            resume_checkpoint_ready: false,
+            resume_checkpoint_id: None,
+            pending_input_count: 0,
+            accepts_user_input: true,
+            reason: None,
+            updated_at: "2026-04-21T10:00:00+08:00".into(),
+        },
+    );
+    write_json(
+        &session_dir.join("queue/pending_inputs.json"),
+        &Vec::<fin_contracts::PendingInputRecord>::new(),
+    );
+    write_json(
+        &session_dir.join("tasks/routing/latest_action.json"),
+        &fin_contracts::RoutingActionRecord {
+            action_id: "routing-action-3".into(),
+            decision_id: "routing-3".into(),
+            operation_id: "op-3".into(),
+            trace_id: "trace-3".into(),
+            refs: entity_refs(&binding(&home)),
+            created_at: "2026-04-21T10:00:00+08:00".into(),
+            action_kind: "continue_current_task".into(),
+            source_disposition: "continue_current_task".into(),
+            apply_immediately: true,
+            prompt_user: false,
+            prompt_text: None,
+            suggested_task_id: Some("task-submitted".into()),
+            suggested_topic_thread_id: None,
+            confidence: 88,
+            reason: "same task".into(),
+        },
+    );
+    write_task_registry(
+        &session_dir,
+        "task-submitted",
+        "submitted",
+        Some("worker-a"),
+    );
+
+    let mut called = false;
+    let response = drive_scheduler(
+        &home,
+        &binding(&home),
+        &RuntimeRetentionConfig::default(),
+        16,
+        |binding, _message, _source, _attachments, _merge_segment| {
+            called = true;
+            Ok(ChatSendResponse {
+                binding,
+                answer: "owner-loop".into(),
+                digest_id: "digest-owner-loop".into(),
+                events_count: 0,
+                response_kind: "assistant_message".into(),
+                freshness: None,
+                control_feedback: None,
+                progress: None,
+                note: None,
+                routing_action: None,
+            })
+        },
+    )
+    .expect("drive");
+
+    assert!(called);
+    assert_eq!(response.drove_count, 1);
+    assert_eq!(response.owner_loop_actions.len(), 2);
+    assert_eq!(
+        response.owner_loop_actions[0].action_kind,
+        "review_submitted_task"
+    );
+    let latest_owner = load_latest_owner_loop_action(&home, &binding(&home))
+        .expect("owner loop")
+        .expect("owner loop record");
+    assert_eq!(latest_owner.action_kind, "review_submitted_task");
+    assert_eq!(
+        latest_owner.target_task_ids,
+        vec!["task-submitted".to_string()]
+    );
+    let latest = load_latest_scheduler_decision(&home, &binding(&home))
+        .expect("latest")
+        .expect("decision");
+    assert_eq!(latest.action_kind, "review_submitted_task");
+}
+
+#[test]
+fn drive_scheduler_executes_one_framework_owner_loop_turn_for_submitted_task() {
+    let home = temp_runtime_home();
+    let session_dir = home.join("sessions/2026/04/session-scheduler");
+    fs::create_dir_all(session_dir.join("conversation")).expect("conversation dir");
+    fs::create_dir_all(session_dir.join("control")).expect("control dir");
+    fs::create_dir_all(session_dir.join("queue")).expect("queue dir");
+    fs::create_dir_all(session_dir.join("tasks/routing")).expect("routing dir");
+    fs::create_dir_all(session_dir.join("tasks/registry")).expect("registry dir");
+    write_json(
+        &session_dir.join("control/execution_state.json"),
+        &fin_contracts::ExecutionStateRecord {
+            state_id: "exec-owner-loop-run".into(),
+            refs: entity_refs(&binding(&home)),
+            status: "idle".into(),
+            active_turn_id: None,
+            active_step_id: None,
+            resume_from_step_id: None,
+            resume_checkpoint_ready: false,
+            resume_checkpoint_id: None,
+            pending_input_count: 0,
+            accepts_user_input: true,
+            reason: None,
+            updated_at: "2026-04-21T10:10:00+08:00".into(),
+        },
+    );
+    write_json(
+        &session_dir.join("queue/pending_inputs.json"),
+        &Vec::<fin_contracts::PendingInputRecord>::new(),
+    );
+    write_json(
+        &session_dir.join("tasks/routing/latest_action.json"),
+        &fin_contracts::RoutingActionRecord {
+            action_id: "routing-action-4".into(),
+            decision_id: "routing-4".into(),
+            operation_id: "op-4".into(),
+            trace_id: "trace-4".into(),
+            refs: entity_refs(&binding(&home)),
+            created_at: "2026-04-21T10:10:00+08:00".into(),
+            action_kind: "continue_current_task".into(),
+            source_disposition: "continue_current_task".into(),
+            apply_immediately: true,
+            prompt_user: false,
+            prompt_text: None,
+            suggested_task_id: Some("task-submitted".into()),
+            suggested_topic_thread_id: None,
+            confidence: 90,
+            reason: "same task".into(),
+        },
+    );
+    write_task_registry(
+        &session_dir,
+        "task-submitted",
+        "submitted",
+        Some("worker-a"),
+    );
+
+    let mut seen_messages = Vec::new();
+    let mut seen_sources = Vec::new();
+    let response = drive_scheduler(
+        &home,
+        &binding(&home),
+        &RuntimeRetentionConfig::default(),
+        16,
+        |binding, message, source, _attachments, _merge_segment| {
+            seen_messages.push(message);
+            seen_sources.push(source);
+            Ok(ChatSendResponse {
+                binding,
+                answer: "owner-loop-ran".into(),
+                digest_id: "digest-owner-loop".into(),
+                events_count: 0,
+                response_kind: "assistant_message".into(),
+                freshness: None,
+                control_feedback: None,
+                progress: None,
+                note: None,
+                routing_action: None,
+            })
+        },
+    )
+    .expect("drive");
+
+    assert_eq!(response.drove_count, 1);
+    assert_eq!(
+        seen_sources,
+        vec!["framework.owner_loop.review_submitted_task"]
+    );
+    assert_eq!(seen_messages.len(), 1);
+    assert!(seen_messages[0].contains("review submitted managed tasks now"));
+    assert!(seen_messages[0].contains("task-submitted"));
+    assert_eq!(
+        response.last_response.expect("response").answer,
+        "owner-loop-ran"
+    );
+    assert_eq!(response.decisions.len(), 2);
+    assert!(
+        response
+            .decisions
+            .iter()
+            .all(|item| item.action_kind == "review_submitted_task")
+    );
 }

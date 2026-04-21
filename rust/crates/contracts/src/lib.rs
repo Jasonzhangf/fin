@@ -6,6 +6,7 @@ mod activity_cards;
 mod context;
 mod daemon;
 mod feedback;
+mod owner_loop;
 mod records;
 
 pub use activity_cards::{
@@ -20,6 +21,7 @@ pub use context::{
 };
 pub use daemon::{DaemonRecoveryActionRecord, DaemonStateRecord};
 pub use feedback::ControlFeedback;
+pub use owner_loop::OwnerLoopActionRecord;
 pub use records::{
     ClosureTraceRecord, ExecutionCheckpointRecord, ExecutionStateRecord, InterruptedSegmentRecord,
     PauseCheckpointRecord, PendingInputRecord, ProviderRequestRecord, ProviderResponseRecord,

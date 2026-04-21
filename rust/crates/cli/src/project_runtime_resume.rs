@@ -36,6 +36,7 @@ pub(crate) fn drive_ready_project_runtime_resumes<F>(
 where
     F: FnMut(
         DebugBinding,
+        Option<String>,
         String,
         String,
         Vec<InputAttachmentSummary>,
@@ -84,7 +85,9 @@ where
             system.runtime.heartbeat_interval_ms,
             &system.runtime.retention,
             system.runtime.retention.recent_routing_decision_limit,
-            &mut run_next,
+            |binding, message, source, attachments, merge_segment| {
+                run_next(binding, None, message, source, attachments, merge_segment)
+            },
         )?;
         report.ticked_count += usize::from(cycle.cycle.is_some());
         report.drove_count += cycle.tick.drive.drove_count;

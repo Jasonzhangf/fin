@@ -16,6 +16,7 @@ mod activity_cards_tests;
 mod agent_naming;
 #[cfg(test)]
 mod assembler_tests;
+mod assignment_queue;
 mod closure_runtime;
 mod context_block_render;
 mod context_blocks;
@@ -31,10 +32,12 @@ mod control_feedback;
 mod control_plane;
 #[cfg(test)]
 mod execution_checkpoint_tests;
+mod managed_task_board;
 mod model_input_assembler;
 mod model_output;
 #[cfg(test)]
 mod model_output_tests;
+mod owner_loop;
 mod prompt_assembly;
 #[cfg(test)]
 mod prompt_tests;
@@ -83,6 +86,10 @@ pub use agent_naming::{
     create_named_local_worker, persist_assignment_summary, read_assignment_summary,
     resolve_agent_identity_by_worker_id, resolve_device_name,
 };
+pub use assignment_queue::{
+    AssignmentRecord, append_assignment_record, read_assignment_queue,
+    target_agent_name_from_worker_id, update_assignment_record,
+};
 pub use context_view::{ContextAssemblyInput, ContextViewBuilder};
 pub use control_feedback::ControlFeedbackBuilder;
 pub use control_plane::{
@@ -92,6 +99,7 @@ pub use control_plane::{
 };
 pub use model_input_assembler::ModelInputAssembler;
 pub use model_output::{ModelOutputParser, ParsedModelOutput};
+pub use owner_loop::derive_owner_loop_action_for_runtime;
 pub use scheduler::derive_scheduler_decision;
 pub use session_materializer::{
     SessionMaterializationReceipt, SessionMaterializer, SessionMessageRecord,
@@ -113,6 +121,8 @@ pub enum RuntimeError {
     Provider(#[from] fin_provider::ProviderError),
     #[error("failed to serialize runtime payload: {0}")]
     Serialize(#[from] serde_json::Error),
+    #[error("invalid runtime state: {0}")]
+    State(String),
     #[error("io error at '{path}': {source}")]
     Io {
         path: String,

@@ -6,6 +6,7 @@
 - 当前 M1 优先级：最小可闭合推理 + 最小可观测 Web debug，而不是复杂自治。
 
 ## Key Decisions
+- [2026-04-21] tentative -> formal task 的设计已冻结为：`/formalize` 只负责 framework-owned task/topic bind，随后自动 enqueue hidden `framework.task_kickoff.plan`；direct vs managed path 必须由首个 planning turn 决定，不能把 bind 与 decomposition 混成一步。
 - [2026-04-20] prompt system 真源已纠偏为 Agent-first：用户面对的永远是 agent，模型只接收 framework 赋予的 role/request/context/tools；provider/model family 只能留在 backend/runtime adapter/debug truth，不能进入 agent 身份层或 system/project role baseline。
 - [2026-04-20] system agent 的角色已进一步冻结为 backlog-first 的 leader/orchestrator：先看当前任务盘，再判断新输入；高优先级任务先做最小分析并尽快 dispatch；completion 到来后必须做 unblock analysis，而不是只记 done。
 - [2026-04-20] 复杂执行已冻结为统一 project task system 路径：借鉴 BD，采用 `epic -> task` 最小模型；worker 先 claim 再执行再提交 review；system/project agent 都是 owner/dispatcher/reviewer；简单任务不建 epic，只走 `update_plan` 轻量路径。

@@ -329,6 +329,7 @@ fn run_binding_turn(
             attachments,
             provider,
             merge_segment,
+            None,
         )
     } else {
         handler.run_chat_turn_with_provider(

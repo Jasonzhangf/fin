@@ -173,7 +173,7 @@ fn refresh_builds_resume_chain_and_auto_resume_can_drive_claimed_idle_project() 
         &system,
         "project_runtime_resume",
         "2026-04-20T12:01:00+08:00",
-        |binding, message, source, _attachments, _merge_segment| {
+        |binding, _agent_name, message, source, _attachments, _merge_segment| {
             assert_eq!(message, "continue work");
             assert_eq!(source, "project.resume");
             Ok(ChatSendResponse {

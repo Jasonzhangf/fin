@@ -116,7 +116,7 @@ impl CliDebugActionHandler {
                     merge_segment,
                 )
             },
-            |binding, message, source, attachments, merge_segment| {
+            |binding, agent_name, message, source, attachments, merge_segment| {
                 self.run_project_turn_with_provider(
                     runtime_home,
                     binding,
@@ -125,6 +125,7 @@ impl CliDebugActionHandler {
                     attachments,
                     provider,
                     merge_segment,
+                    agent_name.as_deref(),
                 )
             },
         )?;
@@ -139,14 +140,9 @@ impl CliDebugActionHandler {
             &request,
             &existing_binding,
         )? {
-            if request.message.trim_start().starts_with("/resume-run")
-                || request.message.trim_start().starts_with("/tick")
+            if let Some(source) =
+                followup_supervisor_cycle_source_for_local_command(request.message.as_str())
             {
-                let source = if request.message.trim_start().starts_with("/resume-run") {
-                    "resume_run"
-                } else {
-                    "manual_tick"
-                };
                 let cycle = run_supervisor_cycle(
                     runtime_home,
                     &response.binding,
@@ -166,8 +162,10 @@ impl CliDebugActionHandler {
                         )
                     },
                 )?;
-                if let Some(drained) = cycle.tick.drive.last_response {
-                    return Ok(drained);
+                if matches!(source, "resume_run" | "manual_tick") {
+                    if let Some(drained) = cycle.tick.drive.last_response {
+                        return Ok(drained);
+                    }
                 }
             }
             return Ok(response);
@@ -234,6 +232,20 @@ impl CliDebugActionHandler {
         )
     }
 }
+
+fn followup_supervisor_cycle_source_for_local_command(message: &str) -> Option<&'static str> {
+    let trimmed = message.trim_start();
+    if trimmed.starts_with("/resume-run") {
+        Some("resume_run")
+    } else if trimmed.starts_with("/tick") {
+        Some("manual_tick")
+    } else if trimmed.starts_with("/formalize") {
+        Some("formalize_kickoff")
+    } else {
+        None
+    }
+}
+
 impl DebugActionHandler for CliDebugActionHandler {
     fn read_binding(&self, runtime_home: &Path) -> Result<DebugBinding, String> {
         self.read_binding_internal(runtime_home)

@@ -2,6 +2,7 @@ mod agent_presence;
 #[cfg(test)]
 mod agent_presence_tests;
 mod agent_registry_status;
+mod assignment_runtime_resume;
 mod attached_control_plane;
 #[cfg(test)]
 mod attached_control_plane_tests;
@@ -29,6 +30,7 @@ mod error;
 mod execution_checkpoint;
 mod execution_segments;
 mod execution_state;
+mod formalize_planning;
 mod fs_utils;
 mod headless_daemon;
 #[cfg(test)]

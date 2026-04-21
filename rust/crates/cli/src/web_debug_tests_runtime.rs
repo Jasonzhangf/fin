@@ -1,5 +1,4 @@
 use super::*;
-
 #[test]
 fn pause_and_resume_run_commands_toggle_execution_state() {
     let home = temp_runtime_home();

@@ -1,20 +1,24 @@
 use crate::{
     CliError,
     agent_registry_status::render_agent_registry_summary,
+    assignment_runtime_resume::{
+        AssignmentRuntimeResumeReport, read_assignment_runtime_resume_report,
+    },
     project_execution_handoff::{ProjectExecutionHandoffSnapshot, read_project_execution_handoffs},
     project_recovery::ProjectRecoveryExecutionReport,
     project_runtime_pickup::{ProjectRuntimePickupSnapshot, read_project_runtime_pickups},
     project_runtime_resume::{ProjectRuntimeResumeReport, read_project_runtime_resume_report},
     project_supervision::read_project_supervision_snapshot,
     runtime_home::read_last_run_value,
-    scheduler_driver::load_latest_scheduler_decision,
+    scheduler_driver::{load_latest_owner_loop_action, load_latest_scheduler_decision},
     startup_control_summary::read_startup_control_summary,
     startup_topology::render_project_registry_summary,
 };
 use fin_contracts::{
     ControlFeedback, DaemonRecoveryActionRecord, DaemonStateRecord, ExecutionNote,
-    ExecutionStateRecord, PendingInputRecord, ProgressBlock, RoutingActionRecord,
-    SchedulerDecisionRecord, SchedulerTickRecord, SupervisorCycleRecord, SupervisorHeartbeatRecord,
+    ExecutionStateRecord, OwnerLoopActionRecord, PendingInputRecord, ProgressBlock,
+    RoutingActionRecord, SchedulerDecisionRecord, SchedulerTickRecord, SupervisorCycleRecord,
+    SupervisorHeartbeatRecord,
 };
 use fin_debug_server::{ChatSendRequest, ChatSendResponse, DebugBinding};
 use serde::de::DeserializeOwned;
@@ -70,6 +74,7 @@ pub(crate) fn build_status_probe_response(
         "conversation/messages.json",
         "queue/pending_inputs.json",
     )?;
+    let owner_loop_action = load_latest_owner_loop_action(runtime_home, &binding)?;
     let scheduler_decision = load_latest_scheduler_decision(runtime_home, &binding)?;
     let scheduler_tick = sibling_json::<SchedulerTickRecord>(
         runtime_home,
@@ -146,6 +151,7 @@ pub(crate) fn build_status_probe_response(
     let project_recovery = read_json_optional::<ProjectRecoveryExecutionReport>(
         &runtime_home.join("runtime/current/current_project_recovery.json"),
     )?;
+    let assignment_runtime_resume = read_assignment_runtime_resume_report(runtime_home)?;
     let project_runtime_resume = read_project_runtime_resume_report(runtime_home)?;
     let project_supervision = read_project_supervision_snapshot(runtime_home)?;
     let project_execution_handoffs = read_project_execution_handoffs(runtime_home)?;
@@ -178,6 +184,7 @@ pub(crate) fn build_status_probe_response(
             control_feedback.as_ref(),
             execution_state.as_ref(),
             pending_inputs.as_deref(),
+            owner_loop_action.as_ref(),
             scheduler_decision.as_ref(),
             scheduler_tick.as_ref(),
             supervisor_cycle.as_ref(),
@@ -188,6 +195,7 @@ pub(crate) fn build_status_probe_response(
             &agent_summary,
             &project_summary,
             project_recovery.as_ref(),
+            assignment_runtime_resume.as_ref(),
             project_runtime_resume.as_ref(),
             project_supervision.as_ref(),
             project_execution_handoffs.as_ref(),
@@ -214,6 +222,7 @@ fn render_status_answer(
     control_feedback: Option<&ControlFeedback>,
     execution_state: Option<&ExecutionStateRecord>,
     pending_inputs: Option<&[PendingInputRecord]>,
+    owner_loop_action: Option<&OwnerLoopActionRecord>,
     scheduler_decision: Option<&SchedulerDecisionRecord>,
     scheduler_tick: Option<&SchedulerTickRecord>,
     supervisor_cycle: Option<&SupervisorCycleRecord>,
@@ -224,6 +233,7 @@ fn render_status_answer(
     agent_summary: &str,
     project_summary: &str,
     project_recovery: Option<&ProjectRecoveryExecutionReport>,
+    assignment_runtime_resume: Option<&AssignmentRuntimeResumeReport>,
     project_runtime_resume: Option<&ProjectRuntimeResumeReport>,
     project_supervision: Option<&crate::project_supervision::ProjectSupervisionSnapshot>,
     project_execution_handoffs: Option<&ProjectExecutionHandoffSnapshot>,
@@ -289,6 +299,25 @@ fn render_status_answer(
             )
         })
         .unwrap_or_else(|| "scheduler unavailable".into());
+    let owner_loop_summary = owner_loop_action
+        .map(|value| {
+            format!(
+                "{} targets={} statuses={} reason={}",
+                value.action_kind,
+                if value.target_task_ids.is_empty() {
+                    "-".into()
+                } else {
+                    value.target_task_ids.join(",")
+                },
+                if value.task_status_counts.is_empty() {
+                    "-".into()
+                } else {
+                    value.task_status_counts.join(",")
+                },
+                value.reason
+            )
+        })
+        .unwrap_or_else(|| "owner loop unavailable".into());
     let tick_summary = scheduler_tick
         .map(|value| {
             format!(
@@ -351,6 +380,9 @@ fn render_status_answer(
     let project_recovery_summary = project_recovery
         .map(|value| value.summary.as_str())
         .unwrap_or("project recovery unavailable");
+    let assignment_runtime_resume_summary = assignment_runtime_resume
+        .map(|value| value.summary.as_str())
+        .unwrap_or("assignment runtime resume unavailable");
     let project_runtime_resume_summary = project_runtime_resume
         .map(|value| value.summary.as_str())
         .unwrap_or("project runtime resume unavailable");
@@ -368,7 +400,7 @@ fn render_status_answer(
         .unwrap_or_else(|| "startup summary unavailable".into());
 
     format!(
-        "status probe ({freshness})\nrequest={probe_message}\nsession={}\ntask={}\nstartup={startup_control_summary}\nagents={agent_summary}\nprojects={project_summary}\nproject_supervision={project_supervision_summary}\nproject_execution_handoffs={project_execution_handoff_summary}\nproject_runtime_pickups={project_runtime_pickup_summary}\nproject_runtime_resume={project_runtime_resume_summary}\nproject_recovery={project_recovery_summary}\nphase={phase}\nblocker={blocker}\nnext_step={next_step}\nactive_step={active_step}\nresume_from={resume_from}\npending_inputs={pending_count}\nnote={note_summary}\ncontrol={control_summary}\nrouting_action={routing_summary}\nscheduler={scheduler_summary}\ntick={tick_summary}\nsupervisor={supervisor_summary}\nheartbeat={heartbeat_summary}\ndaemon={daemon_summary}\nrecovery={recovery_summary}",
+        "status probe ({freshness})\nrequest={probe_message}\nsession={}\ntask={}\nstartup={startup_control_summary}\nagents={agent_summary}\nprojects={project_summary}\nproject_supervision={project_supervision_summary}\nproject_execution_handoffs={project_execution_handoff_summary}\nproject_runtime_pickups={project_runtime_pickup_summary}\nassignment_runtime_resume={assignment_runtime_resume_summary}\nproject_runtime_resume={project_runtime_resume_summary}\nproject_recovery={project_recovery_summary}\nphase={phase}\nblocker={blocker}\nnext_step={next_step}\nactive_step={active_step}\nresume_from={resume_from}\npending_inputs={pending_count}\nnote={note_summary}\ncontrol={control_summary}\nrouting_action={routing_summary}\nowner_loop={owner_loop_summary}\nscheduler={scheduler_summary}\ntick={tick_summary}\nsupervisor={supervisor_summary}\nheartbeat={heartbeat_summary}\ndaemon={daemon_summary}\nrecovery={recovery_summary}",
         binding.session_id.as_deref().unwrap_or("tentative"),
         binding.task_id.as_deref().unwrap_or("-"),
     )

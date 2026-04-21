@@ -90,13 +90,14 @@ fn formalize_binds_tentative_session_into_formal_task_and_topic() {
     let session_dir = session_dir_for(&home, &session_id);
 
     let formalized = handler
-        .send_message_internal(
+        .send_message_internal_with_provider(
             &home,
             ChatSendRequest {
                 message: "/formalize".into(),
                 input_kind: None,
                 attachments: Vec::new(),
             },
+            &static_provider(&handler.system),
         )
         .expect("formalize should run");
 
@@ -168,7 +169,9 @@ fn formalize_binds_tentative_session_into_formal_task_and_topic() {
     )
     .expect("routing action should parse");
     assert_eq!(latest_action.prompt_user, false);
-    assert_eq!(latest_action.action_kind, "formalized_new_task");
+    let events = fs::read_to_string(session_dir.join("events/stream.jsonl")).expect("events");
+    assert!(events.contains("session.formalized"));
+    assert!(events.contains("framework.task_kickoff_enqueued"));
 }
 
 #[test]

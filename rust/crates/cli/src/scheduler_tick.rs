@@ -55,6 +55,7 @@ where
             drive: SchedulerDriveResult {
                 last_response: None,
                 decisions: Vec::new(),
+                owner_loop_actions: Vec::new(),
                 drove_count: 0,
             },
         });
@@ -85,10 +86,23 @@ where
         recent_limit,
         &mut run_next,
     )?;
-    for (index, decision) in drive.decisions.iter().enumerate() {
+    for (index, action) in drive.owner_loop_actions.iter().enumerate() {
         let event = tick_event(
             &tick_id,
             (index as u64) + 2,
+            "scheduler.tick_owner_loop_action_recorded",
+            &action.created_at,
+            &refs,
+            None,
+            serde_json::to_value(action).map_err(CliError::Serialize)?,
+        );
+        framework_events.push(event);
+    }
+    let decision_sequence_start = (drive.owner_loop_actions.len() as u64) + 2;
+    for (index, decision) in drive.decisions.iter().enumerate() {
+        let event = tick_event(
+            &tick_id,
+            decision_sequence_start + (index as u64),
             "scheduler.tick_decision_recorded",
             &decision.created_at,
             &refs,
@@ -104,7 +118,7 @@ where
     if drive.drove_count > 0 {
         let event = tick_event(
             &tick_id,
-            (drive.decisions.len() as u64) + 2,
+            decision_sequence_start + (drive.decisions.len() as u64),
             "scheduler.tick_drove_pending",
             &completed_at,
             &refs,
@@ -120,7 +134,7 @@ where
     } else {
         let event = tick_event(
             &tick_id,
-            (drive.decisions.len() as u64) + 2,
+            decision_sequence_start + (drive.decisions.len() as u64),
             "scheduler.tick_blocked",
             &completed_at,
             &refs,
@@ -137,7 +151,7 @@ where
 
     let completed_event = tick_event(
         &tick_id,
-        (drive.decisions.len() as u64) + 3,
+        decision_sequence_start + (drive.decisions.len() as u64) + 1,
         "scheduler.tick_completed",
         &completed_at,
         &refs,

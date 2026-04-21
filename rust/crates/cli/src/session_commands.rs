@@ -43,7 +43,7 @@ pub(crate) fn try_handle_local_command(
     {
         return Ok(Some(response));
     }
-    if let Some(response) = try_handle_routing_command(runtime_home, message, binding)? {
+    if let Some(response) = try_handle_routing_command(runtime_home, system, message, binding)? {
         return Ok(Some(response));
     }
     let mut parts = message.split_whitespace();

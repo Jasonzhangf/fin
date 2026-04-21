@@ -183,6 +183,8 @@ pub(crate) fn sanitize_id_fragment(raw: &str) -> String {
 
 fn user_visible_input_for_source(source: &str, input: &str) -> Option<String> {
     if source.starts_with("framework.resume_checkpoint")
+        || source.starts_with("framework.owner_loop.")
+        || source.starts_with("framework.task_kickoff.")
         || source.starts_with("project.resume_checkpoint")
     {
         None

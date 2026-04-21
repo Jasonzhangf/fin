@@ -67,6 +67,7 @@ where
                 drive: crate::scheduler_driver::SchedulerDriveResult {
                     last_response: None,
                     decisions: Vec::new(),
+                    owner_loop_actions: Vec::new(),
                     drove_count: 0,
                 },
             },
@@ -215,6 +216,15 @@ fn derive_blocked_kind(
     pending_after: usize,
 ) -> Option<String> {
     match (final_action_kind, blocked_by) {
+        (Some("review_submitted_task"), _) | (_, Some("review_submitted_task")) => {
+            Some("owner_loop_review".into())
+        }
+        (Some("dispatch_ready_task"), _) | (_, Some("dispatch_ready_task")) => {
+            Some("owner_loop_dispatch".into())
+        }
+        (Some("wait_worker_feedback"), _) | (_, Some("wait_worker_feedback")) => {
+            Some("owner_loop_wait_feedback".into())
+        }
         (Some("await_user_confirmation"), _) | (_, Some("routing_prompt_user")) => {
             Some("await_user_confirmation".into())
         }
@@ -234,6 +244,9 @@ fn next_wake_hint(blocked_kind: Option<&str>) -> Option<String> {
         Some("wait_external") => Some("external_event_or_reminder".into()),
         Some("wait_running") => Some("supervisor_heartbeat".into()),
         Some("wait_paused") => Some("resume_or_interrupt".into()),
+        Some("owner_loop_review") => Some("review_submitted_task".into()),
+        Some("owner_loop_dispatch") => Some("dispatch_ready_task".into()),
+        Some("owner_loop_wait_feedback") => Some("worker_progress_or_submission".into()),
         Some("idle_no_work") => Some("new_input_or_reminder".into()),
         Some("auto_step_limit") => Some("next_supervisor_heartbeat".into()),
         _ => None,

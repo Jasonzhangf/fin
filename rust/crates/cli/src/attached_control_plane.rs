@@ -1,5 +1,6 @@
 use crate::{
     CliError,
+    assignment_runtime_resume::{AssignmentRuntimeResumeReport, drive_ready_assignment_resumes},
     daemon_state::{DaemonStateOutcome, refresh_attached_daemon_state},
     execution_state::clear_waiting_if_due,
     project_runtime_resume::{ProjectRuntimeResumeReport, drive_ready_project_runtime_resumes},
@@ -22,6 +23,8 @@ pub(crate) struct AttachedControlPlaneOutcome {
     #[allow(dead_code)]
     pub(crate) project_resume: ProjectRuntimeResumeReport,
     #[allow(dead_code)]
+    pub(crate) assignment_resume: AssignmentRuntimeResumeReport,
+    #[allow(dead_code)]
     pub(crate) daemon_state: DaemonStateOutcome,
 }
 
@@ -43,6 +46,7 @@ where
     ) -> Result<ChatSendResponse, CliError>,
     FP: FnMut(
         DebugBinding,
+        Option<String>,
         String,
         String,
         Vec<InputAttachmentSummary>,
@@ -84,6 +88,13 @@ where
         &now,
         &mut run_project_turn,
     )?;
+    let assignment_resume = drive_ready_assignment_resumes(
+        runtime_home,
+        system,
+        "assignment_runtime_resume",
+        &now,
+        &mut run_project_turn,
+    )?;
     let _ =
         refresh_startup_control_plane(runtime_home, system, &crate::time::local_timestamp_now())?;
     let daemon_state = refresh_attached_daemon_state(
@@ -99,6 +110,7 @@ where
         heartbeat,
         reminder_cycle,
         project_resume,
+        assignment_resume,
         daemon_state,
     })
 }

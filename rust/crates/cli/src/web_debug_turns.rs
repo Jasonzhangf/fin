@@ -123,6 +123,7 @@ impl CliDebugActionHandler {
             attachment_summaries,
             provider,
             merge_segment,
+            None,
             self.system.policy.entry_role.as_str(),
             true,
         )
@@ -137,6 +138,7 @@ impl CliDebugActionHandler {
         attachment_summaries: Vec<InputAttachmentSummary>,
         provider: &impl InferenceProvider,
         merge_segment: Option<&fin_contracts::InterruptedSegmentRecord>,
+        agent_name: Option<&str>,
     ) -> Result<ChatSendResponse, CliError> {
         with_runtime_current_snapshot(runtime_home, || {
             self.run_turn_with_role(
@@ -147,6 +149,7 @@ impl CliDebugActionHandler {
                 attachment_summaries,
                 provider,
                 merge_segment,
+                agent_name,
                 "project",
                 false,
             )
@@ -162,6 +165,7 @@ impl CliDebugActionHandler {
         attachment_summaries: Vec<InputAttachmentSummary>,
         provider: &impl InferenceProvider,
         merge_segment: Option<&fin_contracts::InterruptedSegmentRecord>,
+        agent_name: Option<&str>,
         role_id: &str,
         track_entry_presence: bool,
     ) -> Result<ChatSendResponse, CliError> {
@@ -265,7 +269,7 @@ impl CliDebugActionHandler {
                 session_id: session_id.clone(),
                 task_id: task_id.clone(),
                 topic_thread_id: topic_thread_id.clone(),
-                agent_name: None,
+                agent_name: agent_name.map(str::to_string),
                 role_id: Some(role_id.into()),
                 input: message,
                 source: source.into(),

@@ -7,8 +7,11 @@ use fin_provider::{ProviderDescriptor, StaticProviderClient};
 use std::path::PathBuf;
 use std::{
     fs,
+    sync::atomic::{AtomicU64, Ordering},
     time::{SystemTime, UNIX_EPOCH},
 };
+
+static TEMP_RUNTIME_COUNTER: AtomicU64 = AtomicU64::new(1);
 
 fn sample_user_toml() -> String {
     r#"
@@ -24,8 +27,9 @@ api_key_env = "OPENAI_API_KEY"
 }
 
 fn temp_runtime_home() -> PathBuf {
+    let seq = TEMP_RUNTIME_COUNTER.fetch_add(1, Ordering::Relaxed);
     std::env::temp_dir().join(format!(
-        "fin-status-probe-{}",
+        "fin-status-probe-{}-{seq}",
         SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .expect("time should work")
@@ -392,3 +396,9 @@ fn paused_session_channel_parallel_input_persists_attachments_into_context() {
 
 #[path = "web_debug_tests_runtime.rs"]
 mod web_debug_tests_runtime;
+#[path = "web_debug_tests_runtime_assignment_resume.rs"]
+mod web_debug_tests_runtime_assignment_resume;
+#[path = "web_debug_tests_runtime_owner_loop.rs"]
+mod web_debug_tests_runtime_owner_loop;
+#[path = "web_debug_tests_runtime_planning_kickoff.rs"]
+mod web_debug_tests_runtime_planning_kickoff;

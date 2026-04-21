@@ -1,8 +1,7 @@
-use crate::task_store::{StoredTaskRecord, list_registered_tasks};
+use crate::managed_task_board::load_managed_task_board_truth;
 use fin_contracts::ExecutionStateRecord;
 use serde_json::Value;
 use std::{
-    cmp::Reverse,
     collections::BTreeMap,
     fs,
     path::{Path, PathBuf},
@@ -204,102 +203,21 @@ fn managed_task_board_context(
     session_id: Option<&str>,
     preferred_task_id: Option<&str>,
 ) -> TaskBoardContextSnapshot {
-    let Ok(tasks) = list_registered_tasks(Path::new(runtime_home)) else {
+    let Ok(Some(truth)) =
+        load_managed_task_board_truth(Path::new(runtime_home), session_id, preferred_task_id)
+    else {
         return TaskBoardContextSnapshot::default();
     };
-    if tasks.is_empty() {
-        return TaskBoardContextSnapshot::default();
-    }
-
-    let mut status_counts = BTreeMap::<String, usize>::new();
-    let mut ready_task_ids = Vec::new();
-    let mut submitted_task_ids = Vec::new();
-    let mut working_task_ids = Vec::new();
-    let mut known_task_ids = tasks.keys().cloned().collect::<Vec<_>>();
-    known_task_ids.sort_by_key(|task_id| Reverse(task_id.clone()));
-    known_task_ids.truncate(8);
-
-    for (task_id, (_, task)) in &tasks {
-        *status_counts.entry(task.status.clone()).or_insert(0) += 1;
-        if is_ready_unclaimed(task) {
-            ready_task_ids.push(task_id.clone());
-        }
-        if task.status == "submitted" {
-            submitted_task_ids.push(task_id.clone());
-        }
-        if matches!(task.status.as_str(), "claimed" | "working" | "reviewing") {
-            working_task_ids.push(task_id.clone());
-        }
-    }
-    ready_task_ids.sort();
-    submitted_task_ids.sort();
-    working_task_ids.sort();
-
-    let active_task_id = preferred_task_id
-        .and_then(|task_id| tasks.get(task_id).map(|_| task_id.to_string()))
-        .or_else(|| {
-            session_id.and_then(|current_session| {
-                tasks
-                    .iter()
-                    .filter(|(_, (summary, _))| summary.session_id == current_session)
-                    .map(|(task_id, _)| task_id.clone())
-                    .max()
-            })
-        });
-    let counts = status_counts
-        .iter()
-        .map(|(status, count)| format!("{status}={count}"))
-        .collect::<Vec<_>>();
-    let owner_loop_summary = if !submitted_task_ids.is_empty() {
-        Some(format!(
-            "review_submitted_tasks count={} [{}]",
-            submitted_task_ids.len(),
-            submitted_task_ids.join(", ")
-        ))
-    } else if !ready_task_ids.is_empty() {
-        Some(format!(
-            "dispatch_ready_tasks count={} [{}]",
-            ready_task_ids.len(),
-            ready_task_ids.join(", ")
-        ))
-    } else if !working_task_ids.is_empty() {
-        Some(format!(
-            "wait_for_worker_feedback count={} [{}]",
-            working_task_ids.len(),
-            working_task_ids.join(", ")
-        ))
-    } else {
-        Some("no_actionable_managed_tasks".into())
-    };
-    let task_board_summary = Some(format!(
-        "managed_tasks={} · statuses={} · ready={} · submitted={}{}",
-        tasks.len(),
-        if counts.is_empty() {
-            "none".into()
-        } else {
-            counts.join(",")
-        },
-        ready_task_ids.len(),
-        submitted_task_ids.len(),
-        active_task_id
-            .as_deref()
-            .map(|task_id| format!(" · active_task={task_id}"))
-            .unwrap_or_default()
-    ));
 
     TaskBoardContextSnapshot {
-        active_task_id,
-        task_board_summary,
-        known_task_ids,
-        task_status_counts: counts,
-        ready_task_ids,
-        submitted_task_ids,
-        owner_loop_summary,
+        active_task_id: truth.active_task_id,
+        task_board_summary: Some(truth.task_board_summary),
+        known_task_ids: truth.known_task_ids,
+        task_status_counts: truth.task_status_counts,
+        ready_task_ids: truth.ready_task_ids,
+        submitted_task_ids: truth.submitted_task_ids,
+        owner_loop_summary: Some(truth.owner_loop_summary),
     }
-}
-
-fn is_ready_unclaimed(task: &StoredTaskRecord) -> bool {
-    matches!(task.status.as_str(), "created" | "ready") && task.claimed_by_worker_id.is_none()
 }
 
 fn task_ids_from_session(session_dir: &Path) -> Result<Vec<String>, String> {

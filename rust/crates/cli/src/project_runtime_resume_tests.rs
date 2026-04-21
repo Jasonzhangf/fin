@@ -135,7 +135,7 @@ fn drive_ready_project_runtime_resumes_ticks_ready_project_session() {
         &system(),
         "project_runtime_resume",
         "2026-04-20T23:42:00+08:00",
-        |binding, _message, _source, _attachments, _merge_segment| {
+        |binding, _agent_name, _message, _source, _attachments, _merge_segment| {
             Ok(ChatSendResponse {
                 binding,
                 answer: "done".into(),
@@ -223,7 +223,7 @@ fn drive_ready_project_runtime_resumes_seeds_claimed_idle_project_queue() {
         &system(),
         "project_runtime_resume",
         "2026-04-20T23:42:00+08:00",
-        |binding, message, source, _attachments, _merge_segment| {
+        |binding, _agent_name, message, source, _attachments, _merge_segment| {
             assert_eq!(message, "continue work");
             assert_eq!(source, "project.resume");
             Ok(ChatSendResponse {

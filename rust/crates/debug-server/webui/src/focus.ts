@@ -31,9 +31,11 @@ export class FocusPane {
   render(state: RefreshState): void {
     const selected = selectTurn(state);
     const frontstage = renderFrontstageSummary(state, this.tree);
+    const frameworkTimeline = renderFrameworkTimeline(state, this.tree);
     if (!selected) {
       this.rootEl.innerHTML = `
         ${frontstage}
+        ${frameworkTimeline}
         <section class="selected-request empty">
           <div class="section-kicker">Selected Request</div>
           <h3>还没有可聚焦的请求</h3>
@@ -66,6 +68,7 @@ export class FocusPane {
 
     this.rootEl.innerHTML = `
       ${frontstage}
+      ${frameworkTimeline}
       <section class="selected-request">
         <div class="selected-request-header">
           <div>
@@ -162,6 +165,40 @@ function renderFrontstageSummary(state: RefreshState, tree: StructuredTreeRender
           </article>
         </section>
       ` : ''}
+    </section>
+  `;
+}
+
+function renderFrameworkTimeline(state: RefreshState, tree: StructuredTreeRenderer): string {
+  const items = state.sessionEvents
+    .filter(isFrameworkProgressEvent)
+    .slice(-8)
+    .reverse();
+  if (!items.length) return '';
+
+  return `
+    <section class="selected-request">
+      <div class="selected-request-header">
+        <div>
+          <div class="section-kicker">Framework Progress</div>
+          <h3>formalize / planning / scheduler / supervisor timeline</h3>
+        </div>
+        <span class="request-state-pill neutral">${tree.escapeHtml(String(items.length))} events</span>
+      </div>
+      <div class="timeline-list">
+        ${items.map((event) => `
+          <article class="timeline-item ${frameworkEventTone(event)}">
+            <div class="timeline-item-header">
+              <span class="timeline-name">${tree.escapeHtml(String(event.event_type ?? '-'))}</span>
+              <span class="timeline-time">${tree.escapeHtml(formatLocalTimestamp(event.occurred_at ?? event.timestamp))}</span>
+            </div>
+            <div class="timeline-meta">
+              <span>source=${tree.escapeHtml(String(event.source ?? '-'))}</span>
+              <span>${tree.escapeHtml(frameworkEventSummary(event))}</span>
+            </div>
+          </article>
+        `).join('')}
+      </div>
     </section>
   `;
 }
@@ -281,4 +318,76 @@ function userMessageSnippet(content: unknown): string {
   const text = String(content ?? '-').trim();
   if (text.length <= 72) return text || '-';
   return `${text.slice(0, 72)}…`;
+}
+
+function isFrameworkProgressEvent(event: RuntimeEvent): boolean {
+  const eventType = String(event.event_type ?? '');
+  const source = String(event.source ?? '');
+  return (
+    eventType === 'session.formalized'
+    || eventType === 'framework.task_kickoff_enqueued'
+    || eventType.startsWith('scheduler.tick_')
+    || eventType.startsWith('supervisor.cycle_')
+    || source === 'cli.session_routing'
+    || source === 'cli.scheduler_tick'
+    || source === 'cli.supervisor_cycle'
+  );
+}
+
+function frameworkEventSummary(event: RuntimeEvent): string {
+  const payload = asRecord(event.payload);
+  const eventType = String(event.event_type ?? '');
+  if (eventType === 'session.formalized') {
+    return compactSummary(
+      `task=${String(payload.task_id ?? '-')} · topic=${String(payload.topic_thread_id ?? '-')}`,
+    );
+  }
+  if (eventType === 'framework.task_kickoff_enqueued') {
+    return compactSummary(
+      `queued planning kickoff · ${String(payload.goal_summary ?? payload.enqueue_reason ?? '-')}`,
+    );
+  }
+  if (eventType === 'scheduler.tick_decision_recorded') {
+    return compactSummary(
+      `action=${String(payload.action_kind ?? '-')} · pending=${String(payload.pending_input_count ?? '-')}`,
+    );
+  }
+  if (eventType === 'scheduler.tick_completed') {
+    return compactSummary(
+      `final=${String(payload.final_action_kind ?? '-')} · drove=${String(payload.drove_count ?? '-')}`,
+    );
+  }
+  if (eventType === 'supervisor.cycle_completed') {
+    return compactSummary(
+      `blocked=${String(payload.blocked_kind ?? '-')} · next=${String(payload.next_wake_hint ?? '-')}`,
+    );
+  }
+  return compactSummary(
+    String(
+      payload.result_summary
+      ?? payload.reason
+      ?? payload.source
+      ?? payload.goal_summary
+      ?? '-',
+    ),
+  );
+}
+
+function frameworkEventTone(event: RuntimeEvent): string {
+  const eventType = String(event.event_type ?? '');
+  if (eventType.includes('blocked')) return 'error';
+  if (
+    eventType === 'session.formalized'
+    || eventType === 'framework.task_kickoff_enqueued'
+    || eventType.endsWith('_completed')
+  ) {
+    return 'ok';
+  }
+  return 'subtle';
+}
+
+function compactSummary(input: string): string {
+  const text = input.trim();
+  if (text.length <= 120) return text || '-';
+  return `${text.slice(0, 120)}…`;
 }

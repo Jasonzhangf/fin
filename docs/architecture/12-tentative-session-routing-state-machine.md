@@ -133,6 +133,24 @@
 - 已正式获得 `task_id`
 - session 已进入正式 task 闭环
 
+### `planning_kickoff_pending`
+
+表示：
+
+- framework 已完成 formalization
+- 已写入 framework-owned hidden planning kickoff
+- 正等待 scheduler 把 kickoff 输入推进为首个正式 planning turn
+
+### `planning_turn`
+
+表示：
+
+- 当前正在执行 formal task 之后的首个 hidden planning turn
+- 该 turn 只负责决定：
+  - 走 `simple direct path`
+  - 还是进入 `managed project path`
+- 不要求用户再次确认 formalize，也不把 bind/planning 混为一步
+
 ### `side_topic_active`
 
 表示：
@@ -258,6 +276,37 @@
 条件：
 
 - 后续置信度升高
+
+## F. Formalize 后的 framework planning kickoff
+
+`pending_user_choice -> formalizing -> task_bound -> planning_kickoff_pending -> planning_turn`
+
+条件：
+
+- 用户确认 formalize / reuse / switch
+- framework 已完成 task/topic bind
+
+动作：
+
+- framework 执行 `FormalizationOperation`
+- 生成正式 `task_id`
+- 绑定 `topic_thread_id`
+- 追加 framework 事件：
+  - `session.formalized`
+  - `framework.task_kickoff_enqueued`
+- enqueue 一条 hidden pending input：
+  - `input_kind=framework_planning`
+  - `source=framework.task_kickoff.plan`
+
+规则：
+
+1. formalize 只做 bind，不直接把 decomposition/planning 混进同一个用户动作
+2. planning kickoff 由 framework 自动触发，用户不需要再说一次“开始规划”
+3. hidden planning input 不进入用户可见 conversation，但必须进入 runtime/provider/debug truth
+4. planning turn 的输出只负责决定：
+   - direct path：`update_plan`
+   - managed path：`project.task.create ...`
+5. 同一个 `formalize_kickoff` cycle 内只推进一轮 planning turn，不在同一 tick 里继续深推 owner-loop
 
 ## F. 等待用户选择
 

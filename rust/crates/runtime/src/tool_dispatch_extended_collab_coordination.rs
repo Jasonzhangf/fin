@@ -2,26 +2,14 @@ use crate::tool_dispatch::{
     ToolDispatchInput, ToolDispatchOutcome, failed_record, read_string, runtime_home_from_context,
     short_text,
 };
+use crate::{AssignmentRecord, append_assignment_record, target_agent_name_from_worker_id};
 use fin_contracts::ToolExecutionRecord;
-use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use std::{
     fs,
     io::Write,
     path::{Path, PathBuf},
 };
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-struct AssignmentRecord {
-    assignment_id: String,
-    peer_id: String,
-    target_worker_id: Option<String>,
-    requested_role_id: String,
-    owner_worker_id: Option<String>,
-    task_summary: String,
-    created_at: String,
-    status: String,
-}
 
 pub(super) fn handle_agent_assign(
     outcome: &mut ToolDispatchOutcome,
@@ -68,33 +56,31 @@ pub(super) fn handle_agent_assign(
         return true;
     };
 
-    let pending_path = runtime_home.join("runtime/assignments/pending.json");
-    let mut pending = match read_json::<Vec<AssignmentRecord>>(&pending_path) {
-        Ok(Some(items)) => items,
-        Ok(None) => Vec::new(),
-        Err(err) => {
-            outcome.tool_records.push(failed_record(
-                input,
-                tool_call_id.into(),
-                "agent.assign",
-                format!("failed to read pending assignments: {err}").as_str(),
-            ));
-            return true;
-        }
-    };
-
     let assignment_id = format!("assign-{}-{tool_call_id}", input.operation_id);
-    pending.push(AssignmentRecord {
+    let project_id = input
+        .context
+        .project
+        .as_ref()
+        .and_then(|project| project.primary_project.as_ref())
+        .map(|project| project.project_id.clone());
+    let assignment = AssignmentRecord {
         assignment_id: assignment_id.clone(),
         peer_id: peer_id.clone(),
+        project_id,
+        session_id: input.refs.session_id.clone(),
+        task_id: read_string(arguments, "task_id").or_else(|| input.refs.task_id.clone()),
         target_worker_id: target_worker_id.clone(),
+        target_agent_name: target_worker_id
+            .as_deref()
+            .and_then(target_agent_name_from_worker_id),
         requested_role_id: "project".into(),
         owner_worker_id: input.refs.worker_id.clone(),
         task_summary: task_summary.clone(),
         created_at: input.occurred_at.into(),
         status: "pending".into(),
-    });
-    if let Err(err) = write_json(&pending_path, &pending) {
+        ..AssignmentRecord::default()
+    };
+    if let Err(err) = append_assignment_record(&runtime_home, assignment.clone()) {
         outcome.tool_records.push(failed_record(
             input,
             tool_call_id.into(),
@@ -103,6 +89,7 @@ pub(super) fn handle_agent_assign(
         ));
         return true;
     }
+    let pending_path = runtime_home.join("runtime/assignments/pending.json");
 
     outcome.tool_records.push(ToolExecutionRecord {
         tool_call_id: tool_call_id.into(),
@@ -141,6 +128,9 @@ pub(super) fn handle_agent_assign(
             "tool_call_id": tool_call_id,
             "assignment_id": assignment_id,
             "peer_id": peer_id,
+            "project_id": assignment.project_id,
+            "session_id": assignment.session_id,
+            "task_id": assignment.task_id,
             "target_worker_id": target_worker_id,
             "requested_role_id": "project",
             "owner_worker_id": input.refs.worker_id,
@@ -270,27 +260,6 @@ pub(super) fn handle_capability_invoke(
         .note_hints
         .push(format!("capability.invoke accepted for {capability_id}"));
     true
-}
-
-fn read_json<T: for<'de> Deserialize<'de>>(path: &Path) -> Result<Option<T>, String> {
-    match fs::read_to_string(path) {
-        Ok(content) => serde_json::from_str::<T>(&content)
-            .map(Some)
-            .map_err(|err| err.to_string()),
-        Err(err) if err.kind() == std::io::ErrorKind::NotFound => Ok(None),
-        Err(err) => Err(err.to_string()),
-    }
-}
-
-fn write_json<T: Serialize>(path: &Path, value: &T) -> Result<(), String> {
-    if let Some(parent) = path.parent() {
-        fs::create_dir_all(parent).map_err(|err| err.to_string())?;
-    }
-    fs::write(
-        path,
-        serde_json::to_vec_pretty(value).map_err(|err| err.to_string())?,
-    )
-    .map_err(|err| err.to_string())
 }
 
 fn append_jsonl(path: &Path, value: &Value) -> Result<(), String> {

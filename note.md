@@ -3532,3 +3532,101 @@ fin should adopt the following canonical model:
   - `python3 scripts/check-code-line-limit.py` ✅
 - Remaining gap for `fin-5.5`:
   - owner-loop truth is now visible and biases tool choice, but framework still does not autonomously turn that truth into actual dispatch/review control actions
+
+## 2026-04-21 fin-5.5 owner-loop scheduler decision slice
+- Continued `fin-5.5` by wiring managed-task owner-loop truth into scheduler/supervisor instead of leaving it only in prompt/context bias.
+- New framework-owned truth in this slice:
+  - added `OwnerLoopActionRecord`
+  - scheduler now persists session/runtime artifacts under:
+    - `control/owner_loop/latest.json`
+    - `control/owner_loop/recent_actions.json`
+    - `runtime/current/current_owner_loop_action.json`
+- Runtime behavior now frozen:
+  - owner-loop action is derived from managed task registry truth before each scheduler decision
+  - scheduler surfaces owner-loop blocking/next-action states when idle with no pending inputs:
+    - `review_submitted_task`
+    - `dispatch_ready_task`
+    - `wait_worker_feedback`
+  - supervisor now classifies these as explicit blocked kinds / wake hints instead of collapsing them into generic idle
+- Refactor for single truth:
+  - extracted shared managed-task board derivation into `managed_task_board.rs`
+  - `task_board_snapshot` and owner-loop action now consume the same managed-task truth source
+- Observability:
+  - scheduler tick now emits `scheduler.tick_owner_loop_action_recorded`
+  - status probe now reports `owner_loop=...` alongside routing/scheduler/supervisor summaries
+- Verification:
+  - `cargo fmt --all --manifest-path rust/Cargo.toml` ✅
+  - `python3 scripts/check-code-line-limit.py` ✅
+  - `cargo test -p fin-cli -p fin-runtime --manifest-path rust/Cargo.toml` ✅
+  - exact integration: `scheduler_driver_tests::drive_scheduler_persists_owner_loop_review_decision_from_managed_tasks` ✅
+- Remaining gap after this slice:
+  - framework can now materialize and expose owner-loop control intent, but it still does not autonomously execute review/dispatch actions; actual dispatch/review remains the next step after decision truth is accepted.
+- Follow-up closeout in the same `fin-5.5` slice:
+  - scheduler now performs one minimum executable owner-loop handoff per cycle for:
+    - `review_submitted_task`
+    - `dispatch_ready_task`
+  - handoff is injected as hidden framework input sources:
+    - `framework.owner_loop.review_submitted_task`
+    - `framework.owner_loop.dispatch_ready_task`
+  - these framework inputs are not written as user-visible conversation turns, but they do drive real inference and stay observable in scheduler/debug truth
+  - `wait_worker_feedback` remains decision-only and does not auto-run a model turn
+  - cycle guard: only one owner-loop framework turn is auto-executed per scheduler cycle to avoid infinite repeated review/dispatch loops when task truth does not change
+- Additional verification after executable handoff:
+  - `scheduler_driver_tests::drive_scheduler_executes_one_framework_owner_loop_turn_for_submitted_task` ✅
+- Completed the next owner-loop closure step with real E2E proof:
+  - `/tick` now covers a full chain:
+    - managed task registry reports `submitted`
+    - scheduler derives `review_submitted_task`
+    - framework injects hidden `framework.owner_loop.review_submitted_task`
+    - provider returns `project.task.review`
+    - task registry is updated to `done`
+  - user-visible conversation does not leak the hidden framework prompt; only the assistant reply is rendered
+- New exact E2E proof:
+  - `web_debug_tests_runtime_owner_loop::tick_command_executes_owner_loop_review_and_updates_task_truth` ✅
+  - validates task registry mutation, tool record persistence, scheduler owner-loop artifacts, and hidden prompt non-leakage in conversation truth
+- Bridged the missing middle of the managed-task loop:
+  - `agent.assign` now persists assignment queue truth with `project_id/session_id/task_id/target_worker_id/target_agent_name`
+  - framework added `assignment_runtime_resume` to consume local pending assignments
+  - this path injects hidden `project.assignment` work input, runs one project-role worker turn with the targeted worker identity, and expects the worker to close its slice through `project.task.submit`
+- New runtime/control artifacts:
+  - `runtime/current/current_assignment_runtime_resume.json`
+  - `runtime/assignments/runtime_resume_reports.json`
+  - refreshed `runtime/current/current_assignment_summary.json`
+- New exact E2E proof:
+  - `web_debug_tests_runtime_assignment_resume::assignment_runtime_resume_executes_worker_turn_and_submits_task` ✅
+  - validates `assignment pending -> worker pickup -> project.task.submit -> task status=submitted`
+- Current state of `fin-5.5` after this slice:
+  - review path had E2E
+  - dispatch path had E2E
+  - worker submit bridge now has E2E
+  - remaining next-step is to make the same chain observable as one higher-level owner/worker loop receipt and then decide whether to auto-chain submit->review in one supervisor path or keep them as two adjacent cycles
+
+## 2026-04-21 tentative formalize now auto-kicks planning
+- Closed the gap between `TentativeSession` formalization and actual managed/direct task planning.
+- New frozen runtime behavior:
+  - `/formalize` no longer stops at `task/topic bind`
+  - framework now auto-enqueues one hidden planning kickoff:
+    - `input_kind=framework_planning`
+    - `source=framework.task_kickoff.plan`
+  - framework persists:
+    - `session.formalized`
+    - `framework.task_kickoff_enqueued`
+  - supervisor/scheduler then advances exactly one planning turn for the formalized task
+- Planning-turn boundary now frozen:
+  - planning decides `direct path(update_plan)` vs `managed path(project.task.create...)`
+  - framework owns session/task/topic bind
+  - user-visible conversation must not leak the hidden planning kickoff prompt
+  - same `formalize_kickoff` cycle stops after that planning turn instead of immediately chaining deeper owner-loop actions
+- Web/debug observability:
+  - focus pane now renders framework progress timeline for:
+    - `session.formalized`
+    - `framework.task_kickoff_enqueued`
+    - `scheduler.tick_*`
+    - `supervisor.cycle_*`
+- Verification:
+  - `cargo fmt --all --manifest-path rust/Cargo.toml` ✅
+  - `python3 scripts/check-code-line-limit.py` ✅
+  - `cargo test -p fin-cli -p fin-runtime --manifest-path rust/Cargo.toml` ✅
+  - exact E2E:
+    - `web_debug_tests_runtime_planning_kickoff::formalize_auto_kickoff_runs_managed_planning_and_forms_task_board` ✅
+    - `web_debug_tests_runtime_planning_kickoff::formalize_auto_kickoff_can_take_direct_path_and_persist_plan_artifact` ✅

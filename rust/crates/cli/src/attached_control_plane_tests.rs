@@ -183,7 +183,7 @@ fn attached_control_plane_cycle_drives_ready_project_resume() {
                 routing_action: None,
             })
         },
-        |binding, _message, _source, _attachments, _merge_segment| {
+        |binding, _agent_name, _message, _source, _attachments, _merge_segment| {
             project_calls.fetch_add(1, Ordering::Relaxed);
             Ok(ChatSendResponse {
                 binding,

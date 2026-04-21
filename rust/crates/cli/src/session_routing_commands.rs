@@ -1,5 +1,6 @@
 use crate::{
     CliError,
+    formalize_planning::enqueue_formalized_planning_kickoff,
     local_command_notice::append_notice_messages,
     routing_prompt_state::{
         load_latest_routing_decision, load_pending_routing_action, resolve_pending_routing_action,
@@ -10,6 +11,7 @@ use crate::{
     time::local_timestamp_now,
 };
 use chrono::Local;
+use fin_config::SystemConfig;
 use fin_debug_server::{ChatSendResponse, DebugBinding};
 use fin_runtime::{StoredTaskRecord, create_task_record, load_task_record};
 use serde_json::json;
@@ -17,11 +19,12 @@ use std::path::Path;
 
 pub(crate) fn try_handle_routing_command(
     runtime_home: &Path,
+    system: &SystemConfig,
     message: &str,
     binding: &DebugBinding,
 ) -> Result<Option<ChatSendResponse>, CliError> {
     match message.trim() {
-        "/formalize" => handle_formalize(runtime_home, binding).map(Some),
+        "/formalize" => handle_formalize(runtime_home, system, binding).map(Some),
         "/stay" => handle_stay(runtime_home, binding).map(Some),
         _ => Ok(None),
     }
@@ -29,6 +32,7 @@ pub(crate) fn try_handle_routing_command(
 
 fn handle_formalize(
     runtime_home: &Path,
+    system: &SystemConfig,
     binding: &DebugBinding,
 ) -> Result<ChatSendResponse, CliError> {
     let Some(session_id) = binding.session_id.as_deref() else {
@@ -43,6 +47,7 @@ fn handle_formalize(
         "ask_reuse_existing_task" => bind_existing_task(runtime_home, binding, session_id, &action),
         "ask_formalize_task" | "ask_topic_switch" => create_and_bind_formal_task(
             runtime_home,
+            system,
             binding,
             session_id,
             &action,
@@ -173,6 +178,7 @@ fn bind_existing_task(
 
 fn create_and_bind_formal_task(
     runtime_home: &Path,
+    system: &SystemConfig,
     binding: &DebugBinding,
     session_id: &str,
     action: &fin_contracts::RoutingActionRecord,
@@ -245,20 +251,33 @@ fn create_and_bind_formal_task(
         format!("formalized current session into task {task_id} with topic {topic_thread_id}")
             .as_str(),
     );
+    let rebound_binding = DebugBinding {
+        project_id: binding.project_id.clone(),
+        project_label: binding.project_label.clone(),
+        runtime_home: binding.runtime_home.clone(),
+        session_id: Some(session_id.to_string()),
+        task_id: Some(task_id.clone()),
+        session_messages_path: rebound.session_messages_path,
+        recent_contexts_path: rebound.recent_contexts_path,
+        recent_digests_path: rebound.recent_digests_path,
+    };
+    let kickoff_enqueued = enqueue_formalized_planning_kickoff(
+        runtime_home,
+        system,
+        &rebound_binding,
+        action,
+        &topic_thread_id,
+        &topic_summary,
+        decision
+            .map(|value| value.reason.as_str())
+            .unwrap_or(topic_summary.as_str()),
+        &now,
+    )?;
     Ok(ChatSendResponse {
-        binding: DebugBinding {
-            project_id: binding.project_id.clone(),
-            project_label: binding.project_label.clone(),
-            runtime_home: binding.runtime_home.clone(),
-            session_id: Some(session_id.to_string()),
-            task_id: Some(task_id.clone()),
-            session_messages_path: rebound.session_messages_path,
-            recent_contexts_path: rebound.recent_contexts_path,
-            recent_digests_path: rebound.recent_digests_path,
-        },
+        binding: rebound_binding,
         answer: format!("formalized current session: {session_id} / {task_id} / {topic_thread_id}"),
         digest_id: format!("digest-routing-formalize-{task_id}"),
-        events_count: receipt.artifact_refs.len(),
+        events_count: receipt.artifact_refs.len() + usize::from(kickoff_enqueued) + 1,
         response_kind: "system_notice".into(),
         freshness: Some("instant".into()),
         control_feedback: None,

@@ -1,6 +1,6 @@
 use fin_contracts::{
-    EntityRefs, ExecutionStateRecord, PendingInputRecord, RoutingActionRecord,
-    SchedulerDecisionRecord,
+    EntityRefs, ExecutionStateRecord, OwnerLoopActionRecord, PendingInputRecord,
+    RoutingActionRecord, SchedulerDecisionRecord,
 };
 
 pub fn derive_scheduler_decision(
@@ -8,6 +8,7 @@ pub fn derive_scheduler_decision(
     state: Option<&ExecutionStateRecord>,
     pending_inputs: &[PendingInputRecord],
     routing_action: Option<&RoutingActionRecord>,
+    owner_loop_action: Option<&OwnerLoopActionRecord>,
     created_at: &str,
 ) -> SchedulerDecisionRecord {
     let state_status = state
@@ -93,6 +94,14 @@ pub fn derive_scheduler_decision(
                     None,
                     format!("idle with {pending_input_count} pending inputs"),
                 )
+            } else if owner_loop_action.is_some_and(is_actionable_owner_loop) {
+                let action = owner_loop_action.expect("owner loop action checked");
+                (
+                    action.action_kind.as_str(),
+                    false,
+                    Some(action.action_kind.clone()),
+                    action.reason.clone(),
+                )
             } else {
                 (
                     "stay_idle",
@@ -126,6 +135,13 @@ pub fn derive_scheduler_decision(
         blocked_by,
         reason,
     }
+}
+
+fn is_actionable_owner_loop(action: &OwnerLoopActionRecord) -> bool {
+    matches!(
+        action.action_kind.as_str(),
+        "review_submitted_task" | "dispatch_ready_task" | "wait_worker_feedback"
+    )
 }
 
 fn is_parallel_pending(input: &PendingInputRecord) -> bool {
@@ -209,6 +225,7 @@ mod tests {
                 confidence: 92,
                 reason: "same task".into(),
             }),
+            None,
             "2026-04-19T22:00:00+08:00",
         );
         assert_eq!(decision.action_kind, "run_next_pending");
@@ -261,6 +278,7 @@ mod tests {
                 confidence: 81,
                 reason: "topic changed".into(),
             }),
+            None,
             "2026-04-19T22:00:01+08:00",
         );
         assert_eq!(decision.action_kind, "await_user_confirmation");
@@ -310,6 +328,7 @@ mod tests {
                 },
             ],
             None,
+            None,
             "2026-04-20T10:00:00+08:00",
         );
         assert_eq!(decision.action_kind, "resume_checkpoint");
@@ -346,9 +365,50 @@ mod tests {
                 enqueued_at: "2026-04-21T10:00:00+08:00".into(),
             }],
             None,
+            None,
             "2026-04-21T10:00:00+08:00",
         );
         assert_eq!(decision.action_kind, "run_next_parallel");
         assert!(decision.continue_until_blocked);
+    }
+
+    #[test]
+    fn scheduler_surfaces_owner_loop_action_when_idle_without_pending_inputs() {
+        let decision = derive_scheduler_decision(
+            &refs(),
+            Some(&ExecutionStateRecord {
+                state_id: "exec-5".into(),
+                refs: refs(),
+                status: "idle".into(),
+                active_turn_id: None,
+                active_step_id: None,
+                resume_from_step_id: None,
+                resume_checkpoint_ready: false,
+                resume_checkpoint_id: None,
+                pending_input_count: 0,
+                accepts_user_input: true,
+                reason: None,
+                updated_at: "2026-04-21T10:05:00+08:00".into(),
+            }),
+            &[],
+            None,
+            Some(&OwnerLoopActionRecord {
+                action_id: "owner-loop-1".into(),
+                created_at: "2026-04-21T10:05:00+08:00".into(),
+                refs: refs(),
+                source: "managed_task_registry".into(),
+                action_kind: "review_submitted_task".into(),
+                active_task_id: Some("task-review".into()),
+                target_task_ids: vec!["task-review".into()],
+                task_status_counts: vec!["submitted=1".into()],
+                reason: "review_submitted_tasks count=1 [task-review]".into(),
+            }),
+            "2026-04-21T10:05:00+08:00",
+        );
+        assert_eq!(decision.action_kind, "review_submitted_task");
+        assert_eq!(
+            decision.blocked_by.as_deref(),
+            Some("review_submitted_task")
+        );
     }
 }
