@@ -9,6 +9,7 @@ import {
 } from './activity_cards_ui.js';
 import { renderEventLedger } from './event_ledger.js';
 import { buildEventLedgerView } from './event_ledger_view_state.js';
+import { buildClosedLoopReceiptView, buildFrameworkFlowView } from './framework_flow_view.js';
 import {
   arrayCount,
   asRecord,
@@ -47,16 +48,9 @@ interface CardSpec {
 }
 
 export class InspectorPane {
-  constructor(
-    private readonly rootEl: HTMLElement,
-    private readonly tree: StructuredTreeRenderer,
-  ) {}
+  constructor(private readonly rootEl: HTMLElement, private readonly tree: StructuredTreeRenderer) {}
 
-  render(
-    state: RefreshState,
-    expandedCardId: DashboardCardId | null,
-    detailCardId: DashboardCardId | null,
-  ): void {
+  render(state: RefreshState, expandedCardId: DashboardCardId | null, detailCardId: DashboardCardId | null): void {
     const selected = state.focusTurns.find((turn) => turn.operationId === state.selectedOperationId);
     const cards = this.buildCards(selected, state);
     const openedCard = cards.find((card) => card.id === detailCardId) ?? null;
@@ -79,6 +73,8 @@ export class InspectorPane {
       .map((event) => String(event.event_type ?? '-'))
       .join(' → ');
     const ledgerView = buildEventLedgerView(state);
+    const loopReceipt = buildClosedLoopReceiptView(selected?.events ?? [], state.binding);
+    const frameworkFlow = buildFrameworkFlowView(selected?.events ?? []);
     const userCard = activityUserCard(state.activityCards);
     const focusSource = activityFocusSource(state.activityCards);
     const sourceCards = activitySourceCards(state.activityCards);
@@ -301,6 +297,8 @@ export class InspectorPane {
         digestLines: [
           ['frontstage', focusDigest],
           ['operation', `${selected?.operationId ?? '-'} · trace=${selected?.traceId ?? '-'}`],
+          ['closed loop', `${loopReceipt?.stage ?? '-'} · next=${shortText(loopReceipt?.nextHandoff ?? '-', 88)}`],
+          ['framework', `${frameworkFlow?.latestEvent ?? '-'} · lanes=${frameworkFlow?.lanes.filter((lane) => lane.events.length > 0).length ?? 0}`],
           ['timeline', shortText(latestEventNames || '-', 180)],
           ['ledger', `scope=${state.eventLedgerScope} · segment=${state.eventLedgerSegment ?? '-'} · op=${ledgerOperationId ?? '-'} · events=${filteredLedgerEvents.length}`],
           ['control', `continuity=${scalar(controlFeedback.continuity_confidence)} · shift=${scalar(controlFeedback.topic_shift_confidence)} · simple=${scalar(controlFeedback.simple_query_confidence)}`],
@@ -308,7 +306,7 @@ export class InspectorPane {
           ['tools', `semantic=${semanticToolsForSelected.length} · ${semanticToolDigest}`],
           ['closure', shortText(scalar(selected?.digest?.summary ?? selected?.assistantMessage?.content ?? '-'), 180)],
         ],
-        focusAreas: ['Turn Messages', 'Request Structure', 'Control Feedback', 'Reasoning View', 'Tool Activity', 'Execution Note', 'Closure Trace', 'Selected Timeline', 'Event Ledger', 'Digest'],
+        focusAreas: ['Turn Messages', 'Request Structure', 'Closed Loop Receipt', 'Framework Flow', 'Control Feedback', 'Reasoning View', 'Tool Activity', 'Execution Note', 'Closure Trace', 'Selected Timeline', 'Event Ledger', 'Digest'],
         sections: [
           ['Turn Messages', { user: selected?.userMessage ?? {}, assistant: selected?.assistantMessage ?? {} }],
           ['Request Structure', request],
@@ -317,6 +315,8 @@ export class InspectorPane {
           ['Frontstage Activity', { user_card: userCard ?? {}, focus_source: focusSource ?? {}, stage: frontstageStage, recent_items: activityRecent }],
           ['Tool Activity', { semantic_tools: semanticToolsForSelected, tool_records: toolRecords }],
           ['Execution Note', notePayload],
+          ['Closed Loop Receipt', loopReceipt ?? {}],
+          ['Framework Flow', frameworkFlow ?? {}],
           ['Closure Trace', closureTrace],
           ['Selected Timeline', { events: selected?.events ?? [] }],
           ['Event Ledger', {
