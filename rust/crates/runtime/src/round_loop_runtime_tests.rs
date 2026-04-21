@@ -222,7 +222,7 @@ fn runtime_followup_round_renders_tool_results_and_dynamic_catalog() {
 }
 
 #[test]
-fn runtime_suppresses_reasoning_stop_when_same_round_has_failed_tool() {
+fn runtime_allows_reasoning_stop_after_failed_tool_when_model_chooses_failed_closure() {
     let mut runtime = M1Runtime::default();
     let worker = worker_runtime();
     let provider = FailedToolStopProvider::new();
@@ -267,31 +267,19 @@ fn runtime_suppresses_reasoning_stop_when_same_round_has_failed_tool() {
 
     let run = runtime
         .run_closure(operation, &provider)
-        .expect("closure should continue after failed tool");
+        .expect("closure should stop cleanly even if the tool failed");
     let requests = provider.captured_requests();
-    assert_eq!(requests.len(), 2);
+    assert_eq!(requests.len(), 1);
     assert!(
-        requests[1]
-            .rendered_input
-            .contains("tool=apply_patch status=failed"),
-        "follow-up request must include failed tool receipt"
-    );
-    assert!(
-        requests[1]
-            .rendered_input
-            .contains("tool=reasoning.stop status=suppressed"),
-        "follow-up request must show reasoning.stop suppression"
-    );
-    assert!(
-        run.events
+        run.tool_records
             .iter()
-            .any(|event| event.event_type == "reasoning.stop_suppressed_due_to_failed_tools")
+            .any(|record| record.tool_name == "apply_patch" && record.status == "failed")
     );
     assert!(
         run.tool_records
             .iter()
-            .any(|record| record.tool_name == "reasoning.stop" && record.status == "suppressed")
+            .any(|record| record.tool_name == "reasoning.stop" && record.status == "completed")
     );
-    assert_eq!(run.round_records.len(), 2);
+    assert_eq!(run.round_records.len(), 1);
     let _ = fs::remove_dir_all(&workspace_root);
 }

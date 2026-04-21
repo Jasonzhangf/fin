@@ -157,9 +157,6 @@ fn validate_model_output_contract(
     if assistant_response_text.trim().is_empty() {
         errors.push("missing or empty <fin_user_response> content".into());
     }
-    if parsed.control_feedback.is_none() {
-        errors.push("missing or invalid <fin_control_feedback> JSON block".into());
-    }
     if parsed.tool_calls_block_present && parsed.tool_calls.is_empty() {
         errors.push(format!(
             "detected <fin_tool_calls> but it is not executable: status={} reason={}",

@@ -42,10 +42,6 @@ fn run_closure_emits_expected_event_chain() {
             "control.feedback_round_recorded",
             "tool.dispatch_round_completed",
             "model.output_parsed",
-            "model.output_contract_retry_requested",
-            "model.output_contract_retry_requested",
-            "model.output_contract_retry_requested",
-            "model.output_contract_retry_limit_reached",
             "progress.updated",
             "tool.execution_recorded",
             "control.feedback_recorded",
@@ -75,19 +71,19 @@ fn run_closure_emits_expected_event_chain() {
         run.digest.control_feedback,
         Some(run.control_feedback.clone())
     );
-    assert_eq!(run.tool_records.len(), 4);
+    assert_eq!(run.tool_records.len(), 1);
     assert!(
         run.tool_records
             .iter()
             .all(|record| record.tool_name == "provider.call")
     );
-    assert_eq!(run.provider_request_records.len(), 4);
-    assert_eq!(run.provider_response_records.len(), 4);
+    assert_eq!(run.provider_request_records.len(), 1);
+    assert_eq!(run.provider_response_records.len(), 1);
     assert_eq!(
         run.provider_request_records
             .last()
             .map(|record| record.request_id.as_str()),
-        Some("provider-request-op-1-r01-a04")
+        Some("provider-request-op-1-r01-a01")
     );
     assert_eq!(run.round_records.len(), 1);
     assert!(run.step_records.len() >= 5);
@@ -136,7 +132,7 @@ fn run_closure_emits_expected_event_chain() {
             .get("rendered_input")
             .and_then(serde_json::Value::as_str)
             .unwrap_or_default()
-            .contains("Original request:\nhello")
+            .contains("Current request:\nhello")
     );
     assert!(
         run.step_records

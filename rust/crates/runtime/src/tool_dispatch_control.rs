@@ -119,7 +119,7 @@ pub(super) fn handle_reasoning_stop(
         target_kind: Some("reasoning_closure".into()),
         target_ref: Some("current_turn".into()),
         input_summary: Some(summary.clone()),
-        output_summary: Some("reasoning stop accepted".into()),
+        output_summary: Some("reasoning stop requested; runtime closure gate pending".into()),
         status: "completed".into(),
         started_at: input.occurred_at.into(),
         ended_at: Some(input.occurred_at.into()),
@@ -136,7 +136,9 @@ pub(super) fn handle_reasoning_stop(
             "source": "model_tool_call",
         }),
     ));
-    outcome.note_hints.push("reasoning.stop accepted".into());
+    outcome
+        .note_hints
+        .push("reasoning.stop requested; runtime will decide whether closure is valid".into());
     outcome.stop_requested = true;
     true
 }

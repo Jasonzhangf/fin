@@ -40,8 +40,7 @@ fn run_closure_renders_context_into_provider_input() {
         "Structured output contract:",
         "model_output_contract_v1",
         "do not emit extra control-feedback keys",
-        "Original request:\nanswer current turn",
-        "did not satisfy the fin structured output contract",
+        "Current request:\nanswer current turn",
     ] {
         assert!(
             run.prepared_request.rendered_input.contains(fragment),
