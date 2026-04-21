@@ -3,10 +3,13 @@ use fin_config::{
     ConfigMapper, ProviderCredential, ProviderProtocol, ResolvedProviderConfig, UserConfig,
     UserProviderConfig,
 };
+use fin_contracts::ProjectContextBlock;
 use fin_provider::{PreparedRequest, ProviderDescriptor, ProviderRequest, ProviderResponse};
 use std::{
     collections::BTreeMap,
+    fs,
     sync::{Arc, Mutex},
+    time::{SystemTime, UNIX_EPOCH},
 };
 
 fn worker_runtime() -> WorkerRuntime {
@@ -37,7 +40,36 @@ struct InspectingTwoRoundProvider {
     requests: Arc<Mutex<Vec<PreparedRequest>>>,
 }
 
+#[derive(Debug, Clone)]
+struct FailedToolStopProvider {
+    descriptor: ProviderDescriptor,
+    requests: Arc<Mutex<Vec<PreparedRequest>>>,
+}
+
 impl InspectingTwoRoundProvider {
+    fn new() -> Self {
+        Self {
+            descriptor: ProviderDescriptor::from_resolved(&ResolvedProviderConfig {
+                name: "openai".into(),
+                protocol: ProviderProtocol::OpenAiCompatible,
+                base_url: "https://api.example.com/v1".into(),
+                model: "gpt-5".into(),
+                credential: ProviderCredential::ApiKeyEnv {
+                    env_var: "OPENAI_API_KEY".into(),
+                },
+                user_agent: None,
+                headers: BTreeMap::new(),
+            }),
+            requests: Arc::new(Mutex::new(Vec::new())),
+        }
+    }
+
+    fn captured_requests(&self) -> Vec<PreparedRequest> {
+        self.requests.lock().expect("requests lock").clone()
+    }
+}
+
+impl FailedToolStopProvider {
     fn new() -> Self {
         Self {
             descriptor: ProviderDescriptor::from_resolved(&ResolvedProviderConfig {
@@ -90,6 +122,42 @@ impl InferenceProvider for InspectingTwoRoundProvider {
             model: request.model.clone(),
             output_text: output_text.into(),
             response_id: Some("inspect-two-round-response".into()),
+            stop_reason: Some("end_turn".into()),
+            status: 200,
+        })
+    }
+}
+
+impl InferenceProvider for FailedToolStopProvider {
+    fn descriptor(&self) -> &ProviderDescriptor {
+        &self.descriptor
+    }
+
+    fn prepare_request(&self, request: &ProviderRequest) -> PreparedRequest {
+        self.descriptor.prepare_request(request)
+    }
+
+    fn execute_prepared(
+        &self,
+        request: &PreparedRequest,
+    ) -> Result<ProviderResponse, fin_provider::ProviderError> {
+        self.requests
+            .lock()
+            .expect("requests lock")
+            .push(request.clone());
+        let output_text = if request
+            .input
+            .starts_with("Continue the same turn with the latest tool results.")
+        {
+            "<fin_user_response>失败已处理，现在收口。</fin_user_response>\n<fin_control_feedback>{\"origin\":\"model_output_contract_v1\",\"is_continuation\":true,\"is_simple_query\":false,\"candidate_task_id\":\"task-failed-tool-stop\",\"candidate_topic_thread_id\":\"topic-failed-tool-stop\",\"continuity_confidence\":94,\"topic_shift_confidence\":6,\"simple_query_confidence\":4,\"previous_topic_summary\":\"patch retry\",\"current_topic_summary\":\"patch retry\",\"note_candidate\":\"patch failure handled\",\"digest_candidate\":\"patch failure handled\",\"reason\":\"failed tool receipt inspected\"}</fin_control_feedback>\n<fin_tool_calls>[{\"tool_name\":\"reasoning.stop\",\"arguments\":{\"summary\":\"patch failure inspected and handled\"}}]</fin_tool_calls>"
+        } else {
+            "<fin_user_response>先尝试写文件。</fin_user_response>\n<fin_control_feedback>{\"origin\":\"model_output_contract_v1\",\"is_continuation\":true,\"is_simple_query\":false,\"candidate_task_id\":\"task-failed-tool-stop\",\"candidate_topic_thread_id\":\"topic-failed-tool-stop\",\"continuity_confidence\":89,\"topic_shift_confidence\":11,\"simple_query_confidence\":5,\"previous_topic_summary\":\"patch retry\",\"current_topic_summary\":\"patch retry\",\"note_candidate\":\"patch then stop\",\"digest_candidate\":\"patch then stop\",\"reason\":\"write then close\"}</fin_control_feedback>\n<fin_tool_calls>[{\"tool_name\":\"apply_patch\",\"arguments\":{\"mode\":\"replace\",\"path\":\"existing.txt\",\"old_string\":\"\",\"new_string\":\"rewritten\\n\"}},{\"tool_name\":\"reasoning.stop\",\"arguments\":{\"summary\":\"stop immediately after patch\"}}]</fin_tool_calls>"
+        };
+        Ok(ProviderResponse {
+            provider_name: request.provider_name.clone(),
+            model: request.model.clone(),
+            output_text: output_text.into(),
+            response_id: Some("failed-tool-stop-response".into()),
             stop_reason: Some("end_turn".into()),
             status: 200,
         })
@@ -151,4 +219,79 @@ fn runtime_followup_round_renders_tool_results_and_dynamic_catalog() {
             .rendered_input
             .contains("authoritative client-side facts")
     );
+}
+
+#[test]
+fn runtime_suppresses_reasoning_stop_when_same_round_has_failed_tool() {
+    let mut runtime = M1Runtime::default();
+    let worker = worker_runtime();
+    let provider = FailedToolStopProvider::new();
+    let workspace_root = std::env::temp_dir().join(format!(
+        "fin-failed-tool-stop-{}-{}",
+        std::process::id(),
+        SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("system time")
+            .as_nanos()
+    ));
+    let runtime_home = workspace_root.join(".fin-runtime");
+    fs::create_dir_all(&runtime_home).expect("create runtime home");
+    let target = workspace_root.join("existing.txt");
+    fs::create_dir_all(&workspace_root).expect("create workspace root");
+    fs::write(&target, "occupied\n").expect("seed target file");
+    let operation = InferenceOperationBuilder
+        .build(
+            &worker,
+            InferenceRequest {
+                operation_id: "op-failed-tool-stop".into(),
+                trace_id: "trace-failed-tool-stop".into(),
+                submitted_at: "2026-04-21T21:00:00+08:00".into(),
+                refs: EntityRefs {
+                    session_id: Some("session-failed-tool-stop".into()),
+                    task_id: Some("task-failed-tool-stop".into()),
+                    ..EntityRefs::default()
+                },
+                input: "先写文件再收口".into(),
+                context: MinimalContextView {
+                    project: Some(ProjectContextBlock {
+                        project_root: Some(workspace_root.display().to_string()),
+                        runtime_home: Some(runtime_home.display().to_string()),
+                        cwd: Some(workspace_root.display().to_string()),
+                        ..ProjectContextBlock::default()
+                    }),
+                    ..MinimalContextView::default()
+                },
+            },
+        )
+        .expect("operation");
+
+    let run = runtime
+        .run_closure(operation, &provider)
+        .expect("closure should continue after failed tool");
+    let requests = provider.captured_requests();
+    assert_eq!(requests.len(), 2);
+    assert!(
+        requests[1]
+            .rendered_input
+            .contains("tool=apply_patch status=failed"),
+        "follow-up request must include failed tool receipt"
+    );
+    assert!(
+        requests[1]
+            .rendered_input
+            .contains("tool=reasoning.stop status=suppressed"),
+        "follow-up request must show reasoning.stop suppression"
+    );
+    assert!(
+        run.events
+            .iter()
+            .any(|event| event.event_type == "reasoning.stop_suppressed_due_to_failed_tools")
+    );
+    assert!(
+        run.tool_records
+            .iter()
+            .any(|record| record.tool_name == "reasoning.stop" && record.status == "suppressed")
+    );
+    assert_eq!(run.round_records.len(), 2);
+    let _ = fs::remove_dir_all(&workspace_root);
 }

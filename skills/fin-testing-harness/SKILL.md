@@ -49,6 +49,7 @@ description: Testing and harness workflow for fin. Use for replay design, fault 
 - mainline receipt 若需要 stronger `control_boundary` 样本，优先用 `fin control-boundary-demo <user.toml>` 生成真实 `pause -> queue -> resume-run -> wait_external -> reminder_fired -> supervisor_heartbeat_due/stale_lease` 场景；不要只靠空 heartbeat/daemon state 就宣称 control-plane 够强
 - 真实 provider 多轮 smoke 优先用 `scripts/run-real-provider-smoke.sh [test-run-id]`（内部调用 `fin provider-live-smoke <user.toml>`）；receipt 必须落到 `~/.fin/harness/runs/<run-id>/provider-live-smoke-report.json`，并检查 `control_feedback_origin != runtime_heuristic`，同时记录 `reasoning_stop_present`，避免把 heuristic 回退误判为真实闭环
 - 真实 provider + 工具链 E2E 默认按“只读工具 -> 隔离 scratch 写入 -> 仓库真实写入”三级递进；不要一上来就拿复杂多 turn 读写混合场景判断工具链是否可用
+- 因为 current history / tool receipt 默认按真值全量回注，live E2E 的 `exec_command` 必须显式约束输出体积（精确命令、`head`/`sed`/`rg` 限幅）；不要让模型自由跑 `find ... | xargs head` 这类大输出命令把后续 round prompt 撑爆
 - 若复杂 live E2E 已能真实闭环但产物内容明显过泛，下一步先检查 `recent_provider_requests.json` 是否真的带入了足够的 executed-tool evidence（stdout/artifact refs/snippets），不要把“证据注入太粗”误判成 provider 或 tool dispatcher 失效
 - 当目标是验证 current history/full tool evidence，测试断言必须直接检查 follow-up rendered input 是否出现 authoritative receipt/full stdout/full patch arguments；不要只断言“调过工具了”
 - live provider/harness 禁止使用 180s/240s 这类短 wall-clock subprocess timeout 截断整条 run；最小要求是 provider waiting budget >= 15 分钟，并且 timeout 只绑定等待阶段，不绑定整条推理链墙钟

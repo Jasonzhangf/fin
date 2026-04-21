@@ -2,7 +2,7 @@ use crate::{
     model_output::ModelToolCall, tool_dispatch_control, tool_dispatch_extended, tool_dispatch_peer,
 };
 use fin_contracts::{EntityRefs, MinimalContextView, ToolExecutionRecord};
-use serde_json::Value;
+use serde_json::{Value, json};
 use std::path::PathBuf;
 
 #[derive(Debug, Clone, Default, PartialEq)]
@@ -199,7 +199,56 @@ pub(super) fn execute_model_tools(
             ));
         }
     }
+    suppress_reasoning_stop_if_failed_tools(&mut outcome);
     outcome
+}
+
+fn suppress_reasoning_stop_if_failed_tools(outcome: &mut ToolDispatchOutcome) {
+    if !outcome.stop_requested {
+        return;
+    }
+    let failed_tools = outcome
+        .tool_records
+        .iter()
+        .filter(|record| record.status == "failed" && record.tool_name != "reasoning.stop")
+        .map(|record| record.tool_name.clone())
+        .collect::<Vec<_>>();
+    if failed_tools.is_empty() {
+        return;
+    }
+    let failed_tools_summary = failed_tools.join(", ");
+    outcome.stop_requested = false;
+    for record in outcome
+        .tool_records
+        .iter_mut()
+        .filter(|record| record.tool_name == "reasoning.stop")
+    {
+        record.status = "suppressed".into();
+        record.output_summary = Some(format!(
+            "reasoning stop suppressed until failed tool(s) are handled: {failed_tools_summary}"
+        ));
+        record.error_summary = Some(format!(
+            "same-round failed tool(s) require another follow-up round: {failed_tools_summary}"
+        ));
+        if !record
+            .side_effects
+            .iter()
+            .any(|effect| effect == "suppress_reasoning_stop_due_to_failed_tools")
+        {
+            record
+                .side_effects
+                .push("suppress_reasoning_stop_due_to_failed_tools".into());
+        }
+    }
+    outcome.events.push((
+        "reasoning.stop_suppressed_due_to_failed_tools".into(),
+        json!({
+            "failed_tools": failed_tools,
+        }),
+    ));
+    outcome.note_hints.push(format!(
+        "reasoning.stop suppressed because failed tool(s) require retry: {failed_tools_summary}"
+    ));
 }
 
 pub(super) fn runtime_home_from_context(context: &MinimalContextView) -> Option<PathBuf> {

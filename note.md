@@ -2,6 +2,25 @@
 
 Updated: 2026-04-18
 
+## 2026-04-21 failed-tool + reasoning.stop closure bug fixed and live E2E re-validated
+
+- runtime 已修复一个真实闭环 bug：
+  - 同一 round 内若出现 failed tool，`reasoning.stop` 不再允许直接收口
+  - framework 会把 stop 标记为 `suppressed`，继续 follow-up round，让模型基于 failed tool receipt 修正
+- 已补 runtime 回归：
+  - `runtime_suppresses_reasoning_stop_when_same_round_has_failed_tool`
+  - 验证 follow-up request 能看到 `tool=apply_patch status=failed`
+  - 验证 follow-up request 能看到 `tool=reasoning.stop status=suppressed`
+- 真实 provider E2E 已重新闭环：
+  - run id: `test-live-provider-codex-hermes-write-small-20260421-203620`
+  - transcript: 真实 `exec_command -> apply_patch -> exec_command verify -> reasoning.stop`
+  - turn1 共 5 个 round：先读两条证据，再经历两次 patch failure，随后读取旧文件内容并用精确 `old_string` 成功写入
+  - turn2 共 2 个 round：先验证文件，再基于真实 `wc -l + sed` 结果收口
+- 本次 live run 说明：
+  - current history 全量回注是正确方向
+  - 但 live E2E prompt 必须主动限制 `exec_command` 输出体积，否则 follow-up round 会因 receipt 过大而显著拖慢
+  - 对真实写入型任务，模型会利用 failed receipt 自行修正 `apply_patch` 参数，这证明“错误反馈 -> 再推理 -> 再工具”主链已经能工作
+
 ## 2026-04-21 live provider e2e expectations corrected
 
 - 真 provider 只读工具链 receipt 已闭环：
