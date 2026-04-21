@@ -14,6 +14,7 @@ pub fn javascript_for_path(path: &str) -> Option<&'static str> {
             Some(include_str!("../webui/dist/event_ledger_view_state.js"))
         }
         "/focus.js" => Some(include_str!("../webui/dist/focus.js")),
+        "/focus_progress.js" => Some(include_str!("../webui/dist/focus_progress.js")),
         "/inspector.js" => Some(include_str!("../webui/dist/inspector.js")),
         "/inspector_helpers.js" => Some(include_str!("../webui/dist/inspector_helpers.js")),
         "/section_renderers.js" => Some(include_str!("../webui/dist/section_renderers.js")),

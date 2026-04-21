@@ -3630,3 +3630,34 @@ fin should adopt the following canonical model:
   - exact E2E:
     - `web_debug_tests_runtime_planning_kickoff::formalize_auto_kickoff_runs_managed_planning_and_forms_task_board` ✅
     - `web_debug_tests_runtime_planning_kickoff::formalize_auto_kickoff_can_take_direct_path_and_persist_plan_artifact` ✅
+
+## 2026-04-21 managed closed-loop receipt + full E2E landed
+- Closed the current “framework loop can run, but user/debug still cannot see one complete receipt” gap with two pieces:
+  - Web focus pane now renders a `Closed Loop Receipt` section derived directly from `session event truth`
+  - new end-to-end managed loop test now proves:
+    - tentative input
+    - `/formalize`
+    - hidden planning kickoff
+    - managed `project.task.create`
+    - owner `/tick` dispatch (`agent.assign + project.task.claim`)
+    - attached control-plane `assignment_runtime_resume`
+    - worker `project.task.submit`
+    - owner `/tick` review (`project.task.review`)
+    - final task status `done`
+- Receipt rendering is intentionally event-derived, not a second runtime truth:
+  - formalized
+  - planning kickoff
+  - managed/direct planning
+  - owner dispatch
+  - worker submit
+  - owner review
+- During closeout, found and fixed a real truth leak:
+  - hidden `project.assignment` input was still appearing in `conversation/messages.json`
+  - root cause was not only runtime closure finalize; CLI demo wrapper also re-applied `run.conversation_user_input`
+  - fix was applied in both places so hidden framework/project prompts no longer leak into visible conversation truth
+- Verification:
+  - `cargo fmt --all --manifest-path rust/Cargo.toml` ✅
+  - `python3 scripts/check-code-line-limit.py` ✅
+  - `cd rust/crates/debug-server/webui && tsc -p tsconfig.json` ✅
+  - exact E2E:
+    - `web_debug_tests_runtime_closed_loop::managed_closed_loop_e2e_reaches_review_done_with_full_framework_chain` ✅

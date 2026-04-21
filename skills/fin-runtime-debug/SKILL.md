@@ -89,6 +89,7 @@ description: Runtime/event debugging workflow for fin. Use for multi-agent, cros
 - 文字 channel 若用户反馈“发了消息但没反应”，第一检查不是 provider，而是 ingress 用户可见回执链：进入去重后的 inbound 必须先看到一条 ack，其后 reject/error/no-output 也必须有用户可见 notice；只记 event 不算闭环
 - 若怀疑“QQ 已 connected 但就是没有 ingress”，先查 `bridge.stderr.log` 里的 `dispatch / dispatch-unhandled` 事件名；先确认 gateway 实际投递了什么 `eventType`，再决定是 runner 漏处理还是上游根本没推送
 - qqbot peer 的“上游登录态”和“session 绑定态”必须分开看：`connectivity_state/upstream_authenticated_at` 代表已登录；`binding_state/session_valid` 只代表当前是否绑定到活动 session。session mismatch/expire 只能释放绑定到 `unbound`，不能把已登录 peer 打回 `pairing_required`
+- hidden framework/project 输入若意外出现在 `conversation/messages.json`，不要只查 runtime materializer；`fin` 当前还要同时检查 CLI demo/web wrapper 对 `run.conversation_user_input` 的二次覆盖，避免 runtime 已过滤、wrapper 又写回去形成双真源泄漏
 
 ## 4) Minimal validation
 

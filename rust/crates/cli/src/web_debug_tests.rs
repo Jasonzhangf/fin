@@ -398,6 +398,8 @@ fn paused_session_channel_parallel_input_persists_attachments_into_context() {
 mod web_debug_tests_runtime;
 #[path = "web_debug_tests_runtime_assignment_resume.rs"]
 mod web_debug_tests_runtime_assignment_resume;
+#[path = "web_debug_tests_runtime_closed_loop.rs"]
+mod web_debug_tests_runtime_closed_loop;
 #[path = "web_debug_tests_runtime_owner_loop.rs"]
 mod web_debug_tests_runtime_owner_loop;
 #[path = "web_debug_tests_runtime_planning_kickoff.rs"]

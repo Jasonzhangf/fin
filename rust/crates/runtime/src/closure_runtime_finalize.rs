@@ -28,7 +28,10 @@ pub(super) fn build_partial_run(
         prepared_request: prepared_request.clone(),
         provider_response: provider_response.clone(),
         assistant_response_text: assistant_response_text.to_string(),
-        conversation_user_input: Some(operation.payload.input.clone()),
+        conversation_user_input: conversation_user_input_for_source(
+            &operation.source,
+            &operation.payload.input,
+        ),
         control_feedback: control_feedback.clone(),
         context_snapshot: context_snapshot.clone(),
         tool_records: tool_records.to_vec(),
@@ -133,7 +136,10 @@ pub(super) fn build_final_run(
     events: Vec<EventEnvelope<Value>>,
 ) -> ClosureRun {
     ClosureRun {
-        conversation_user_input: Some(context_snapshot.input.clone()),
+        conversation_user_input: conversation_user_input_for_source(
+            &operation.source,
+            &context_snapshot.input,
+        ),
         operation,
         prepared_request,
         provider_response,
@@ -155,5 +161,18 @@ pub(super) fn build_final_run(
         resume_checkpoint,
         closure_trace,
         events,
+    }
+}
+
+fn conversation_user_input_for_source(source: &str, input: &str) -> Option<String> {
+    if source.starts_with("framework.resume_checkpoint")
+        || source.starts_with("framework.owner_loop.")
+        || source.starts_with("framework.task_kickoff.")
+        || source.starts_with("project.resume_checkpoint")
+        || source == "project.assignment"
+    {
+        None
+    } else {
+        Some(input.to_string())
     }
 }
