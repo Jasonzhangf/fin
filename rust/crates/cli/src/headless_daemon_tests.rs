@@ -9,6 +9,7 @@ use fin_config::SystemConfig;
 use fin_provider::{
     InferenceProvider, PreparedRequest, ProviderDescriptor, ProviderRequest, ProviderResponse,
 };
+use serde_json::json;
 use std::{
     fs,
     path::PathBuf,
@@ -48,6 +49,45 @@ impl InferenceProvider for HeadlessResumeProvider {
             model: request.model.clone(),
             output_text: "<fin_user_response>后台守护已恢复并完成本轮检查。</fin_user_response>\n<fin_control_feedback>{\"origin\":\"model_output_contract_v1\",\"is_continuation\":true,\"is_simple_query\":false,\"candidate_task_id\":\"task-auto-resume\",\"candidate_topic_thread_id\":\"topic-auto-resume\",\"continuity_confidence\":94,\"topic_shift_confidence\":4,\"simple_query_confidence\":4,\"previous_topic_summary\":\"waiting\",\"current_topic_summary\":\"waiting\",\"note_candidate\":\"daemon resume finished\",\"digest_candidate\":\"daemon resume finished\",\"reason\":\"headless daemon checkpoint resume completed\"}</fin_control_feedback>\n<fin_tool_calls>[{\"tool_name\":\"reasoning.stop\",\"arguments\":{\"summary\":\"headless checkpoint resume complete\"}}]</fin_tool_calls>".into(),
             response_id: Some("headless-resume-response".into()),
+            stop_reason: Some("end_turn".into()),
+            status: 200,
+        })
+    }
+}
+
+#[derive(Debug, Clone)]
+struct HeadlessProjectProvider {
+    descriptor: ProviderDescriptor,
+}
+
+impl HeadlessProjectProvider {
+    fn new(system: &SystemConfig) -> Self {
+        Self {
+            descriptor: ProviderDescriptor::from_resolved(
+                system.default_provider_config().expect("default provider"),
+            ),
+        }
+    }
+}
+
+impl InferenceProvider for HeadlessProjectProvider {
+    fn descriptor(&self) -> &ProviderDescriptor {
+        &self.descriptor
+    }
+
+    fn prepare_request(&self, request: &ProviderRequest) -> PreparedRequest {
+        self.descriptor.prepare_request(request)
+    }
+
+    fn execute_prepared(
+        &self,
+        request: &PreparedRequest,
+    ) -> Result<ProviderResponse, fin_provider::ProviderError> {
+        Ok(ProviderResponse {
+            provider_name: request.provider_name.clone(),
+            model: request.model.clone(),
+            output_text: "<fin_user_response>project worker finished detached headless task.</fin_user_response>\n<fin_control_feedback>{\"origin\":\"model_output_contract_v1\",\"is_continuation\":true,\"is_simple_query\":false,\"candidate_task_id\":\"task-fin-1\",\"candidate_topic_thread_id\":\"topic-fin-1\",\"continuity_confidence\":96,\"topic_shift_confidence\":3,\"simple_query_confidence\":4,\"previous_topic_summary\":\"project work\",\"current_topic_summary\":\"project work\",\"note_candidate\":\"headless project resume completed\",\"digest_candidate\":\"headless project resume completed\",\"reason\":\"detached daemon resumed local project agent\"}</fin_control_feedback>\n<fin_tool_calls>[{\"tool_name\":\"project.task.submit\",\"arguments\":{\"task_id\":\"task-fin-1\",\"result_summary\":\"detached daemon completed project task\"}},{\"tool_name\":\"reasoning.stop\",\"arguments\":{\"summary\":\"headless project task complete\"}}]</fin_tool_calls>".into(),
+            response_id: Some("headless-project-response".into()),
             stop_reason: Some("end_turn".into()),
             status: 200,
         })
@@ -214,6 +254,165 @@ fn headless_daemon_cycle_resumes_checkpoint_without_frontstage() {
         fs::read_to_string(home.join("runtime/leases/headless-daemon.json")).expect("lease");
     assert!(lease.contains("\"processed_sessions\": 1"));
     assert!(lease.contains("session-checkpoint-resume"));
+
+    if let Some(value) = previous {
+        unsafe {
+            std::env::set_var("FIN_HEADLESS_DAEMON_MAX_CYCLES", value);
+        }
+    } else {
+        unsafe {
+            std::env::remove_var("FIN_HEADLESS_DAEMON_MAX_CYCLES");
+        }
+    }
+}
+
+#[test]
+fn headless_daemon_cycle_autonomously_resumes_local_project_agent_without_frontstage() {
+    let _guard = env_lock().lock().expect("env lock");
+    let previous = std::env::var("FIN_HEADLESS_DAEMON_MAX_CYCLES").ok();
+    unsafe {
+        std::env::set_var("FIN_HEADLESS_DAEMON_MAX_CYCLES", "1");
+    }
+
+    let home = temp_runtime_home("project-detached");
+    ensure_runtime_home_layout(&home).expect("runtime home should init");
+    let user_toml = sample_user_toml();
+    let mut system = map_system_config(&user_toml).expect("system config");
+    system.runtime.device_name = Some("mbp".into());
+    system
+        .runtime
+        .startup
+        .project_agents
+        .push(fin_config::ProjectAgentStartupConfig {
+            project_id: "fin".into(),
+            mode: fin_config::ProjectAgentMode::Local,
+            project_root: Some("/tmp/fin".into()),
+            endpoint: None,
+            agent_name: Some("builder".into()),
+            worker_budget: 2,
+            always_on: true,
+            auto_resume: true,
+            auto_connect: true,
+        });
+
+    let session_dir = home.join("sessions/2026/04/session-fin-detached");
+    for relative in [
+        "conversation",
+        "control",
+        "queue",
+        "tasks/registry",
+        "tasks/board",
+        "tasks/routing",
+        "digests",
+        "context",
+        "reasoning",
+        "tools",
+        "events",
+    ] {
+        fs::create_dir_all(session_dir.join(relative)).expect("session dir");
+    }
+    write_file(&session_dir.join("conversation/messages.json"), b"[]").expect("messages");
+    write_file(&session_dir.join("digests/recent_digests.json"), b"[]").expect("digests");
+    write_file(&session_dir.join("context/recent_contexts.json"), b"[]").expect("contexts");
+    write_file(
+        &session_dir.join("reasoning/recent_reasoning_views.json"),
+        b"[]",
+    )
+    .expect("reasoning");
+    write_file(&session_dir.join("tools/recent_tool_records.json"), b"[]").expect("tools");
+    write_file(&session_dir.join("events/stream.jsonl"), b"").expect("events");
+    write_file(
+        &session_dir.join("context/current_context.json"),
+        br#"{"project":{"primary_project":{"project_id":"fin","label":"fin"}}}"#,
+    )
+    .expect("current context");
+    write_file(&session_dir.join("queue/pending_inputs.json"), b"[]").expect("pending");
+    write_file(
+        &session_dir.join("control/execution_state.json"),
+        serde_json::to_vec_pretty(&json!({
+            "state_id":"exec-state-fin-detached",
+            "session_id":"session-fin-detached",
+            "task_id":"task-fin-1",
+            "status":"idle",
+            "pending_input_count":0,
+            "accepts_user_input":true,
+            "updated_at":"2026-04-21T00:10:00+08:00"
+        }))
+        .expect("state json")
+        .as_slice(),
+    )
+    .expect("state");
+    write_file(
+        &session_dir.join("tasks/registry/task-fin-1.json"),
+        serde_json::to_vec_pretty(&json!({
+            "task_id":"task-fin-1",
+            "session_id":"session-fin-detached",
+            "title":"Detached task",
+            "summary":"autonomous local project work",
+            "status":"ready",
+            "review_owner_worker_id":"worker-system",
+            "created_at":"2026-04-21T00:10:00+08:00",
+            "updated_at":"2026-04-21T00:11:00+08:00"
+        }))
+        .expect("task json")
+        .as_slice(),
+    )
+    .expect("task");
+    write_file(
+        &home.join("runtime/current/last_run.json"),
+        serde_json::to_vec_pretty(&json!({
+            "session_id":"session-fin-detached",
+            "task_id":"task-fin-1",
+            "session_messages_path":"sessions/2026/04/session-fin-detached/conversation/messages.json",
+            "session_recent_contexts_path":"sessions/2026/04/session-fin-detached/context/recent_contexts.json",
+            "session_recent_digests_path":"sessions/2026/04/session-fin-detached/digests/recent_digests.json",
+            "session_recent_reasoning_path":"sessions/2026/04/session-fin-detached/reasoning/recent_reasoning_views.json",
+            "session_recent_tool_records_path":"sessions/2026/04/session-fin-detached/tools/recent_tool_records.json"
+        }))
+        .expect("last run")
+        .as_slice(),
+    )
+    .expect("last run");
+
+    let report = run_headless_daemon_with_provider(
+        &user_toml,
+        &system,
+        &HeadlessProjectProvider::new(&system),
+        home.clone(),
+    )
+    .expect("headless daemon run");
+
+    assert_eq!(report.cycles_completed, 1);
+    assert!(report.drove_count >= 1);
+
+    let task_json =
+        fs::read_to_string(session_dir.join("tasks/registry/task-fin-1.json")).expect("task json");
+    assert!(task_json.contains("\"status\": \"submitted\""));
+    assert!(task_json.contains("\"submitted_by_worker_id\": \"worker-builder\""));
+    assert!(task_json.contains("detached daemon completed project task"));
+
+    let queue =
+        fs::read_to_string(session_dir.join("queue/pending_inputs.json")).expect("pending queue");
+    assert_eq!(queue.trim(), "[]");
+
+    let resume =
+        fs::read_to_string(home.join("runtime/current/current_project_runtime_resume.json"))
+            .expect("resume");
+    assert!(!resume.contains("\"drove_count\": 0"));
+    assert!(resume.contains("\"project_ids\": ["));
+    assert!(resume.contains("\"fin\""));
+
+    let builder_presence = fs::read_to_string(home.join("runtime/agents/state/mbp.builder.json"))
+        .expect("builder presence");
+    assert!(builder_presence.contains("\"role_id\": \"project\""));
+    assert!(builder_presence.contains("\"status\": \"idle\""));
+    assert!(builder_presence.contains("\"current_session_id\": \"session-fin-detached\""));
+
+    let startup_wakeup =
+        fs::read_to_string(home.join("runtime/current/current_startup_wakeup.json"))
+            .expect("startup wakeup");
+    assert!(startup_wakeup.contains("\"project_id\": \"fin\""));
+    assert!(startup_wakeup.contains("\"status\": \"completed\""));
 
     if let Some(value) = previous {
         unsafe {

@@ -217,6 +217,58 @@ fn anthropic_execute_retries_retryable_request_failures() {
 }
 
 #[test]
+fn anthropic_execute_uses_larger_output_budget() {
+    let listener = TcpListener::bind("127.0.0.1:0").expect("listener");
+    let address = listener.local_addr().expect("local addr");
+    let captured_body = Arc::new(std::sync::Mutex::new(String::new()));
+    let captured_body_for_thread = Arc::clone(&captured_body);
+    let server = thread::spawn(move || {
+        let (mut stream, _) = listener.accept().expect("accept");
+        let mut buffer = [0_u8; 16384];
+        let read = stream.read(&mut buffer).expect("read request");
+        let raw = String::from_utf8_lossy(&buffer[..read]).to_string();
+        let body = raw.split("\r\n\r\n").nth(1).unwrap_or_default().to_string();
+        *captured_body_for_thread.lock().expect("lock body") = body;
+        let response_body =
+            r#"{"id":"msg-1","content":[{"type":"text","text":"OK"}],"stop_reason":"end_turn"}"#;
+        let response = format!(
+            "HTTP/1.1 200 OK\r\ncontent-type: application/json\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{}",
+            response_body.len(),
+            response_body
+        );
+        stream
+            .write_all(response.as_bytes())
+            .expect("write response");
+    });
+
+    let facade = ProviderFacade::from_resolved(&ResolvedProviderConfig {
+        name: "local-anthropic".into(),
+        protocol: ProviderProtocol::AnthropicWire,
+        base_url: format!("http://{}", address),
+        model: "qwen3.6-plus".into(),
+        credential: ProviderCredential::DirectApiKey {
+            api_key: "test-key".into(),
+        },
+        user_agent: Some("opencode/1.2.27".into()),
+        headers: BTreeMap::new(),
+    });
+    let prepared = facade.prepare_request(&ProviderRequest {
+        input: "hello".into(),
+        rendered_input: Some("hello".into()),
+        override_model: None,
+    });
+
+    let response = facade
+        .execute_prepared(&prepared)
+        .expect("request should succeed");
+    assert_eq!(response.output_text, "OK");
+    server.join().expect("server thread");
+
+    let request_body = captured_body.lock().expect("lock body").clone();
+    assert!(request_body.contains("\"max_tokens\":2048"));
+}
+
+#[test]
 fn anthropic_execute_does_not_retry_http_status_errors() {
     let listener = TcpListener::bind("127.0.0.1:0").expect("listener");
     let address = listener.local_addr().expect("local addr");

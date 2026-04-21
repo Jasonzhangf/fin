@@ -1,6 +1,10 @@
 use super::*;
 use crate::{
-    agent_presence::{mark_entry_agent_busy, mark_entry_agent_failed, mark_entry_agent_idle},
+    agent_presence::{
+        find_project_agent_config, mark_entry_agent_busy, mark_entry_agent_failed,
+        mark_entry_agent_idle, mark_project_agent_runtime_error,
+        mark_project_agent_runtime_presence,
+    },
     execution_checkpoint::{load_open_execution_checkpoint, restore_execution_checkpoint},
     execution_segments::merge_segment_into_run,
     execution_state::{
@@ -247,6 +251,15 @@ impl CliDebugActionHandler {
         let submitted_at = local_timestamp_now();
         let operation_id = format!("op-{scope}-{turn_index:04}");
         let trace_id = format!("trace-{scope}-{turn_index:04}");
+        let project_config = (!track_entry_presence)
+            .then(|| {
+                find_project_agent_config(
+                    &self.system,
+                    Some(binding.project_id.as_str()),
+                    agent_name,
+                )
+            })
+            .flatten();
         if track_entry_presence {
             let _ = mark_entry_agent_busy(
                 &self.system,
@@ -259,6 +272,22 @@ impl CliDebugActionHandler {
             )?;
         }
         mark_running(runtime_home, &binding, &operation_id, &submitted_at)?;
+        if let Some(project) = project_config {
+            let _ = mark_project_agent_runtime_presence(
+                &self.system,
+                runtime_home,
+                project,
+                Some(session_id.as_str()),
+                task_id.as_deref(),
+                Some(&fin_contracts::ExecutionStateRecord {
+                    status: "running".into(),
+                    pending_input_count: 0,
+                    ..fin_contracts::ExecutionStateRecord::default()
+                }),
+                &submitted_at,
+                "project agent accepted runtime turn and started reasoning",
+            )?;
+        }
 
         let run = match run_demo_request(
             &self.system,
@@ -306,6 +335,17 @@ impl CliDebugActionHandler {
                         &local_timestamp_now(),
                         err.to_string().as_str(),
                     )?;
+                } else if let Some(project) = project_config {
+                    let _ = mark_project_agent_runtime_error(
+                        &self.system,
+                        runtime_home,
+                        project,
+                        Some(session_id.as_str()),
+                        task_id.as_deref(),
+                        &operation_id,
+                        &local_timestamp_now(),
+                        format!("project turn failed: {err}").as_str(),
+                    )?;
                 }
                 return Err(err);
             }
@@ -348,6 +388,18 @@ impl CliDebugActionHandler {
                 Some(operation_id.as_str()),
                 &local_timestamp_now(),
                 "frontstage idle; awaiting next request or worker feedback",
+            )?;
+        } else if let Some(project) = project_config {
+            let state = load_execution_state(runtime_home, &binding)?;
+            let _ = mark_project_agent_runtime_presence(
+                &self.system,
+                runtime_home,
+                project,
+                binding.session_id.as_deref(),
+                binding.task_id.as_deref(),
+                state.as_ref(),
+                &local_timestamp_now(),
+                "project agent runtime turn completed; awaiting next project work item",
             )?;
         }
         if let Some(segment) = merge_segment {

@@ -116,7 +116,7 @@ pub(super) fn build_dynamic_tool_catalog_block(
 
     if input.round_index > 1 {
         block.tool_selection_policy.push(format!(
-            "round {} is an auto-tool follow-up; first inspect current Recent tool activity and executed tool results before choosing more tools",
+            "round {} is an auto-tool follow-up; first inspect current tool execution history and executed tool results before choosing more tools",
             input.round_index
         ));
     }

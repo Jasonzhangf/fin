@@ -1,15 +1,11 @@
 use crate::{
     CliError,
     agent_presence::{ensure_project_agent_presence, ensure_system_worker_pool, project_agent_id},
+    startup_project_task_scan::{ProjectTaskScan, scan_project_tasks},
 };
 use fin_config::{ProjectAgentMode, ProjectAgentStartupConfig, SystemConfig};
-use fin_contracts::ExecutionStateRecord;
 use serde::{Deserialize, Serialize};
-use serde_json::Value;
-use std::{
-    fs,
-    path::{Path, PathBuf},
-};
+use std::{fs, path::Path};
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub(crate) struct StartupTopologySnapshot {
@@ -56,12 +52,6 @@ pub(crate) struct ProjectWakeRequest {
     pub(crate) requested_by: String,
     pub(crate) auto_resume: bool,
     pub(crate) created_at: String,
-}
-
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
-struct ProjectTaskScan {
-    unfinished_task_count: usize,
-    last_active_task_id: Option<String>,
 }
 
 pub(crate) fn materialize_startup_topology(
@@ -170,80 +160,6 @@ fn project_mode_name(project: &ProjectAgentStartupConfig) -> String {
     }
 }
 
-fn scan_project_tasks(runtime_home: &Path) -> Result<Vec<(String, ProjectTaskScan)>, CliError> {
-    let sessions_root = runtime_home.join("sessions");
-    if !sessions_root.exists() {
-        return Ok(Vec::new());
-    }
-    let mut grouped = std::collections::BTreeMap::<String, ProjectTaskScan>::new();
-    for session_dir in session_dirs(&sessions_root)? {
-        let Some(project_id) = session_project_id(&session_dir)? else {
-            continue;
-        };
-        let Some(state) = read_json_optional::<ExecutionStateRecord>(
-            &session_dir.join("control/execution_state.json"),
-        )?
-        else {
-            continue;
-        };
-        let Some(task_id) = state.refs.task_id.clone() else {
-            continue;
-        };
-        let entry = grouped.entry(project_id).or_default();
-        if task_is_unfinished(&state) {
-            entry.unfinished_task_count = entry.unfinished_task_count.saturating_add(1);
-            entry.last_active_task_id = Some(task_id);
-        } else if entry.last_active_task_id.is_none() {
-            entry.last_active_task_id = Some(task_id);
-        }
-    }
-    Ok(grouped.into_iter().collect())
-}
-
-fn task_is_unfinished(state: &ExecutionStateRecord) -> bool {
-    matches!(
-        state.status.as_str(),
-        "running" | "paused" | "waiting_external"
-    ) || state.pending_input_count > 0
-}
-
-fn session_project_id(session_dir: &Path) -> Result<Option<String>, CliError> {
-    let context = read_json_optional::<Value>(&session_dir.join("context/current_context.json"))?;
-    Ok(context
-        .as_ref()
-        .and_then(|value| value.get("project"))
-        .and_then(|value| value.get("primary_project"))
-        .and_then(|value| value.get("project_id"))
-        .and_then(Value::as_str)
-        .map(str::to_string))
-}
-
-fn session_dirs(root: &Path) -> Result<Vec<PathBuf>, CliError> {
-    let mut dirs = Vec::new();
-    for year in fs::read_dir(root).map_err(|source| CliError::ReadFile {
-        path: root.display().to_string(),
-        source,
-    })? {
-        let year = year.map_err(read_dir_error(root))?;
-        if !year.path().is_dir() {
-            continue;
-        }
-        for month in fs::read_dir(year.path()).map_err(read_dir_error(&year.path()))? {
-            let month = month.map_err(read_dir_error(&year.path()))?;
-            if !month.path().is_dir() {
-                continue;
-            }
-            for session in fs::read_dir(month.path()).map_err(read_dir_error(&month.path()))? {
-                let session = session.map_err(read_dir_error(&month.path()))?;
-                if session.path().is_dir() {
-                    dirs.push(session.path());
-                }
-            }
-        }
-    }
-    Ok(dirs)
-}
-
 fn persist_snapshot(
     runtime_home: &Path,
     snapshot: &StartupTopologySnapshot,
@@ -277,13 +193,6 @@ fn sanitize_id(raw: &str) -> String {
         .collect::<String>()
         .trim_matches('-')
         .to_string()
-}
-
-fn read_dir_error(path: &Path) -> impl FnOnce(std::io::Error) -> CliError + '_ {
-    move |source| CliError::ReadFile {
-        path: path.display().to_string(),
-        source,
-    }
 }
 
 fn read_json_optional<T: for<'de> Deserialize<'de>>(path: &Path) -> Result<Option<T>, CliError> {
@@ -322,8 +231,9 @@ mod tests {
     use fin_config::{
         ConfigMapper, ProviderProtocol, UserConfig, UserProviderConfig, UserRuntimeConfig,
     };
+    use fin_contracts::ExecutionStateRecord;
     use serde_json::{Value, json};
-    use std::collections::BTreeMap;
+    use std::{collections::BTreeMap, path::PathBuf};
 
     fn system() -> SystemConfig {
         let mut system = ConfigMapper::map_user_to_system(&UserConfig {

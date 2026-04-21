@@ -9,6 +9,7 @@ mod http_client;
 
 const DEFAULT_USER_AGENT: &str = "fin-coding-agent/0.1";
 const MAX_REQUEST_ATTEMPTS: usize = 3;
+const ANTHROPIC_MAX_OUTPUT_TOKENS: u64 = 2048;
 
 #[derive(Debug, Error, PartialEq, Eq)]
 pub enum ProviderError {
@@ -210,6 +211,61 @@ impl InferenceProvider for StaticProviderClient {
 }
 
 #[derive(Debug, Clone)]
+pub struct StructuredStaticProviderClient {
+    descriptor: ProviderDescriptor,
+}
+
+impl StructuredStaticProviderClient {
+    pub fn new(descriptor: ProviderDescriptor) -> Self {
+        Self { descriptor }
+    }
+}
+
+impl InferenceProvider for StructuredStaticProviderClient {
+    fn descriptor(&self) -> &ProviderDescriptor {
+        &self.descriptor
+    }
+
+    fn execute_prepared(
+        &self,
+        request: &PreparedRequest,
+    ) -> Result<ProviderResponse, ProviderError> {
+        let user_response = format!("simulated response for {}", request.input);
+        let escaped_response = serde_json::to_string(&user_response).map_err(|error| {
+            ProviderError::ParseResponse {
+                message: format!("failed to encode structured static response: {error}"),
+            }
+        })?;
+        let trimmed_input = request.input.trim();
+        let word_count = trimmed_input.split_whitespace().count();
+        let punctuation_count = trimmed_input
+            .chars()
+            .filter(|ch| matches!(ch, '?' | '？' | '!' | '！'))
+            .count();
+        let is_simple_query = word_count <= 12 && punctuation_count <= 1;
+        let continuity_confidence = if is_simple_query { 72 } else { 58 };
+        let topic_shift_confidence = if is_simple_query { 28 } else { 36 };
+        let simple_query_confidence = if is_simple_query { 88 } else { 24 };
+        let escaped_current_topic =
+            serde_json::to_string(trimmed_input).map_err(|error| ProviderError::ParseResponse {
+                message: format!("failed to encode current topic summary: {error}"),
+            })?;
+        Ok(ProviderResponse {
+            provider_name: request.provider_name.clone(),
+            model: request.model.clone(),
+            output_text: format!(
+                "<fin_user_response>{user_response}</fin_user_response>\
+<fin_control_feedback>{{\"origin\":\"model_output_contract_v1\",\"is_continuation\":false,\"is_simple_query\":{is_simple_query},\"candidate_task_id\":null,\"candidate_topic_thread_id\":null,\"continuity_confidence\":{continuity_confidence},\"topic_shift_confidence\":{topic_shift_confidence},\"simple_query_confidence\":{simple_query_confidence},\"previous_topic_summary\":\"static provider\",\"current_topic_summary\":{escaped_current_topic},\"note_candidate\":{escaped_response},\"digest_candidate\":{escaped_response},\"reason\":\"structured static provider\"}}</fin_control_feedback>\
+<fin_tool_calls>[{{\"name\":\"reasoning.stop\",\"arguments\":{{\"summary\":{escaped_response}}}}}]</fin_tool_calls>"
+            ),
+            response_id: Some("structured-static-response".into()),
+            stop_reason: Some("end_turn".into()),
+            status: 200,
+        })
+    }
+}
+
+#[derive(Debug, Clone)]
 pub struct ProviderFacade {
     descriptor: ProviderDescriptor,
     credential: ProviderCredential,
@@ -247,7 +303,7 @@ impl ProviderFacade {
         let headers = self.build_anthropic_headers(&api_key)?;
         let payload = serde_json::json!({
             "model": request.model,
-            "max_tokens": 256,
+            "max_tokens": ANTHROPIC_MAX_OUTPUT_TOKENS,
             "messages": [
                 {
                     "role": "user",

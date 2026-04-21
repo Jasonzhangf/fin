@@ -219,6 +219,31 @@ user/debug input
 
 固定结论：
 
+## 3.3 model output parse / repair boundary
+
+当前主链对模型输出的边界冻结为：
+
+- 先 strict parse
+- 再做确定性、语义保持的形状修复
+- 不做语义推断修补
+
+对应规则：
+
+1. `control_feedback`
+   - 允许 whitelist salvage
+   - 允许布尔/置信度标准化
+2. `tool_calls`
+   - 允许确定性形状修复
+   - 只在语义值完整时才可执行
+   - 若只检测到坏掉的 tool block，必须进入 runtime truth，而不是伪装成“未检测到工具”
+
+这条边界的意义是：
+
+- 提高 provider/model 兼容性
+- 保持 session / event / tool truth 干净
+- 让后续 retry feedback 只修结构、不改语义
+- 让同一 logical round 内的多次 retry attempt 以 provider/session truth 形式完整保留，而不是只剩 summary/event
+
 - context 真源在 runtime 装配层
 - 不是在 Web inspector
 - 不是在 provider adapter

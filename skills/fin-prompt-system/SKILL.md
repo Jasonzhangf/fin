@@ -81,6 +81,8 @@ description: Prompt system routing and execution skill for fin. Use when changin
 6. project agent 与 system agent 的 project scope 不得混写成单 project 语义
 7. schema 演进必须兼容旧 session artifacts；新增字段默认 `serde(default)`，改名字段保留 alias
 8. 真实 provider 若出现“语义正确但 schema 不精确”的 drift，优先把 exact output contract 与禁用样式（如 `0.98/1.0`、字符串布尔值、extra keys）重复暴露到推理末尾，而不是先放宽 runtime truth 判定
+9. 当前 `<fin_tool_calls>` 只是过渡期 fin contract，不是长期的 provider-native function/tool calling 真源；修改 prompt/tool schema 时要朝“provider-native standard call -> fin internal IR”方向靠拢，而不是继续固化自定义 wire
+10. prompt 优化不得以“压缩上下文换通过率”为目标；真实业务默认会塞满上下文，只允许优化 layer/source assembly 与 rebuild，不允许用删减业务上下文冒充稳定性提升
 
 ## 5) Minimal validation
 
@@ -103,3 +105,5 @@ prompt 相关改动至少做：
 - 在 Web 层显示 prompt 真相，但 runtime 没有同字段
 - 把 framework internal capability 冒充 model tool
 - 先写 prompt 文本细节，后补 role/source/layer 边界
+- 把 `<fin_tool_calls>` 的临时形态误当作长期标准 function call 协议
+- 用 prompt 压缩规避真实 full-context 问题，而不是修正 contract / tool loop / timeout / observability

@@ -35,6 +35,7 @@ mod execution_checkpoint_tests;
 mod managed_task_board;
 mod model_input_assembler;
 mod model_output;
+mod model_output_shapes;
 #[cfg(test)]
 mod model_output_tests;
 mod owner_loop;
@@ -44,6 +45,10 @@ mod prompt_tests;
 mod round_context;
 #[cfg(test)]
 mod round_loop_runtime_tests;
+#[cfg(test)]
+mod round_loop_runtime_tests_contract_retry;
+#[cfg(test)]
+mod round_loop_runtime_tests_full_history;
 mod routing_actions;
 mod scheduler;
 mod session_materializer;
@@ -77,6 +82,7 @@ mod tool_dispatch_query_tests;
 mod tool_dispatch_task_write_tests;
 #[cfg(test)]
 mod tool_dispatch_tests;
+mod tool_history_render;
 mod tool_semantics;
 mod trace_records;
 mod turn_records;

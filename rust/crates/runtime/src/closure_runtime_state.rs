@@ -1,3 +1,4 @@
+use super::closure_runtime_contract_retry::ContractRetrySummary;
 use crate::tool_dispatch::ToolDispatchOutcome;
 
 pub(super) fn merge_dispatch_outcome(
@@ -65,5 +66,24 @@ pub(super) fn record_auto_tool_round_limit(
             "max_rounds": max_auto_tool_rounds,
             "remaining_tool_calls": parsed_output.tool_calls.len(),
         }),
+    ));
+}
+
+pub(super) fn record_output_contract_retry_limit(
+    dispatched_tools: &mut ToolDispatchOutcome,
+    summaries: &[ContractRetrySummary],
+    max_retries: usize,
+) {
+    let total_retries = summaries.iter().map(|item| item.retry_count).sum::<usize>();
+    if total_retries == 0 {
+        return;
+    }
+    let limit_hits = summaries.iter().filter(|item| item.limit_reached).count();
+    if limit_hits == 0 {
+        return;
+    }
+    dispatched_tools.note_hints.push(format!(
+        "output contract retry hit limit on {} round(s) with max {} retry attempt(s)",
+        limit_hits, max_retries
     ));
 }

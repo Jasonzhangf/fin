@@ -1,17 +1,26 @@
 use super::*;
 use closure_runtime_checkpoint::build_resume_checkpoint;
+use closure_runtime_contract_retry::{
+    MAX_OUTPUT_CONTRACT_RETRIES, execute_round_with_contract_retries,
+};
 use closure_runtime_events::{EventEmissionInput, emit_runtime_events};
 use closure_runtime_finalize::{
     append_checkpoint_recorded_event, append_finalize_step, build_final_run, build_partial_run,
 };
-use closure_runtime_rounds::{allocate_step, build_followup_input, execute_round, record_round};
+use closure_runtime_rounds::{
+    allocate_step, build_context_build_step_record, build_context_snapshot, build_followup_input,
+    record_round,
+};
 use closure_runtime_state::{
-    merge_dispatch_outcome, next_step, operation_status, record_auto_tool_round_limit, stop_source,
+    merge_dispatch_outcome, next_step, operation_status, record_auto_tool_round_limit,
+    record_output_contract_retry_limit, stop_source,
 };
 use round_context::{DynamicRoundContextInput, build_round_context};
 
 #[path = "closure_runtime_checkpoint.rs"]
 mod closure_runtime_checkpoint;
+#[path = "closure_runtime_contract_retry.rs"]
+mod closure_runtime_contract_retry;
 #[path = "closure_runtime_events.rs"]
 mod closure_runtime_events;
 #[path = "closure_runtime_finalize.rs"]
@@ -63,7 +72,7 @@ impl M1Runtime {
             previous_assistant_response: None,
             recent_tool_records: &[],
         });
-        let initial_round = execute_round(
+        let initial_retry_bundle = execute_round_with_contract_retries(
             &operation,
             provider,
             &refs,
@@ -71,87 +80,67 @@ impl M1Runtime {
             1,
             operation.payload.input.clone(),
         )?;
-        let mut prepared_request = initial_round.prepared_request;
-        let mut provider_response = initial_round.provider_response;
-        let mut provider_debug = initial_round.provider_debug;
-        let mut parsed_output = initial_round.parsed_output;
+        let initial_round = initial_retry_bundle.final_round.clone();
+        let mut prepared_request = initial_round.prepared_request.clone();
+        let mut provider_response = initial_round.provider_response.clone();
+        let mut provider_debug = initial_round.provider_debug.clone();
+        let mut parsed_output = initial_round.parsed_output.clone();
         let mut dispatched_tools = initial_round.dispatched_tools.clone();
-        let mut assistant_response_text = initial_round.assistant_response_text;
-        let mut control_feedback = initial_round.control_feedback;
+        let mut assistant_response_text = initial_round.assistant_response_text.clone();
+        let mut control_feedback = initial_round.control_feedback.clone();
         let mut round_count = 1usize;
         let max_auto_tool_rounds = 6usize;
-        let context_snapshot = ContextSnapshotRecord {
-            operation_id: operation.operation_id.clone(),
-            trace_id: operation.trace_id.clone(),
-            refs: refs.clone(),
-            input: operation.payload.input.clone(),
-            context: operation.payload.context.clone(),
-            role: operation.payload.role.clone(),
-            provider_path: operation.payload.provider_path.clone(),
-            provider_strategy: operation.payload.provider_strategy,
-            protocol_version: operation.payload.protocol_version.clone(),
-            stream: operation.payload.stream,
-            captured_at: operation.submitted_at.clone(),
-        };
+        let mut contract_retry_summaries = vec![initial_retry_bundle.summary.clone()];
+        let context_snapshot = build_context_snapshot(&operation, &refs);
         let mut provider_request_records = Vec::new();
         let mut provider_response_records = Vec::new();
         let mut round_records = Vec::new();
         let context_build_step =
             allocate_step(&mut step_index, &operation.operation_id, "context_build");
-        let mut step_records = vec![turn_records::step_record(
+        let mut step_records = vec![build_context_build_step_record(
             context_build_step.step_id,
-            &turn_id,
-            &operation.operation_id,
-            &operation.trace_id,
-            &refs,
             context_build_step.step_index,
-            "context_build",
-            "completed",
-            &operation.submitted_at,
-            format!(
-                "assembled context for role={} with continuity_tail={} messages",
-                operation.payload.role.role_id.as_str(),
-                operation.payload.context.continuity_tail.len()
-            ),
-            Some(format!(
-                "context/recent_contexts.json#operation_id={}",
-                operation.operation_id
-            )),
-            Some(format!(
-                "provider/recent_provider_requests.json#operation_id={}",
-                operation.operation_id
-            )),
-            Some("provider_request".into()),
-        )];
-
-        let mut tool_records = vec![trace_records::provider_tool_record(
-            &operation.operation_id,
-            &operation.trace_id,
-            &refs,
-            &prepared_request,
-            &provider_response,
-            assistant_response_text.as_str(),
-            &operation.submitted_at,
-        )];
-        tool_records.extend(dispatched_tools.tool_records.clone());
-        let mut latest_round_tool_records = initial_round.dispatched_tools.tool_records.clone();
-        record_round(
-            &mut step_index,
             &operation,
             &refs,
             &turn_id,
-            1,
-            &prepared_request,
-            &provider_response,
-            &parsed_output,
-            &control_feedback,
-            &dispatched_tools,
-            assistant_response_text.as_str(),
-            &mut provider_request_records,
-            &mut provider_response_records,
-            &mut round_records,
-            &mut step_records,
-        );
+        )];
+
+        let mut tool_records = Vec::new();
+        for attempt in &initial_retry_bundle.attempts {
+            tool_records.push(trace_records::provider_tool_record(
+                &operation.operation_id,
+                &operation.trace_id,
+                &refs,
+                &attempt.round.prepared_request,
+                &attempt.round.provider_response,
+                attempt.round.assistant_response_text.as_str(),
+                &operation.submitted_at,
+            ));
+            if attempt.attempt_index == initial_retry_bundle.attempts.len() as u32 {
+                tool_records.extend(attempt.round.dispatched_tools.tool_records.clone());
+            }
+            record_round(
+                &mut step_index,
+                &operation,
+                &refs,
+                &turn_id,
+                1,
+                attempt.attempt_index,
+                attempt.attempt_index == initial_retry_bundle.attempts.len() as u32,
+                &attempt.round.prepared_request,
+                &attempt.round.provider_response,
+                &attempt.round.parsed_output,
+                &attempt.round.control_feedback,
+                &attempt.round.dispatched_tools,
+                attempt.round.assistant_response_text.as_str(),
+                &attempt.validation_errors,
+                &mut provider_request_records,
+                &mut provider_response_records,
+                &mut round_records,
+                &mut step_records,
+            );
+        }
+        let mut latest_round_tool_records = initial_round.dispatched_tools.tool_records.clone();
 
         while !dispatched_tools.stop_requested
             && !dispatched_tools.yield_requested
@@ -160,6 +149,7 @@ impl M1Runtime {
         {
             let next_round_index = round_count as u32 + 1;
             let followup_input = build_followup_input(
+                &operation.payload.context,
                 operation.payload.input.as_str(),
                 assistant_response_text.as_str(),
                 &latest_round_tool_records,
@@ -174,7 +164,7 @@ impl M1Runtime {
                 previous_assistant_response: Some(assistant_response_text.as_str()),
                 recent_tool_records: &tool_records,
             });
-            let followup_round = execute_round(
+            let followup_retry_bundle = execute_round_with_contract_retries(
                 &operation,
                 provider,
                 &refs,
@@ -182,16 +172,42 @@ impl M1Runtime {
                 next_round_index,
                 followup_input,
             )?;
-            tool_records.push(trace_records::provider_tool_record(
-                &operation.operation_id,
-                &operation.trace_id,
-                &refs,
-                &followup_round.prepared_request,
-                &followup_round.provider_response,
-                followup_round.assistant_response_text.as_str(),
-                &operation.submitted_at,
-            ));
-            tool_records.extend(followup_round.dispatched_tools.tool_records.clone());
+            contract_retry_summaries.push(followup_retry_bundle.summary.clone());
+            let followup_round = followup_retry_bundle.final_round.clone();
+            for attempt in &followup_retry_bundle.attempts {
+                tool_records.push(trace_records::provider_tool_record(
+                    &operation.operation_id,
+                    &operation.trace_id,
+                    &refs,
+                    &attempt.round.prepared_request,
+                    &attempt.round.provider_response,
+                    attempt.round.assistant_response_text.as_str(),
+                    &operation.submitted_at,
+                ));
+                if attempt.attempt_index == followup_retry_bundle.attempts.len() as u32 {
+                    tool_records.extend(attempt.round.dispatched_tools.tool_records.clone());
+                }
+                record_round(
+                    &mut step_index,
+                    &operation,
+                    &refs,
+                    &turn_id,
+                    next_round_index,
+                    attempt.attempt_index,
+                    attempt.attempt_index == followup_retry_bundle.attempts.len() as u32,
+                    &attempt.round.prepared_request,
+                    &attempt.round.provider_response,
+                    &attempt.round.parsed_output,
+                    &attempt.round.control_feedback,
+                    &attempt.round.dispatched_tools,
+                    attempt.round.assistant_response_text.as_str(),
+                    &attempt.validation_errors,
+                    &mut provider_request_records,
+                    &mut provider_response_records,
+                    &mut round_records,
+                    &mut step_records,
+                );
+            }
             let current_round_tools = followup_round.dispatched_tools.clone();
             latest_round_tool_records = current_round_tools.tool_records.clone();
             merge_dispatch_outcome(&mut dispatched_tools, &current_round_tools);
@@ -202,29 +218,17 @@ impl M1Runtime {
             assistant_response_text = followup_round.assistant_response_text;
             control_feedback = followup_round.control_feedback;
             round_count += 1;
-            record_round(
-                &mut step_index,
-                &operation,
-                &refs,
-                &turn_id,
-                round_count as u32,
-                &prepared_request,
-                &provider_response,
-                &parsed_output,
-                &control_feedback,
-                &current_round_tools,
-                assistant_response_text.as_str(),
-                &mut provider_request_records,
-                &mut provider_response_records,
-                &mut round_records,
-                &mut step_records,
-            );
         }
         record_auto_tool_round_limit(
             &mut dispatched_tools,
             &parsed_output,
             round_count,
             max_auto_tool_rounds,
+        );
+        record_output_contract_retry_limit(
+            &mut dispatched_tools,
+            &contract_retry_summaries,
+            MAX_OUTPUT_CONTRACT_RETRIES,
         );
 
         let closure_stopped = dispatched_tools.stop_requested;

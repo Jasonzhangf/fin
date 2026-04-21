@@ -1,5 +1,6 @@
 use crate::{
     CliError, agent_presence::ensure_entry_agent_presence,
+    headless_daemon_project_resume::drive_headless_project_runtime_resumes,
     reminder_scheduler::inject_due_reminders, runtime_home::init_runtime_home,
     startup_control_summary::read_startup_control_summary,
     startup_wakeup::refresh_startup_control_plane, supervisor_cycle::run_supervisor_cycle,
@@ -185,14 +186,22 @@ pub(crate) fn run_headless_daemon_with_provider(
         }
         let cycle_now = crate::time::local_timestamp_now();
         let startup = refresh_startup_control_plane(&runtime_home, system, &cycle_now)?;
+        let project_resume_drove = drive_headless_project_runtime_resumes(
+            &runtime_home,
+            system,
+            provider,
+            &handler,
+            &cycle_now,
+        )?;
         let sessions = discover_sessions_with_work(&runtime_home, system)?;
-        let cycle = run_headless_cycle(
+        let mut cycle = run_headless_cycle(
             &runtime_home,
             system,
             provider,
             &handler,
             sessions.as_slice(),
         )?;
+        cycle.drove_count = cycle.drove_count.saturating_add(project_resume_drove);
         processed_sessions = processed_sessions.saturating_add(cycle.processed_sessions);
         drove_count = drove_count.saturating_add(cycle.drove_count);
         cycles_completed = cycles_completed.saturating_add(1);

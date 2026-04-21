@@ -97,6 +97,54 @@ fn remote_wake_becomes_waiting_not_idle() {
 }
 
 #[test]
+fn refresh_consumes_daemon_ensure_request_and_wakes_project_agent() {
+    let home = temp_home("daemon-ensure");
+    let mut system = system();
+    system.runtime.startup.project_agents[0].always_on = false;
+    system.runtime.startup.project_agents[0].auto_resume = false;
+    fs::create_dir_all(home.join("runtime/peers")).expect("peers dir");
+    fs::write(
+        home.join("runtime/peers/ensure_requests.json"),
+        br#"[
+  {
+    "request_id":"ensure-peer-project-agent-fin",
+    "peer_id":"peer-project-agent-fin",
+    "peer_kind":"project_agent",
+    "project_id":"fin",
+    "agent_name":"builder",
+    "mode_hint":"local",
+    "project_root":"/tmp/fin",
+    "endpoint":null,
+    "lease_ttl_ms":60000,
+    "requested_at":"2026-04-21T16:00:00+08:00",
+    "requested_by_worker_id":"worker-system",
+    "status":"pending",
+    "consumed_at":null
+  }
+]"#,
+    )
+    .expect("ensure request");
+
+    let snapshot = refresh_startup_control_plane(&home, &system, "2026-04-21T16:00:01+08:00")
+        .expect("startup refresh");
+    assert_eq!(snapshot.projects.len(), 1);
+    assert_eq!(snapshot.projects[0].presence_state, "idle");
+
+    let wake_report = fs::read_to_string(home.join("runtime/current/current_startup_wakeup.json"))
+        .expect("wakeup report");
+    assert!(wake_report.contains("\"reason\": \"daemon.ensure_peer_requested\""));
+    assert!(wake_report.contains("\"mode\": \"local\""));
+
+    let ensure_requests = fs::read_to_string(home.join("runtime/peers/ensure_requests.json"))
+        .expect("ensure requests");
+    assert!(ensure_requests.contains("\"status\": \"completed\""));
+    assert!(ensure_requests.contains("\"consumed_at\": \"2026-04-21T16:00:01+08:00\""));
+    let peer_state =
+        fs::read_to_string(home.join("runtime/peers/registry.json")).expect("peer registry");
+    assert!(peer_state.contains("peer-project-agent-fin"));
+}
+
+#[test]
 fn refresh_builds_resume_chain_and_auto_resume_can_drive_claimed_idle_project() {
     let home = temp_home("resume-chain");
     let session_dir = home.join("sessions/2026/04/session-fin");

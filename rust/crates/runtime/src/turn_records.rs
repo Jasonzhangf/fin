@@ -11,14 +11,18 @@ pub(super) fn provider_request_record(
     turn_id: &str,
     step_id: &str,
     round_index: u32,
+    attempt_index: u32,
     request: &PreparedRequest,
     created_at: &str,
 ) -> ProviderRequestRecord {
     ProviderRequestRecord {
-        request_id: format!("provider-request-{operation_id}-r{round_index:02}"),
+        request_id: format!(
+            "provider-request-{operation_id}-r{round_index:02}-a{attempt_index:02}"
+        ),
         turn_id: turn_id.into(),
         step_id: step_id.into(),
         round_index,
+        attempt_index,
         operation_id: operation_id.into(),
         trace_id: trace_id.into(),
         refs: refs.clone(),
@@ -40,16 +44,20 @@ pub(super) fn provider_response_record(
     turn_id: &str,
     step_id: &str,
     round_index: u32,
+    attempt_index: u32,
     request_id: &str,
     response: &ProviderResponse,
     created_at: &str,
 ) -> ProviderResponseRecord {
     ProviderResponseRecord {
-        response_record_id: format!("provider-response-{operation_id}-r{round_index:02}"),
+        response_record_id: format!(
+            "provider-response-{operation_id}-r{round_index:02}-a{attempt_index:02}"
+        ),
         request_id: request_id.into(),
         turn_id: turn_id.into(),
         step_id: step_id.into(),
         round_index,
+        attempt_index,
         operation_id: operation_id.into(),
         trace_id: trace_id.into(),
         refs: refs.clone(),

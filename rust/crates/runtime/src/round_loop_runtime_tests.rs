@@ -128,19 +128,19 @@ fn runtime_followup_round_renders_tool_results_and_dynamic_catalog() {
     assert!(
         second
             .rendered_input
-            .contains("Executed tool results (authoritative client facts):")
+            .contains("Executed tool results (authoritative client facts, full current history):")
     );
     assert!(
         second
             .rendered_input
             .contains("tool=peer.list status=completed")
     );
-    assert!(second.rendered_input.contains("Recent tool activity:"));
     assert!(
         second
             .rendered_input
-            .contains("peer.list completed -> context.peer")
+            .contains("Current tool execution history:")
     );
+    assert!(second.rendered_input.contains("target_ref=context.peer"));
     assert!(
         second
             .rendered_input

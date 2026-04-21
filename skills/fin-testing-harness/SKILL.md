@@ -48,6 +48,11 @@ description: Testing and harness workflow for fin. Use for replay design, fault 
 - mainline receipt 若需要真实 `auto_tool_roundtrip` 样本，优先用 `fin mainline-demo <user.toml>` 生成 deterministic 3-turn + 2-round tool-loop session；不要拿单轮 tool dispatch 冒充多轮 roundtrip
 - mainline receipt 若需要 stronger `control_boundary` 样本，优先用 `fin control-boundary-demo <user.toml>` 生成真实 `pause -> queue -> resume-run -> wait_external -> reminder_fired -> supervisor_heartbeat_due/stale_lease` 场景；不要只靠空 heartbeat/daemon state 就宣称 control-plane 够强
 - 真实 provider 多轮 smoke 优先用 `scripts/run-real-provider-smoke.sh [test-run-id]`（内部调用 `fin provider-live-smoke <user.toml>`）；receipt 必须落到 `~/.fin/harness/runs/<run-id>/provider-live-smoke-report.json`，并检查 `control_feedback_origin != runtime_heuristic`，同时记录 `reasoning_stop_present`，避免把 heuristic 回退误判为真实闭环
+- 真实 provider + 工具链 E2E 默认按“只读工具 -> 隔离 scratch 写入 -> 仓库真实写入”三级递进；不要一上来就拿复杂多 turn 读写混合场景判断工具链是否可用
+- 若复杂 live E2E 已能真实闭环但产物内容明显过泛，下一步先检查 `recent_provider_requests.json` 是否真的带入了足够的 executed-tool evidence（stdout/artifact refs/snippets），不要把“证据注入太粗”误判成 provider 或 tool dispatcher 失效
+- 当目标是验证 current history/full tool evidence，测试断言必须直接检查 follow-up rendered input 是否出现 authoritative receipt/full stdout/full patch arguments；不要只断言“调过工具了”
+- live provider/harness 禁止使用 180s/240s 这类短 wall-clock subprocess timeout 截断整条 run；最小要求是 provider waiting budget >= 15 分钟，并且 timeout 只绑定等待阶段，不绑定整条推理链墙钟
+- 若 live run 失败后只剩 `start log + agent registry`，必须判定为“partial truth / diagnosability 缺口”，不能直接把问题归咎于 provider 或模型服从性
 - `build-mainline-receipts.py` 允许按 receipt family 指定不同 source session；当 history/context、tool-loop、control-boundary 真源不在同一 session 时，必须显式传 `--history-session-id/--tool-loop-session-id/--control-session-id`
 
 ## 4) Minimal validation matrix
@@ -65,3 +70,5 @@ description: Testing and harness workflow for fin. Use for replay design, fault 
 - 故障注入只看 UI，不看结构化事件
 - 只跑 unit 就宣称模块可交付
 - 用正常 `~/.fin` 家目录跑测试，导致 session / log / projection 污染
+- 用短总超时把真实 provider/tool run 强行打死，然后把 timeout 误报成 runtime/tool 失败
+- 还没证明“只读工具链 / scratch patch”可用，就直接拿仓库写入型复杂任务做唯一 E2E 判断

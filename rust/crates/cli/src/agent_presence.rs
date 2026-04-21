@@ -5,8 +5,12 @@ use fin_runtime::{allocate_local_agent_identity, resolve_device_name};
 use serde::{Deserialize, Serialize};
 use std::path::Path;
 
+#[path = "agent_presence_project.rs"]
+mod agent_presence_project;
 #[path = "agent_presence_store.rs"]
 mod agent_presence_store;
+use agent_presence_project::project_mode_name;
+pub(crate) use agent_presence_project::{find_project_agent_config, project_agent_name};
 use agent_presence_store::{presence_path, read_presence, write_presence};
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -399,7 +403,7 @@ pub(crate) fn mark_project_agent_runtime_presence(
     record.updated_at = updated_at.into();
     record.last_heartbeat_at = Some(updated_at.into());
     record.progress_summary = progress_summary.into();
-    record.source = "framework.project_runtime_pickup".into();
+    record.source = "framework.project_runtime".into();
     record.pending_input_count = state.map(|value| value.pending_input_count).unwrap_or(0);
 
     match state.map(|value| value.status.as_str()) {
@@ -433,41 +437,27 @@ pub(crate) fn mark_project_agent_runtime_presence(
     Ok(record)
 }
 
-fn project_agent_name(project: &ProjectAgentStartupConfig) -> String {
-    project
-        .agent_name
-        .as_deref()
-        .and_then(sanitize_name_part)
-        .unwrap_or_else(|| {
-            let base = format!("project-{}", project.project_id);
-            sanitize_name_part(base.as_str()).unwrap_or_else(|| "project".into())
-        })
-}
-
-fn project_mode_name(project: &ProjectAgentStartupConfig) -> String {
-    match project.mode {
-        fin_config::ProjectAgentMode::Local => "local".into(),
-        fin_config::ProjectAgentMode::Remote => "remote".into(),
-    }
-}
-
-fn sanitize_name_part(raw: &str) -> Option<String> {
-    let sanitized = raw
-        .trim()
-        .chars()
-        .map(|ch| {
-            if ch.is_ascii_alphanumeric() || ch == '-' || ch == '_' {
-                ch.to_ascii_lowercase()
-            } else {
-                '-'
-            }
-        })
-        .collect::<String>()
-        .trim_matches('-')
-        .to_string();
-    if sanitized.is_empty() {
-        None
-    } else {
-        Some(sanitized)
-    }
+pub(crate) fn mark_project_agent_runtime_error(
+    system: &SystemConfig,
+    runtime_home: &Path,
+    project: &ProjectAgentStartupConfig,
+    session_id: Option<&str>,
+    task_id: Option<&str>,
+    operation_id: &str,
+    updated_at: &str,
+    progress_summary: &str,
+) -> Result<AgentPresenceRecord, CliError> {
+    let mut record = ensure_project_agent_presence(system, runtime_home, project, updated_at)?;
+    record.status = "idle".into();
+    record.current_session_id = session_id.map(str::to_string);
+    record.current_task_id = task_id.map(str::to_string);
+    record.current_operation_id = Some(operation_id.into());
+    record.current_phase = Some("error".into());
+    record.updated_at = updated_at.into();
+    record.last_heartbeat_at = Some(updated_at.into());
+    record.progress_summary = progress_summary.into();
+    record.waiting_reason = Some("project_turn_failed".into());
+    record.source = "framework.project_runtime".into();
+    write_presence(runtime_home, &record)?;
+    Ok(record)
 }

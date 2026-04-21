@@ -19,11 +19,18 @@ fn context_tool_catalog_exposes_rich_apply_patch_and_query_tool_metadata() {
     );
     assert!(apply_patch.input_schema_summary.contains("mode=replace"));
     assert!(apply_patch.input_schema_summary.contains("mode=patch"));
+    assert!(apply_patch.input_schema_summary.contains("old_string=\"\""));
     assert!(
         apply_patch
             .example_uses
             .iter()
             .any(|item| item.contains("exact function body"))
+    );
+    assert!(
+        apply_patch
+            .example_uses
+            .iter()
+            .any(|item| item.contains("create a new file"))
     );
 
     for tool_name in [

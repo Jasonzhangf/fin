@@ -11,7 +11,7 @@ use crate::{
 use fin_config::SystemConfig;
 use fin_contracts::{ContextSnapshotRecord, ControlFeedback, DigestRecord};
 #[cfg(test)]
-use fin_provider::StaticProviderClient;
+use fin_provider::StructuredStaticProviderClient;
 use std::{
     fs,
     path::{Path, PathBuf},
@@ -62,8 +62,8 @@ fn temp_runtime_home() -> PathBuf {
     ))
 }
 
-fn static_provider(system: &SystemConfig) -> StaticProviderClient {
-    StaticProviderClient::new(fin_provider::ProviderDescriptor::from_resolved(
+fn static_provider(system: &SystemConfig) -> StructuredStaticProviderClient {
+    StructuredStaticProviderClient::new(fin_provider::ProviderDescriptor::from_resolved(
         system.default_provider_config().expect("default provider"),
     ))
 }
@@ -325,7 +325,7 @@ fn runtime_demo_persists_home_artifacts() {
             .expect("current control feedback should exist"),
     )
     .expect("control feedback should decode");
-    assert_eq!(control_feedback.origin, "runtime_heuristic");
+    assert_eq!(control_feedback.origin, "model_output_contract_v1");
     let last_run = read_last_run_value(&home).expect("last_run should exist");
     assert_eq!(
         last_run

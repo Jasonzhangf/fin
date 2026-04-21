@@ -102,7 +102,7 @@ fn drive_ready_project_runtime_resumes_ticks_ready_project_session() {
   "title":"task",
   "summary":"task",
   "status":"claimed",
-  "claimed_by_worker_id":"worker-mbp-builder",
+  "claimed_by_worker_id":"worker-builder",
   "created_at":"2026-04-20T23:39:00+08:00",
   "updated_at":"2026-04-20T23:39:00+08:00"
 }"#,
@@ -118,7 +118,7 @@ fn drive_ready_project_runtime_resumes_ticks_ready_project_session() {
   "projects":[{
     "project_id":"fin",
     "agent_id":"mbp.builder",
-    "worker_id":"worker-mbp-builder",
+    "worker_id":"worker-builder",
     "session_id":"session-fin",
     "task_id":"task-fin-1",
     "handoff_state":"prepared",
@@ -135,7 +135,8 @@ fn drive_ready_project_runtime_resumes_ticks_ready_project_session() {
         &system(),
         "project_runtime_resume",
         "2026-04-20T23:42:00+08:00",
-        |binding, _agent_name, _message, _source, _attachments, _merge_segment| {
+        |binding, agent_name, _message, _source, _attachments, _merge_segment| {
+            assert_eq!(agent_name.as_deref(), Some("builder"));
             Ok(ChatSendResponse {
                 binding,
                 answer: "done".into(),
@@ -190,7 +191,7 @@ fn drive_ready_project_runtime_resumes_seeds_claimed_idle_project_queue() {
   "title":"task",
   "summary":"task",
   "status":"claimed",
-  "claimed_by_worker_id":"worker-mbp-builder",
+  "claimed_by_worker_id":"worker-builder",
   "created_at":"2026-04-20T23:39:00+08:00",
   "updated_at":"2026-04-20T23:39:00+08:00"
 }"#,
@@ -206,7 +207,7 @@ fn drive_ready_project_runtime_resumes_seeds_claimed_idle_project_queue() {
   "projects":[{
     "project_id":"fin",
     "agent_id":"mbp.builder",
-    "worker_id":"worker-mbp-builder",
+    "worker_id":"worker-builder",
     "session_id":"session-fin",
     "task_id":"task-fin-1",
     "handoff_state":"prepared",
@@ -223,7 +224,8 @@ fn drive_ready_project_runtime_resumes_seeds_claimed_idle_project_queue() {
         &system(),
         "project_runtime_resume",
         "2026-04-20T23:42:00+08:00",
-        |binding, _agent_name, message, source, _attachments, _merge_segment| {
+        |binding, agent_name, message, source, _attachments, _merge_segment| {
+            assert_eq!(agent_name.as_deref(), Some("builder"));
             assert_eq!(message, "continue work");
             assert_eq!(source, "project.resume");
             Ok(ChatSendResponse {

@@ -51,6 +51,9 @@ description: Runtime/event debugging workflow for fin. Use for multi-agent, cros
 - debug 服务默认以前台命令运行；定位问题时不要通过后台悬挂进程维持状态
 - live `4040` 若行为与源码不一致，先判 stale binary / stale process；重编译后精确重启当前 PID，再继续怀疑 HTTP/provider 路径
 - provider 请求失败时，先看结构化 reqwest 诊断字段（stage/attempt/endpoint/timeout/connect/request/body/decode/source-chain），不要只凭一句 `request failed` 下结论
+- live provider run 若被外层短 wall-clock timeout 截断，先判定为 harness timeout 设计错误；不要把“wrapper 杀进程”误诊成 provider/tool/runtime 失败
+- 若 live provider E2E 中模型确实调了工具、tool records 也完整，但综合内容仍泛化，优先查 `sessions/.../provider/recent_provider_requests.json` 的 rendered input：先确认 follow-up round 是否真正看到了 executed tool 的 stdout/receipt/artifact refs，而不是只看到了粗粒度 `Recent tool activity`
+- Jason 已明确收紧该条：`current history` 不允许用 summary/recent 假真相替代真实工具结果；若 rendered input 里只有 activity 摘要、没有 authoritative receipt/full stdout/full patch arguments，就直接判 runtime context assembly 有缺口
 - WebUI 新字段若“后端有文件但页面没显示”，先查 `/app.js` 是否已经包含对应消费路径关键字，再判前端逻辑问题；include_str/bundled JS 不刷新时，页面会继续跑旧 bundle
 - 推理核心若怀疑“没走工具 / 没多步闭环”，先看 `model.output_parsed.stop_kind + tool.dispatch_* + operation.completed/failed`；`fin_tool_calls` 被解析但没有 `tool.dispatch_completed`，问题一定在 runtime dispatch，不在 Web
 - 未实现工具必须走 failed closure（`tool.dispatch_failed` + `operation.failed`），禁止把模型的工具请求静默降级成直接答复，否则 session truth 会丢真正的失败因果
@@ -87,6 +90,7 @@ description: Runtime/event debugging workflow for fin. Use for multi-agent, cros
 - 若 qqbot bridge 自身异常退出，先查 `channel.peer.bridge_process_exited / bridge_restart_scheduled / bridge_supervisor_error`；当前最小保活真源是 attached bridge supervisor，不是 detached daemon
 - 若看到 `bridge.stderr.log` 中的 `write EPIPE`，先确认是否为旧日志；当前 runner 已对 `stdout EPIPE / ERR_STREAM_DESTROYED` 加防护，新的 pipe-break 应表现为安静退出 + supervisor 重拉，而不是 Node 未处理异常直接炸栈
 - 文字 channel 若用户反馈“发了消息但没反应”，第一检查不是 provider，而是 ingress 用户可见回执链：进入去重后的 inbound 必须先看到一条 ack，其后 reject/error/no-output 也必须有用户可见 notice；只记 event 不算闭环
+- 若 live run 失败后 run-root 只有 `provider-live-smoke.log` 起始行和极少数初始化文件，先把它归类为“partial truth 缺口”；下一步优先补 started / round / waiting-phase truth，而不是直接继续拍脑袋改 prompt
 - 若怀疑“QQ 已 connected 但就是没有 ingress”，先查 `bridge.stderr.log` 里的 `dispatch / dispatch-unhandled` 事件名；先确认 gateway 实际投递了什么 `eventType`，再决定是 runner 漏处理还是上游根本没推送
 - qqbot peer 的“上游登录态”和“session 绑定态”必须分开看：`connectivity_state/upstream_authenticated_at` 代表已登录；`binding_state/session_valid` 只代表当前是否绑定到活动 session。session mismatch/expire 只能释放绑定到 `unbound`，不能把已登录 peer 打回 `pairing_required`
 - hidden framework/project 输入若意外出现在 `conversation/messages.json`，不要只查 runtime materializer；`fin` 当前还要同时检查 CLI demo/web wrapper 对 `run.conversation_user_input` 的二次覆盖，避免 runtime 已过滤、wrapper 又写回去形成双真源泄漏

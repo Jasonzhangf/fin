@@ -26,6 +26,9 @@
 5. 真实 payload 不可裁剪或改写语义；只允许裁剪内部调试快照。
 6. 所有关键状态推进都必须产出结构化事件，供 Web / harness / CI 消费。
 7. 所有实现遵循 owning layer，禁止跨层复制业务语义。
+8. inference/provider/tool 改动默认按真实 provider E2E 验收；没有真实 session/provider/tool artifacts，不算闭环。
+9. live provider/harness timeout 必须按阶段设置（connect / waiting provider / tool wait）；禁止用 180s/240s 这类短 wall-clock 总超时截断整条真实推理链。
+10. 不得把 prompt 压缩当作通过真实业务测试的手段；context 工程只能在“正常会塞满上下文”的前提下优化装配与重建。
 
 ## route-map
 1. 通用开发流程：`skills/fin-general-dev/SKILL.md`

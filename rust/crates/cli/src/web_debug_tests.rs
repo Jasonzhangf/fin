@@ -3,7 +3,7 @@ use crate::{
     config::map_system_config, fs_utils::write_file, runtime_home::ensure_runtime_home_layout,
 };
 use fin_contracts::{ControlFeedback, ExecutionNote, ProgressBlock};
-use fin_provider::{ProviderDescriptor, StaticProviderClient};
+use fin_provider::{ProviderDescriptor, StructuredStaticProviderClient};
 use std::path::PathBuf;
 use std::{
     fs,
@@ -37,8 +37,8 @@ fn temp_runtime_home() -> PathBuf {
     ))
 }
 
-fn static_provider(system: &SystemConfig) -> StaticProviderClient {
-    StaticProviderClient::new(ProviderDescriptor::from_resolved(
+fn static_provider(system: &SystemConfig) -> StructuredStaticProviderClient {
+    StructuredStaticProviderClient::new(ProviderDescriptor::from_resolved(
         system.default_provider_config().expect("default provider"),
     ))
 }

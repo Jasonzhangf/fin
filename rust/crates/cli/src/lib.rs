@@ -33,6 +33,7 @@ mod execution_state;
 mod formalize_planning;
 mod fs_utils;
 mod headless_daemon;
+mod headless_daemon_project_resume;
 #[cfg(test)]
 mod headless_daemon_tests;
 mod install_flow;
@@ -65,6 +66,8 @@ mod session_binding;
 mod session_commands;
 mod session_routing_commands;
 mod startup_control_summary;
+mod startup_daemon_ensure;
+mod startup_project_task_scan;
 mod startup_topology;
 mod startup_wakeup;
 mod status_probe;

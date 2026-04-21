@@ -5,6 +5,7 @@ use crate::{
     project_runtime_pickup::materialize_project_runtime_pickups,
     project_supervision::materialize_project_supervision,
     startup_control_summary::{persist_startup_control_summary, read_startup_control_summary},
+    startup_daemon_ensure::{complete_daemon_ensure_requests, merge_daemon_ensure_wake_requests},
     startup_topology::{ProjectWakeRequest, StartupTopologySnapshot, materialize_startup_topology},
 };
 use fin_config::{ProjectAgentMode, ProjectAgentStartupConfig, SystemConfig};
@@ -14,6 +15,8 @@ use std::{fs, path::Path};
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub(crate) struct StartupWakeAction {
     pub(crate) action_id: String,
+    #[serde(default)]
+    pub(crate) wake_request_id: Option<String>,
     pub(crate) project_id: String,
     pub(crate) agent_id: String,
     pub(crate) mode: String,
@@ -67,7 +70,12 @@ pub(crate) fn refresh_startup_control_plane(
     system: &SystemConfig,
     updated_at: &str,
 ) -> Result<StartupTopologySnapshot, CliError> {
-    let snapshot = materialize_startup_topology(runtime_home, system, updated_at)?;
+    let snapshot = merge_daemon_ensure_wake_requests(
+        runtime_home,
+        system,
+        materialize_startup_topology(runtime_home, system, updated_at)?,
+        updated_at,
+    )?;
     let _ = execute_wake_queue(runtime_home, system, &snapshot, updated_at)?;
     let final_snapshot = materialize_startup_topology(runtime_home, system, updated_at)?;
     let supervision = materialize_project_supervision(runtime_home, &final_snapshot)?;
@@ -96,6 +104,12 @@ pub(crate) fn execute_wake_queue(
         executed_at: executed_at.into(),
         actions,
     };
+    let ensure_request_ids = report
+        .actions
+        .iter()
+        .filter_map(|item| item.wake_request_id.clone())
+        .collect::<Vec<_>>();
+    complete_daemon_ensure_requests(runtime_home, ensure_request_ids.as_slice(), executed_at)?;
     persist_report(runtime_home, &report)?;
     Ok(report)
 }
@@ -144,6 +158,7 @@ fn execute_local_wake(
             project.project_id,
             sanitize_id(executed_at)
         ),
+        wake_request_id: Some(request.request_id.clone()),
         project_id: project.project_id.clone(),
         agent_id: request.agent_id.clone(),
         mode: "local".into(),
@@ -177,6 +192,7 @@ fn execute_remote_wake(
             project.project_id,
             sanitize_id(executed_at)
         ),
+        wake_request_id: Some(request.request_id.clone()),
         project_id: project.project_id.clone(),
         agent_id: request.agent_id.clone(),
         mode: "remote".into(),

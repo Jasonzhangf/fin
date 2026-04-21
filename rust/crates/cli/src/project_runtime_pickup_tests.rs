@@ -167,7 +167,7 @@ fn materialize_marks_handoff_idle_when_same_worker_already_claimed_task() {
             "title":"task",
             "summary":"task",
             "status":"claimed",
-            "claimed_by_worker_id":"worker-mbp-builder",
+            "claimed_by_worker_id":"worker-builder",
             "created_at":"2026-04-20T23:00:00+08:00",
             "updated_at":"2026-04-20T23:05:00+08:00"
         }))

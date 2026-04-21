@@ -89,6 +89,8 @@ pub struct ProviderRequestRecord {
     pub turn_id: String,
     pub step_id: String,
     pub round_index: u32,
+    #[serde(default = "default_attempt_index")]
+    pub attempt_index: u32,
     pub operation_id: String,
     pub trace_id: String,
     #[serde(flatten)]
@@ -112,6 +114,8 @@ pub struct ProviderResponseRecord {
     pub turn_id: String,
     pub step_id: String,
     pub round_index: u32,
+    #[serde(default = "default_attempt_index")]
+    pub attempt_index: u32,
     pub operation_id: String,
     pub trace_id: String,
     #[serde(flatten)]
@@ -148,6 +152,10 @@ pub struct RoundRecord {
     pub stop_requested: bool,
     pub yield_requested: bool,
     pub reminder_scheduled: bool,
+}
+
+fn default_attempt_index() -> u32 {
+    1
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]

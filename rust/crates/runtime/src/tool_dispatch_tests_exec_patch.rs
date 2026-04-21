@@ -194,3 +194,47 @@ world
             .contains("created=1")
     );
 }
+
+#[test]
+fn apply_patch_replace_mode_supports_creating_new_file_with_empty_old_string() {
+    let runtime_home = temp_runtime_home("apply-patch-create");
+    fs::create_dir_all(&runtime_home).expect("runtime_home");
+    let workspace = runtime_home.join("workspace");
+    fs::create_dir_all(&workspace).expect("workspace");
+    let context = context_with_runtime_home_and_cwd(&runtime_home, &workspace);
+
+    let result = execute_model_tools(
+        "op-apply-patch-create",
+        "trace-apply-patch-create",
+        &refs(),
+        "2026-04-21T19:00:00+08:00",
+        &context,
+        1,
+        &[ModelToolCall {
+            tool_name: "apply_patch".into(),
+            arguments: json!({
+                "path": "created.txt",
+                "mode": "replace",
+                "old_string": "",
+                "new_string": "hello\nworld\n",
+            }),
+        }],
+    );
+    let record = result
+        .tool_records
+        .iter()
+        .find(|item| item.tool_name == "apply_patch")
+        .expect("apply_patch record");
+    assert_eq!(record.status, "completed");
+    assert_eq!(
+        fs::read_to_string(workspace.join("created.txt")).expect("created file"),
+        "hello\nworld\n"
+    );
+    assert!(
+        record
+            .output_summary
+            .as_deref()
+            .unwrap_or_default()
+            .contains("created=1")
+    );
+}

@@ -9,6 +9,8 @@
 - Status: in_progress
 
 ## Recent Decisions
+- [2026-04-21] 真实 provider 只读工具 E2E 已再次确认：同一 turn 内 `exec_command -> tool-result reinjection -> reasoning.stop` 在真 provider 下可闭环；当前更大的缺口转为 `apply_patch` 写入稳定性与失败时 partial truth 不足。
+- [2026-04-21] 当前推理/tool 问题的修复方向已纠偏：不做 prompt 压缩；优先修正 live timeout 边界、partial truth/diagnosability，以及 tool-call 向更标准格式靠拢。
 - [2026-04-18] peer 架构已冻结为：`system agent + daemon + peer network`，peer 再细分为 `capability peer / agent peer / channel gateway`；presence 对称、binding 非对称，用户会话主真源仍归 `system agent`。
 - [2026-04-18] 本地 runtime 推理链在新 peer 设计下的主要缺口已确认：缺 `project_agent` 级 role prompt、peer/presence/binding/capability catalog context blocks、peer routing control block、peer/daemon 事件族，以及 capability/agent/gateway 执行面工具抽象。
 - [2026-04-18] 推理核心已从单轮 closure 升级为真正 multi-step loop：支持 `fin_tool_calls` 解析、`update_plan/session.list/context_history.rebuild` 三个最小可执行工具、失败 closure 收口（`operation.failed` + failure summary），并把 tool/progress/control/note/digest 全链继续写入 session truth。
@@ -548,3 +550,11 @@ model: glm-5
 provider: anthropic-messages
 finishReason: stop
 -->
+
+### Assistant · 2026/04/21 19:35:00
+
+真实 provider 3-turn E2E 已复测通过：`exec_command` 读 `~/code/codex` / `~/github/hermes-agent`，`apply_patch` 创建 `docs/samples/multi-agent-e2e-sample.md`，再用 `exec_command` 验证文件非空并由 `reasoning.stop` 收口。当前新发现不是工具链坏，而是 follow-up context 对工具证据注入过粗，只带 activity 摘要，不带足够的 stdout/artifact 细节。
+
+### Assistant · 2026/04/21 22:10:00
+
+已按 Jason 的纠正把 current history 真源收紧：follow-up context 不再使用 `Recent tool activity` 摘要，而改成 `Current tool execution history` 全量渲染，并从 `exec_command/write_stdin/apply_patch` 的 authoritative receipts 读取真实结果回注下一轮。新增 full-history 单测已通过。

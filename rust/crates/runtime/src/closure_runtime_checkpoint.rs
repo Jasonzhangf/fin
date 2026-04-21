@@ -22,6 +22,7 @@ pub(super) fn build_resume_checkpoint(
     };
     let next_round_index = last_round.round_index.saturating_add(1);
     let resume_input = build_followup_input(
+        &operation.payload.context,
         operation.payload.input.as_str(),
         assistant_response_text,
         latest_round_tool_records,

@@ -84,19 +84,19 @@ impl ModelInputAssembler {
         if let Some(history) = &context.history {
             if !history.recent_messages.is_empty() {
                 sections.push(format!(
-                    "Recent interaction ledger:\n- {}",
+                    "Current interaction ledger:\n- {}",
                     history.recent_messages.join("\n- ")
                 ));
             }
             if !history.recent_reasoning.is_empty() {
                 sections.push(format!(
-                    "Recent reasoning summaries:\n- {}",
+                    "Current reasoning history:\n- {}",
                     history.recent_reasoning.join("\n- ")
                 ));
             }
             if !history.recent_tool_activity.is_empty() {
                 sections.push(format!(
-                    "Recent tool activity:\n- {}",
+                    "Current tool execution history:\n- {}",
                     history.recent_tool_activity.join("\n- ")
                 ));
             }

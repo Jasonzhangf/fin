@@ -19,7 +19,7 @@ pub use context::{
     PeerContextBlock, PeerDescriptorSummary, ProjectContextBlock, ProjectRef, PromptLayerSummary,
     PromptModuleEntry, RolePromptBlock, ToolCatalogBlock, ToolCatalogEntry,
 };
-pub use daemon::{DaemonRecoveryActionRecord, DaemonStateRecord};
+pub use daemon::{DaemonEnsurePeerRequestRecord, DaemonRecoveryActionRecord, DaemonStateRecord};
 pub use feedback::ControlFeedback;
 pub use owner_loop::OwnerLoopActionRecord;
 pub use records::{

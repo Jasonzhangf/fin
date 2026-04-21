@@ -130,10 +130,14 @@ fn should_prepare_handoff(project: &ProjectSupervisionRecord) -> bool {
 }
 
 fn project_worker_id(project: &ProjectSupervisionRecord) -> String {
+    let agent_name = project
+        .agent_id
+        .rsplit('.')
+        .next()
+        .unwrap_or(project.agent_id.as_str());
     format!(
         "worker-{}",
-        project
-            .agent_id
+        agent_name
             .chars()
             .map(|ch| {
                 if ch.is_ascii_alphanumeric() {
@@ -287,7 +291,7 @@ mod tests {
                 "title":"task",
                 "summary":"task",
                 "status":"claimed",
-                "claimed_by_worker_id":"worker-mbp-builder",
+                "claimed_by_worker_id":"worker-builder",
                 "created_at":"2026-04-20T22:00:00+08:00",
                 "updated_at":"2026-04-20T22:00:00+08:00"
             }))
@@ -298,7 +302,7 @@ mod tests {
             &home,
             "task-1",
             None,
-            "worker-mbp-builder",
+            "worker-builder",
             "2026-04-20T22:05:00+08:00",
         )
         .expect("handoff")

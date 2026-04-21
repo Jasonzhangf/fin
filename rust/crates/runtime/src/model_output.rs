@@ -1,3 +1,7 @@
+use crate::model_output_shapes::{
+    classify_invalid_tool_calls, extract_tag, partial_tool_signal_present, repair_json_shape,
+    strip_json_code_fence, strip_structured_blocks,
+};
 use fin_contracts::{ControlFeedback, InferenceOperationPayload};
 use fin_provider::{PreparedRequest, ProviderResponse};
 use serde::{Deserialize, Serialize};
@@ -6,6 +10,7 @@ use serde_json::Value;
 const USER_RESPONSE_TAG: &str = "fin_user_response";
 const CONTROL_FEEDBACK_TAG: &str = "fin_control_feedback";
 const TOOL_CALLS_TAG: &str = "fin_tool_calls";
+const KNOWN_STRUCTURED_TAGS: &[&str] = &[USER_RESPONSE_TAG, CONTROL_FEEDBACK_TAG, TOOL_CALLS_TAG];
 const CONTROL_FEEDBACK_KEYS: &[&str] = &[
     "origin",
     "is_continuation",
@@ -28,6 +33,9 @@ pub struct ParsedModelOutput {
     pub control_feedback: Option<ControlFeedback>,
     pub control_feedback_salvaged: bool,
     pub contract_detected: bool,
+    pub tool_calls_block_present: bool,
+    pub tool_calls_parse_status: String,
+    pub tool_calls_invalid_reason: Option<String>,
     pub tool_calls: Vec<ModelToolCall>,
 }
 
@@ -49,28 +57,37 @@ impl ModelOutputParser {
         response: &ProviderResponse,
     ) -> ParsedModelOutput {
         let raw = response.output_text.trim();
-        let user_response = extract_tag(raw, USER_RESPONSE_TAG)
-            .map(|value| value.trim().to_string())
+        let user_response = extract_tag(raw, USER_RESPONSE_TAG, KNOWN_STRUCTURED_TAGS)
+            .map(|value| value.content.trim().to_string())
             .filter(|value| !value.is_empty())
-            .unwrap_or_else(|| strip_structured_blocks(raw).trim().to_string());
-        let (control_feedback, control_feedback_salvaged) = extract_tag(raw, CONTROL_FEEDBACK_TAG)
-            .and_then(|block| parse_control_feedback(&block))
-            .map(|result| {
-                (
-                    Some(normalize_feedback(
-                        result.feedback,
-                        payload,
-                        request,
-                        response,
-                        result.salvaged,
-                    )),
-                    result.salvaged,
+            .unwrap_or_else(|| {
+                strip_structured_blocks(
+                    raw,
+                    &[CONTROL_FEEDBACK_TAG, TOOL_CALLS_TAG],
+                    KNOWN_STRUCTURED_TAGS,
                 )
-            })
-            .unwrap_or((None, false));
-        let tool_calls = extract_tag(raw, TOOL_CALLS_TAG)
-            .map(|block| parse_tool_calls(&block))
-            .unwrap_or_default();
+                .trim()
+                .to_string()
+            });
+        let (control_feedback, control_feedback_salvaged) =
+            extract_tag(raw, CONTROL_FEEDBACK_TAG, KNOWN_STRUCTURED_TAGS)
+                .and_then(|block| parse_control_feedback(&block.content))
+                .map(|result| {
+                    (
+                        Some(normalize_feedback(
+                            result.feedback,
+                            payload,
+                            request,
+                            response,
+                            result.salvaged,
+                        )),
+                        result.salvaged,
+                    )
+                })
+                .unwrap_or((None, false));
+        let parsed_tool_calls = extract_tag(raw, TOOL_CALLS_TAG, KNOWN_STRUCTURED_TAGS)
+            .map(|block| parse_tool_calls(&block.content, block.repaired))
+            .unwrap_or_else(ParsedToolCalls::absent);
 
         ParsedModelOutput {
             user_response: if user_response.is_empty() {
@@ -83,38 +100,135 @@ impl ModelOutputParser {
             contract_detected: raw.contains("<fin_user_response>")
                 || raw.contains("<fin_control_feedback>")
                 || raw.contains("<fin_tool_calls>"),
-            tool_calls,
+            tool_calls_block_present: parsed_tool_calls.block_present,
+            tool_calls_parse_status: parsed_tool_calls.parse_status,
+            tool_calls_invalid_reason: parsed_tool_calls.invalid_reason,
+            tool_calls: parsed_tool_calls.calls,
         }
     }
 }
 
-fn parse_tool_calls(raw: &str) -> Vec<ModelToolCall> {
-    let Ok(value) = serde_json::from_str::<Value>(raw.trim()) else {
-        return Vec::new();
-    };
-    match value {
-        Value::Array(items) => items.into_iter().filter_map(normalize_tool_call).collect(),
-        other => normalize_tool_call(other).into_iter().collect(),
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct ParsedToolCalls {
+    block_present: bool,
+    parse_status: String,
+    invalid_reason: Option<String>,
+    calls: Vec<ModelToolCall>,
+}
+
+impl ParsedToolCalls {
+    fn absent() -> Self {
+        Self {
+            block_present: false,
+            parse_status: "absent".into(),
+            invalid_reason: None,
+            calls: Vec::new(),
+        }
     }
 }
 
-fn normalize_tool_call(value: Value) -> Option<ModelToolCall> {
-    let object = value.as_object()?;
+fn parse_tool_calls(raw: &str, extraction_repaired: bool) -> ParsedToolCalls {
+    let mut repaired = extraction_repaired;
+    let mut working = raw.trim().to_string();
+    let (without_fence, fence_repaired) = strip_json_code_fence(&working);
+    working = without_fence;
+    repaired |= fence_repaired;
+
+    if let Ok(value) = serde_json::from_str::<Value>(&working) {
+        return finalize_tool_calls(value, true, repaired, None);
+    }
+
+    if let Some(repaired_json) = repair_json_shape(&working) {
+        repaired = true;
+        if let Ok(value) = serde_json::from_str::<Value>(&repaired_json) {
+            return finalize_tool_calls(value, true, repaired, None);
+        }
+    }
+
+    let invalid_reason = classify_invalid_tool_calls(&working);
+    ParsedToolCalls {
+        block_present: true,
+        parse_status: if partial_tool_signal_present(&working) {
+            "masked_partial".into()
+        } else {
+            "invalid".into()
+        },
+        invalid_reason: Some(invalid_reason),
+        calls: Vec::new(),
+    }
+}
+
+fn finalize_tool_calls(
+    value: Value,
+    block_present: bool,
+    repaired: bool,
+    invalid_reason: Option<String>,
+) -> ParsedToolCalls {
+    match parse_tool_calls_value(value) {
+        Ok((calls, normalized_repaired)) => ParsedToolCalls {
+            block_present,
+            parse_status: if repaired || normalized_repaired {
+                "repaired_deterministic".into()
+            } else {
+                "exact".into()
+            },
+            invalid_reason,
+            calls,
+        },
+        Err(reason) => ParsedToolCalls {
+            block_present,
+            parse_status: "invalid".into(),
+            invalid_reason: Some(reason.into()),
+            calls: Vec::new(),
+        },
+    }
+}
+
+fn parse_tool_calls_value(value: Value) -> Result<(Vec<ModelToolCall>, bool), &'static str> {
+    let (items, repaired) = match value {
+        Value::Array(items) => (items, false),
+        other => (vec![other], true),
+    };
+    let mut normalized_repaired = repaired;
+    let mut calls = Vec::with_capacity(items.len());
+    for item in items {
+        let normalized = normalize_tool_call(item)?;
+        normalized_repaired |= normalized.repaired;
+        calls.push(normalized.call);
+    }
+    Ok((calls, normalized_repaired))
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct NormalizedToolCall {
+    call: ModelToolCall,
+    repaired: bool,
+}
+
+fn normalize_tool_call(value: Value) -> Result<NormalizedToolCall, &'static str> {
+    let object = value.as_object().ok_or("tool_call_not_object")?;
+    let used_name_alias = object.contains_key("name") && !object.contains_key("tool_name");
     let tool_name = object
         .get("tool_name")
         .or_else(|| object.get("name"))
         .and_then(Value::as_str)
         .map(str::trim)
-        .filter(|value| !value.is_empty())?
+        .filter(|value| !value.is_empty())
+        .ok_or("missing_tool_name")?
         .to_string();
+    let used_args_alias = object.contains_key("args") && !object.contains_key("arguments");
+    let used_default_arguments = !object.contains_key("arguments") && !object.contains_key("args");
     let arguments = object
         .get("arguments")
         .or_else(|| object.get("args"))
         .cloned()
         .unwrap_or_else(|| Value::Object(Default::default()));
-    Some(ModelToolCall {
-        tool_name,
-        arguments,
+    Ok(NormalizedToolCall {
+        call: ModelToolCall {
+            tool_name,
+            arguments,
+        },
+        repaired: used_name_alias || used_args_alias || used_default_arguments,
     })
 }
 
@@ -310,42 +424,6 @@ fn mask_confidence(value: &Value) -> Option<u8> {
         raw.round()
     };
     Some(normalized.clamp(0.0, 100.0) as u8)
-}
-
-fn extract_tag(raw: &str, tag: &str) -> Option<String> {
-    let start_tag = format!("<{tag}>");
-    let end_tag = format!("</{tag}>");
-    let start = raw.find(&start_tag)?;
-    let content_start = start + start_tag.len();
-    let end = raw[content_start..].find(&end_tag)?;
-    Some(raw[content_start..content_start + end].to_string())
-}
-
-fn strip_structured_blocks(raw: &str) -> String {
-    let mut cleaned = raw.to_string();
-    for tag in [CONTROL_FEEDBACK_TAG, TOOL_CALLS_TAG] {
-        cleaned = remove_tag_block(&cleaned, tag);
-    }
-    cleaned
-}
-
-fn remove_tag_block(raw: &str, tag: &str) -> String {
-    let start_tag = format!("<{tag}>");
-    let end_tag = format!("</{tag}>");
-    let Some(start) = raw.find(&start_tag) else {
-        return raw.to_string();
-    };
-    let Some(end) = raw[start..].find(&end_tag) else {
-        return raw.to_string();
-    };
-    let end = start + end + end_tag.len();
-    let mut cleaned = String::new();
-    cleaned.push_str(raw[..start].trim_end());
-    if !cleaned.is_empty() && end < raw.len() {
-        cleaned.push_str("\n\n");
-    }
-    cleaned.push_str(raw[end..].trim_start());
-    cleaned
 }
 
 fn short_text(value: &str, limit: usize) -> String {

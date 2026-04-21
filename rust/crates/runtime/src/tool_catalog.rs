@@ -146,7 +146,7 @@ pub(super) fn build_tool_catalog_block() -> ToolCatalogBlock {
                     "you are still exploring and do not know the concrete change yet".into(),
                     "the edit target is outside the current project/workspace scope".into(),
                 ],
-                "mode=replace: path + old_string + new_string + replace_all? ; mode=patch: patch"
+                "mode=replace: path + old_string + new_string + replace_all? (use old_string=\"\" to create a new file) ; mode=patch: patch"
                     .into(),
                 "patch receipt + modified file refs".into(),
                 vec![
@@ -155,6 +155,7 @@ pub(super) fn build_tool_catalog_block() -> ToolCatalogBlock {
                 ],
                 vec![
                     "replace one exact function body in src/runtime.rs".into(),
+                    "create a new file with mode=replace using old_string=\"\" and the full new_string body".into(),
                     "apply a multi-file V4A patch for a small deterministic refactor".into(),
                 ],
             ),

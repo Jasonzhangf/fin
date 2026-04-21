@@ -15,7 +15,9 @@ use std::{
 
 #[derive(Debug, Clone, Serialize)]
 struct PatchReceipt {
+    tool_call_id: String,
     mode: String,
+    arguments: Value,
     files_modified: Vec<String>,
     files_created: Vec<String>,
     files_deleted: Vec<String>,
@@ -73,7 +75,7 @@ fn push_success(
     applied: PatchApplyResult,
 ) {
     let mut artifact_refs =
-        persist_patch_receipt(input, tool_call_id, mode, &applied).unwrap_or_default();
+        persist_patch_receipt(input, tool_call_id, arguments, mode, &applied).unwrap_or_default();
     artifact_refs.extend(applied.files_modified.iter().cloned());
     artifact_refs.extend(applied.files_created.iter().cloned());
     artifact_refs.extend(applied.files_deleted.iter().cloned());
@@ -136,21 +138,61 @@ fn apply_replace_mode(
     let Some(path) = read_string(arguments, "path") else {
         return Err("missing required argument: path".into());
     };
-    let Some(old_string) = read_string(arguments, "old_string") else {
+    let Some(old_string) = read_patch_string(arguments, "old_string") else {
         return Err("missing required argument: old_string".into());
     };
-    let Some(new_string) = read_string(arguments, "new_string") else {
+    let Some(new_string) = read_patch_string(arguments, "new_string") else {
         return Err("missing required argument: new_string".into());
     };
     let replace_all = read_bool(arguments, "replace_all").unwrap_or(false);
 
     let resolved = resolve_workspace_path(input, path.as_str())?;
+    if !resolved.exists() {
+        if !old_string.is_empty() {
+            return Err(format!(
+                "patch target '{}' does not exist; old_string must be empty to create a new file",
+                resolved.display()
+            ));
+        }
+        write_parent(&resolved)?;
+        fs::write(&resolved, new_string.as_str()).map_err(|err| {
+            format!(
+                "failed to create patch target '{}': {err}",
+                resolved.display()
+            )
+        })?;
+        return Ok(PatchApplyResult {
+            files_created: vec![display_artifact(input, &resolved)],
+            replacement_count: 1,
+            ..PatchApplyResult::default()
+        });
+    }
+
     let original = fs::read_to_string(&resolved).map_err(|err| {
         format!(
             "failed to read patch target '{}': {err}",
             resolved.display()
         )
     })?;
+    if old_string.is_empty() {
+        if !original.is_empty() {
+            return Err(
+                "old_string may be empty only when creating a new file or replacing an empty file"
+                    .into(),
+            );
+        }
+        fs::write(&resolved, new_string.as_str()).map_err(|err| {
+            format!(
+                "failed to write patch target '{}': {err}",
+                resolved.display()
+            )
+        })?;
+        return Ok(PatchApplyResult {
+            files_modified: vec![display_artifact(input, &resolved)],
+            replacement_count: 1,
+            ..PatchApplyResult::default()
+        });
+    }
     let (updated, replacement_count) = replace_exact(
         original.as_str(),
         old_string.as_str(),
@@ -181,6 +223,14 @@ fn patch_mode(arguments: &Value) -> String {
             }
         })
         .to_ascii_lowercase()
+}
+
+fn read_patch_string(arguments: &Value, key: &str) -> Option<String> {
+    let object = arguments.as_object()?;
+    object.get(key).and_then(|value| match value {
+        Value::String(raw) => Some(raw.clone()),
+        _ => None,
+    })
 }
 
 pub(super) fn replace_exact(
@@ -314,6 +364,7 @@ fn input_summary(arguments: &Value, mode: &str) -> String {
 fn persist_patch_receipt(
     input: &ToolDispatchInput<'_>,
     tool_call_id: &str,
+    arguments: &Value,
     mode: &str,
     applied: &PatchApplyResult,
 ) -> Result<Vec<String>, String> {
@@ -323,7 +374,9 @@ fn persist_patch_receipt(
     let path = runtime_home.join(format!("runtime/tools/patch_receipts/{tool_call_id}.json"));
     write_parent(&path)?;
     let receipt = PatchReceipt {
+        tool_call_id: tool_call_id.into(),
         mode: mode.into(),
+        arguments: arguments.clone(),
         files_modified: applied.files_modified.clone(),
         files_created: applied.files_created.clone(),
         files_deleted: applied.files_deleted.clone(),

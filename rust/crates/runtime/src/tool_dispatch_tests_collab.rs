@@ -95,6 +95,11 @@ fn project_worker_assignment_and_mailbox_chain_produces_local_worker_truth() {
             .iter()
             .any(|(event_type, _)| event_type == "peer.lease_opened")
     );
+    let ensure_requests =
+        fs::read_to_string(runtime_home.join("runtime/peers/ensure_requests.json"))
+            .expect("ensure requests");
+    assert!(ensure_requests.contains("\"peer_id\": \"local-worker-b\""));
+    assert!(ensure_requests.contains("\"status\": \"pending\""));
 
     let assign = execute_model_tools(
         "op-worker-chain",
@@ -205,4 +210,46 @@ fn project_worker_assignment_and_mailbox_chain_produces_local_worker_truth() {
     let inbox_text = fs::read_to_string(&inbox_path).expect("worker mailbox");
     let inbox: Vec<serde_json::Value> = serde_json::from_str(&inbox_text).expect("worker inbox");
     assert!(inbox.is_empty());
+}
+
+#[test]
+fn daemon_ensure_peer_persists_project_agent_request_contract() {
+    let runtime_home = temp_runtime_home("ensure-project-agent");
+    fs::create_dir_all(&runtime_home).expect("runtime_home");
+    let context = context_with_runtime_home(&runtime_home);
+
+    let ensure = execute_model_tools(
+        "op-ensure-project-agent",
+        "trace-ensure-project-agent",
+        &refs(),
+        "2026-04-21T15:00:00+08:00",
+        &context,
+        1,
+        &[ModelToolCall {
+            tool_name: "daemon.ensure_peer".into(),
+            arguments: json!({
+                "peer_kind": "project_agent",
+                "peer_id": "peer-project-agent-fin",
+                "project_id": "fin",
+                "agent_name": "builder",
+                "mode": "local",
+                "project_root": "/tmp/fin",
+                "lease_ttl_ms": 45000,
+            }),
+        }],
+    );
+    assert!(
+        ensure
+            .events
+            .iter()
+            .any(|(event_type, _)| event_type == "daemon.ensure_peer_requested")
+    );
+
+    let requests = fs::read_to_string(runtime_home.join("runtime/peers/ensure_requests.json"))
+        .expect("ensure requests");
+    assert!(requests.contains("\"peer_id\": \"peer-project-agent-fin\""));
+    assert!(requests.contains("\"project_id\": \"fin\""));
+    assert!(requests.contains("\"agent_name\": \"builder\""));
+    assert!(requests.contains("\"mode_hint\": \"local\""));
+    assert!(requests.contains("\"status\": \"pending\""));
 }

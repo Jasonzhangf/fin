@@ -86,6 +86,9 @@ fn model_output_parser_extracts_response_and_control_feedback() {
     assert_eq!(parsed.user_response, "好的，我继续当前任务。");
     assert!(parsed.contract_detected);
     assert!(!parsed.control_feedback_salvaged);
+    assert!(!parsed.tool_calls_block_present);
+    assert_eq!(parsed.tool_calls_parse_status, "absent");
+    assert!(parsed.tool_calls_invalid_reason.is_none());
     assert!(parsed.tool_calls.is_empty());
     let feedback = parsed.control_feedback.expect("feedback should parse");
     assert_eq!(feedback.origin, "model_output_contract_v1");
@@ -121,6 +124,8 @@ fn control_feedback_builder_falls_back_when_no_structured_output_exists() {
         .merge_with_fallback(parsed.control_feedback.clone(), fallback.clone());
     assert_eq!(parsed.user_response, "plain answer");
     assert!(!parsed.control_feedback_salvaged);
+    assert!(!parsed.tool_calls_block_present);
+    assert_eq!(parsed.tool_calls_parse_status, "absent");
     assert!(parsed.tool_calls.is_empty());
     assert_eq!(merged, fallback);
 }
@@ -151,6 +156,8 @@ fn model_output_parser_rejects_unrecognized_control_feedback_shape() {
     assert_eq!(parsed.user_response, "OK");
     assert!(parsed.contract_detected);
     assert!(!parsed.control_feedback_salvaged);
+    assert!(!parsed.tool_calls_block_present);
+    assert_eq!(parsed.tool_calls_parse_status, "absent");
     assert!(parsed.control_feedback.is_none());
 }
 
@@ -180,6 +187,8 @@ fn model_output_parser_salvages_whitelisted_feedback_fields_with_mask() {
     assert_eq!(parsed.user_response, "OK");
     assert!(parsed.contract_detected);
     assert!(parsed.control_feedback_salvaged);
+    assert!(!parsed.tool_calls_block_present);
+    assert_eq!(parsed.tool_calls_parse_status, "absent");
     assert!(parsed.tool_calls.is_empty());
     let feedback = parsed
         .control_feedback
@@ -222,6 +231,9 @@ fn model_output_parser_extracts_tool_calls_block() {
     let parsed = ModelOutputParser::default().parse(&payload, &request, &response);
     assert_eq!(parsed.user_response, "waiting for logs");
     assert!(parsed.contract_detected);
+    assert!(parsed.tool_calls_block_present);
+    assert_eq!(parsed.tool_calls_parse_status, "exact");
+    assert!(parsed.tool_calls_invalid_reason.is_none());
     assert_eq!(parsed.tool_calls.len(), 1);
     assert_eq!(parsed.tool_calls[0].tool_name, "wait.remind");
     assert_eq!(
@@ -231,6 +243,102 @@ fn model_output_parser_extracts_tool_calls_block() {
             .and_then(serde_json::Value::as_u64),
         Some(5)
     );
+}
+
+#[test]
+fn model_output_parser_repairs_missing_user_response_closing_tag() {
+    let payload = payload_with_task();
+    let request = PreparedRequest {
+        provider_name: "openai".into(),
+        protocol: ProviderProtocol::OpenAiCompatible,
+        endpoint: "https://api.example.com/v1/chat/completions".into(),
+        model: "gpt-5".into(),
+        input: payload.input.clone(),
+        rendered_input: "compiled".into(),
+        user_agent: None,
+        sanitized_headers: BTreeMap::new(),
+    };
+    let response = ProviderResponse {
+        provider_name: "openai".into(),
+        model: "gpt-5".into(),
+        output_text: "<fin_user_response>先继续当前任务。\n<fin_control_feedback>{\"origin\":\"model_output_contract_v1\",\"is_continuation\":true,\"is_simple_query\":false,\"candidate_task_id\":\"task-1\",\"candidate_topic_thread_id\":\"topic-1\",\"continuity_confidence\":90,\"topic_shift_confidence\":10,\"simple_query_confidence\":4,\"previous_topic_summary\":\"task\",\"current_topic_summary\":\"task\",\"note_candidate\":\"continue\",\"digest_candidate\":\"continue\",\"reason\":\"same task\"}</fin_control_feedback>".into(),
+        response_id: Some("resp-repair-user-response".into()),
+        stop_reason: Some("end_turn".into()),
+        status: 200,
+    };
+
+    let parsed = ModelOutputParser::default().parse(&payload, &request, &response);
+    assert_eq!(parsed.user_response, "先继续当前任务。");
+    assert!(parsed.control_feedback.is_some());
+}
+
+#[test]
+fn model_output_parser_repairs_deterministic_tool_call_shape() {
+    let payload = payload_with_task();
+    let request = PreparedRequest {
+        provider_name: "openai".into(),
+        protocol: ProviderProtocol::OpenAiCompatible,
+        endpoint: "https://api.example.com/v1/chat/completions".into(),
+        model: "gpt-5".into(),
+        input: payload.input.clone(),
+        rendered_input: "compiled".into(),
+        user_agent: None,
+        sanitized_headers: BTreeMap::new(),
+    };
+    let response = ProviderResponse {
+        provider_name: "openai".into(),
+        model: "gpt-5".into(),
+        output_text: "<fin_user_response>done</fin_user_response>\n<fin_control_feedback>{\"origin\":\"model_output_contract_v1\",\"is_continuation\":false,\"is_simple_query\":true,\"candidate_task_id\":null,\"candidate_topic_thread_id\":null,\"continuity_confidence\":20,\"topic_shift_confidence\":80,\"simple_query_confidence\":95,\"previous_topic_summary\":\"short previous topic summary\",\"current_topic_summary\":\"short current topic summary\",\"note_candidate\":\"done\",\"digest_candidate\":\"done\",\"reason\":\"done\"}</fin_control_feedback>\n<fin_tool_calls>\n```json\n{\"name\":\"reasoning.stop\",\"args\":{\"summary\":\"done\"}}\n```".into(),
+        response_id: Some("resp-repair-tool".into()),
+        stop_reason: Some("end_turn".into()),
+        status: 200,
+    };
+
+    let parsed = ModelOutputParser::default().parse(&payload, &request, &response);
+    assert!(parsed.tool_calls_block_present);
+    assert_eq!(parsed.tool_calls_parse_status, "repaired_deterministic");
+    assert!(parsed.tool_calls_invalid_reason.is_none());
+    assert_eq!(parsed.tool_calls.len(), 1);
+    assert_eq!(parsed.tool_calls[0].tool_name, "reasoning.stop");
+    assert_eq!(
+        parsed.tool_calls[0]
+            .arguments
+            .get("summary")
+            .and_then(serde_json::Value::as_str),
+        Some("done")
+    );
+}
+
+#[test]
+fn model_output_parser_does_not_salvage_truncated_tool_call_value() {
+    let payload = payload_with_task();
+    let request = PreparedRequest {
+        provider_name: "openai".into(),
+        protocol: ProviderProtocol::OpenAiCompatible,
+        endpoint: "https://api.example.com/v1/chat/completions".into(),
+        model: "gpt-5".into(),
+        input: payload.input.clone(),
+        rendered_input: "compiled".into(),
+        user_agent: None,
+        sanitized_headers: BTreeMap::new(),
+    };
+    let response = ProviderResponse {
+        provider_name: "openai".into(),
+        model: "gpt-5".into(),
+        output_text: "<fin_user_response>done</fin_user_response>\n<fin_control_feedback>{\"origin\":\"model_output_contract_v1\",\"is_continuation\":true,\"is_simple_query\":true,\"candidate_task_id\":null,\"candidate_topic_thread_id\":null,\"continuity_confidence\":95,\"topic_shift_confidence\":85,\"simple_query_confidence\":95,\"previous_topic_summary\":\"prev\",\"current_topic_summary\":\"current\",\"note_candidate\":\"done\",\"digest_candidate\":\"done\",\"reason\":\"done\"}</fin_control_feedback>\n<fin_tool_calls>\n[{\"tool_name\":\"reasoning.stop\",\"arguments\":{\"summary\":\"Timeline validation complete. Max_tokens cutoff confirmed as cause for".into(),
+        response_id: Some("resp-invalid-tool".into()),
+        stop_reason: Some("max_tokens".into()),
+        status: 200,
+    };
+
+    let parsed = ModelOutputParser::default().parse(&payload, &request, &response);
+    assert!(parsed.tool_calls_block_present);
+    assert_eq!(parsed.tool_calls_parse_status, "masked_partial");
+    assert_eq!(
+        parsed.tool_calls_invalid_reason.as_deref(),
+        Some("unterminated_string_value")
+    );
+    assert!(parsed.tool_calls.is_empty());
 }
 
 #[path = "model_output_runtime_tests.rs"]

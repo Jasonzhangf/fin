@@ -3,7 +3,7 @@ use reqwest::Error as ReqwestError;
 use reqwest::blocking::Client;
 use std::time::Duration;
 
-const REQUEST_TIMEOUT_SECS: u64 = 120;
+const REQUEST_TIMEOUT_SECS: u64 = 15 * 60;
 const CONNECT_TIMEOUT_SECS: u64 = 15;
 
 #[derive(Debug, Clone, PartialEq, Eq)]

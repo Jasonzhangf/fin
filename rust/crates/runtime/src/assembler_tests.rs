@@ -109,7 +109,7 @@ fn model_input_assembler_renders_role_tools_history_and_project_scope() {
     assert!(rendered.contains("example: list peers before choosing a route target"));
     assert!(rendered.contains("Framework capabilities"));
     assert!(rendered.contains("Tool selection policy"));
-    assert!(rendered.contains("Recent interaction ledger"));
+    assert!(rendered.contains("Current interaction ledger"));
     assert!(rendered.contains("Project scope"));
     assert!(rendered.contains("Peer scope"));
     assert!(rendered.contains("Current request"));
@@ -147,7 +147,7 @@ fn model_input_assembler_renders_apply_patch_guidance_verbatim_in_tool_catalog()
                         "you are still exploring and do not know the concrete change yet".into(),
                     ],
                     input_schema_summary:
-                        "mode=replace: path + old_string + new_string + replace_all? ; mode=patch: patch"
+                        "mode=replace: path + old_string + new_string + replace_all? (use old_string=\"\" to create a new file) ; mode=patch: patch"
                             .into(),
                     output_schema_summary: "patch receipt + modified file refs".into(),
                     example_uses: vec![
@@ -165,6 +165,7 @@ fn model_input_assembler_renders_apply_patch_guidance_verbatim_in_tool_catalog()
     assert!(rendered.contains("apply_patch"));
     assert!(rendered.contains("mode=replace"));
     assert!(rendered.contains("replace_all?"));
+    assert!(rendered.contains("old_string=\"\""));
     assert!(rendered.contains("mode=patch"));
     assert!(rendered.contains("patch receipt + modified file refs"));
     assert!(rendered.contains("replace one exact function body in src/runtime.rs"));

@@ -52,7 +52,23 @@ impl fin_provider::InferenceProvider for AssignmentWorkerProvider {
 fn assignment_runtime_resume_executes_worker_turn_and_submits_task() {
     let home = temp_runtime_home();
     ensure_runtime_home_layout(&home).expect("runtime home should init");
-    let system = map_system_config(&sample_user_toml()).expect("system config");
+    let mut system = map_system_config(&sample_user_toml()).expect("system config");
+    system.runtime.device_name = Some("mbp".into());
+    system
+        .runtime
+        .startup
+        .project_agents
+        .push(fin_config::ProjectAgentStartupConfig {
+            project_id: "fin".into(),
+            mode: fin_config::ProjectAgentMode::Local,
+            project_root: Some("/tmp/fin".into()),
+            endpoint: None,
+            agent_name: Some("builder".into()),
+            worker_budget: 2,
+            always_on: true,
+            auto_resume: true,
+            auto_connect: true,
+        });
     let handler =
         CliDebugActionHandler::new(sample_user_toml(), system).expect("handler should build");
     let session_dir = home.join("sessions/2026/04/session-owner-loop-dispatch");
@@ -160,6 +176,12 @@ fn assignment_runtime_resume_executes_worker_turn_and_submits_task() {
         fs::read_to_string(home.join("runtime/current/current_assignment_summary.json"))
             .expect("assignment summary");
     assert!(current_assignment.contains("\"worker_id\": \"worker-builder\""));
+    let builder_presence = fs::read_to_string(home.join("runtime/agents/state/mbp.builder.json"))
+        .expect("builder presence");
+    assert!(builder_presence.contains("\"role_id\": \"project\""));
+    assert!(builder_presence.contains("\"status\": \"idle\""));
+    assert!(builder_presence.contains("\"current_session_id\": \"session-owner-loop-dispatch\""));
+    assert!(builder_presence.contains("\"current_task_id\": \"task-owner-dispatch\""));
 
     let latest_tools =
         fs::read_to_string(session_dir.join("tools/recent_tool_records.json")).expect("tools");

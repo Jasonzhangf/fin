@@ -2,6 +2,96 @@
 
 Updated: 2026-04-18
 
+## 2026-04-21 live provider e2e expectations corrected
+
+- 真 provider 只读工具链 receipt 已闭环：
+  - round1: 模型真实输出两个 `exec_command`
+  - client 真实执行
+  - round2: tool results 回注 provider request
+  - final: `reasoning.stop`
+- 当前未闭环的是：
+  - `apply_patch` 写入链
+  - 复杂多 turn 的读+写混合任务
+  - 失败后的 partial truth
+- 因此当前主问题不是“模型完全不会调用工具”，而是：
+  - 写工具链稳定性不足
+  - timeout / failure diagnosability 不足
+
+## 2026-04-21 tool call / timeout / context policy corrected
+
+- `fin_tool_calls` 当前只是过渡期 contract，不是长期标准 function/tool calling wire
+- 长期方向：
+  - provider-native standard tool call
+  - fin internal IR
+  - control/note/digest 继续保留为框架层 contract
+- live provider timeout 规则修正为：
+  - 短 connect timeout
+  - 长 provider waiting timeout（>=15m）
+  - tool timeout 独立
+  - stale/no-progress 由 supervisor/harness 判定
+  - 禁止用 180s/240s 的短总超时截断整条 run
+- prompt 压缩不是当前方向：
+  - 默认接受真实业务会塞满上下文
+  - 只做 context assembly / rebuild / selection 优化
+  - 不通过裁减业务上下文换测试通过率
+
+## 2026-04-21 deterministic model-output repair boundary frozen
+
+- model output repair 当前已明确边界：
+  - 只做确定性、语义保持的形状修复
+  - 不做语义推断修补
+- 允许：
+  - tag / bracket / brace 的确定性闭合
+  - `name -> tool_name`
+  - `args -> arguments`
+  - control feedback 的 whitelist mask salvage
+- 禁止：
+  - 把 prose 解释成工具调用
+  - 补全截断的字符串值、命令值、tool name
+  - 根据上下文猜模型“想调用什么”
+- tool call 解析状态后续要能区分：
+  - `exact`
+  - `repaired_deterministic`
+  - `masked_partial`
+  - `invalid`
+- 执行边界：
+  - `exact / repaired_deterministic` 可执行
+  - `masked_partial / invalid` 不可执行，但必须进入 debug truth
+
+## 2026-04-21 output contract retry loop landed
+
+- runtime 现在会对不满足 fin structured contract 的模型输出做 framework-owned retry：
+  - 只反馈结构错误
+  - 明确要求保持原语义，不新增事实/工具意图/结论
+- 当前最小 validator：
+  - user_response 不能为空
+  - control_feedback 必须可解析
+  - 如果检测到 `<fin_tool_calls>` 但不可执行，必须进入 retry
+- 当前默认上限：
+  - `MAX_OUTPUT_CONTRACT_RETRIES = 3`
+- 超限行为：
+  - 停止当前 contract retry，避免死循环
+  - 记录 `model.output_contract_retry_limit_reached`
+  - 失败原因进入 note/event/debug truth
+- 已有成功与失败回归：
+  - malformed tool block -> retry -> repaired -> stop
+  - malformed tool block 持续失败 -> 第 4 次 provider 请求后停止（首轮 + 3 retries）
+
+## 2026-04-21 retry attempt timeline truth landed
+
+- 补齐了 output contract retry 的 durable truth 缺口：同一 logical round 内的 retry，不再只剩 summary/event。
+- 当前冻结边界：
+  - `RoundRecord`：只表示最终 accepted 的 logical round
+  - `ProviderRequestRecord / ProviderResponseRecord`：每个 retry attempt 都单独落盘，并新增 `attempt_index`
+  - `StepRecord.summary`：显式包含 `round / attempt / accepted / validation_errors`
+- 当前 request/response id 规则：
+  - `provider-request-{operation_id}-r{round}-a{attempt}`
+  - `provider-response-{operation_id}-r{round}-a{attempt}`
+- 回归已覆盖：
+  - retry recover 时能看到 `r01-a01` 与 `r01-a02`
+  - retry limit 时能看到 `r01-a01..a04`
+  - `RoundRecord` 只指向最终 accepted attempt
+
 ## 2026-04-20 presence registry truth landed
 
 - `agent presence` 不再只有单条 `current_agent_presence.json`。
@@ -3661,3 +3751,62 @@ fin should adopt the following canonical model:
   - `cd rust/crates/debug-server/webui && tsc -p tsconfig.json` ✅
   - exact E2E:
     - `web_debug_tests_runtime_closed_loop::managed_closed_loop_e2e_reaches_review_done_with_full_framework_chain` ✅
+
+## 2026-04-21 detached local project autonomous loop closed further
+- Closed two real gaps in the local multi-agent detached path:
+  - `headless_daemon` now actively drives `project_runtime_resume`, so local project sessions no longer require a frontstage request to continue.
+  - startup project scan now treats `tasks/registry` as unfinished-task truth in addition to `execution_state`, so claimed/ready/submitted/reviewing project work can enter `supervision -> handoff -> pickup -> resume`.
+- Fixed worker identity mismatch in project handoff:
+  - handoff worker truth now uses `worker-{agent_name}` (for `mbp.builder` => `worker-builder`) instead of incorrectly deriving `worker-mbp-builder` from `agent_id`.
+  - this aligns project handoff with runtime worker allocation truth and unblocks `project.task.submit` inside detached/local project turns.
+- Added/updated evidence:
+  - new module: `startup_project_task_scan.rs`
+  - new helper: `headless_daemon_project_resume.rs`
+  - new E2E: detached daemon autonomously resumes local project agent without frontstage
+- Verification:
+  - `cargo fmt --all --manifest-path rust/Cargo.toml` ✅
+  - `python3 scripts/check-code-line-limit.py` ✅
+  - exact regression:
+    - `startup_project_task_scan::tests::scan_counts_unfinished_registry_tasks_for_project_session` ✅
+    - `startup_wakeup::tests::refresh_consumes_daemon_ensure_request_and_wakes_project_agent` ✅
+    - `project_execution_handoff::tests::materialize_prepares_local_resume_task_handoff` ✅
+    - `project_runtime_resume_tests::drive_ready_project_runtime_resumes_seeds_claimed_idle_project_queue` ✅
+  - `attached_control_plane_tests::attached_control_plane_cycle_drives_ready_project_resume` ✅
+  - `headless_daemon_tests::headless_daemon_cycle_resumes_checkpoint_without_frontstage` ✅
+  - `headless_daemon_tests::headless_daemon_cycle_autonomously_resumes_local_project_agent_without_frontstage` ✅
+
+## 2026-04-21 real provider 3-turn codex/hermes->write E2E
+- Re-ran a stronger live-provider E2E after the timeout / tool-call-shape / apply_patch-create fixes.
+- Isolated run:
+  - run id: `test-live-provider-codex-hermes-write-20260421`
+  - receipt: `~/.fin/harness/runs/test-live-provider-codex-hermes-write-20260421/provider-live-smoke-report.json`
+- Verified closed chain with real provider:
+  - turn1: model called `exec_command` twice against `~/code/codex` and `~/github/hermes-agent`, then `reasoning.stop`
+  - turn2: model called `apply_patch` in replace mode with `old_string=""` and created `docs/samples/multi-agent-e2e-sample.md`, then `reasoning.stop`
+  - turn3: model called `exec_command` to verify file non-empty, runtime auto follow-up ran round2, then `reasoning.stop`
+- Durable truth verified:
+  - session messages: `.../conversation/messages.json`
+  - tool records: `.../tools/recent_tool_records.json`
+  - rounds: `.../rounds/recent_rounds.json`
+  - provider requests/responses: `.../provider/recent_provider_requests.json` / `recent_provider_responses.json`
+- Important new finding:
+  - chain closure is now real, but turn2 synthesis still leaned generic because follow-up prompt only carried coarse `Recent tool activity` summaries (`exec_command completed -> unknown target`) instead of richer tool evidence / stdout snippets / artifact refs
+  - this is no longer a “tool chain broken” problem; it is a **context evidence richness** gap
+- Gate status after this slice:
+  - `cargo fmt --all --manifest-path rust/Cargo.toml` ✅
+  - `cargo test -p fin-provider -p fin-runtime -p fin-cli --manifest-path rust/Cargo.toml --quiet` ✅
+  - `python3 scripts/check-code-line-limit.py` ❌
+    - `rust/crates/provider/src/lib.rs` = 545
+    - `rust/crates/runtime/src/closure_runtime.rs` = 503
+    - `rust/crates/runtime/src/round_loop_runtime_tests.rs` = 526
+
+## 2026-04-21 current history full-truth correction
+- Jason 明确纠正：**current context/history 不能用 summary/recent 假真相替代真实工具结果**；当前推理链中的 tool execution history 必须按真实执行结果全量进入下一轮请求。
+- 已修正 runtime 真源：
+  - `ContextViewBuilder / round_context / ModelInputAssembler` 统一改为 `Current interaction ledger / Current reasoning history / Current tool execution history`
+  - follow-up round 不再只注入粗粒度 `Recent tool activity`，而是注入全量 tool history
+  - `exec_command / write_stdin / apply_patch` 现在持久化 authoritative receipt，下一轮直接读取 receipt 真值进入 prompt
+- 新增验证：
+  - `runtime_followup_round_includes_full_exec_receipt_in_current_history` ✅
+  - `runtime_followup_round_includes_full_patch_receipt_arguments` ✅
+  - `cargo test -p fin-runtime --manifest-path rust/Cargo.toml --quiet` ✅

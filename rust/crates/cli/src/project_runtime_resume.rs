@@ -1,5 +1,6 @@
 use crate::{
     CliError,
+    agent_presence::{find_project_agent_config, project_agent_name},
     execution_state::{
         enqueue_framework_pending_input, load_execution_state, load_pending_inputs,
         resume_execution,
@@ -86,7 +87,17 @@ where
             &system.runtime.retention,
             system.runtime.retention.recent_routing_decision_limit,
             |binding, message, source, attachments, merge_segment| {
-                run_next(binding, None, message, source, attachments, merge_segment)
+                let agent_name =
+                    find_project_agent_config(system, Some(pickup.project_id.as_str()), None)
+                        .map(project_agent_name);
+                run_next(
+                    binding,
+                    agent_name,
+                    message,
+                    source,
+                    attachments,
+                    merge_segment,
+                )
             },
         )?;
         report.ticked_count += usize::from(cycle.cycle.is_some());
