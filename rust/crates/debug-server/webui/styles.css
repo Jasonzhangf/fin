@@ -1415,6 +1415,18 @@ button, textarea, input { font: inherit; }
   border-radius: 12px;
   background: rgba(8, 17, 31, 0.7);
 }
+.alert-strip {
+  padding: 9px 11px;
+  border: 1px solid rgba(86, 114, 157, 0.2);
+  border-radius: 12px;
+  font-size: 12px;
+  line-height: 1.5;
+}
+.alert-strip.error {
+  border-color: rgba(255, 123, 114, 0.34);
+  background: rgba(255, 123, 114, 0.12);
+  color: #ffd7d3;
+}
 .semantic-meta-list {
   overflow: hidden;
   border: 1px solid rgba(86, 114, 157, 0.18);
@@ -1475,6 +1487,16 @@ button, textarea, input { font: inherit; }
 }
 .timeline-item.ok { border-color: rgba(61, 220, 151, 0.26); }
 .timeline-item.error { border-color: rgba(255, 123, 114, 0.3); }
+.framework-timeline-item.framework-error {
+  border-color: rgba(255, 123, 114, 0.45);
+  background: rgba(72, 21, 25, 0.58);
+}
+.framework-timeline-item.framework-ok {
+  border-color: rgba(61, 220, 151, 0.34);
+}
+.framework-timeline-item.framework-subtle {
+  border-color: rgba(79, 140, 255, 0.24);
+}
 .timeline-item-header, .event-header, .context-header { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
 .timeline-seq {
   min-width: 28px; color: var(--accent-strong);

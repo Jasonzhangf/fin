@@ -317,6 +317,7 @@ export class InspectorPane {
           ['Execution Note', notePayload],
           ['Closed Loop Receipt', loopReceipt ?? {}],
           ['Framework Flow', frameworkFlow ?? {}],
+          ['Framework Timeline', { events: selected?.events ?? [] }],
           ['Closure Trace', closureTrace],
           ['Selected Timeline', { events: selected?.events ?? [] }],
           ['Event Ledger', {

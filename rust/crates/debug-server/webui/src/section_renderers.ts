@@ -25,6 +25,9 @@ export function renderInspectorSection(
   if (cardId === 'operation' && label === 'Framework Flow') {
     return renderFrameworkFlow(asRecord(value), tree);
   }
+  if (cardId === 'operation' && label === 'Framework Timeline') {
+    return renderFrameworkTimeline(asRecord(value), tree);
+  }
   return tree.renderPanelValue(value);
 }
 
@@ -131,6 +134,7 @@ function renderClosureTrace(value: JsonRecord, tree: StructuredTreeRenderer): st
 function renderClosedLoopReceipt(value: JsonRecord, tree: StructuredTreeRenderer): string {
   if (!Object.keys(value).length) return tree.renderPanelValue(value);
   const milestones = asArray(value.milestones).map((item) => asRecord(item));
+  const blocker = scalar(value.blocker);
   return `
     <div class="semantic-stack">
       ${renderSummaryGrid([
@@ -145,8 +149,9 @@ function renderClosedLoopReceipt(value: JsonRecord, tree: StructuredTreeRenderer
       ${renderMetaRows([
         ['last action', scalar(value.lastAction)],
         ['next handoff', scalar(value.nextHandoff)],
-        ['blocker', scalar(value.blocker)],
+        ['blocker', blocker],
       ], tree)}
+      ${blocker !== '-' ? `<section class="alert-strip error"><strong>Blocked:</strong> ${tree.escapeHtml(blocker)}</section>` : ''}
       ${milestones.length ? `
         <section class="semantic-panel">
           <div class="semantic-panel-title">Milestones</div>
@@ -186,6 +191,24 @@ function renderFrameworkFlow(value: JsonRecord, tree: StructuredTreeRenderer): s
   `;
 }
 
+function renderFrameworkTimeline(value: JsonRecord, tree: StructuredTreeRenderer): string {
+  const events = asArray(value.events).map((item) => asRecord(item));
+  if (!events.length) return tree.renderPanelValue(value);
+  const frameworkEvents = events.filter((event) => isFrameworkEvent(scalar(event.event_type)));
+  const blocker = firstBlocker(frameworkEvents);
+  return `
+    <div class="semantic-stack">
+      ${blocker ? `<section class="alert-strip error"><strong>Current blocker:</strong> ${tree.escapeHtml(blocker)}</section>` : ''}
+      <section class="semantic-panel">
+        <div class="semantic-panel-title">Framework Timeline</div>
+        <div class="timeline-list compact-timeline-list">
+          ${frameworkEvents.map((event) => renderFrameworkTimelineEvent(event, tree)).join('')}
+        </div>
+      </section>
+    </div>
+  `;
+}
+
 function renderFlowLaneCard(value: JsonRecord, tree: StructuredTreeRenderer): string {
   const events = asArray(value.events).map((item) => asRecord(item));
   const tone = flowLaneTone(scalar(value.tone));
@@ -212,6 +235,22 @@ function renderFlowLaneCard(value: JsonRecord, tree: StructuredTreeRenderer): st
             <div class="flow-lane-event-summary">${tree.escapeHtml(scalar(event.summary))}</div>
           </article>
         `).join('') : '<div class="empty-state compact"><div class="empty-text">No events</div></div>'}
+      </div>
+    </article>
+  `;
+}
+
+function renderFrameworkTimelineEvent(value: JsonRecord, tree: StructuredTreeRenderer): string {
+  const eventType = scalar(value.event_type);
+  const tone = frameworkTimelineTone(eventType);
+  return `
+    <article class="timeline-item ${tree.escapeHtml(tone)} compact-timeline-item framework-timeline-item ${tree.escapeHtml(`framework-${tone}`)}">
+      <div class="timeline-item-header">
+        <span class="timeline-name">${tree.escapeHtml(eventType)}</span>
+        <span class="timeline-time">${tree.escapeHtml(scalar(value.occurred_at) !== '-' ? scalar(value.occurred_at) : scalar(value.timestamp))}</span>
+      </div>
+      <div class="timeline-meta">
+        <span>${tree.escapeHtml(frameworkTimelineSummary(value))}</span>
       </div>
     </article>
   `;
@@ -292,6 +331,55 @@ function flowLaneTone(tone: string): string {
   if (tone === 'error') return 'error';
   if (tone === 'ok') return 'ok';
   return 'neutral';
+}
+
+function frameworkTimelineTone(eventType: string): string {
+  if (eventType.includes('blocked')) return 'error';
+  if (eventType.includes('review') || eventType.includes('submit') || eventType.includes('completed')) return 'ok';
+  return 'subtle';
+}
+
+function frameworkTimelineSummary(value: JsonRecord): string {
+  const payload = asRecord(value.payload);
+  const eventType = scalar(value.event_type);
+  if (eventType === 'session.formalized') return compactText(`task=${scalar(payload.task_id)} · topic=${scalar(payload.topic_thread_id)}`);
+  if (eventType === 'framework.task_kickoff_enqueued') return compactText(`kickoff · ${scalar(payload.goal_summary) !== '-' ? scalar(payload.goal_summary) : scalar(payload.enqueue_reason)}`);
+  if (eventType === 'scheduler.tick_decision_recorded') return compactText(`action=${scalar(payload.action_kind)} · pending=${scalar(payload.pending_input_count)}`);
+  if (eventType === 'scheduler.tick_blocked') return compactText(`blocked=${scalar(payload.blocked_by)} · ${scalar(payload.result_summary)}`);
+  if (eventType === 'supervisor.cycle_completed') return compactText(`blocked=${scalar(payload.blocked_kind)} · next=${scalar(payload.next_wake_hint)}`);
+  if (eventType === 'agent.assignment_requested') return compactText(`worker=${scalar(payload.target_worker_id)} · ${scalar(payload.task_summary)}`);
+  if (eventType.startsWith('project.task.')) {
+    const task = asRecord(payload.task);
+    return compactText(`task=${scalar(task.task_id) !== '-' ? scalar(task.task_id) : scalar(payload.task_id)} · status=${scalar(task.status) !== '-' ? scalar(task.status) : scalar(payload.status)}`);
+  }
+  return compactText(scalar(payload.result_summary) !== '-' ? scalar(payload.result_summary) : scalar(payload.reason));
+}
+
+function isFrameworkEvent(eventType: string): boolean {
+  return eventType === 'session.formalized'
+    || eventType === 'framework.task_kickoff_enqueued'
+    || eventType === 'agent.assignment_requested'
+    || eventType.startsWith('scheduler.tick_')
+    || eventType.startsWith('supervisor.cycle_')
+    || eventType.startsWith('project.task.');
+}
+
+function firstBlocker(events: JsonRecord[]): string | null {
+  for (const event of events) {
+    const payload = asRecord(event.payload);
+    const eventType = scalar(event.event_type);
+    if (eventType === 'scheduler.tick_blocked') {
+      return scalar(payload.blocked_by) !== '-' ? scalar(payload.blocked_by) : scalar(payload.result_summary);
+    }
+    if (eventType === 'supervisor.cycle_completed' && scalar(payload.blocked_kind) !== '-') {
+      return compactText(`${scalar(payload.blocked_kind)} · ${scalar(payload.next_wake_hint)}`);
+    }
+  }
+  return null;
+}
+
+function compactText(value: string): string {
+  return value.length > 140 ? `${value.slice(0, 140)}…` : value;
 }
 
 function scalar(value: unknown): string {
