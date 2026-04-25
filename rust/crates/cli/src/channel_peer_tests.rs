@@ -149,6 +149,29 @@ fn heartbeat_records_event_and_last_heartbeat() {
 }
 
 #[test]
+fn peer_events_are_trimmed_to_recent_window() {
+    let home = temp_runtime_home();
+    fs::create_dir_all(&home).expect("home");
+    ensure_builtin_qqbot_peer(&home).expect("ensure");
+
+    for _ in 0..520 {
+        record_builtin_qqbot_heartbeat(&home).expect("heartbeat");
+    }
+
+    let events_text =
+        fs::read_to_string(home.join("runtime/peers/qqbot/events.jsonl")).expect("events");
+    let lines = events_text
+        .lines()
+        .filter(|line| !line.trim().is_empty())
+        .collect::<Vec<_>>();
+    assert_eq!(lines.len(), 512);
+    let first: Value = serde_json::from_str(lines.first().expect("first line")).expect("json");
+    let last: Value = serde_json::from_str(lines.last().expect("last line")).expect("json");
+    assert_eq!(first["sequence"], 11);
+    assert_eq!(last["sequence"], 522);
+}
+
+#[test]
 fn binding_mismatch_invalidates_existing_paired_session() {
     let home = temp_runtime_home();
     fs::create_dir_all(&home).expect("home");

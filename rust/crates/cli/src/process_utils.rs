@@ -6,6 +6,8 @@ use std::{
     time::{SystemTime, UNIX_EPOCH},
 };
 
+const PLAIN_LOG_TAIL_BYTES_LIMIT: usize = 512 * 1024;
+
 pub(crate) fn repo_root() -> Result<PathBuf, CliError> {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("../../..")
@@ -78,7 +80,23 @@ pub(crate) fn append_log(path: &Path, line: &str) -> Result<(), CliError> {
         .map_err(|source| CliError::WriteFile {
             path: path.display().to_string(),
             source,
-        })
+        })?;
+    trim_file_to_tail_bytes(path, PLAIN_LOG_TAIL_BYTES_LIMIT)
+}
+
+fn trim_file_to_tail_bytes(path: &Path, limit: usize) -> Result<(), CliError> {
+    let bytes = fs::read(path).map_err(|source| CliError::ReadFile {
+        path: path.display().to_string(),
+        source,
+    })?;
+    if bytes.len() <= limit {
+        return Ok(());
+    }
+    let keep_from = bytes.len() - limit;
+    fs::write(path, &bytes[keep_from..]).map_err(|source| CliError::WriteFile {
+        path: path.display().to_string(),
+        source,
+    })
 }
 
 pub(crate) fn file_checksum_hex(path: &Path) -> Result<String, CliError> {
@@ -90,4 +108,31 @@ pub(crate) fn file_checksum_hex(path: &Path) -> Result<String, CliError> {
         acc.wrapping_mul(16777619) ^ u64::from(*byte)
     });
     Ok(format!("{checksum:016x}"))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    fn temp_log_path() -> PathBuf {
+        std::env::temp_dir().join(format!(
+            "fin-process-utils-log-{}",
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .expect("time")
+                .as_nanos()
+        ))
+    }
+
+    #[test]
+    fn append_log_trims_to_recent_tail_bytes() {
+        let path = temp_log_path();
+        append_log(&path, &"a".repeat(PLAIN_LOG_TAIL_BYTES_LIMIT)).expect("seed log");
+        append_log(&path, "tail").expect("append tail");
+
+        let bytes = fs::read(&path).expect("read log");
+        assert_eq!(bytes.len(), PLAIN_LOG_TAIL_BYTES_LIMIT);
+        assert!(String::from_utf8_lossy(&bytes).ends_with("tail"));
+    }
 }

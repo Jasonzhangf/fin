@@ -123,21 +123,21 @@ pub struct RuntimeRetentionConfig {
 impl Default for RuntimeRetentionConfig {
     fn default() -> Self {
         Self {
-            session_event_hot_limit: 512,
-            session_event_local_archive_file_limit: 8,
-            recent_context_limit: 8,
-            recent_digest_limit: 8,
-            recent_reasoning_limit: 16,
-            recent_tool_record_limit: 32,
-            recent_closure_limit: 16,
-            recent_provider_request_limit: 32,
-            recent_provider_response_limit: 32,
-            recent_step_record_limit: 64,
-            recent_turn_limit: 16,
-            recent_routing_decision_limit: 32,
-            recent_round_limit: 32,
-            session_message_limit: 128,
-            reminder_pending_limit: 128,
+            session_event_hot_limit: 256,
+            session_event_local_archive_file_limit: 4,
+            recent_context_limit: 4,
+            recent_digest_limit: 4,
+            recent_reasoning_limit: 8,
+            recent_tool_record_limit: 16,
+            recent_closure_limit: 8,
+            recent_provider_request_limit: 8,
+            recent_provider_response_limit: 8,
+            recent_step_record_limit: 24,
+            recent_turn_limit: 8,
+            recent_routing_decision_limit: 16,
+            recent_round_limit: 8,
+            session_message_limit: 64,
+            reminder_pending_limit: 64,
         }
     }
 }
@@ -624,7 +624,7 @@ X-Client = "fin"
         assert_eq!(system.providers["openai"].headers["X-Client"], "fin");
         assert_eq!(system.runtime.runtime_home, "~/.fin");
         assert_eq!(system.runtime.device_name.as_deref(), Some("mac-studio"));
-        assert_eq!(system.runtime.retention.recent_round_limit, 32);
+        assert_eq!(system.runtime.retention.recent_round_limit, 8);
         assert_eq!(system.policy.default_role, "project");
         assert_eq!(system.policy.entry_role, "system");
         assert_eq!(
@@ -730,7 +730,7 @@ X-Client = "fin"
         );
         assert_eq!(reparsed.providers["openai"].headers["X-Client"], "fin");
         assert_eq!(reparsed.policy.protocol_version, "fin.m1");
-        assert_eq!(reparsed.runtime.retention.session_message_limit, 128);
+        assert_eq!(reparsed.runtime.retention.session_message_limit, 64);
     }
 
     #[test]
@@ -876,17 +876,17 @@ session_event_hot_limit = 0
 session_event_local_archive_file_limit = 1
 recent_context_limit = 8
 recent_digest_limit = 8
-recent_reasoning_limit = 16
-recent_tool_record_limit = 32
-recent_closure_limit = 16
-recent_provider_request_limit = 32
-recent_provider_response_limit = 32
-recent_step_record_limit = 64
-recent_turn_limit = 16
-recent_routing_decision_limit = 32
-recent_round_limit = 32
-session_message_limit = 128
-reminder_pending_limit = 128
+recent_reasoning_limit = 8
+recent_tool_record_limit = 16
+recent_closure_limit = 8
+recent_provider_request_limit = 8
+recent_provider_response_limit = 8
+recent_step_record_limit = 24
+recent_turn_limit = 8
+recent_routing_decision_limit = 16
+recent_round_limit = 8
+session_message_limit = 64
+reminder_pending_limit = 64
 
 [policy]
 default_role = "project"

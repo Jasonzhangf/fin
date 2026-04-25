@@ -1,7 +1,7 @@
 use crate::{
     command::{Command, parse_command},
     config::{load_system_config, map_system_config},
-    demo::{demo_identity, run_demo, sanitize_id_fragment},
+    demo::{DemoRequest, demo_identity, run_demo, run_demo_request, sanitize_id_fragment},
     runtime_home::{
         SessionMessageRecord, ensure_runtime_home_layout, persist_runtime_demo, read_last_run_value,
     },
@@ -66,6 +66,14 @@ fn static_provider(system: &SystemConfig) -> StructuredStaticProviderClient {
     StructuredStaticProviderClient::new(fin_provider::ProviderDescriptor::from_resolved(
         system.default_provider_config().expect("default provider"),
     ))
+}
+
+fn read_json_value(path: &Path) -> serde_json::Value {
+    serde_json::from_slice(&fs::read(path).expect("json file should exist")).expect("valid json")
+}
+
+fn read_json_messages(path: &Path) -> Vec<SessionMessageRecord> {
+    serde_json::from_slice(&fs::read(path).expect("messages should exist")).expect("messages json")
 }
 
 #[test]
@@ -347,6 +355,130 @@ fn runtime_demo_persists_home_artifacts() {
     );
 }
 
+#[test]
+fn hidden_framework_resume_turn_does_not_pollute_normal_session_history() {
+    let user_toml = sample_user_toml();
+    let system = sample_system_config();
+    let home = temp_runtime_home();
+    let provider = static_provider(&system);
+
+    let visible_run = run_demo_request(
+        &system,
+        &provider,
+        DemoRequest {
+            operation_id: "op-visible-0001".into(),
+            trace_id: "trace-visible-0001".into(),
+            session_id: "session-hidden-guard".into(),
+            task_id: Some("task-hidden-guard".into()),
+            topic_thread_id: None,
+            agent_name: Some("system".into()),
+            role_id: Some("system".into()),
+            input: "visible user turn".into(),
+            source: "cli.user".into(),
+            recent_messages: Vec::new(),
+            recent_digests: Vec::new(),
+            recent_reasoning_views: Vec::new(),
+            recent_tool_records: Vec::new(),
+            project_label: Some("fin".into()),
+            runtime_home: Some(home.display().to_string()),
+            cwd: None,
+            selected_paths: Vec::new(),
+            attachment_summaries: Vec::new(),
+            submitted_at: "2026-04-24T10:00:00+08:00".into(),
+        },
+    )
+    .expect("visible run");
+    persist_runtime_demo(&user_toml, &system, &visible_run, Some(home.as_path()))
+        .expect("persist visible run");
+
+    let session_dir = home.join("sessions/2026/04/session-hidden-guard");
+    let messages_before = read_json_messages(&session_dir.join("conversation/messages.json"));
+    assert_eq!(messages_before.len(), 2);
+    assert_eq!(messages_before[0].role, "user");
+    assert_eq!(messages_before[1].role, "assistant");
+    let digests_before = read_json_value(&session_dir.join("digests/recent_digests.json"));
+    let reasoning_before =
+        read_json_value(&session_dir.join("reasoning/recent_reasoning_views.json"));
+    let tools_before = read_json_value(&session_dir.join("tools/recent_tool_records.json"));
+    let turns_before = read_json_value(&session_dir.join("turns/recent_turns.json"));
+    let events_before = std::fs::read_to_string(session_dir.join("events/stream.jsonl"))
+        .expect("visible stream should exist");
+    let session_archive_index_before =
+        std::fs::read_to_string(session_dir.join("events/archive_index.json")).ok();
+    let current_archive_index_before =
+        std::fs::read_to_string(home.join("runtime/current/current_event_archive_index.json")).ok();
+
+    let hidden_run = run_demo_request(
+        &system,
+        &provider,
+        DemoRequest {
+            operation_id: "op-hidden-0002".into(),
+            trace_id: "trace-hidden-0002".into(),
+            session_id: "session-hidden-guard".into(),
+            task_id: Some("task-hidden-guard".into()),
+            topic_thread_id: None,
+            agent_name: Some("system".into()),
+            role_id: Some("system".into()),
+            input: "Continue the same turn.".into(),
+            source: "framework.resume_checkpoint.wait".into(),
+            recent_messages: Vec::new(),
+            recent_digests: Vec::new(),
+            recent_reasoning_views: Vec::new(),
+            recent_tool_records: Vec::new(),
+            project_label: Some("fin".into()),
+            runtime_home: Some(home.display().to_string()),
+            cwd: None,
+            selected_paths: Vec::new(),
+            attachment_summaries: Vec::new(),
+            submitted_at: "2026-04-24T10:01:00+08:00".into(),
+        },
+    )
+    .expect("hidden run");
+    persist_runtime_demo(&user_toml, &system, &hidden_run, Some(home.as_path()))
+        .expect("persist hidden run");
+
+    let messages_after = read_json_messages(&session_dir.join("conversation/messages.json"));
+    assert_eq!(messages_after, messages_before);
+    assert_eq!(
+        read_json_value(&session_dir.join("digests/recent_digests.json")),
+        digests_before
+    );
+    assert_eq!(
+        read_json_value(&session_dir.join("reasoning/recent_reasoning_views.json")),
+        reasoning_before
+    );
+    assert_eq!(
+        read_json_value(&session_dir.join("tools/recent_tool_records.json")),
+        tools_before
+    );
+    assert_eq!(
+        read_json_value(&session_dir.join("turns/recent_turns.json")),
+        turns_before
+    );
+    assert_eq!(
+        std::fs::read_to_string(session_dir.join("events/stream.jsonl"))
+            .expect("hidden turn should not rewrite event stream"),
+        events_before
+    );
+    assert!(
+        std::fs::read_to_string(session_dir.join("events/archive_index.json")).ok()
+            == session_archive_index_before,
+        "hidden turn should not rewrite session archive index"
+    );
+    assert!(
+        std::fs::read_to_string(home.join("runtime/current/current_event_archive_index.json")).ok()
+            == current_archive_index_before,
+        "hidden turn should not rewrite current archive index"
+    );
+    let last_run = read_last_run_value(&home).expect("last run should stay visible");
+    assert_eq!(
+        last_run
+            .get("operation_id")
+            .and_then(serde_json::Value::as_str),
+        Some("op-visible-0001")
+    );
+}
+
 #[path = "tests_runtime_artifacts.rs"]
 mod tests_runtime_artifacts;
 
@@ -411,4 +543,11 @@ fn ensure_runtime_home_layout_creates_skills_dir() {
     let home = temp_runtime_home();
     ensure_runtime_home_layout(&home).expect("runtime home should init");
     assert!(home.join("skills").is_dir());
+}
+
+#[test]
+fn ensure_runtime_home_layout_creates_sessions_dir() {
+    let home = temp_runtime_home();
+    ensure_runtime_home_layout(&home).expect("runtime home should init");
+    assert!(home.join("sessions").is_dir());
 }
