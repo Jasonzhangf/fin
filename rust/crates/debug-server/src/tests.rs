@@ -88,7 +88,7 @@ fn projector_tracks_latest_progress_note_digest_and_provider_activity() {
         created_at: "2026-04-17T00:00:00Z".into(),
     };
     let feedback = ControlFeedback {
-        origin: "runtime_heuristic".into(),
+        origin: "runtime_observation_only_v1".into(),
         continuity_confidence: 92,
         topic_shift_confidence: 8,
         simple_query_confidence: 20,
@@ -173,7 +173,7 @@ fn projector_tracks_latest_progress_note_digest_and_provider_activity() {
     );
     assert_eq!(
         projector.current.latest_control_origin.as_deref(),
-        Some("runtime_heuristic")
+        Some("runtime_observation_only_v1")
     );
     assert_eq!(projector.current.latest_continuity_confidence, Some(92));
     assert_eq!(projector.current.latest_topic_shift_confidence, Some(8));

@@ -186,7 +186,7 @@
 - `versions/`：已归档的可运行版本
 - `staged/`：待回归验证的候选安装物
 - `current/`：当前提升为全局默认版本的软链接
-- `previous/`：最近一个可快速回退版本
+- `previous/`：最近一个可快速切换的上一版本
 - `receipts/`：安装与提升回执
 - `packages/`：打包文件（如后续需要 tarball / zip / pkg）
 

@@ -104,7 +104,7 @@ single-runtime local closure
 
 ---
 
-## 4. M1 local-only fallback 规则
+## 4. M1 local-only 占位规则
 
 在 peer registry / daemon / lease 尚未接通前，允许 `peer` block 进入 **local-only placeholder mode**。
 
@@ -205,4 +205,3 @@ not placeholder = fabricated peer truth
 3. role prompt 已区分 `system_agent / project_agent / channel_gateway / peer_router`
 4. 当前 runtime 在没有 peer registry 时，仍能生成受控的 local-only peer placeholder
 5. 相关 runtime / cli / debug-server 回归通过
-

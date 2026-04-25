@@ -6,9 +6,9 @@
 
 - 新输入如何启动
 - 什么时候保持 simple chat
-- 什么时候提示用户选择历史 topic / 新建 task
+- 什么时候由模型显式建议 formalize / reuse / switch
 - 什么时候正式执行 `task creation operation`
-- 谁负责判断，谁负责控制
+- 谁负责判断，谁负责刚性执行
 
 不展开：
 
@@ -20,10 +20,11 @@
 ## 1. 核心原则
 
 1. 新输入默认先进入 `TentativeSession`。
-2. 在没有正式 `task_id` 前，系统先做 intent clarification，而不是立即进入正式任务体系。
-3. 模型只输出结构化 routing feedback，不直接拥有 session/topic 切换与询问权。
-4. 用户可见的选择、确认、切换提示由框架发起。
-5. 只有当意图足够清晰且用户确认时，框架才执行正式 `task creation operation`。
+2. 在没有正式 `task_id` 前，所有自然语言输入都必须先进入模型；framework 不得先行做自然语言意图判断。
+3. 模型先输出结构化 routing / control feedback，由它判断当前更像 simple chat、普通任务推进、还是需要 formalize 的任务候选。
+4. 框架只消费模型的显式反馈或用户刚性命令；**不得仅凭 confidence 阈值、聊天文本或 wrapper 启发式把普通输入自动升级成“新任务候选”**。
+5. 正常用户↔agent 对话中，framework 保持透明；若需要确认/澄清，应由模型在可见回复中自己表达，而不是 framework 插话。
+6. 只有当模型显式给出对应 control 指标、或用户显式触发支持的刚性命令时，框架才执行正式 `task creation operation`。
 
 ## 2. 关键对象
 
@@ -91,15 +92,15 @@
 
 表示：
 
-- 框架判断当前输入可能属于已有 topic / task
-- 待决定是否提示用户复用历史主线
+- 模型的 control feedback 表明当前输入可能属于已有 topic / task
+- framework 仅记录该候选，等待后续显式 trigger
 
 ### `tentative_candidate_new`
 
 表示：
 
-- 框架判断当前输入可能需要新建正式 task/topic
-- 待决定是否提示用户确认创建
+- 模型的 control feedback 表明当前输入可能需要新建正式 task/topic
+- framework 仅记录该候选，等待后续显式 trigger
 
 ### `pending_observation`
 
@@ -112,12 +113,13 @@
 
 表示：
 
-- 框架已经决定需要用户选择
+- 模型已显式表明需要用户补充/确认，framework 只记录阻塞状态
 - 正在等待用户选择：
   - 继续当前
   - 复用历史 topic
   - 新建 task/topic
   - side topic
+- 用户可见说明必须来自模型回复或用户显式命令路径，不由 framework 单独发 prompt
 
 ### `formalizing`
 
@@ -132,24 +134,6 @@
 
 - 已正式获得 `task_id`
 - session 已进入正式 task 闭环
-
-### `planning_kickoff_pending`
-
-表示：
-
-- framework 已完成 formalization
-- 已写入 framework-owned hidden planning kickoff
-- 正等待 scheduler 把 kickoff 输入推进为首个正式 planning turn
-
-### `planning_turn`
-
-表示：
-
-- 当前正在执行 formal task 之后的首个 hidden planning turn
-- 该 turn 只负责决定：
-  - 走 `simple direct path`
-  - 还是进入 `managed project path`
-- 不要求用户再次确认 formalize，也不把 bind/planning 混为一步
 
 ### `side_topic_active`
 
@@ -181,6 +165,7 @@
 - 建立 `TentativeSession`
 - 构造最小 context
 - 调用模型获得首轮 routing feedback
+- 在模型返回前，framework 不对自然输入做任务/聊天预判
 
 ## B. 简单聊天路径
 
@@ -220,8 +205,8 @@
 
 动作：
 
-- 框架准备历史候选列表
-- 决定是否直接继续或进入用户确认
+- framework 记录历史候选列表
+- 是否继续/是否需要确认，必须等待模型 control signal 或用户刚性命令
 
 `tentative_candidate_existing -> pending_user_choice`
 
@@ -233,7 +218,7 @@
 
 条件：
 
-- 框架策略允许自动继续
+- 模型显式给出可直接继续/复用的 control 指标
 - 且无需额外用户确认
 
 ## D. 新建 task/topic 候选
@@ -242,14 +227,15 @@
 
 条件：
 
-- 当前目标已较清晰
+- 模型显式给出“建议 formalize 为新任务”的反馈
 - 明显不是 simple chat
-- 明显不属于当前已有 task/topic
+- 且不属于当前已有 task/topic
 
 动作：
 
-- 框架准备 preview
-- 准备“是否做 xxx 正式任务”的确认
+- framework 记录 preview
+- 不主动生成可见确认话术
+- 不允许只因为 `continuity/topic/simple` 分数落到某个阈值，就由 framework 自己生成新任务候选
 
 `tentative_candidate_new -> pending_user_choice`
 
@@ -277,13 +263,14 @@
 
 - 后续置信度升高
 
-## F. Formalize 后的 framework planning kickoff
+## F. Formalize 只做 bind，不做 hidden follow-up
 
-`pending_user_choice -> formalizing -> task_bound -> planning_kickoff_pending -> planning_turn`
+`pending_user_choice -> formalizing -> task_bound`
 
 条件：
 
-- 用户确认 formalize / reuse / switch
+- 用户显式刚性命令触发 formalize / reuse / switch，或
+- 模型已返回明确 control 指标且后续用户输入满足该显式要求
 - framework 已完成 task/topic bind
 
 动作：
@@ -293,28 +280,25 @@
 - 绑定 `topic_thread_id`
 - 追加 framework 事件：
   - `session.formalized`
-  - `framework.task_kickoff_enqueued`
-- enqueue 一条 hidden pending input：
-  - `input_kind=framework_planning`
-  - `source=framework.task_kickoff.plan`
+- formalize 完成后，framework 不自动 enqueue hidden follow-up input，也不自动推进 scheduler turn
 
 规则：
 
 1. formalize 只做 bind，不直接把 decomposition/planning 混进同一个用户动作
-2. planning kickoff 由 framework 自动触发，用户不需要再说一次“开始规划”
-3. hidden planning input 不进入用户可见 conversation，但必须进入 runtime/provider/debug truth
-4. planning turn 的输出只负责决定：
-   - direct path：`update_plan`
-   - managed path：`project.task.create ...`
-5. 同一个 `formalize_kickoff` cycle 内只推进一轮 planning turn，不在同一 tick 里继续深推 owner-loop
+2. formalize 之后若要继续 direct / managed 推进，必须来自：
+   - 后续正常 agent 推理轮，或
+   - 用户刚性命令，或
+   - 已落盘 control / execution truth 触发的工具集切换与后续推理
+3. framework 不得把 `/formalize` 自动扩展成 hidden follow-up input、hidden prompt、或自动 scheduler 推进
+4. `continuity_confidence / topic_shift_confidence / simple_query_confidence` 仍可作为模型输出里的观测字段保留，但 framework 不得单独依赖这些分数做 formalize / switch / dispatch 决策
 
-## F. 等待用户选择
+## G. 等待用户选择
 
 `pending_user_choice -> formalizing`
 
 条件：
 
-- 用户明确选择：
+- 用户明确选择，或显式发送受支持命令：
   - 绑定历史 topic
   - 新建 task
   - 继续当前并 formalize
@@ -332,7 +316,7 @@
 - 用户选择暂不 formalize
 - 继续轻量对话
 
-## G. 正式化
+## H. 正式化
 
 `formalizing -> task_bound`
 
@@ -354,10 +338,10 @@
 
 动作：
 
-- 回退到 tentative 状态
+- 切回 tentative 状态
 - 记录异常事件
 
-## H. Side topic
+## I. Side topic
 
 `side_topic_active -> tentative_open | task_bound | discarded`
 
@@ -371,17 +355,29 @@
 
 ### 模型负责
 
+- 理解自然语言输入
 - 输出 routing feedback
 - 给出置信度与原因
 - 帮助生成 preview 和 intent summary
+- 在需要确认/澄清时，于可见回复中自己向用户表达
 
 ### 框架负责
 
 - 维护状态机
-- 选择是否提示用户
-- 发起用户可见确认
+- 解析刚性命令
+- 解析模型返回的显式 control 指标
 - 执行 `FormalizationOperation`
-- 决定是否进入 formal task 体系
+- 在显式 trigger 已满足时推进 formal task 体系
+- 记录 `session.formalized` 等 framework-owned durable truth
+
+附加硬规则：
+
+- framework 不得理解或判断自然语言用户输入
+- framework 不得把“未绑定 task + 某个 confidence 阈值”直接等价成“新任务”
+- framework 不得根据聊天文本、wrapper shortcut、可见回复文案或 heuristic 自行触发 formalize/routing/scheduler
+- 新任务 formalize 的触发必须来自：
+  - 模型显式 control signal，或
+  - 用户显式刚性命令（如 `/formalize`）
 
 ### 用户负责
 
@@ -393,7 +389,7 @@
 
 ## 6. 用户确认点
 
-以下场景默认是框架可发起的确认点：
+以下场景可以由**模型在可见回复中**提出确认，framework 只记录等待状态，不单独发提示：
 
 1. 当前输入疑似属于历史 topic，需要确认是否复用
 2. 当前输入已形成明确目标，需要确认是否创建正式 task
@@ -406,7 +402,7 @@ M1 不要求实现完整 topic revive / merge / split 体系，但要求至少�
 
 - `TentativeSession`
 - simple chat vs formal task 的基础判断
-- framework-driven user confirmation
+- model-driven clarification + framework passive execution
 - formal task creation
 - tentative -> first closure 的并入
 

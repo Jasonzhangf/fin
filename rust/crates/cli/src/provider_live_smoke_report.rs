@@ -1,3 +1,4 @@
+use super::provider_live_smoke_timeline::{build_conformance, build_turn_timelines};
 use super::{ProviderLiveSmokeLayout, ProviderLiveSmokeReport};
 use crate::{CliError, fs_utils::write_file, time::local_timestamp_now};
 use fin_runtime::ClosureRun;
@@ -36,6 +37,15 @@ pub(super) fn build_report(
         last_run,
         "session_recent_step_records_path",
     )?);
+    let session_recent_tool_records_path = runtime_home.join(required_last_run_path(
+        last_run,
+        "session_recent_tool_records_path",
+    )?);
+    let session_root = session_root_from_messages_path(&session_messages_path)?;
+    let session_recent_provider_requests_path =
+        session_root.join("provider/recent_provider_requests.json");
+    let session_recent_provider_responses_path =
+        session_root.join("provider/recent_provider_responses.json");
 
     for path in [
         projection_json,
@@ -51,6 +61,9 @@ pub(super) fn build_report(
         &session_messages_path,
         &session_recent_rounds_path,
         &session_recent_steps_path,
+        &session_recent_tool_records_path,
+        &session_recent_provider_requests_path,
+        &session_recent_provider_responses_path,
     ] {
         if !path.exists() {
             return Err(CliError::MissingInstallTarget(path.display().to_string()));
@@ -65,6 +78,15 @@ pub(super) fn build_report(
     let session_messages: Vec<serde_json::Value> = read_json_array(&session_messages_path)?;
     let control_feedback: serde_json::Value = read_json_value(&current_control_feedback_path)?;
     let tool_records: Vec<serde_json::Value> = read_json_array(&current_tool_records_path)?;
+    let session_tool_records: Vec<serde_json::Value> =
+        read_json_array(&session_recent_tool_records_path)?;
+    let session_step_records: Vec<serde_json::Value> = read_json_array(&session_recent_steps_path)?;
+    let session_round_records: Vec<serde_json::Value> =
+        read_json_array(&session_recent_rounds_path)?;
+    let session_provider_request_records: Vec<serde_json::Value> =
+        read_json_array(&session_recent_provider_requests_path)?;
+    let session_provider_response_records: Vec<serde_json::Value> =
+        read_json_array(&session_recent_provider_responses_path)?;
 
     if request_records.is_empty()
         || response_records.is_empty()
@@ -75,19 +97,6 @@ pub(super) fn build_report(
             "provider live smoke wrote incomplete current runtime artifacts".into(),
         ));
     }
-    if control_feedback
-        .get("origin")
-        .and_then(serde_json::Value::as_str)
-        == Some("runtime_heuristic")
-    {
-        return Err(CliError::InvalidInstallState(
-            "provider live smoke fell back to runtime_heuristic control feedback".into(),
-        ));
-    }
-    let reasoning_stop_present = tool_records.iter().any(|record| {
-        record.get("tool_name").and_then(serde_json::Value::as_str) == Some("reasoning.stop")
-            && record.get("status").and_then(serde_json::Value::as_str) == Some("completed")
-    });
     if session_messages.len() < transcript.runs.len() * 2 {
         return Err(CliError::InvalidInstallState(format!(
             "expected at least {} session messages, got {}",
@@ -96,6 +105,42 @@ pub(super) fn build_report(
         )));
     }
 
+    let reasoning_stop_present =
+        session_tool_records
+            .iter()
+            .chain(tool_records.iter())
+            .any(|record| {
+                record.get("tool_name").and_then(serde_json::Value::as_str)
+                    == Some("reasoning.stop")
+                    && record.get("status").and_then(serde_json::Value::as_str) == Some("completed")
+            });
+    let turn_timelines = build_turn_timelines(
+        transcript,
+        &session_step_records,
+        &session_round_records,
+        &session_tool_records,
+        &session_provider_request_records,
+    );
+    let mut conformance = build_conformance(
+        transcript,
+        &session_messages,
+        &turn_timelines,
+        &session_provider_response_records,
+    );
+    if control_feedback
+        .get("origin")
+        .and_then(serde_json::Value::as_str)
+        .is_some_and(|origin| {
+            origin == "runtime_heuristic" || origin == "runtime_observation_only_v1"
+        })
+    {
+        conformance
+            .issues
+            .push("control feedback stayed in runtime observation-only mode".into());
+        if conformance.attribution_hint == "framework_conformance_ok" {
+            conformance.attribution_hint = "likely_model_or_prompt_gap".into();
+        }
+    }
     let last_closure = transcript.runs.last().ok_or(CliError::Usage)?;
     Ok(ProviderLiveSmokeReport {
         run_id: layout.run_id.clone(),
@@ -128,6 +173,15 @@ pub(super) fn build_report(
         session_messages_path: session_messages_path.display().to_string(),
         session_recent_rounds_path: session_recent_rounds_path.display().to_string(),
         session_recent_steps_path: session_recent_steps_path.display().to_string(),
+        session_recent_tool_records_path: session_recent_tool_records_path.display().to_string(),
+        session_recent_provider_requests_path: session_recent_provider_requests_path
+            .display()
+            .to_string(),
+        session_recent_provider_responses_path: session_recent_provider_responses_path
+            .display()
+            .to_string(),
+        conformance,
+        turn_timelines,
         assistant_outputs_preview: transcript
             .runs
             .iter()
@@ -135,6 +189,18 @@ pub(super) fn build_report(
             .collect(),
         verified_at: local_timestamp_now(),
     })
+}
+
+fn session_root_from_messages_path(messages_path: &Path) -> Result<&Path, CliError> {
+    messages_path
+        .parent()
+        .and_then(Path::parent)
+        .ok_or_else(|| {
+            CliError::InvalidInstallState(format!(
+                "failed to derive session root from {}",
+                messages_path.display()
+            ))
+        })
 }
 
 fn required_last_run_path<'a>(

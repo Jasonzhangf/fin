@@ -274,7 +274,7 @@ user/debug input
 3. execute prepared request
 4. parse model output
 5. dispatch tool calls
-6. merge control feedback fallback
+6. merge control feedback observation-only record
 
 固定结论：
 

@@ -179,8 +179,8 @@ mod tests {
     }
 
     #[test]
-    fn falls_back_to_agents_registry_when_current_missing() {
-        let home = temp_runtime_home("fallback");
+    fn uses_agents_registry_when_current_missing() {
+        let home = temp_runtime_home("registry");
         let path = home.join("runtime/agents/registry.json");
         fs::create_dir_all(path.parent().expect("parent")).expect("dir");
         fs::write(

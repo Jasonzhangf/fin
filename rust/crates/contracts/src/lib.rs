@@ -484,7 +484,7 @@ mod tests {
             latest_provider_activity: Some("provider.request_started".into()),
             latest_provider_user_agent: Some("opencode/1.2.27".into()),
             latest_provider_header_names: vec!["user-agent".into(), "x-api-key".into()],
-            latest_control_origin: Some("runtime_heuristic".into()),
+            latest_control_origin: Some("runtime_observation_only_v1".into()),
             latest_continuity_confidence: Some(92),
             latest_topic_shift_confidence: Some(8),
             latest_simple_query_confidence: Some(15),

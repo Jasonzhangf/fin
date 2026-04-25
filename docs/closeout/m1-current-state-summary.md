@@ -286,7 +286,7 @@ receipt 当前固定验证：
 当前若继续推进，建议严格按这个顺序走：
 
 1. **保持当前 receipt / regression 持续为绿**
-2. **只做 truth consistency 与防回退修复**
+2. **只做 truth consistency 与防反弹修复**
 3. **若要扩能力，先明确是否正式切入 M2**
 4. **进入 M2 前，先回到 architecture docs 冻结 owning layer**
 

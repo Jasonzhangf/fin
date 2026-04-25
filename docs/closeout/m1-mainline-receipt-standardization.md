@@ -197,7 +197,7 @@ scripts/build-mainline-receipts.py \
 - `--tool-loop-session-id`
 - `--control-session-id`
 
-未指定时，默认都回退到 `--session-id`。
+未指定时，默认都使用 `--session-id`。
 
 输出：
 

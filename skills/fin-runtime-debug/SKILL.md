@@ -60,7 +60,7 @@ description: Runtime/event debugging workflow for fin. Use for multi-agent, cros
 - 若 `attached_control_plane` / `headless_daemon` 相关老测试失败，但 `project_runtime_resume.summary` 明确是 `explicit_trigger_required=*` 且 pickup 仍为 `ready_to_resume`，先判为**test expectation drift**：当前真相是 framework 只 materialize resume truth，不自动驱动 project closure
 - WebUI 新字段若“后端有文件但页面没显示”，先查 `/app.js` 是否已经包含对应消费路径关键字，再判前端逻辑问题；include_str/bundled JS 不刷新时，页面会继续跑旧 bundle
 - 推理核心若怀疑“没走工具 / 没多步闭环”，先看 `model.output_parsed.stop_kind + tool.dispatch_* + operation.completed/failed`；`fin_tool_calls` 被解析但没有 `tool.dispatch_completed`，问题一定在 runtime dispatch，不在 Web
-- 未实现工具必须走 failed closure（`tool.dispatch_failed` + `operation.failed`），禁止把模型的工具请求静默降级成直接答复，否则 session truth 会丢真正的失败因果
+- 未实现工具必须走 failed closure（`tool.dispatch_failed` + `operation.failed`），禁止把模型的工具请求静默改写成直接答复，否则 session truth 会丢真正的失败因果
 - peer-aware 阶段先看 `peer.discovered / binding.opened / daemon.state_observed / peer.routing_feedback_recorded`；若只有 placeholder 事件，说明当前仍在 local-only skeleton，不要误判成 remote peer 真连接
 - channel gateway（qqbot）生命周期问题优先看 `~/.fin/runtime/peers/qqbot/state.json + events.jsonl`：若出现 `channel.peer.session_expired`，下一步必须看到 `channel.peer.pairing_required`，否则说明重配闭环断裂
 - 若当前 active session 已切换（如 `/new` / `/resume`）但 qqbot 仍绑定旧 session，框架必须产出 `channel.peer.session_invalidated` + `channel.peer.pairing_required`；这类 mismatch 不应继续伪装成有效 paired 状态

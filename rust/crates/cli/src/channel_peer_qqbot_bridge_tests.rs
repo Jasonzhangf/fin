@@ -65,7 +65,7 @@ fn attachment_summaries_keep_whitelisted_fields() {
 }
 
 #[test]
-fn attachment_only_message_gets_fallback_prompt() {
+fn attachment_only_message_gets_default_prompt() {
     let attachments = vec![fin_contracts::InputAttachmentSummary {
         name: Some("demo.png".into()),
         ..fin_contracts::InputAttachmentSummary::default()
@@ -153,6 +153,11 @@ fn empty_sanitized_session_message_is_not_marked_delivered() {
                 operation_id: None,
                 trace_id: None,
                 closure_id: None,
+                sender_kind: Some("agent_reply".into()),
+                role_id: Some("system".into()),
+                agent_name: Some("system".into()),
+                display_name: Some("System Agent".into()),
+                source_kind: Some("session_message".into()),
             },
             SessionMessageRecord {
                 message_id: "assistant-real".into(),
@@ -164,6 +169,11 @@ fn empty_sanitized_session_message_is_not_marked_delivered() {
                 operation_id: None,
                 trace_id: None,
                 closure_id: None,
+                sender_kind: Some("agent_reply".into()),
+                role_id: Some("project".into()),
+                agent_name: Some("builder".into()),
+                display_name: Some("Project Agent · builder".into()),
+                source_kind: Some("session_message".into()),
             },
         ],
     );
@@ -204,7 +214,8 @@ fn empty_sanitized_session_message_is_not_marked_delivered() {
         "test",
     )
     .expect("deliver");
-    assert_eq!(delivered, 1);
+    assert_eq!(delivered.sent_count, 1);
+    assert_eq!(delivered.suppressed_empty_count, 1);
 
     let conversation = load_conversation_by_target(&home, "qqbot:c2c:user-1")
         .expect("conversation")

@@ -37,7 +37,7 @@
 - [2026-04-17] Stable Core Prompt 第一轮设计已落盘：结构参考 Hermes、写法参考 Codex、语义服从 fin 框架真相边界；设计真源写入 `docs/architecture/27-stable-core-prompt.md`，第一版 prompt blocks 文本写入 `docs/prompts/01-stable-core-prompt-v1.md`
 - [2026-04-17] Role Prompt 文本层继续推进：四类 role baseline 第一版写入 `docs/prompts/02-role-baselines-v1.md`，GPT/Codex overlay 第一版写入 `docs/prompts/03-gpt-codex-overlay-v1.md`；下一步可直接进入 Rust assembler skeleton
 - [2026-04-18] `ControlFeedback` 第一版已接入 closure 链路：新增 `control.feedback_recorded` event、`runtime/current/current_control_feedback.json`、`sessions/.../control/latest.json`，并同步进入 note/digest/projection/Web inspector。
-- [2026-04-18] `ControlFeedback` 第二轮已升级为模型输出解析：`assistant_response_text` 与 provider raw output 分离；`model.output_parsed` 事件新增 `contract_detected` / `control_feedback_parsed`；错误 shape 的 control block 现在严格 fallback 到 `runtime_heuristic`。
+- [2026-04-18] `ControlFeedback` 第二轮已升级为模型输出解析：`assistant_response_text` 与 provider raw output 分离；`model.output_parsed` 事件新增 `contract_detected` / `control_feedback_parsed`；错误 shape 的 control block 现在严格标记为 `runtime_heuristic` 观察态。
 - [2026-04-18] `ControlFeedback` 第三轮已接入 parse-failure salvage：`model.output_parsed` 新增 `control_feedback_salvaged`；真实 provider 在错 type JSON 下现在会走 `model_output_contract_masked`，保留白名单字段并丢弃未知字段。
 - [2026-04-18] 真实 qwen provider 的 exact schema 命中已通过“`role_prompt.output_contract` + 推理末尾 mandatory final answer format”双重暴露提升；关键强化点是把禁止样式显式写出来：`0.98/1.0` 小数 confidence、字符串布尔值、extra keys。
 - [2026-04-18] conversation UI 的下一层不再只叫 debug：已冻结为 Minimal / Rich / Full Trace 三档 richness；normal conversation 与 debug 共用 session render truth，Rich mode 后续要承载 reasoning summary、control block、tool semantic cards。

@@ -60,9 +60,9 @@ cargo test -p fin-runtime -p fin-cli -p fin-debug-server --manifest-path rust/Ca
 
 ## 4. 仍需明确补齐的最小缺口
 
-以下项目若要宣称 M1 fully closed，当前更多是“持续盯防不回退”，而不是功能缺口：
+以下项目若要宣称 M1 fully closed，当前更多是“持续盯防不反弹”，而不是功能缺口：
 
-1. **installed-binary smoke / install receipts 防回退**
+1. **installed-binary smoke / install receipts 防反弹**
    - 当前 `install-dev` 已真实跑通，且 receipt-index 默认刷新；后续重点是避免 build flow 再次失去标准化产物
 
 ## 5. closeout 阶段建议的最小手工验证脚本

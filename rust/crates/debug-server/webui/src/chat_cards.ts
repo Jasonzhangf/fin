@@ -70,7 +70,7 @@ export function buildTurnCards(
 
   const toolCards = semanticTools.length
     ? semanticTools
-    : (focusTurn.toolRecords ?? []).map((tool) => semanticToolFallback(tool));
+    : (focusTurn.toolRecords ?? []).map((tool) => semanticToolDefault(tool));
 
   for (const [index, tool] of toolCards.entries()) {
     cards.push({
@@ -210,7 +210,7 @@ function extractProviderMeta(turn: FocusTurn): {
   };
 }
 
-function semanticToolFallback(tool: ToolExecutionRecord): ToolSemanticView {
+function semanticToolDefault(tool: ToolExecutionRecord): ToolSemanticView {
   return {
     tool_call_id: tool.tool_call_id,
     operation_id: tool.operation_id,

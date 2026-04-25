@@ -1,5 +1,7 @@
 use super::*;
-use crate::tool_history_render::render_current_tool_execution_history;
+use crate::model_output::ModelToolCall;
+use serde_json::json;
+use std::{fs, path::PathBuf};
 
 pub(super) struct StepAllocation {
     pub(super) step_id: String,
@@ -24,6 +26,8 @@ pub(super) fn execute_round(
     round_context: &MinimalContextView,
     round_index: u32,
     input: String,
+    prior_tool_calls: &[ModelToolCall],
+    tool_results: &[ToolExecutionRecord],
 ) -> Result<RoundExecution, RuntimeError> {
     let rendered_input = ModelInputAssembler::default().assemble(&input, round_context);
     let prepared_request = provider.prepare_request(&ProviderRequest {
@@ -37,6 +41,12 @@ pub(super) fn execute_round(
                 .model
                 .clone(),
         ),
+        tools: build_provider_tool_specs(round_context),
+        prior_tool_calls: prior_tool_calls
+            .iter()
+            .map(model_tool_call_to_provider_tool_call)
+            .collect(),
+        tool_results: build_provider_tool_results(round_context, tool_results),
     });
     let provider_response = provider.execute_prepared(&prepared_request)?;
     let provider_debug = SanitizedProviderDebug {
@@ -58,11 +68,14 @@ pub(super) fn execute_round(
         &parsed_output.tool_calls,
     );
     let assistant_response_text = parsed_output.user_response.clone();
-    let fallback_feedback =
+    let runtime_observation_feedback =
         ControlFeedbackBuilder.build(&operation.payload, &prepared_request, &provider_response);
     let mut control_feedback = ControlFeedbackBuilder::default()
-        .merge_with_fallback(parsed_output.control_feedback.clone(), fallback_feedback);
-    ControlFeedbackBuilder::default().rewrite_runtime_heuristic_candidates(
+        .merge_with_runtime_observation(
+            parsed_output.control_feedback.clone(),
+            runtime_observation_feedback,
+        );
+    ControlFeedbackBuilder::default().rewrite_runtime_observation_candidates(
         &mut control_feedback,
         &prepared_request,
         &provider_response,
@@ -353,20 +366,9 @@ pub(super) fn record_round(
     }
 }
 
-pub(super) fn build_followup_input(
-    context: &MinimalContextView,
-    original_input: &str,
-    assistant_response: &str,
-    tool_records: &[ToolExecutionRecord],
-) -> String {
-    let tool_lines = render_current_tool_execution_history(context, tool_records);
+pub(super) fn build_followup_input(original_input: &str, assistant_response: &str) -> String {
     format!(
-        "Continue the same turn with the latest tool results.\nOriginal request: {original_input}\nLast assistant response: {assistant_response}\nExecuted tool results (authoritative client facts, full current history):\n- {}\nInspect these tool results before deciding whether another tool is needed. If the task is complete, answer directly and emit reasoning.stop.",
-        if tool_lines.is_empty() {
-            "none".to_string()
-        } else {
-            tool_lines.join("\n- ")
-        }
+        "Continue the same turn.\nOriginal request: {original_input}\nLast assistant response: {assistant_response}\nThe previous round's native tool results are attached in this request; inspect them directly before deciding whether another tool is needed.\nIf the task is now complete, answer directly and emit control feedback that proves completion (task_completed=true plus non-empty completion_evidence and final_conclusions). If this is just a simple chat closure, set is_simple_chat=true. If you are blocked and need the user to do something, set blocked=true, needs_user_involve=true, and fill blocked_reason plus what_needs_to_be_done_by_user.\nOnly request reasoning.stop when the current reasoning cycle should really stop and the control feedback already contains one of those valid closure channels. Otherwise continue reasoning and do not stop yet."
     )
 }
 
@@ -387,3 +389,9 @@ pub(super) fn append_step_event_id(step_records: &mut [StepRecord], step_id: &st
         step.event_ids.push(event_id.to_string());
     }
 }
+
+#[path = "closure_runtime_rounds_tools.rs"]
+mod closure_runtime_rounds_tools;
+use self::closure_runtime_rounds_tools::{
+    build_provider_tool_results, build_provider_tool_specs, model_tool_call_to_provider_tool_call,
+};

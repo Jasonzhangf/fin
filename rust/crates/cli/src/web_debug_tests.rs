@@ -12,6 +12,7 @@ use std::{
 };
 
 static TEMP_RUNTIME_COUNTER: AtomicU64 = AtomicU64::new(1);
+pub(crate) const REMOVED_LEGACY_HIDDEN_FOLLOWUP_EVENT: &str = "framework.task_kickoff_enqueued";
 
 fn sample_user_toml() -> String {
     r#"
@@ -109,7 +110,7 @@ fn status_probe_returns_latest_framework_state_without_new_closure() {
     write_file(
         &session_dir.join("control/latest.json"),
         serde_json::to_vec_pretty(&ControlFeedback {
-            origin: "runtime_heuristic".into(),
+            origin: "runtime_observation_only_v1".into(),
             is_continuation: true,
             continuity_confidence: 93,
             topic_shift_confidence: 7,
@@ -400,7 +401,9 @@ mod web_debug_tests_runtime;
 mod web_debug_tests_runtime_assignment_resume;
 #[path = "web_debug_tests_runtime_closed_loop.rs"]
 mod web_debug_tests_runtime_closed_loop;
+#[path = "web_debug_tests_runtime_formalize_passive.rs"]
+mod web_debug_tests_runtime_formalize_passive;
 #[path = "web_debug_tests_runtime_owner_loop.rs"]
 mod web_debug_tests_runtime_owner_loop;
-#[path = "web_debug_tests_runtime_planning_kickoff.rs"]
-mod web_debug_tests_runtime_planning_kickoff;
+#[path = "web_debug_tests_runtime_system_inspection.rs"]
+mod web_debug_tests_runtime_system_inspection;
