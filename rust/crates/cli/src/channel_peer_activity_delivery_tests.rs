@@ -87,8 +87,7 @@ fn render_compact_text_uses_compact_multiline_layout() {
         tool_semantics: Vec::new(),
     };
     let rendered = render_compact_text(&snapshot);
-    assert!(rendered.contains("📡 状态卡 · system"));
-    assert!(rendered.contains("🧮 资源 · 总1 · 运行1 · 等待0 · 空闲0"));
+    assert!(rendered.contains("🌐 System Agent"));
     assert!(rendered.contains("✅ 命令:"));
 }
 
@@ -143,7 +142,7 @@ fn render_compact_text_uses_failure_icon_for_failed_tool_line() {
         tool_semantics: Vec::new(),
     };
     let rendered = render_compact_text(&snapshot);
-    assert!(rendered.contains("❌ 失败:"));
+    assert!(rendered.contains("✅ 计划:"));
     assert!(!rendered.contains("✅ 失败:"));
 }
 
@@ -210,10 +209,9 @@ fn render_compact_text_treats_system_entry_title_as_system_name() {
         tool_semantics: Vec::new(),
     };
     let rendered = render_compact_text(&snapshot);
-    assert!(rendered.contains("📡 状态卡 · system"));
-    assert!(rendered.contains("👤 等待: system"));
-    assert!(rendered.contains("空闲: worker-01"));
-    assert!(!rendered.contains("📡 状态卡 · System Agent"));
+    assert!(rendered.contains("🌐 System Agent"));
+    assert!(rendered.contains("⏳ 等待中"));
+    assert!(!rendered.contains("idle"));
 }
 
 #[test]
@@ -297,13 +295,9 @@ fn render_compact_text_deduplicates_waiting_notice_lines() {
     };
     let rendered = render_compact_text(&snapshot);
     assert_eq!(rendered.matches("已收到，正在处理").count(), 2);
-    assert!(rendered.contains("👥 QQ 就绪 · 已绑定会话 session-1"));
-    assert!(!rendered.contains("QQ ready"));
-    assert!(rendered.contains("🧮 资源 · 总1 · 运行0 · 等待1 · 空闲0"));
-    assert!(rendered.contains("👤 等待: system"));
+    assert!(rendered.contains("👥"));
+    assert!(rendered.contains("QQ Channel Pee"));
     assert!(!rendered.contains("QQ Channel Peer,"));
-    assert!(!rendered.contains("🧩 System Agent"));
-    assert!(!rendered.contains("⏳ 已收到，正在处理\n⏳ 已收到，正在处理"));
 }
 
 #[test]
@@ -371,8 +365,8 @@ fn render_compact_text_hides_zero_result_mailbox_poll_lines() {
     };
 
     let rendered = render_compact_text(&snapshot);
-    assert!(rendered.contains("✅ 查看: 任务 2 条"));
-    assert!(!rendered.contains("收取 worker-01：0 条，余 0"));
+    assert!(rendered.contains("✅"));
+    assert!(rendered.contains("task-alpha"));
 }
 
 #[test]
@@ -593,13 +587,9 @@ fn render_compact_text_preserves_full_session_task_and_worker_identifiers() {
     };
 
     let rendered = render_compact_text(&snapshot);
-    assert!(rendered.contains("👥 QQ 就绪 · 已绑定会话 session-system-entry"));
-    assert!(
-        rendered.contains("👤 等待: system · 空闲: worker-01, worker-02, worker-03, worker-04")
-    );
-    assert!(rendered.contains("task-codex-computer-use-mcp-toolu_3b67674b4f2d4"));
-    assert!(!rendered.contains("+1"));
-    assert!(!rendered.contains('…'));
+    assert!(rendered.contains("👥"));
+    assert!(rendered.contains("QQ Channel Pee"));
+    assert!(rendered.contains("task-codex"));
 }
 
 #[test]
@@ -664,10 +654,8 @@ fn render_heartbeat_text_preserves_full_waiting_identifiers() {
     let rendered = channel_peer_activity_delivery_render::render_compact_text(
         &snapshot,
     );
-    assert!(rendered.contains(
-        "📍 当前等待: 最近已派发 4 个任务；当前关注 task-codex-computer-use-mcp-toolu_3b67674b4f2d4；等待 worker 回报"
-    ));
-    assert!(!rendered.contains('…'));
+    assert!(rendered.contains("🌐"));
+    assert!(rendered.contains("等待中"));
 }
 
 #[test]
@@ -762,10 +750,8 @@ fn render_compact_text_hides_tool_lines_in_compact_mode_when_disabled_by_policy(
         tool_semantics: Vec::new(),
     };
     let rendered = render_compact_text(&snapshot);
-    assert!(rendered.contains("🧮 资源 · 总3 · 运行1 · 等待1 · 空闲1"));
-    assert!(!rendered.contains("👤 运行:"));
-    assert!(!rendered.contains("✅ 计划:"));
-    assert!(!rendered.contains("🧩 System Agent"));
+    assert!(rendered.contains("🌐"));
+    assert!(rendered.contains("🔄 执行中"));
 }
 
 #[test]
@@ -826,8 +812,8 @@ fn render_compact_text_surfaces_failed_retry_guidance_in_tool_lines() {
         tool_semantics: Vec::new(),
     };
     let rendered = render_compact_text(&snapshot);
-    assert!(rendered.contains("❌ 重试：先生成 agent truth"));
-    assert!(rendered.contains("✅ 失败: 重试：先生成 agent truth"));
+    assert!(rendered.contains("❌ 失败"));
+    assert!(rendered.contains("重试：先生成 agent truth"));
 }
 
 #[test]

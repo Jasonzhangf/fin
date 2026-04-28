@@ -121,6 +121,7 @@ pub(crate) fn ensure_runtime_home_layout(runtime_home: &Path) -> Result<(), CliE
         "harness/baselines",
         "harness/reports",
         "workdirs",
+        "sessions",
         "archive/sessions",
         "archive/logs",
         "archive/diagnostics",

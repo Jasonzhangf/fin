@@ -40,7 +40,7 @@ pub(super) fn should_emit_snapshot(snapshot: &ActivityCardsSnapshot) -> bool {
         return false;
     };
     if has_pending_inbound_notice(user_card) {
-        return true;
+        return !is_ack_equivalent_snapshot(snapshot);
     }
     let Some(system_card) = snapshot
         .source_cards
@@ -49,6 +49,9 @@ pub(super) fn should_emit_snapshot(snapshot: &ActivityCardsSnapshot) -> bool {
     else {
         return false;
     };
+    if is_ack_equivalent_snapshot(snapshot) {
+        return false;
+    }
     matches!(
         system_card.state.as_str(),
         "running" | "waiting" | "paused" | "failed"
@@ -66,6 +69,18 @@ fn has_pending_inbound_notice(user_card: &UserActivityCardView) -> bool {
             .recent_items
             .iter()
             .any(|item| item.as_str() == PENDING_INBOUND_NOTICE)
+}
+
+fn is_ack_equivalent_snapshot(snapshot: &ActivityCardsSnapshot) -> bool {
+    let system_card = snapshot
+        .source_cards
+        .iter()
+        .find(|card| card.source_id == SYSTEM_SOURCE_ID);
+    system_card.is_some_and(|card| {
+        card.summary.as_str() == PENDING_INBOUND_NOTICE
+            || card.waiting_detail.as_deref() == Some(PENDING_INBOUND_NOTICE)
+            || card.current_activity.as_deref() == Some(PENDING_INBOUND_NOTICE)
+    })
 }
 
 fn render_header(snapshot: &ActivityCardsSnapshot, user_card: &UserActivityCardView) -> String {
