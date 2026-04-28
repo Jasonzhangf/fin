@@ -90,6 +90,23 @@ pub(super) fn pending_inbound_notice(
     Ok(pending.then(|| super::PENDING_INBOUND_NOTICE.into()))
 }
 
+
+pub(super) fn read_session_vec<T: for<'de> Deserialize<'de>>(
+    runtime_home: &Path,
+    session_id: &str,
+    field: &str,
+) -> Result<Vec<T>, RuntimeError> {
+    let year = &session_id.split('-').nth(1).unwrap_or("2026");
+    let month = &session_id.split('-').nth(2).unwrap_or("01");
+    let path = runtime_home
+        .join("sessions")
+        .join(year)
+        .join(month)
+        .join(session_id)
+        .join(field);
+    read_json_if_exists(&path).map(|v| v.unwrap_or_default())
+}
+
 pub(super) fn string_field(value: &Value, key: &str) -> Option<String> {
     value.get(key).and_then(Value::as_str).map(str::to_string)
 }

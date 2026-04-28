@@ -59,6 +59,9 @@ fn client_prepares_request_from_descriptor() {
         input: "hello".into(),
         rendered_input: None,
         override_model: None,
+        tools: Vec::new(),
+        prior_tool_calls: Vec::new(),
+        tool_results: Vec::new(),
     });
 
     assert_eq!(client.protocol(), ProviderProtocol::OpenAiCompatible);
@@ -91,6 +94,9 @@ fn anthropic_descriptor_prepares_messages_endpoint() {
         input: "hello".into(),
         rendered_input: None,
         override_model: None,
+        tools: Vec::new(),
+        prior_tool_calls: Vec::new(),
+        tool_results: Vec::new(),
     });
     assert_eq!(
         prepared.endpoint,
@@ -206,6 +212,9 @@ fn anthropic_execute_retries_retryable_request_failures() {
         input: "hello".into(),
         rendered_input: Some("hello".into()),
         override_model: None,
+        tools: Vec::new(),
+        prior_tool_calls: Vec::new(),
+        tool_results: Vec::new(),
     });
 
     let response = facade
@@ -256,6 +265,9 @@ fn anthropic_execute_uses_larger_output_budget() {
         input: "hello".into(),
         rendered_input: Some("hello".into()),
         override_model: None,
+        tools: Vec::new(),
+        prior_tool_calls: Vec::new(),
+        tool_results: Vec::new(),
     });
 
     let response = facade
@@ -305,6 +317,9 @@ fn anthropic_execute_does_not_retry_http_status_errors() {
         input: "hello".into(),
         rendered_input: Some("hello".into()),
         override_model: None,
+        tools: Vec::new(),
+        prior_tool_calls: Vec::new(),
+        tool_results: Vec::new(),
     });
 
     let err = facade

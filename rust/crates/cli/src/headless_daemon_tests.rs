@@ -51,6 +51,7 @@ impl InferenceProvider for HeadlessResumeProvider {
             response_id: Some("headless-resume-response".into()),
             stop_reason: Some("end_turn".into()),
             status: 200,
+            tool_calls: Vec::new(),
         })
     }
 }
@@ -90,6 +91,7 @@ impl InferenceProvider for HeadlessProjectProvider {
             response_id: Some("headless-project-response".into()),
             stop_reason: Some("end_turn".into()),
             status: 200,
+            tool_calls: Vec::new(),
         })
     }
 }

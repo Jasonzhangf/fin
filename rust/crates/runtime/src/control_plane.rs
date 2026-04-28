@@ -26,9 +26,6 @@ pub fn running_state(
         status: "running".into(),
         active_turn_id: Some(format!("turn-{operation_id}")),
         active_step_id: Some(format!("step-{operation_id}-01-context_build")),
-        resume_from_step_id: Some(format!("step-{operation_id}-01-context_build")),
-        resume_checkpoint_ready: false,
-        resume_checkpoint_id: None,
         pending_input_count,
         accepts_user_input: false,
         reason: Some("active closure running".into()),
@@ -38,11 +35,6 @@ pub fn running_state(
 
 pub fn state_after_run(run: &ClosureRun, pending_input_count: usize) -> ExecutionStateRecord {
     let last_step_id = run.step_records.last().map(|step| step.step_id.clone());
-    let resume_from_step_id = run
-        .resume_checkpoint
-        .as_ref()
-        .map(|value| value.source_step_id.clone())
-        .or_else(|| last_step_id.clone());
     let is_waiting = run
         .tool_records
         .iter()
@@ -57,26 +49,12 @@ pub fn state_after_run(run: &ClosureRun, pending_input_count: usize) -> Executio
         },
         active_turn_id: Some(run.turn_record.turn_id.clone()),
         active_step_id: last_step_id.clone(),
-        resume_from_step_id,
-        resume_checkpoint_ready: run.resume_checkpoint.is_some(),
-        resume_checkpoint_id: run
-            .resume_checkpoint
-            .as_ref()
-            .map(|value| value.checkpoint_id.clone()),
         pending_input_count,
         accepts_user_input: true,
         reason: Some(if is_waiting {
-            if run.resume_checkpoint.is_some() {
-                "waiting for reminder or external result; resumable checkpoint ready".into()
-            } else {
-                "waiting for reminder or external result".into()
-            }
+            "waiting for reminder or external result".into()
         } else {
-            if run.resume_checkpoint.is_some() {
-                "closure checkpointed for precise resume".into()
-            } else {
-                "closure completed".into()
-            }
+            "closure completed".into()
         }),
         updated_at: run.note.created_at.clone(),
     }
@@ -95,9 +73,6 @@ pub fn failed_state(
         status: "idle".into(),
         active_turn_id: Some(format!("turn-{operation_id}")),
         active_step_id: None,
-        resume_from_step_id: None,
-        resume_checkpoint_ready: false,
-        resume_checkpoint_id: None,
         pending_input_count,
         accepts_user_input: true,
         reason: Some(reason.into()),
@@ -122,7 +97,7 @@ pub fn paused_state(
         turn_id: turn_id.clone(),
         active_step_id: step_id.clone(),
         resume_from_step_id: step_id.clone(),
-        resume_checkpoint_id: current_state.and_then(|state| state.resume_checkpoint_id.clone()),
+        resume_checkpoint_id: step_id.clone(),
         reason: reason.clone(),
         paused_at: now.into(),
     };
@@ -132,9 +107,6 @@ pub fn paused_state(
         status: "paused".into(),
         active_turn_id: turn_id,
         active_step_id: step_id.clone(),
-        resume_from_step_id: step_id,
-        resume_checkpoint_ready: checkpoint.resume_checkpoint_id.is_some(),
-        resume_checkpoint_id: checkpoint.resume_checkpoint_id.clone(),
         pending_input_count,
         accepts_user_input: false,
         reason,
@@ -156,10 +128,6 @@ pub fn resumed_state(
         status: "idle".into(),
         active_turn_id: checkpoint.and_then(|value| value.turn_id.clone()),
         active_step_id: checkpoint.and_then(|value| value.active_step_id.clone()),
-        resume_from_step_id: checkpoint.and_then(|value| value.resume_from_step_id.clone()),
-        resume_checkpoint_ready: checkpoint
-            .is_some_and(|value| value.resume_checkpoint_id.is_some()),
-        resume_checkpoint_id: checkpoint.and_then(|value| value.resume_checkpoint_id.clone()),
         pending_input_count,
         accepts_user_input: true,
         reason: Some("manual resume".into()),

@@ -37,6 +37,8 @@ pub(super) fn execute_round_with_contract_retries(
         round_context,
         round_index,
         input.clone(),
+        &[],
+        &[],
     )?;
     let mut retry_events = Vec::new();
     let mut errors =
@@ -79,6 +81,8 @@ pub(super) fn execute_round_with_contract_retries(
             round_context,
             round_index,
             retry_input.clone(),
+            &[],
+            &[],
         )?;
         errors =
             validate_model_output_contract(&round.parsed_output, &round.assistant_response_text);

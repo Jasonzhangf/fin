@@ -15,6 +15,7 @@ fn exec_command_and_write_stdin_replay_session_work() {
         1,
         &[ModelToolCall {
             tool_name: "exec_command".into(),
+            tool_call_id: None,
             arguments: json!({
                 "cmd": "cat",
                 "open_stdin_session": true,
@@ -43,6 +44,7 @@ fn exec_command_and_write_stdin_replay_session_work() {
         2,
         &[ModelToolCall {
             tool_name: "write_stdin".into(),
+            tool_call_id: None,
             arguments: json!({
                 "session_id": session_id,
                 "chars": "hello-from-stdin",
@@ -95,6 +97,7 @@ beta
         1,
         &[ModelToolCall {
             tool_name: "apply_patch".into(),
+            tool_call_id: None,
             arguments: json!({
                 "path": "sample.txt",
                 "old_string": "beta",
@@ -153,6 +156,7 @@ stay
         1,
         &[ModelToolCall {
             tool_name: "apply_patch".into(),
+            tool_call_id: None,
             arguments: json!({
                 "mode": "patch",
                 "patch": "*** Begin Patch
@@ -212,6 +216,7 @@ fn apply_patch_replace_mode_supports_creating_new_file_with_empty_old_string() {
         1,
         &[ModelToolCall {
             tool_name: "apply_patch".into(),
+            tool_call_id: None,
             arguments: json!({
                 "path": "created.txt",
                 "mode": "replace",

@@ -43,6 +43,8 @@ pub struct ParsedModelOutput {
 pub struct ModelToolCall {
     pub tool_name: String,
     #[serde(default)]
+    pub tool_call_id: Option<String>,
+    #[serde(default)]
     pub arguments: Value,
 }
 
@@ -89,6 +91,25 @@ impl ModelOutputParser {
             .map(|block| parse_tool_calls(&block.content, block.repaired))
             .unwrap_or_else(ParsedToolCalls::absent);
 
+        // When the text output has no <fin_tool_calls> block, check native
+        // provider tool_calls (provider-native function calling protocol).
+        let parsed_tool_calls = if parsed_tool_calls.calls.is_empty()
+            && !response.tool_calls.is_empty()
+        {
+            let native_calls: Vec<ModelToolCall> = response
+                .tool_calls
+                .iter()
+                .map(|tc| ModelToolCall {
+                    tool_name: tc.name.clone(),
+                    tool_call_id: Some(tc.tool_call_id.clone()),
+                    arguments: tc.arguments.clone(),
+                })
+                .collect();
+            ParsedToolCalls::native(parsed_tool_calls, native_calls)
+        } else {
+            parsed_tool_calls
+        };
+
         ParsedModelOutput {
             user_response: if user_response.is_empty() {
                 raw.to_string()
@@ -123,6 +144,15 @@ impl ParsedToolCalls {
             parse_status: "absent".into(),
             invalid_reason: None,
             calls: Vec::new(),
+        }
+    }
+
+    fn native(text_parsed: Self, calls: Vec<ModelToolCall>) -> Self {
+        Self {
+            block_present: text_parsed.block_present,
+            parse_status: "provider_native".into(),
+            invalid_reason: None,
+            calls,
         }
     }
 }
@@ -225,6 +255,7 @@ fn normalize_tool_call(value: Value) -> Result<NormalizedToolCall, &'static str>
         .unwrap_or_else(|| Value::Object(Default::default()));
     Ok(NormalizedToolCall {
         call: ModelToolCall {
+            tool_call_id: None,
             tool_name,
             arguments,
         },

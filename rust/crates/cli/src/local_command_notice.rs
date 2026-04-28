@@ -25,6 +25,11 @@ pub(crate) fn append_notice_messages(
         operation_id: None,
         trace_id: None,
         closure_id: None,
+        sender_kind: None,
+        role_id: None,
+        agent_name: None,
+        display_name: None,
+        source_kind: None,
     });
     messages.push(SessionMessageRecord {
         message_id: format!("system-notice-{stamp}"),
@@ -36,6 +41,11 @@ pub(crate) fn append_notice_messages(
         operation_id: None,
         trace_id: None,
         closure_id: None,
+        sender_kind: None,
+        role_id: None,
+        agent_name: None,
+        display_name: None,
+        source_kind: None,
     });
     trim_head(&mut messages, SESSION_MESSAGE_LIMIT);
     write_json(message_path, &messages)

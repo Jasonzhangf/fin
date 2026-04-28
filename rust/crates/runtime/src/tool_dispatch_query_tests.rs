@@ -83,6 +83,7 @@ fn view_image_uses_current_attachment_metadata() {
         1,
         &[ModelToolCall {
             tool_name: "view_image".into(),
+            tool_call_id: None,
             arguments: json!({}),
         }],
     );
@@ -147,6 +148,7 @@ fn context_history_rebuild_refreshes_rebuild_index() {
         1,
         &[ModelToolCall {
             tool_name: "context_history.rebuild".into(),
+            tool_call_id: None,
             arguments: json!({ "reason": "test_rebuild" }),
         }],
     );
@@ -203,6 +205,7 @@ fn project_task_tools_list_and_status_known_tasks() {
         1,
         &[ModelToolCall {
             tool_name: "project.task.list".into(),
+            tool_call_id: None,
             arguments: json!({ "limit": 5 }),
         }],
     );
@@ -222,6 +225,7 @@ fn project_task_tools_list_and_status_known_tasks() {
         1,
         &[ModelToolCall {
             tool_name: "project.task.status".into(),
+            tool_call_id: None,
             arguments: json!({ "task_id": "task-tool-dispatch" }),
         }],
     );
@@ -282,6 +286,7 @@ fn control_query_tools_list_presence_and_supervision_truth() {
         1,
         &[ModelToolCall {
             tool_name: "agent.presence.list".into(),
+            tool_call_id: None,
             arguments: json!({ "limit": 5 }),
         }],
     );
@@ -314,6 +319,7 @@ fn control_query_tools_list_presence_and_supervision_truth() {
         1,
         &[ModelToolCall {
             tool_name: "project.supervision.list".into(),
+            tool_call_id: None,
             arguments: json!({ "desired_action": "resume_project_task" }),
         }],
     );

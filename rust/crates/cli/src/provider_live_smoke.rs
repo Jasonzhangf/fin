@@ -18,6 +18,9 @@ use std::{
     path::{Path, PathBuf},
 };
 
+#[path = "provider_live_smoke_timeline.rs"]
+mod provider_live_smoke_timeline;
+
 #[path = "provider_live_smoke_report.rs"]
 mod provider_live_smoke_report;
 use provider_live_smoke_report::{LiveTranscriptRun, build_report, write_report};
@@ -50,6 +53,11 @@ pub(crate) struct ProviderLiveSmokeReport {
     pub(crate) session_messages_path: String,
     pub(crate) session_recent_rounds_path: String,
     pub(crate) session_recent_steps_path: String,
+    pub(crate) session_recent_tool_records_path: String,
+    pub(crate) session_recent_provider_requests_path: String,
+    pub(crate) session_recent_provider_responses_path: String,
+    pub(crate) conformance: ProviderLiveSmokeConformance,
+    pub(crate) turn_timelines: Vec<ProviderLiveSmokeTurnTimeline>,
     pub(crate) assistant_outputs_preview: Vec<String>,
     pub(crate) verified_at: String,
 }
@@ -342,6 +350,46 @@ fn live_transcript_ids(scenario: &TranscriptScenario) -> LiveTranscriptIds {
         session_id,
         task_id,
     }
+}
+
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub(crate) struct ProviderLiveSmokeConformance {
+    pub(crate) policy: String,
+    pub(crate) user_turn_purity_ok: bool,
+    pub(crate) visible_message_roles_ok: bool,
+    pub(crate) timeline_steps_ok: bool,
+    pub(crate) issues: Vec<String>,
+    pub(crate) attribution_hint: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub(crate) struct ProviderLiveSmokeTurnTimeline {
+    pub(crate) turn_index: usize,
+    pub(crate) operation_id: String,
+    pub(crate) provider_attempts: usize,
+    pub(crate) round_count: usize,
+    pub(crate) assistant_response_present: bool,
+    pub(crate) model_tool_names: Vec<String>,
+    pub(crate) reasoning_stop_completed: bool,
+    pub(crate) closure_stop_source: Option<String>,
+    pub(crate) required_steps_present: bool,
+    pub(crate) step_timeline: Vec<String>,
+}
+
+pub(crate) fn live_smoke_scenario_violations(
+    scenario: &crate::transcript::TranscriptScenario,
+) -> Vec<String> {
+    let mut issues = Vec::new();
+    if scenario.turns.is_empty() {
+        issues.push("scenario has no turns".into());
+    }
+    for (i, turn) in scenario.turns.iter().enumerate() {
+        if turn.input.trim().is_empty() {
+            issues.push(format!("turn {} has empty input", i + 1));
+        }
+    }
+    issues
 }
 
 #[cfg(test)]

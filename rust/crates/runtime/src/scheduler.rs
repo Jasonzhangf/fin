@@ -80,13 +80,6 @@ pub fn derive_scheduler_decision(
                     None,
                     format!("idle with {parallel_pending_count} parallel user inputs"),
                 )
-            } else if state.is_some_and(|value| value.resume_checkpoint_ready) {
-                (
-                    "resume_checkpoint",
-                    true,
-                    None,
-                    "idle with open resumable execution checkpoint".into(),
-                )
             } else if pending_input_count > 0 {
                 (
                     "run_next_pending",
@@ -176,9 +169,6 @@ mod tests {
                 status: "idle".into(),
                 active_turn_id: None,
                 active_step_id: None,
-                resume_from_step_id: None,
-                resume_checkpoint_ready: false,
-                resume_checkpoint_id: None,
                 pending_input_count: 2,
                 accepts_user_input: true,
                 reason: None,
@@ -242,9 +232,6 @@ mod tests {
                 status: "idle".into(),
                 active_turn_id: None,
                 active_step_id: None,
-                resume_from_step_id: None,
-                resume_checkpoint_ready: false,
-                resume_checkpoint_id: None,
                 pending_input_count: 1,
                 accepts_user_input: true,
                 reason: None,
@@ -286,7 +273,7 @@ mod tests {
     }
 
     #[test]
-    fn scheduler_prefers_resume_checkpoint_before_pending_queue() {
+    fn scheduler_prefers_pending_queue_when_idle() {
         let decision = derive_scheduler_decision(
             &refs(),
             Some(&ExecutionStateRecord {
@@ -295,9 +282,6 @@ mod tests {
                 status: "idle".into(),
                 active_turn_id: Some("turn-op-1".into()),
                 active_step_id: Some("step-op-1-04-tool_dispatch".into()),
-                resume_from_step_id: Some("step-op-1-04-tool_dispatch".into()),
-                resume_checkpoint_ready: true,
-                resume_checkpoint_id: Some("checkpoint-op-1-r02".into()),
                 pending_input_count: 2,
                 accepts_user_input: true,
                 reason: Some("checkpoint ready".into()),
@@ -331,8 +315,7 @@ mod tests {
             None,
             "2026-04-20T10:00:00+08:00",
         );
-        assert_eq!(decision.action_kind, "resume_checkpoint");
-        assert!(decision.continue_until_blocked);
+        assert_eq!(decision.action_kind, "run_next_pending");
     }
 
     #[test]
@@ -345,9 +328,6 @@ mod tests {
                 status: "waiting_external".into(),
                 active_turn_id: Some("turn-op-2".into()),
                 active_step_id: Some("step-op-2-05-finalize".into()),
-                resume_from_step_id: Some("step-op-2-05-finalize".into()),
-                resume_checkpoint_ready: true,
-                resume_checkpoint_id: Some("checkpoint-op-2-r02".into()),
                 pending_input_count: 1,
                 accepts_user_input: true,
                 reason: Some("waiting".into()),
@@ -382,9 +362,6 @@ mod tests {
                 status: "idle".into(),
                 active_turn_id: None,
                 active_step_id: None,
-                resume_from_step_id: None,
-                resume_checkpoint_ready: false,
-                resume_checkpoint_id: None,
                 pending_input_count: 0,
                 accepts_user_input: true,
                 reason: None,

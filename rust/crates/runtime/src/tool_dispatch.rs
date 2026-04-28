@@ -286,3 +286,7 @@ pub(super) fn short_text(value: &str, limit: usize) -> String {
         out
     }
 }
+
+pub fn authoritative_receipt_ref(artifact_ref: &str) -> bool {
+    artifact_ref.ends_with(".receipt.md") || artifact_ref.ends_with(".receipt.json") || artifact_ref.contains("/receipts/")
+}

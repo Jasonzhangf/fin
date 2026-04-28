@@ -20,7 +20,6 @@ pub(super) fn build_partial_run(
     turn_record: &TurnRecord,
     routing_decision: &RoutingDecisionRecord,
     routing_action: &RoutingActionRecord,
-    resume_checkpoint: Option<&ExecutionCheckpointRecord>,
     events: &[EventEnvelope<Value>],
 ) -> ClosureRun {
     ClosureRun {
@@ -46,30 +45,17 @@ pub(super) fn build_partial_run(
         turn_record: turn_record.clone(),
         routing_decision: routing_decision.clone(),
         routing_action: routing_action.clone(),
-        resume_checkpoint: resume_checkpoint.cloned(),
         closure_trace: ClosureTraceRecord::default(),
         events: events.to_vec(),
     }
 }
 
 pub(super) fn append_checkpoint_recorded_event(
-    runtime: &mut M1Runtime,
-    events: &mut Vec<EventEnvelope<Value>>,
-    operation: &OperationEnvelope<InferenceOperationPayload>,
-    refs: &EntityRefs,
-    checkpoint: Option<&ExecutionCheckpointRecord>,
+    _runtime: &mut M1Runtime,
+    _events: &mut Vec<EventEnvelope<Value>>,
+    _operation: &OperationEnvelope<InferenceOperationPayload>,
+    _refs: &EntityRefs,
 ) -> Result<(), RuntimeError> {
-    let Some(checkpoint) = checkpoint else {
-        return Ok(());
-    };
-    events.push(runtime.event(
-        "execution.checkpoint_recorded",
-        &operation.trace_id,
-        &operation.submitted_at,
-        refs,
-        Some(operation.operation_id.clone()),
-        serde_json::to_value(checkpoint)?,
-    )?);
     Ok(())
 }
 
@@ -131,7 +117,6 @@ pub(super) fn build_final_run(
     turn_record: TurnRecord,
     routing_decision: RoutingDecisionRecord,
     routing_action: RoutingActionRecord,
-    resume_checkpoint: Option<ExecutionCheckpointRecord>,
     closure_trace: ClosureTraceRecord,
     events: Vec<EventEnvelope<Value>>,
 ) -> ClosureRun {
@@ -158,7 +143,6 @@ pub(super) fn build_final_run(
         turn_record,
         routing_decision,
         routing_action,
-        resume_checkpoint,
         closure_trace,
         events,
     }

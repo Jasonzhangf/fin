@@ -1,0 +1,12 @@
+{
+  "session_id": "session-__RUN_ID__-provider-write-file-business-like",
+  "task_id": "task-__RUN_ID__-provider-write-file-business-like",
+  "turns": [
+    {
+      "input": "请基于当前工作区里与真实 provider/tool 闭环最相关、且你能实际核验到的资料，整理一份简短业务测试记录到 `.tmp/live-e2e/__RUN_ID__/provider-write-file-business-like.md`。要求：1) 只能写你实际核验到的信息，不要猜；2) 至少写 3 条当前实现状态；3) 至少写 2 条下一步测试建议；4) 这是一份完整文档，请直接把最终内容写成文件，不要只给片段；5) 结果文件必须真实存在且非空。"
+    },
+    {
+      "input": "继续同一任务。如果你已经完成，请只基于刚才这轮真实执行过程告诉我三件事：你最终是怎么把文件写出来的、输出文件路径是什么、这次更像是正常业务推进还是空转。"
+    }
+  ]
+}

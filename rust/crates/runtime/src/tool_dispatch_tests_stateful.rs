@@ -17,6 +17,7 @@ fn update_plan_persists_runtime_plan_artifact() {
         1,
         &[ModelToolCall {
             tool_name: "update_plan".into(),
+            tool_call_id: None,
             arguments: json!({
                 "explanation": "close current runtime gap",
                 "steps": [
@@ -67,6 +68,7 @@ fn session_list_returns_recent_session_ids() {
         1,
         &[ModelToolCall {
             tool_name: "session.list".into(),
+            tool_call_id: None,
             arguments: json!({ "limit": 2 }),
         }],
     );

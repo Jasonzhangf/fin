@@ -1,7 +1,6 @@
 use super::*;
 use crate::channel_peer::complete_builtin_qqbot_pairing;
 use crate::channel_peer_activity_delivery::channel_peer_activity_delivery_render::render_recent_action;
-use crate::channel_peer_progress_policy::QqbotProgressPolicy;
 use fin_contracts::{
     ActivitySourceSummary, SourceActivityCardView, ToolSemanticView, UserActivityCardView,
 };
@@ -30,10 +29,6 @@ fn write_json(path: &Path, value: &impl serde::Serialize) {
         fs::create_dir_all(parent).expect("create parent");
     }
     fs::write(path, serde_json::to_vec_pretty(value).expect("json")).expect("write");
-}
-
-fn default_policy() -> QqbotProgressPolicy {
-    QqbotProgressPolicy::default()
 }
 
 #[test]
@@ -91,7 +86,7 @@ fn render_compact_text_uses_compact_multiline_layout() {
         }],
         tool_semantics: Vec::new(),
     };
-    let rendered = render_compact_text(&snapshot, false, &default_policy());
+    let rendered = render_compact_text(&snapshot);
     assert!(rendered.contains("📡 状态卡 · system"));
     assert!(rendered.contains("🧮 资源 · 总1 · 运行1 · 等待0 · 空闲0"));
     assert!(rendered.contains("✅ 命令:"));
@@ -147,7 +142,7 @@ fn render_compact_text_uses_failure_icon_for_failed_tool_line() {
         }],
         tool_semantics: Vec::new(),
     };
-    let rendered = render_compact_text(&snapshot, false, &default_policy());
+    let rendered = render_compact_text(&snapshot);
     assert!(rendered.contains("❌ 失败:"));
     assert!(!rendered.contains("✅ 失败:"));
 }
@@ -214,7 +209,7 @@ fn render_compact_text_treats_system_entry_title_as_system_name() {
         ],
         tool_semantics: Vec::new(),
     };
-    let rendered = render_compact_text(&snapshot, false, &default_policy());
+    let rendered = render_compact_text(&snapshot);
     assert!(rendered.contains("📡 状态卡 · system"));
     assert!(rendered.contains("👤 等待: system"));
     assert!(rendered.contains("空闲: worker-01"));
@@ -300,7 +295,7 @@ fn render_compact_text_deduplicates_waiting_notice_lines() {
         ],
         tool_semantics: Vec::new(),
     };
-    let rendered = render_compact_text(&snapshot, false, &default_policy());
+    let rendered = render_compact_text(&snapshot);
     assert_eq!(rendered.matches("已收到，正在处理").count(), 2);
     assert!(rendered.contains("👥 QQ 就绪 · 已绑定会话 session-1"));
     assert!(!rendered.contains("QQ ready"));
@@ -375,7 +370,7 @@ fn render_compact_text_hides_zero_result_mailbox_poll_lines() {
         tool_semantics: Vec::new(),
     };
 
-    let rendered = render_compact_text(&snapshot, false, &default_policy());
+    let rendered = render_compact_text(&snapshot);
     assert!(rendered.contains("✅ 查看: 任务 2 条"));
     assert!(!rendered.contains("收取 worker-01：0 条，余 0"));
 }
@@ -442,7 +437,7 @@ fn render_compact_text_does_not_use_global_tool_failures_when_focus_source_has_n
         }],
     };
 
-    let rendered = render_compact_text(&snapshot, false, &default_policy());
+    let rendered = render_compact_text(&snapshot);
     assert!(!rendered.contains("referenced runtime target does not exist"));
     assert!(!rendered.contains("❌ 失败:"));
 }
@@ -597,7 +592,7 @@ fn render_compact_text_preserves_full_session_task_and_worker_identifiers() {
         tool_semantics: Vec::new(),
     };
 
-    let rendered = render_compact_text(&snapshot, false, &default_policy());
+    let rendered = render_compact_text(&snapshot);
     assert!(rendered.contains("👥 QQ 就绪 · 已绑定会话 session-system-entry"));
     assert!(
         rendered.contains("👤 等待: system · 空闲: worker-01, worker-02, worker-03, worker-04")
@@ -666,10 +661,8 @@ fn render_heartbeat_text_preserves_full_waiting_identifiers() {
         tool_semantics: Vec::new(),
     };
 
-    let rendered = channel_peer_activity_delivery_render::render_heartbeat_text(
+    let rendered = channel_peer_activity_delivery_render::render_compact_text(
         &snapshot,
-        false,
-        &default_policy(),
     );
     assert!(rendered.contains(
         "📍 当前等待: 最近已派发 4 个任务；当前关注 task-codex-computer-use-mcp-toolu_3b67674b4f2d4；等待 worker 回报"
@@ -768,10 +761,7 @@ fn render_compact_text_hides_tool_lines_in_compact_mode_when_disabled_by_policy(
         ],
         tool_semantics: Vec::new(),
     };
-    let mut policy = default_policy();
-    policy.detail_level = "compact".into();
-    policy.show_tool_summary = false;
-    let rendered = render_compact_text(&snapshot, false, &policy);
+    let rendered = render_compact_text(&snapshot);
     assert!(rendered.contains("🧮 资源 · 总3 · 运行1 · 等待1 · 空闲1"));
     assert!(!rendered.contains("👤 运行:"));
     assert!(!rendered.contains("✅ 计划:"));
@@ -835,9 +825,7 @@ fn render_compact_text_surfaces_failed_retry_guidance_in_tool_lines() {
         }],
         tool_semantics: Vec::new(),
     };
-    let mut policy = default_policy();
-    policy.detail_level = "verbose".into();
-    let rendered = render_compact_text(&snapshot, false, &policy);
+    let rendered = render_compact_text(&snapshot);
     assert!(rendered.contains("❌ 重试：先生成 agent truth"));
     assert!(rendered.contains("✅ 失败: 重试：先生成 agent truth"));
 }

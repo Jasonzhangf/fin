@@ -140,7 +140,7 @@ impl M1Runtime {
                 &mut step_records,
             );
         }
-        let mut latest_round_tool_records = initial_round.dispatched_tools.tool_records.clone();
+        let mut _latest_round_tool_records = initial_round.dispatched_tools.tool_records.clone();
 
         while !dispatched_tools.stop_requested
             && !dispatched_tools.yield_requested
@@ -149,10 +149,8 @@ impl M1Runtime {
         {
             let next_round_index = round_count as u32 + 1;
             let followup_input = build_followup_input(
-                &operation.payload.context,
                 operation.payload.input.as_str(),
                 assistant_response_text.as_str(),
-                &latest_round_tool_records,
             );
             let followup_round_context = build_round_context(DynamicRoundContextInput {
                 role_id: operation.payload.role.role_id.as_str(),
@@ -209,7 +207,7 @@ impl M1Runtime {
                 );
             }
             let current_round_tools = followup_round.dispatched_tools.clone();
-            latest_round_tool_records = current_round_tools.tool_records.clone();
+            _latest_round_tool_records = current_round_tools.tool_records.clone();
             merge_dispatch_outcome(&mut dispatched_tools, &current_round_tools);
             prepared_request = followup_round.prepared_request;
             provider_response = followup_round.provider_response;
@@ -233,17 +231,7 @@ impl M1Runtime {
 
         let closure_stopped = dispatched_tools.stop_requested;
         let closure_waiting_external = dispatched_tools.yield_requested;
-        let resume_checkpoint = build_resume_checkpoint(
-            &operation,
-            &refs,
-            &turn_id,
-            round_records.last(),
-            &parsed_output,
-            &dispatched_tools,
-            assistant_response_text.as_str(),
-            &latest_round_tool_records,
-            &operation.submitted_at,
-        );
+        let _resume_checkpoint = build_resume_checkpoint();
         let stop_source = stop_source(closure_waiting_external, closure_stopped);
         let operation_status = operation_status(closure_waiting_external, closure_stopped);
         let progress = ProgressBlock {
@@ -420,7 +408,6 @@ impl M1Runtime {
             &turn_record,
             &routing_decision,
             &routing_action,
-            resume_checkpoint.as_ref(),
             &events,
         );
         let closure_trace = trace_records::closure_trace_record(&partial_run);
@@ -449,7 +436,6 @@ impl M1Runtime {
             &mut events,
             &operation,
             &refs,
-            resume_checkpoint.as_ref(),
         )?;
 
         Ok(build_final_run(
@@ -471,7 +457,6 @@ impl M1Runtime {
             turn_record,
             routing_decision,
             routing_action,
-            resume_checkpoint,
             closure_trace,
             events,
         ))

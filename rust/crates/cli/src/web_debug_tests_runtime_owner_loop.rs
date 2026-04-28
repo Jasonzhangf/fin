@@ -44,6 +44,7 @@ impl fin_provider::InferenceProvider for OwnerLoopReviewProvider {
             response_id: Some("owner-loop-review-response".into()),
             stop_reason: Some("end_turn".into()),
             status: 200,
+            tool_calls: Vec::new(),
         })
     }
 }
@@ -91,6 +92,7 @@ impl fin_provider::InferenceProvider for OwnerLoopDispatchProvider {
             response_id: Some("owner-loop-dispatch-response".into()),
             stop_reason: Some("end_turn".into()),
             status: 200,
+            tool_calls: Vec::new(),
         })
     }
 }

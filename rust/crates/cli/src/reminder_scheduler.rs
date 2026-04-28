@@ -82,6 +82,11 @@ pub(crate) fn inject_due_reminders(
             operation_id: record.operation_id.clone(),
             trace_id: record.trace_id.clone(),
             closure_id: None,
+            sender_kind: None,
+            role_id: None,
+            agent_name: None,
+            display_name: None,
+            source_kind: None,
         });
         trim_head(&mut messages, SESSION_MESSAGE_LIMIT);
         write_json(&messages_path, &messages)?;

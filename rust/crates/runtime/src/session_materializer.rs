@@ -188,7 +188,6 @@ impl SessionMaterializer {
             retention,
             persistence_mode.persist_session_history(),
         )?;
-        persist_execution_checkpoint(runtime_home, &session_dir, run.resume_checkpoint.as_ref())?;
         let journal_paths = session_record_journal::persist_extended_records(
             runtime_home,
             &session_dir,
@@ -197,7 +196,6 @@ impl SessionMaterializer {
             &session_id,
             run,
             retention,
-            persistence_mode.persist_session_history(),
         )?;
         persist_scheduled_reminders(runtime_home, &run.events, retention)?;
         write_json_file(
@@ -243,8 +241,7 @@ impl SessionMaterializer {
                 "current_rounds_path": "runtime/current/current_rounds.json",
                 "current_routing_decision_path": "runtime/current/current_routing_decision.json",
                 "current_routing_action_path": "runtime/current/current_routing_action.json",
-                "current_execution_checkpoint_path": run.resume_checkpoint.as_ref().map(|_| "runtime/current/current_execution_checkpoint.json"),
-                "current_event_archive_index_path": "runtime/current/current_event_archive_index.json",
+                                "current_event_archive_index_path": "runtime/current/current_event_archive_index.json",
                 "session_control_feedback_path": format!("sessions/{year}/{month}/{session_id}/control/latest.json"),
                 "session_recent_contexts_path": session_recent_contexts_path,
                 "session_recent_digests_path": session_recent_digests_path,

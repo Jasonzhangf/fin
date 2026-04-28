@@ -44,6 +44,7 @@ impl fin_provider::InferenceProvider for AssignmentWorkerProvider {
             response_id: Some("assignment-worker-response".into()),
             stop_reason: Some("end_turn".into()),
             status: 200,
+            tool_calls: Vec::new(),
         })
     }
 }

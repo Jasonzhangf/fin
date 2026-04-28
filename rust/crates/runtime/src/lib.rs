@@ -1,6 +1,6 @@
 use fin_contracts::{
     AgentId, ClosureTraceRecord, ContextSnapshotRecord, ControlFeedback, DigestRecord, EntityRefs,
-    EventEnvelope, ExecutionCheckpointRecord, ExecutionNote, InferenceOperationPayload,
+    EventEnvelope, ExecutionNote, InferenceOperationPayload,
     MinimalContextView, OperationEnvelope, ProgressBlock, ProviderEventPayload, ProviderPath,
     ProviderRequestRecord, ProviderResponseRecord, ProviderStrategy, ReasoningViewRecord,
     RoleProfileRef, RoundRecord, RoutingActionRecord, RoutingDecisionRecord,
@@ -84,6 +84,7 @@ mod tool_dispatch_task_write_tests;
 mod tool_dispatch_tests;
 mod tool_history_render;
 mod tool_semantics;
+mod source_visibility;
 mod trace_records;
 mod turn_records;
 pub use activity_cards::build_activity_cards;
@@ -97,6 +98,7 @@ pub use assignment_queue::{
     target_agent_name_from_worker_id, update_assignment_record,
 };
 pub use context_view::{ContextAssemblyInput, ContextViewBuilder};
+pub use source_visibility::uses_ephemeral_session_persistence;
 pub use control_feedback::ControlFeedbackBuilder;
 pub use control_plane::{
     PendingInputDequeue, apply_segment_merge, clear_waiting_state_if_due, dequeue_pending_input,
@@ -255,7 +257,6 @@ pub struct ClosureRun {
     pub turn_record: TurnRecord,
     pub routing_decision: RoutingDecisionRecord,
     pub routing_action: RoutingActionRecord,
-    pub resume_checkpoint: Option<ExecutionCheckpointRecord>,
     pub closure_trace: ClosureTraceRecord,
     pub events: Vec<EventEnvelope<Value>>,
 }

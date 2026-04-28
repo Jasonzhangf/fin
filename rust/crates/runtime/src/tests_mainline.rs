@@ -62,7 +62,7 @@ fn run_closure_emits_expected_event_chain() {
     assert!(run.provider_response.output_text.contains("hello"));
     assert!(run.assistant_response_text.contains("hello"));
     assert!(run.events.iter().all(|event| event.trace_id == "trace-1"));
-    assert_eq!(run.control_feedback.origin, "runtime_heuristic");
+    assert_eq!(run.control_feedback.origin, "model_output_contract_v1");
     assert_eq!(
         run.note.control_feedback,
         Some(run.control_feedback.clone())

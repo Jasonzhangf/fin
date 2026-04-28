@@ -331,6 +331,11 @@ mod tests {
                     operation_id: Some("op-live-1".into()),
                     trace_id: None,
                     closure_id: None,
+                    sender_kind: None,
+                    role_id: None,
+                    agent_name: None,
+                    display_name: None,
+                    source_kind: None,
                 },
                 SessionMessageRecord {
                     message_id: "assistant-1".into(),
@@ -342,6 +347,11 @@ mod tests {
                     operation_id: Some("op-live-1".into()),
                     trace_id: None,
                     closure_id: None,
+                    sender_kind: None,
+                    role_id: None,
+                    agent_name: None,
+                    display_name: None,
+                    source_kind: None,
                 },
             ],
         );
@@ -421,6 +431,11 @@ mod tests {
                 operation_id: Some("op-failed".into()),
                 trace_id: None,
                 closure_id: None,
+                sender_kind: None,
+                role_id: None,
+                agent_name: None,
+                display_name: None,
+                source_kind: None,
             }],
         );
         write_json(

@@ -214,8 +214,7 @@ fn empty_sanitized_session_message_is_not_marked_delivered() {
         "test",
     )
     .expect("deliver");
-    assert_eq!(delivered.sent_count, 1);
-    assert_eq!(delivered.suppressed_empty_count, 1);
+    assert_eq!(delivered, 1);
 
     let conversation = load_conversation_by_target(&home, "qqbot:c2c:user-1")
         .expect("conversation")

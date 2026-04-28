@@ -278,7 +278,7 @@ fn render_status_answer(
         .or_else(|| execution_state.map(|value| value.pending_input_count))
         .unwrap_or(0);
     let resume_from = execution_state
-        .and_then(|value| value.resume_from_step_id.as_deref())
+        .and_then(|value| value.active_step_id.as_deref())
         .unwrap_or("-");
     let routing_summary = routing_action
         .map(|value| {

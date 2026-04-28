@@ -101,6 +101,7 @@ impl InferenceProvider for ContractRetryProvider {
             response_id: Some("contract-retry-response".into()),
             stop_reason: Some("end_turn".into()),
             status: 200,
+            tool_calls: Vec::new(),
         })
     }
 }
@@ -158,6 +159,7 @@ impl InferenceProvider for ContractRetryLimitProvider {
             response_id: Some("contract-retry-limit-response".into()),
             stop_reason: Some("end_turn".into()),
             status: 200,
+            tool_calls: Vec::new(),
         })
     }
 }

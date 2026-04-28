@@ -75,6 +75,16 @@ pub struct UserActivityCardView {
     pub waiting_detail: Option<String>,
     #[serde(default)]
     pub failure_detail: Option<String>,
+    #[serde(default)]
+    pub total_sources: usize,
+    #[serde(default)]
+    pub running_sources: usize,
+    #[serde(default)]
+    pub waiting_sources: usize,
+    #[serde(default)]
+    pub failed_sources: usize,
+    #[serde(default)]
+    pub idle_sources: usize,
     pub updated_at: String,
 }
 

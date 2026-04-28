@@ -15,6 +15,7 @@ fn mailbox_send_then_poll_consume_produces_expected_events() {
         1,
         &[ModelToolCall {
             tool_name: "mailbox.send".into(),
+            tool_call_id: None,
             arguments: json!({
                 "target_peer_id": "peer-reviewer",
                 "message": { "kind": "note", "text": "check logs" },
@@ -36,6 +37,7 @@ fn mailbox_send_then_poll_consume_produces_expected_events() {
         2,
         &[ModelToolCall {
             tool_name: "mailbox.poll".into(),
+            tool_call_id: None,
             arguments: json!({
                 "peer_id": "peer-reviewer",
                 "consume": true,
@@ -82,6 +84,7 @@ fn project_worker_assignment_and_mailbox_chain_produces_local_worker_truth() {
         1,
         &[ModelToolCall {
             tool_name: "daemon.ensure_peer".into(),
+            tool_call_id: None,
             arguments: json!({
                 "peer_kind": "project_worker",
                 "peer_id": "local-worker-b",
@@ -110,6 +113,7 @@ fn project_worker_assignment_and_mailbox_chain_produces_local_worker_truth() {
         2,
         &[ModelToolCall {
             tool_name: "agent.assign".into(),
+            tool_call_id: None,
             arguments: json!({
                 "target_worker_id": "worker-b",
                 "task_summary": "inspect logs and report blocker summary",
@@ -155,6 +159,7 @@ fn project_worker_assignment_and_mailbox_chain_produces_local_worker_truth() {
         3,
         &[ModelToolCall {
             tool_name: "mailbox.send".into(),
+            tool_call_id: None,
             arguments: json!({
                 "target_worker_id": "worker-b",
                 "message": { "kind": "assignment", "text": "inspect logs and report blocker summary" },
@@ -180,6 +185,7 @@ fn project_worker_assignment_and_mailbox_chain_produces_local_worker_truth() {
         4,
         &[ModelToolCall {
             tool_name: "mailbox.poll".into(),
+            tool_call_id: None,
             arguments: json!({
                 "worker_id": "worker-b",
                 "consume": true,
@@ -227,6 +233,7 @@ fn daemon_ensure_peer_persists_project_agent_request_contract() {
         1,
         &[ModelToolCall {
             tool_name: "daemon.ensure_peer".into(),
+            tool_call_id: None,
             arguments: json!({
                 "peer_kind": "project_agent",
                 "peer_id": "peer-project-agent-fin",

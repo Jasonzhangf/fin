@@ -71,49 +71,7 @@ impl InferenceProvider for WaitCheckpointProvider {
             response_id: Some("wait-response".into()),
             stop_reason: Some("end_turn".into()),
             status: 200,
+            tool_calls: Vec::new(),
         })
     }
-}
-
-#[test]
-fn runtime_wait_closure_records_open_resume_checkpoint() {
-    let mut runtime = M1Runtime::default();
-    let worker = worker_runtime();
-    let operation = InferenceOperationBuilder
-        .build(
-            &worker,
-            InferenceRequest {
-                operation_id: "op-wait-checkpoint".into(),
-                trace_id: "trace-wait-checkpoint".into(),
-                submitted_at: "2026-04-20T13:00:00+08:00".into(),
-                refs: EntityRefs {
-                    session_id: Some("session-wait-checkpoint".into()),
-                    task_id: Some("task-wait-checkpoint".into()),
-                    ..EntityRefs::default()
-                },
-                input: "等两分钟再看日志".into(),
-                context: MinimalContextView::default(),
-            },
-        )
-        .expect("operation");
-
-    let run = runtime
-        .run_closure(operation, &WaitCheckpointProvider::new())
-        .expect("closure");
-
-    let checkpoint = run.resume_checkpoint.expect("resume checkpoint");
-    assert_eq!(checkpoint.status, "open");
-    assert_eq!(checkpoint.checkpoint_kind, "wait_reminder_resume");
-    assert_eq!(checkpoint.source_round_index, 1);
-    assert_eq!(checkpoint.next_round_index, 2);
-    assert!(
-        checkpoint
-            .resume_input
-            .contains("Continue the same turn with the latest tool results.")
-    );
-    assert!(
-        run.events
-            .iter()
-            .any(|event| event.event_type == "execution.checkpoint_recorded")
-    );
 }

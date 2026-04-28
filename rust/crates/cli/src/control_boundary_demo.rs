@@ -76,6 +76,7 @@ impl InferenceProvider for ControlBoundaryProvider {
             response_id: Some("control-boundary-demo-response".into()),
             stop_reason: Some("end_turn".into()),
             status: 200,
+            tool_calls: Vec::new(),
         })
     }
 }

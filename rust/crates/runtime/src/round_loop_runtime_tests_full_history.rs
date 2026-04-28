@@ -106,7 +106,7 @@ impl InferenceProvider for TwoRoundToolProvider {
         requests.push(request.clone());
         let output_text = if request
             .input
-            .starts_with("Continue the same turn with the latest tool results.")
+            .starts_with("Continue the same turn.")
         {
             "<fin_user_response>工具结果已确认，停止。</fin_user_response>\n<fin_control_feedback>{\"origin\":\"model_output_contract_v1\",\"is_continuation\":true,\"is_simple_query\":false,\"candidate_task_id\":\"task-two-round-tool\",\"candidate_topic_thread_id\":\"topic-two-round-tool\",\"continuity_confidence\":95,\"topic_shift_confidence\":5,\"simple_query_confidence\":4,\"previous_topic_summary\":\"tool followup\",\"current_topic_summary\":\"tool followup\",\"note_candidate\":\"tool followup done\",\"digest_candidate\":\"tool followup done\",\"reason\":\"tool result inspected\"}</fin_control_feedback>\n<fin_tool_calls>[{\"tool_name\":\"reasoning.stop\",\"arguments\":{\"summary\":\"tool-backed followup finished\"}}]</fin_tool_calls>".to_string()
         } else {
@@ -119,6 +119,7 @@ impl InferenceProvider for TwoRoundToolProvider {
             response_id: Some("two-round-tool-provider".into()),
             stop_reason: Some("end_turn".into()),
             status: 200,
+            tool_calls: Vec::new(),
         })
     }
 }

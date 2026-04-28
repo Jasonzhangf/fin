@@ -36,6 +36,7 @@ impl fin_provider::InferenceProvider for ResumeCheckpointProvider {
             response_id: Some("resume-checkpoint-response".into()),
             stop_reason: Some("end_turn".into()),
             status: 200,
+            tool_calls: Vec::new(),
         })
     }
 }

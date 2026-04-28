@@ -57,6 +57,7 @@ fn project_task_write_tools_create_claim_submit_and_review() {
         1,
         &[ModelToolCall {
             tool_name: "project.task.create".into(),
+            tool_call_id: None,
             arguments: json!({
                 "task_id": "task-owner-loop",
                 "title": "Owner loop follow-up",
@@ -80,6 +81,7 @@ fn project_task_write_tools_create_claim_submit_and_review() {
         1,
         &[ModelToolCall {
             tool_name: "project.task.claim".into(),
+            tool_call_id: None,
             arguments: json!({ "task_id": "task-owner-loop" }),
         }],
     );
@@ -99,6 +101,7 @@ fn project_task_write_tools_create_claim_submit_and_review() {
         1,
         &[ModelToolCall {
             tool_name: "project.task.submit".into(),
+            tool_call_id: None,
             arguments: json!({
                 "task_id": "task-owner-loop",
                 "result_summary": "patched runtime and ran smoke",
@@ -129,6 +132,7 @@ fn project_task_write_tools_create_claim_submit_and_review() {
         1,
         &[ModelToolCall {
             tool_name: "project.task.review".into(),
+            tool_call_id: None,
             arguments: json!({
                 "task_id": "task-owner-loop",
                 "decision": "approve",
@@ -167,6 +171,7 @@ fn project_task_review_rejects_non_owner_and_submit_rejects_wrong_claimer() {
         1,
         &[ModelToolCall {
             tool_name: "project.task.create".into(),
+            tool_call_id: None,
             arguments: json!({
                 "task_id": "task-owner-loop",
                 "title": "Guarded task",
@@ -183,6 +188,7 @@ fn project_task_review_rejects_non_owner_and_submit_rejects_wrong_claimer() {
         1,
         &[ModelToolCall {
             tool_name: "project.task.claim".into(),
+            tool_call_id: None,
             arguments: json!({ "task_id": "task-owner-loop" }),
         }],
     );
@@ -196,6 +202,7 @@ fn project_task_review_rejects_non_owner_and_submit_rejects_wrong_claimer() {
         1,
         &[ModelToolCall {
             tool_name: "project.task.submit".into(),
+            tool_call_id: None,
             arguments: json!({
                 "task_id": "task-owner-loop",
                 "result_summary": "intruding submit",
@@ -218,6 +225,7 @@ fn project_task_review_rejects_non_owner_and_submit_rejects_wrong_claimer() {
         1,
         &[ModelToolCall {
             tool_name: "project.task.review".into(),
+            tool_call_id: None,
             arguments: json!({
                 "task_id": "task-owner-loop",
                 "decision": "approve",
@@ -247,6 +255,7 @@ fn system_owner_can_assign_worker_and_close_managed_task_loop() {
         1,
         &[ModelToolCall {
             tool_name: "project.task.create".into(),
+            tool_call_id: None,
             arguments: json!({
                 "task_id": "task-collab-loop",
                 "title": "Close startup control summary loop",
@@ -271,6 +280,7 @@ fn system_owner_can_assign_worker_and_close_managed_task_loop() {
         1,
         &[ModelToolCall {
             tool_name: "agent.assign".into(),
+            tool_call_id: None,
             arguments: json!({
                 "target_worker_id": "worker-builder",
                 "task_summary": "implement startup summary persistence and report receipts",
@@ -298,6 +308,7 @@ fn system_owner_can_assign_worker_and_close_managed_task_loop() {
         1,
         &[ModelToolCall {
             tool_name: "project.task.claim".into(),
+            tool_call_id: None,
             arguments: json!({ "task_id": "task-collab-loop" }),
         }],
     );
@@ -317,6 +328,7 @@ fn system_owner_can_assign_worker_and_close_managed_task_loop() {
         1,
         &[ModelToolCall {
             tool_name: "project.task.submit".into(),
+            tool_call_id: None,
             arguments: json!({
                 "task_id": "task-collab-loop",
                 "result_summary": "persisted startup summary and verified receipts",
@@ -340,6 +352,7 @@ fn system_owner_can_assign_worker_and_close_managed_task_loop() {
         1,
         &[ModelToolCall {
             tool_name: "project.task.review".into(),
+            tool_call_id: None,
             arguments: json!({
                 "task_id": "task-collab-loop",
                 "decision": "approve",
