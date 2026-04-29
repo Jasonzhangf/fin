@@ -94,8 +94,7 @@ pub(crate) fn prepare_periodic_delivery(
     if rendered.trim().is_empty() {
         return Ok(None);
     }
-    let changed = state.last_user_signature.as_deref() != Some(signature.as_str())
-        || state.last_delivered_text.as_deref() != Some(rendered.as_str());
+    let changed = state.last_delivered_text.as_deref() != Some(rendered.as_str());
     if !changed {
         return Ok(None);
     }
