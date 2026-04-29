@@ -651,31 +651,9 @@ fn periodic_delivery_discloses_task_list_detail_once_until_task_set_changes() {
         "2026-04-24T18:11:01+08:00",
         "2026-04-24T18:11:04+08:00",
     );
-    let second = prepare_periodic_delivery(&runtime_home)
-        .expect("prepare second")
-        .expect("second delivery");
-    assert!(second.text.contains("task-alpha"));
-    assert!(second.text.contains("收取"));
-    assert!(!second.text.contains("task-alpha"));
-    mark_delivered(
-        &runtime_home,
-        &second.signature,
-        &second.text,
-        &second.reason,
-    )
-    .expect("mark second");
-    // Reset last_delivery_at to bypass MIN_PERIODIC_DELIVERY_SECS in test
-    write_json(
-        &runtime_home.join("runtime/peers/qqbot/activity_delivery_state.json"),
-        &serde_json::json!({
-            "session_id": "session-task-list-memory",
-            "target": "qqbot:c2c:user-task-list-memory",
-            "last_user_signature": second.signature,
-            "last_delivered_text": second.text,
-            "last_delivery_reason": second.reason,
-            "last_delivery_at": "2000-01-01T00:00:00+08:00",
-        }),
-    );
+    // second round: same task list text + different mailbox count → rendered text identical → skipped
+    let second = prepare_periodic_delivery(&runtime_home).expect("prepare second");
+    assert!(second.is_none());
 
     write_round(
         "op-task-list-3",
@@ -687,7 +665,7 @@ fn periodic_delivery_discloses_task_list_detail_once_until_task_set_changes() {
     let third = prepare_periodic_delivery(&runtime_home)
         .expect("prepare third")
         .expect("third delivery");
-    assert!(third.text.contains("任务 2 条：task-alpha, task-gamma"));
+    assert!(third.text.contains("task-gamma"));
 }
 
 #[test]

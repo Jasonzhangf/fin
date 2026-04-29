@@ -1,6 +1,6 @@
 use crate::{CliError, channel_peer::active_builtin_qqbot_session, time::local_timestamp_now};
 use fin_contracts::ActivityCardsSnapshot;
-use fin_runtime::build_activity_cards;
+use fin_runtime::{build_activity_cards, build_activity_cards_for_session};
 use serde::{Deserialize, Serialize};
 use std::path::Path;
 
@@ -94,7 +94,8 @@ pub(crate) fn prepare_periodic_delivery(
     if rendered.trim().is_empty() {
         return Ok(None);
     }
-    let changed = state.last_user_signature.as_deref() != Some(signature.as_str());
+    let changed = state.last_user_signature.as_deref() != Some(signature.as_str())
+        || state.last_delivered_text.as_deref() != Some(rendered.as_str());
     if !changed {
         return Ok(None);
     }

@@ -13454,3 +13454,52 @@ sessionId: 019dd4b4-d523-76d1-8ab9-f8640ff9e9c2
 model: gpt-5.4
 provider: openai-responses
 -->
+
+### Assistant · 2026/04/29 07:48:00
+
+Jason，当前进展汇报：
+
+## 本轮完成的修复
+
+| 修复项 | 影响 |
+|---|---|
+| `render_compact_text` 断言对齐 (8 tests) | ✅ 新 `🌐` 格式匹配 |
+| `is_ack_equivalent_snapshot` 逻辑 | ✅ PENDING_INBOUND_NOTICE 抑制 |
+| `ensure_runtime_home_layout` sessions 目录 | ✅ |
+| runtime `rendered_input` header 断言 | ✅ |
+| fin-runtime 96/96 全通过 | ✅ |
+| 已提交 2 个 commit | ✅ |
+
+## 剩余 18 个 failures（深层 runtime 行为问题）
+
+这些不是简单的断言格式问题，而是 **runtime 行为与 test 期望之间的设计偏差**。每个类别需要：
+1. 理解 test setup 的完整上下文
+2. 追踪 runtime 实际执行路径
+3. 判断是 test 过时还是 runtime bug
+
+剩余测试分类：
+- 3 periodic delivery（signature/text diff 逻辑变化）
+- 4 scheduler/supervisor/tick（framework event 写入路径变化）
+- 1 hidden turn pollution（session_record_journal 在 ephemeral 模式仍写 extended records）
+- 10 web-debug 集成（fake provider control-feedback 模拟输出与新 contract 不匹配）
+
+这 18 个测试的修复工作量较大，每个需要 10-20 分钟的上下文理解 + 修复。要我继续逐个修，还是先跳到 daemon 重启 + E2E 验证？
+
+<!-- cache-meta
+requestId: openai-responses-mimo.key1-mimo-v2.5-pro-20260429T074748152-158376-2962
+sessionId: 019dd4b4-d523-76d1-8ab9-f8640ff9e9c2
+model: mimo-v2.5-pro
+provider: anthropic-messages
+finishReason: stop
+-->
+
+### User · 2026/04/29 07:56:40
+
+修复测试，不要废话
+
+<!-- cache-meta
+requestId: openai-responses-unknown-unknown-20260429T075640194-158382-2968
+sessionId: 019dd4b4-d523-76d1-8ab9-f8640ff9e9c2
+model: gpt-5.4
+provider: openai-responses
+-->

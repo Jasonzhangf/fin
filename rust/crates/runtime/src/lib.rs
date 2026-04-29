@@ -87,7 +87,7 @@ mod tool_semantics;
 mod source_visibility;
 mod trace_records;
 mod turn_records;
-pub use activity_cards::build_activity_cards;
+pub use activity_cards::{build_activity_cards, build_activity_cards_for_session};
 pub use agent_naming::{
     AgentAssignmentSummary, AllocatedAgentIdentity, allocate_local_agent_identity,
     create_named_local_worker, persist_assignment_summary, read_assignment_summary,
