@@ -20487,3 +20487,118 @@ sessionId: 019dfd2f-1664-7fd2-8405-fcf7499f2fc2
 model: gpt-5.4
 provider: openai-responses
 -->
+
+### Assistant · 2026/05/07 00:29:09
+
+所有修复已完成并推送到 `codex/ui-rail-layering` 分支。以下是根本原因和变更总结：
+
+## 根因定位
+
+**问题1：缺乏周期性更新（如 finger 之前的"仍在处理中"）**
+- `spawn_activity_delivery_loop` 中原本的 progress notice 逻辑在早前提交中被移除。用户发来消息后，如果 agent 需要一段时间推理但没有立即产出回复，bridge 不会有任何间隔通知，用户体验上感觉"卡住了"。
+
+**问题2："没有生成新的可发送回复"**
+- 两个层面：
+  - **runtime 层面**：`closure_runtime.rs` 的 while-loop 在 assistant 回复为空且没有 tool_call 时立即退出，导致 agent 的"本轮没有产出"被默认为完成，不去继续推理。
+  - **bridge 层面**：`send_channel_notice` 在消息内容被 `sanitize_text_channel_output` 清理后变成空文本时，直接 `return Ok(())` 静默丢弃，导致即使 runtime 产出了内容也可能因清洗为空而被丢弃。
+
+## 四项修复
+
+| 文件 | 修改 |
+|------|------|
+| `rust/crates/runtime/src/closure_runtime.rs` | 改进 while-loop 退出条件：当 assistant 回复为空时，不退出，继续推理循环，强制 agent 产出一个有效回复。 |
+| `rust/crates/runtime/src/closure_runtime_rounds.rs` | 在无 tool_call 的 followup prompt 中增加强制指令：**必须产出非空的 `<fin_user_response>`**，即使只是"Processing, please wait."。 |
+| `rust/crates/cli/src/channel_peer_qqbot_bridge_support.rs` | `send_channel_notice` 当清洗后文本为空时不再静默丢弃，而是发送兜底文本"正在处理中，请稍候。"。 |
+| `rust/crates/cli/src/channel_peer_qqbot_bridge_support.rs` | 在 `spawn_activity_delivery_loop` 中重新加入 **每15秒的周期性进度通知**：对有入站消息但尚无回复的会话，发送"仍在处理中，请稍候…"。 |
+
+## 当前状态
+
+- 分支：`codex/ui-rail-layering`
+- 编译通过（仅有1个无关的 unused import warning）
+- 远程已同步
+
+可以触发一次真实 QQ bot 对话验证效果。需要我帮忙启动 daemon 跑一次回归吗？
+
+<!-- cache-meta
+requestId: openai-responses-whitedrem.key1-deepseek-v4-pro-20260507T002820738-165493-904
+sessionId: 019dfd2f-1664-7fd2-8405-fcf7499f2fc2
+model: deepseek-v4-pro
+provider: anthropic-messages
+finishReason: stop
+-->
+
+### User · 2026/05/07 00:29:27
+
+继续
+
+<!-- cache-meta
+requestId: openai-responses-unknown-unknown-20260507T002926702-165498-909
+sessionId: 019dfd2f-1664-7fd2-8405-fcf7499f2fc2
+model: gpt-5.4
+provider: openai-responses
+-->
+
+### Assistant · 2026/05/07 00:32:11
+
+Jason，所有修复已经完成并推送到 `codex/ui-rail-layering` 分支。以下是完整交付报告：
+
+---
+
+## 交付报告
+
+### 问题根因分析
+
+报告中描述的两个症状有**三个根因**：
+
+**问题 1：缺少周期性进度更新（"正在处理中"）**
+- `spawn_activity_delivery_loop` 中原来的 progress notice 逻辑被移除（commit `ecd746d`），导致 agent 在长时间执行时不会发送"仍在处理中，请稍候…"的间隔更新。
+
+**问题 2：后续追问"没有生成新的可发送回复"**
+- **根因 A — runtime loop 提前退出**：`closure_runtime.rs` 的 while loop 条件 `!parsed_output.tool_calls.is_empty() || !parsed_output.tool_calls_block_present` 在 agent 产出了 `<fin_user_response>` 但没有 tool calls 时直接退出 loop，导致空回复（有 control feedback 但 user response 为空）。
+- **根因 B — bridge 静默丢弃空消息**：`send_channel_notice` 在 `sanitize_text_channel_output` 返回空字符串时直接 `return Ok(())`，agent 即使产出了回复但被清洗后变空，也会被静默丢弃，用户只看到"已收到，但本轮没有生成新的可发送回复"。
+
+### 修复内容（4 项）
+
+| 修复 | 文件 | 内容 |
+|------|------|------|
+| ① | `closure_runtime.rs:144-150` | while loop 退出条件增加 `assistant_response_text.trim().is_empty()` — 空回复时继续循环 |
+| ② | `closure_runtime_rounds.rs:376` | followup prompt 增加强制指令："You MUST output a non-empty `<fin_user_response>`" |
+| ③ | `channel_peer_qqbot_bridge_support.rs:246-253` | `send_channel_notice` 空消息时发送 fallback `"正在处理中，请稍候。"` 而非静默丢弃 |
+| ④ | `channel_peer_qqbot_bridge_support.rs:385-438` | `spawn_activity_delivery_loop` 重新加入 15s 间隔的周期性进度通知 |
+
+### 提交链
+
+```
+69cfac2 chore: resolve CACHE.md conflict, sync conversation memory
+b3a7045 fix(bridge): empty reply fallback + periodic progress notices
+95d6768 fix: qqbot bridge periodic progress and runtime closure contract validation
+ecd746d fix(qqbot): remove unconditional progress spam and enforce reply generation
+```
+
+### 验证
+
+- ✅ cargo check -p fin-cli：编译通过（仅有已知 unused import warning）
+- ✅ cargo test -p fin-runtime -- model_output：13/13 通过
+- ✅ 四修复位点验证：closure_loop=1, followup_prompt=1, bridge_fallback=1, bridge_progress=5
+- ✅ 已推送到 `origin/codex/ui-rail-layering`
+
+### 未完成项 / 风险
+
+- `CACHE.md` 有少量未提交变更（conversation memory），不影响功能
+- `.deepseek/` 和 `*.bak` 文件为临时文件，建议清理
+
+### 关于分支名称
+
+`codex/ui-rail-layering` 是由 Codex 自动生成的开发分支名（基于该分支最早的开发内容）。如果需要更名可以在后续处理。
+
+### 下一步建议
+
+1. 重启 fin daemo... [truncated]
+
+<!-- cache-meta
+requestId: openai-responses-mimo.key1-mimo-v2.5-pro-20260507T003114424-165504-915
+sessionId: 019dfd2f-1664-7fd2-8405-fcf7499f2fc2
+model: mimo-v2.5-pro
+provider: anthropic-messages
+finishReason: stop
+-->
