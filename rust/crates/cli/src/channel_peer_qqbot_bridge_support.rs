@@ -244,7 +244,14 @@ pub(super) fn send_channel_notice(
     }
     let rendered = sanitize_text_channel_output(text);
     if rendered.trim().is_empty() {
-        return Ok(());
+        // Fallback: never send an empty message; use a placeholder instead.
+        let fallback = "正在处理中，请稍候。";
+        return write_bridge_request(
+            stdin,
+            "send",
+            Some(json!({"to": target, "text": fallback, "replyToId": reply_to_id})),
+        )
+        .map(|_| ());
     }
     write_bridge_request(
         stdin,
@@ -333,6 +340,8 @@ pub(super) fn spawn_activity_delivery_loop(
 ) -> JoinHandle<()> {
     thread::spawn(move || {
         let mut was_ready = false;
+        let mut last_progress_notice: std::collections::HashMap<String, u64> =
+            std::collections::HashMap::new();
         while !stop_signal.load(Ordering::SeqCst) {
             let is_ready = ready_signal.load(Ordering::SeqCst);
             let reconnected = is_ready && !was_ready;
@@ -374,6 +383,59 @@ pub(super) fn spawn_activity_delivery_loop(
                     None,
                     json!({ "error": err.to_string() }),
                 );
+            }
+
+            // Periodic progress notices: send "still processing" updates
+            // for conversations with pending inbound but no response yet.
+            let now_secs = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_secs())
+                .unwrap_or(0);
+            if let Ok(conversations) = list_conversations(&runtime_home) {
+                for conv in &conversations {
+                    if conv.session_id.is_none() {
+                        continue;
+                    }
+                    let inbound_after_delivery = match (&conv.last_inbound_at, &conv.last_delivery_at) {
+                        (Some(inbound_at), Some(delivery_at)) => {
+                            inbound_at.as_str() > delivery_at.as_str()
+                        }
+                        (Some(_), None) => true,
+                        _ => false,
+                    };
+                    if !inbound_after_delivery {
+                        last_progress_notice.remove(&conv.target);
+                        continue;
+                    }
+                    let has_pending_outbound = pending_outbound_messages(&runtime_home, &conv.target)
+                        .ok()
+                        .flatten()
+                        .is_some_and(|(_, pending)| !pending.is_empty());
+                    if has_pending_outbound {
+                        last_progress_notice.remove(&conv.target);
+                        continue;
+                    }
+                    let last_notice = last_progress_notice
+                        .get(&conv.target)
+                        .copied()
+                        .unwrap_or(0);
+                    if now_secs.saturating_sub(last_notice) >= 15 {
+                        let _ = write_bridge_request(
+                            &stdin,
+                            "send",
+                            Some(json!({"to": conv.target, "text": "仍在处理中，请稍候…"})),
+                        );
+                        let _ = record_builtin_qqbot_runtime_event(
+                            &runtime_home,
+                            "channel.peer.progress_notice_sent",
+                            None,
+                            None,
+                            None,
+                            json!({"target": conv.target, "session_id": conv.session_id}),
+                        );
+                        last_progress_notice.insert(conv.target.clone(), now_secs);
+                    }
+                }
             }
 
             match prepare_periodic_delivery(&runtime_home) {
