@@ -1,5 +1,6 @@
 use super::closure_runtime_contract_retry::ContractRetrySummary;
 use crate::tool_dispatch::ToolDispatchOutcome;
+use fin_contracts::ControlFeedback;
 
 pub(super) fn merge_dispatch_outcome(
     aggregate: &mut ToolDispatchOutcome,
@@ -14,23 +15,56 @@ pub(super) fn merge_dispatch_outcome(
     aggregate.yield_requested |= current_round.yield_requested;
 }
 
-pub(super) fn stop_source(waiting_external: bool, stopped: bool) -> &'static str {
+pub(super) fn stop_source(
+    waiting_external: bool,
+    stopped: bool,
+    feedback: &ControlFeedback,
+) -> &'static str {
     if waiting_external {
         "wait.remind"
     } else if stopped {
-        "reasoning.stop"
+        exit_channel_label(feedback)
     } else {
         "not_emitted"
     }
 }
 
-pub(super) fn operation_status(waiting_external: bool, stopped: bool) -> &'static str {
+pub(super) fn operation_status(
+    waiting_external: bool,
+    stopped: bool,
+    feedback: &ControlFeedback,
+) -> &'static str {
     if waiting_external {
         "waiting_external"
     } else if stopped {
-        "stopped"
+        exit_channel_label(feedback)
     } else {
         "continued"
+    }
+}
+
+fn exit_channel_label(feedback: &ControlFeedback) -> &'static str {
+    if feedback.task_completed
+        && !feedback.completion_evidence.is_empty()
+        && !feedback.final_conclusions.is_empty()
+    {
+        "completed_with_evidence"
+    } else if feedback.is_simple_chat {
+        "simple_chat_done"
+    } else if feedback.blocked
+        && feedback.needs_user_involve
+        && feedback
+            .blocked_reason
+            .as_ref()
+            .map_or(false, |s| !s.trim().is_empty())
+        && feedback
+            .what_needs_to_be_done_by_user
+            .as_ref()
+            .map_or(false, |s| !s.trim().is_empty())
+    {
+        "blocked_requires_user_action"
+    } else {
+        "stopped"
     }
 }
 

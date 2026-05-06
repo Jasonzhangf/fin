@@ -41,6 +41,7 @@ const QQBOT_RUNNER_SOURCE: &str = include_str!("../assets/qqbot_peer_runner.mjs"
 pub(crate) struct BuiltinQqbotBridge {
     stdin: Arc<Mutex<Option<std::process::ChildStdin>>>,
     stop_signal: Arc<AtomicBool>,
+    ready_signal: Arc<AtomicBool>,
     supervisor_thread: Option<JoinHandle<()>>,
     activity_thread: Option<JoinHandle<()>>,
 }
@@ -74,6 +75,7 @@ impl BuiltinQqbotBridge {
         })?;
         let stdin = Arc::new(Mutex::new(None));
         let stop_signal = Arc::new(AtomicBool::new(false));
+        let ready_signal = Arc::new(AtomicBool::new(false));
         let supervisor_thread = Some(spawn_bridge_supervisor(
             runtime_home.to_path_buf(),
             handler,
@@ -81,15 +83,18 @@ impl BuiltinQqbotBridge {
             credentials,
             stdin.clone(),
             stop_signal.clone(),
+            ready_signal.clone(),
         ));
         let activity_thread = Some(spawn_activity_delivery_loop(
             runtime_home.to_path_buf(),
             stdin.clone(),
             stop_signal.clone(),
+            ready_signal.clone(),
         ));
         Ok(Self {
             stdin,
             stop_signal,
+            ready_signal,
             supervisor_thread,
             activity_thread,
         })
@@ -99,6 +104,7 @@ impl BuiltinQqbotBridge {
 impl Drop for BuiltinQqbotBridge {
     fn drop(&mut self) {
         self.stop_signal.store(true, Ordering::SeqCst);
+        self.ready_signal.store(false, Ordering::SeqCst);
         let _ = write_bridge_request(&self.stdin, "stop", None);
         if let Some(handle) = self.supervisor_thread.take() {
             let _ = handle.join();
@@ -113,10 +119,11 @@ fn handle_stdout_line(
     runtime_home: &Path,
     handler: &CliDebugActionHandler,
     stdin: &Arc<Mutex<Option<std::process::ChildStdin>>>,
+    ready_signal: &Arc<AtomicBool>,
     line: &str,
 ) -> Result<(), CliError> {
     if let Ok(event) = serde_json::from_str::<BridgeEventEnvelope>(line) {
-        return handle_bridge_event(runtime_home, handler, stdin, event);
+        return handle_bridge_event(runtime_home, handler, stdin, ready_signal, event);
     }
     if let Ok(response) = serde_json::from_str::<BridgeResponse>(line) {
         return handle_bridge_response(runtime_home, response);
@@ -164,15 +171,28 @@ fn handle_bridge_event(
     runtime_home: &Path,
     handler: &CliDebugActionHandler,
     stdin: &Arc<Mutex<Option<std::process::ChildStdin>>>,
+    ready_signal: &Arc<AtomicBool>,
     event: BridgeEventEnvelope,
 ) -> Result<(), CliError> {
     match event.event.as_str() {
         "ready" => {
+            ready_signal.store(true, Ordering::SeqCst);
             record_builtin_qqbot_runtime_event(
                 runtime_home,
                 "channel.peer.bridge_ready",
                 Some("bridge_ready"),
                 Some("connected"),
+                None,
+                event.data,
+            )?;
+        }
+        "disconnected" => {
+            ready_signal.store(false, Ordering::SeqCst);
+            record_builtin_qqbot_runtime_event(
+                runtime_home,
+                "channel.peer.bridge_disconnected",
+                Some("bridge_disconnected"),
+                Some("connecting"),
                 None,
                 event.data,
             )?;

@@ -1,4 +1,215 @@
 use super::*;
+use fin_config::{ProviderCredential, ProviderProtocol, ResolvedProviderConfig};
+use fin_provider::{PreparedRequest, ProviderDescriptor, ProviderRequest, ProviderResponse};
+use std::{
+    collections::BTreeMap,
+    sync::{Arc, Mutex},
+};
+
+#[derive(Debug, Clone)]
+struct CompletedWithEvidenceProvider {
+    descriptor: ProviderDescriptor,
+}
+
+impl CompletedWithEvidenceProvider {
+    fn new() -> Self {
+        Self {
+            descriptor: ProviderDescriptor::from_resolved(&ResolvedProviderConfig {
+                name: "openai".into(),
+                protocol: ProviderProtocol::OpenAiCompatible,
+                base_url: "https://api.example.com/v1".into(),
+                model: "gpt-5".into(),
+                credential: ProviderCredential::ApiKeyEnv {
+                    env_var: "OPENAI_API_KEY".into(),
+                },
+                user_agent: None,
+                headers: BTreeMap::new(),
+            }),
+        }
+    }
+}
+
+impl InferenceProvider for CompletedWithEvidenceProvider {
+    fn descriptor(&self) -> &ProviderDescriptor {
+        &self.descriptor
+    }
+
+    fn prepare_request(&self, request: &ProviderRequest) -> PreparedRequest {
+        self.descriptor.prepare_request(request)
+    }
+
+    fn execute_prepared(
+        &self,
+        request: &PreparedRequest,
+    ) -> Result<ProviderResponse, fin_provider::ProviderError> {
+        Ok(ProviderResponse {
+            provider_name: request.provider_name.clone(),
+            model: request.model.clone(),
+            output_text: "<fin_user_response>任务已完成，所有检查通过。</fin_user_response>\n<fin_control_feedback>{\"origin\":\"model_output_contract_v1\",\"is_continuation\":false,\"is_simple_query\":false,\"candidate_task_id\":\"task-complete\",\"candidate_topic_thread_id\":\"topic-complete\",\"continuity_confidence\":20,\"topic_shift_confidence\":80,\"simple_query_confidence\":5,\"previous_topic_summary\":\"task\",\"current_topic_summary\":\"done\",\"note_candidate\":\"finished\",\"digest_candidate\":\"finished\",\"reason\":\"done\",\"task_completed\":true,\"completion_evidence\":[\"所有步骤已完成\",\"文件已验证\"],\"final_conclusions\":[\"任务成功收口\"]}</fin_control_feedback>".into(),
+            response_id: Some("completed-with-evidence-response".into()),
+            stop_reason: Some("end_turn".into()),
+            status: 200,
+            tool_calls: Vec::new(),
+        })
+    }
+}
+
+#[derive(Debug, Clone)]
+struct SimpleChatProvider {
+    descriptor: ProviderDescriptor,
+}
+
+impl SimpleChatProvider {
+    fn new() -> Self {
+        Self {
+            descriptor: ProviderDescriptor::from_resolved(&ResolvedProviderConfig {
+                name: "openai".into(),
+                protocol: ProviderProtocol::OpenAiCompatible,
+                base_url: "https://api.example.com/v1".into(),
+                model: "gpt-5".into(),
+                credential: ProviderCredential::ApiKeyEnv {
+                    env_var: "OPENAI_API_KEY".into(),
+                },
+                user_agent: None,
+                headers: BTreeMap::new(),
+            }),
+        }
+    }
+}
+
+impl InferenceProvider for SimpleChatProvider {
+    fn descriptor(&self) -> &ProviderDescriptor {
+        &self.descriptor
+    }
+
+    fn prepare_request(&self, request: &ProviderRequest) -> PreparedRequest {
+        self.descriptor.prepare_request(request)
+    }
+
+    fn execute_prepared(
+        &self,
+        request: &PreparedRequest,
+    ) -> Result<ProviderResponse, fin_provider::ProviderError> {
+        Ok(ProviderResponse {
+            provider_name: request.provider_name.clone(),
+            model: request.model.clone(),
+            output_text: "<fin_user_response>你好！有什么可以帮你的？</fin_user_response>\n<fin_control_feedback>{\"origin\":\"model_output_contract_v1\",\"is_continuation\":false,\"is_simple_query\":true,\"candidate_task_id\":null,\"candidate_topic_thread_id\":null,\"continuity_confidence\":0,\"topic_shift_confidence\":0,\"simple_query_confidence\":100,\"previous_topic_summary\":\"\",\"current_topic_summary\":\"greeting\",\"note_candidate\":\"simple chat\",\"digest_candidate\":\"simple chat\",\"reason\":\"simple chat\",\"is_simple_chat\":true}</fin_control_feedback>".into(),
+            response_id: Some("simple-chat-response".into()),
+            stop_reason: Some("end_turn".into()),
+            status: 200,
+            tool_calls: Vec::new(),
+        })
+    }
+}
+
+#[derive(Debug, Clone)]
+struct BlockedUserActionProvider {
+    descriptor: ProviderDescriptor,
+}
+
+impl BlockedUserActionProvider {
+    fn new() -> Self {
+        Self {
+            descriptor: ProviderDescriptor::from_resolved(&ResolvedProviderConfig {
+                name: "openai".into(),
+                protocol: ProviderProtocol::OpenAiCompatible,
+                base_url: "https://api.example.com/v1".into(),
+                model: "gpt-5".into(),
+                credential: ProviderCredential::ApiKeyEnv {
+                    env_var: "OPENAI_API_KEY".into(),
+                },
+                user_agent: None,
+                headers: BTreeMap::new(),
+            }),
+        }
+    }
+}
+
+impl InferenceProvider for BlockedUserActionProvider {
+    fn descriptor(&self) -> &ProviderDescriptor {
+        &self.descriptor
+    }
+
+    fn prepare_request(&self, request: &ProviderRequest) -> PreparedRequest {
+        self.descriptor.prepare_request(request)
+    }
+
+    fn execute_prepared(
+        &self,
+        request: &PreparedRequest,
+    ) -> Result<ProviderResponse, fin_provider::ProviderError> {
+        Ok(ProviderResponse {
+            provider_name: request.provider_name.clone(),
+            model: request.model.clone(),
+            output_text: "<fin_user_response>部署脚本已准备好，但需要你先确认 SSH 密钥位置。</fin_user_response>\n<fin_control_feedback>{\"origin\":\"model_output_contract_v1\",\"is_continuation\":true,\"is_simple_query\":false,\"candidate_task_id\":\"task-blocked\",\"candidate_topic_thread_id\":\"topic-blocked\",\"continuity_confidence\":80,\"topic_shift_confidence\":20,\"simple_query_confidence\":5,\"previous_topic_summary\":\"deploy\",\"current_topic_summary\":\"deploy\",\"note_candidate\":\"blocked\",\"digest_candidate\":\"blocked\",\"reason\":\"user action needed\",\"blocked\":true,\"needs_user_involve\":true,\"blocked_reason\":\"需要 SSH 密钥路径才能执行部署\",\"what_needs_to_be_done_by_user\":\"请提供 SSH 密钥的完整路径\"}</fin_control_feedback>\n<fin_tool_calls>[{\"tool_name\":\"reasoning.stop\",\"arguments\":{\"summary\":\"blocked, waiting for user input\"}}]</fin_tool_calls>".into(),
+            response_id: Some("blocked-user-action-response".into()),
+            stop_reason: Some("end_turn".into()),
+            status: 200,
+            tool_calls: Vec::new(),
+        })
+    }
+}
+
+#[derive(Debug, Clone)]
+struct MissingCompletionFeedbackRetryProvider {
+    descriptor: ProviderDescriptor,
+    requests: Arc<Mutex<Vec<PreparedRequest>>>,
+}
+
+impl MissingCompletionFeedbackRetryProvider {
+    fn new() -> Self {
+        Self {
+            descriptor: ProviderDescriptor::from_resolved(&ResolvedProviderConfig {
+                name: "openai".into(),
+                protocol: ProviderProtocol::OpenAiCompatible,
+                base_url: "https://api.example.com/v1".into(),
+                model: "gpt-5".into(),
+                credential: ProviderCredential::ApiKeyEnv {
+                    env_var: "OPENAI_API_KEY".into(),
+                },
+                user_agent: None,
+                headers: BTreeMap::new(),
+            }),
+            requests: Arc::new(Mutex::new(Vec::new())),
+        }
+    }
+
+    fn captured_requests(&self) -> Vec<PreparedRequest> {
+        self.requests.lock().expect("requests lock").clone()
+    }
+}
+
+impl InferenceProvider for MissingCompletionFeedbackRetryProvider {
+    fn descriptor(&self) -> &ProviderDescriptor {
+        &self.descriptor
+    }
+
+    fn prepare_request(&self, request: &ProviderRequest) -> PreparedRequest {
+        self.descriptor.prepare_request(request)
+    }
+
+    fn execute_prepared(
+        &self,
+        request: &PreparedRequest,
+    ) -> Result<ProviderResponse, fin_provider::ProviderError> {
+        let mut requests = self.requests.lock().expect("requests lock");
+        requests.push(request.clone());
+        let output_text = if requests.len() == 1 {
+            "<fin_user_response>任务完成。</fin_user_response>\n<fin_control_feedback>{\"origin\":\"model_output_contract_v1\",\"is_continuation\":false,\"is_simple_query\":false,\"candidate_task_id\":\"task-missing-feedback\",\"candidate_topic_thread_id\":\"topic-missing-feedback\",\"continuity_confidence\":30,\"topic_shift_confidence\":70,\"simple_query_confidence\":10,\"previous_topic_summary\":\"task\",\"current_topic_summary\":\"report\",\"note_candidate\":\"done\",\"digest_candidate\":\"done\",\"reason\":\"done\",\"task_completed\":true}</fin_control_feedback>\n<fin_tool_calls>[{\"tool_name\":\"reasoning.stop\",\"arguments\":{\"summary\":\"task finished\"}}]</fin_tool_calls>".into()
+        } else {
+            "<fin_user_response>任务已完成，所有检查通过。</fin_user_response>\n<fin_control_feedback>{\"origin\":\"model_output_contract_v1\",\"is_continuation\":false,\"is_simple_query\":false,\"candidate_task_id\":\"task-missing-feedback\",\"candidate_topic_thread_id\":\"topic-missing-feedback\",\"continuity_confidence\":20,\"topic_shift_confidence\":80,\"simple_query_confidence\":5,\"previous_topic_summary\":\"task\",\"current_topic_summary\":\"done\",\"note_candidate\":\"finished\",\"digest_candidate\":\"finished\",\"reason\":\"done\",\"task_completed\":true,\"completion_evidence\":[\"all checks passed\"],\"final_conclusions\":[\"task complete\"]}</fin_control_feedback>\n<fin_tool_calls>[{\"tool_name\":\"reasoning.stop\",\"arguments\":{\"summary\":\"task finished with full evidence\"}}]</fin_tool_calls>".into()
+        };
+        Ok(ProviderResponse {
+            provider_name: request.provider_name.clone(),
+            model: request.model.clone(),
+            output_text,
+            response_id: Some("missing-completion-feedback-response".into()),
+            stop_reason: Some("end_turn".into()),
+            status: 200,
+            tool_calls: Vec::new(),
+        })
+    }
+}
 
 #[test]
 fn runtime_closure_uses_structured_user_response_for_session_visible_output() {

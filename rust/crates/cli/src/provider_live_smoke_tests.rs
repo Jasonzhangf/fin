@@ -73,7 +73,7 @@ impl InferenceProvider for SmokeContractProvider {
             model: request.model.clone(),
             output_text: [
                 format!("<fin_user_response>ok:{}</fin_user_response>", request.input),
-                r#"<fin_control_feedback>{"origin":"model_output_contract_v1","is_continuation":true,"is_simple_query":false,"candidate_task_id":"task-provider-live-smoke","candidate_topic_thread_id":"topic-provider-live-smoke","continuity_confidence":95,"topic_shift_confidence":5,"simple_query_confidence":10,"previous_topic_summary":"provider smoke","current_topic_summary":"provider smoke","note_candidate":"smoke ok","digest_candidate":"smoke ok","reason":"contract smoke"}</fin_control_feedback>"#.to_string(),
+                r#"<fin_control_feedback>{"origin":"model_output_contract_v1","is_continuation":true,"is_simple_query":false,"candidate_task_id":"task-provider-live-smoke","candidate_topic_thread_id":"topic-provider-live-smoke","continuity_confidence":95,"topic_shift_confidence":5,"simple_query_confidence":10,"previous_topic_summary":"provider smoke","current_topic_summary":"provider smoke","is_simple_chat":true,"note_candidate":"smoke ok","digest_candidate":"smoke ok","reason":"contract smoke"}</fin_control_feedback>"#.to_string(),
                 r#"<fin_tool_calls>[{"tool_name":"reasoning.stop","arguments":{"summary":"smoke ok"}}]</fin_tool_calls>"#.to_string(),
             ].join(""),
             response_id: Some("smoke-contract-response".into()),

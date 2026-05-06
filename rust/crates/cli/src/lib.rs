@@ -92,3 +92,5 @@ mod tests;
 
 pub use cli::{run, run_with_runtime_home};
 pub use error::CliError;
+
+mod headless_daemon_bridge;

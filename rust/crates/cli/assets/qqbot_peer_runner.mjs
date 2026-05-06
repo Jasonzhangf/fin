@@ -30,6 +30,7 @@ const state = {
   heartbeatTimer: null,
   reconnectTimer: null,
   stopping: false,
+  connecting: false,
   token: null,
   tokenExpiresAt: 0,
   sessionId: null,
@@ -194,6 +195,7 @@ function clearConnection() {
     } catch {}
     state.ws = null;
   }
+  state.connecting = false;
 }
 
 function scheduleReconnect(delayMs = 3000) {
@@ -236,6 +238,7 @@ function handleDispatch(eventType, data) {
   if (eventType === 'READY') {
     state.sessionId = data.session_id || null;
     state.lastSuccessfulIntentLevel = state.intentLevelIndex;
+    state.connecting = false;
     emit({
       event: 'ready',
       data: {
@@ -246,6 +249,7 @@ function handleDispatch(eventType, data) {
     return;
   }
   if (eventType === 'RESUMED') {
+    state.connecting = false;
     emit({
       event: 'ready',
       data: {
@@ -314,99 +318,119 @@ function identifyPayload(accessToken) {
       token: `QQBot ${accessToken}`,
       intents: level.intents,
       shard: [0, 1],
+      properties: {
+        $os: process.platform,
+        $browser: "fin-qqbot-peer",
+        $device: "fin-qqbot-peer",
+      },
     },
   };
 }
 
 async function connect() {
+  if (state.connecting) {
+    return;
+  }
   clearConnection();
-  const accessToken = await getAccessToken(false);
-  const gatewayUrl = await getGatewayUrl();
-  const ws = new WebSocket(gatewayUrl);
-  state.ws = ws;
+  state.connecting = true;
 
-  ws.addEventListener('open', () => {
-    log('websocket connected');
-  });
+  try {
+    const accessToken = await getAccessToken(false);
+    const gatewayUrl = await getGatewayUrl();
+    const ws = new WebSocket(gatewayUrl);
+    state.ws = ws;
 
-  ws.addEventListener('message', async (event) => {
-    try {
-      const payload = JSON.parse(String(event.data));
-      if (payload.s !== undefined && payload.s !== null) {
-        state.lastSeq = payload.s;
-      }
-      if (payload.op === 10) {
-        const hello = payload.d || {};
-        if (state.sessionId && state.lastSeq !== null) {
-          ws.send(JSON.stringify({
-            op: 6,
-            d: {
-              token: `QQBot ${accessToken}`,
-              session_id: state.sessionId,
-              seq: state.lastSeq,
-            },
-          }));
-        } else {
-          ws.send(JSON.stringify(identifyPayload(accessToken)));
+    ws.addEventListener('open', () => {
+      log('websocket connected');
+    });
+
+    ws.addEventListener('message', async (event) => {
+      try {
+        const payload = JSON.parse(String(event.data));
+        if (payload.s !== undefined && payload.s !== null) {
+          state.lastSeq = payload.s;
         }
-        if (state.heartbeatTimer) {
-          clearInterval(state.heartbeatTimer);
-        }
-        state.heartbeatTimer = setInterval(() => {
-          if (ws.readyState === WebSocket.OPEN) {
-            ws.send(JSON.stringify({ op: 1, d: state.lastSeq }));
+        if (payload.op === 10) {
+          const hello = payload.d || {};
+          if (state.sessionId && state.lastSeq !== null) {
+            ws.send(JSON.stringify({
+              op: 6,
+              d: {
+                token: `QQBot ${accessToken}`,
+                session_id: state.sessionId,
+                seq: state.lastSeq,
+              },
+            }));
+          } else {
+            ws.send(JSON.stringify(identifyPayload(accessToken)));
           }
-        }, hello.heartbeat_interval || 30000);
-        return;
-      }
-      if (payload.op === 0) {
-        handleDispatch(payload.t, payload.d || {});
-        return;
-      }
-      if (payload.op === 7) {
-        emit({ event: 'error', data: { phase: 'server_reconnect', message: 'server requested reconnect' } });
-        clearConnection();
-        scheduleReconnect(2000);
-        return;
-      }
-      if (payload.op === 9) {
-        const canResume = Boolean(payload.d);
-        if (!canResume) {
-          state.sessionId = null;
-          state.lastSeq = null;
-          if (state.intentLevelIndex < INTENT_LEVELS.length - 1) {
-            state.intentLevelIndex += 1;
+          if (state.heartbeatTimer) {
+            clearInterval(state.heartbeatTimer);
           }
+          state.heartbeatTimer = setInterval(() => {
+            if (ws.readyState === WebSocket.OPEN) {
+              ws.send(JSON.stringify({ op: 1, d: state.lastSeq }));
+            }
+          }, hello.heartbeat_interval || 30000);
+          return;
         }
-        emit({ event: 'error', data: { phase: 'invalid_session', canResume } });
-        clearConnection();
-        scheduleReconnect(3000);
+        if (payload.op === 0) {
+          handleDispatch(payload.t, payload.d || {});
+          return;
+        }
+        if (payload.op === 7) {
+          emit({ event: 'error', data: { phase: 'server_reconnect', message: 'server requested reconnect' } });
+          clearConnection();
+          scheduleReconnect(2000);
+          return;
+        }
+        if (payload.op === 9) {
+          const canResume = Boolean(payload.d);
+          if (!canResume) {
+            state.sessionId = null;
+            state.lastSeq = null;
+            if (state.intentLevelIndex < INTENT_LEVELS.length - 1) {
+              state.intentLevelIndex += 1;
+            }
+          }
+          emit({ event: 'error', data: { phase: 'invalid_session', canResume } });
+          clearConnection();
+          scheduleReconnect(3000);
+        }
+      } catch (err) {
+        emit({ event: 'error', data: { phase: 'message_parse', message: String(err) } });
       }
-    } catch (err) {
-      emit({ event: 'error', data: { phase: 'message_parse', message: String(err) } });
-    }
-  });
+    });
 
-  ws.addEventListener('close', (event) => {
-    if (state.stopping) {
-      emit({ event: 'stopped', data: { code: event.code, reason: String(event.reason || '') } });
-      return;
-    }
-    if ([4006, 4007, 4009].includes(event.code)) {
-      state.sessionId = null;
-      state.lastSeq = null;
-    }
-    if (event.code === 4004) {
-      state.token = null;
-      state.tokenExpiresAt = 0;
-    }
-    emit({ event: 'error', data: { phase: 'close', code: event.code, reason: String(event.reason || '') } });
-    scheduleReconnect(event.code === 4008 ? 60000 : 3000);
-  });
+    ws.addEventListener('close', (event) => {
+      state.connecting = false;
+      if (state.stopping) {
+        emit({ event: 'stopped', data: { code: event.code, reason: String(event.reason || '') } });
+        return;
+      }
+      emit({ event: 'disconnected', data: { code: event.code, reason: String(event.reason || '') } });
+      log('disconnected', { code: event.code, reason: String(event.reason || '') });
+      if ([4006, 4007, 4009].includes(event.code)) {
+        state.sessionId = null;
+        state.lastSeq = null;
+      }
+      if (event.code === 4004) {
+        state.token = null;
+        state.tokenExpiresAt = 0;
+      }
+      emit({ event: 'error', data: { phase: 'close', code: event.code, reason: String(event.reason || '') } });
+      scheduleReconnect(event.code === 4008 ? 60000 : 3000);
+    });
 
-  ws.addEventListener('error', (event) => {
-    emit({ event: 'error', data: { phase: 'websocket', message: String(event.message || 'websocket error') } });
-  });
+    ws.addEventListener('error', (event) => {
+      state.connecting = false;
+      emit({ event: 'error', data: { phase: 'websocket', message: String(event.message || 'websocket error') } });
+    });
+  } catch (err) {
+    state.connecting = false;
+    emit({ event: 'error', data: { phase: 'connect', message: String(err) } });
+    throw err;
+  }
 }
 
 async function handleRequest(line) {

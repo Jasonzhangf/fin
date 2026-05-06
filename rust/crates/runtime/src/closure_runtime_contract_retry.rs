@@ -171,6 +171,65 @@ fn validate_model_output_contract(
                 .unwrap_or("unknown")
         ));
     }
+    let fb = parsed.control_feedback.as_ref();
+    let has_reasoning_stop = parsed
+        .tool_calls
+        .iter()
+        .any(|tc| tc.tool_name == "reasoning.stop");
+    if has_reasoning_stop {
+        let completed_with_evidence = fb.map_or(false, |f| {
+            f.task_completed
+                && !f.completion_evidence.is_empty()
+                && !f.final_conclusions.is_empty()
+        });
+        let simple_chat = fb.map_or(false, |f| f.is_simple_chat);
+        let blocked_user = fb.map_or(false, |f| {
+            f.blocked
+                && f.needs_user_involve
+                && f.blocked_reason
+                    .as_ref()
+                    .map_or(false, |s| !s.trim().is_empty())
+                && f.what_needs_to_be_done_by_user
+                    .as_ref()
+                    .map_or(false, |s| !s.trim().is_empty())
+        });
+        let has_closure_channel = completed_with_evidence || simple_chat || blocked_user;
+        if !has_closure_channel {
+            if fb.map_or(false, |f| f.task_completed) {
+                if fb.map_or(true, |f| f.completion_evidence.is_empty()) {
+                    errors.push("completion_evidence is empty".into());
+                }
+                if fb.map_or(true, |f| f.final_conclusions.is_empty()) {
+                    errors.push("final_conclusions is empty".into());
+                }
+            }
+            if fb.map_or(false, |f| f.blocked && !f.needs_user_involve) {
+                errors.push("blocked is true but needs_user_involve is not set".into());
+            }
+            if fb.map_or(false, |f| {
+                f.blocked && f.needs_user_involve
+                    && f.blocked_reason
+                        .as_ref()
+                        .map_or(true, |s| s.trim().is_empty())
+            }) {
+                errors.push("blocked is true but blocked_reason is empty".into());
+            }
+            if fb.map_or(false, |f| {
+                f.blocked && f.needs_user_involve
+                    && f.what_needs_to_be_done_by_user
+                        .as_ref()
+                        .map_or(true, |s| s.trim().is_empty())
+            }) {
+                errors.push(
+                    "blocked is true but what_needs_to_be_done_by_user is empty".into(),
+                );
+            }
+            errors.push(
+                "reasoning.stop was requested, but the control feedback still lacks a valid closure channel"
+                    .into(),
+            );
+        }
+    }
     errors
 }
 

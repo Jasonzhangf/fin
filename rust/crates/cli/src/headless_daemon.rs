@@ -1,5 +1,6 @@
 use crate::{
     CliError, agent_presence::ensure_entry_agent_presence,
+    headless_daemon_bridge::maybe_start_builtin_qqbot_bridge,
     headless_daemon_project_resume::drive_headless_project_runtime_resumes,
     reminder_scheduler::inject_due_reminders, runtime_home::init_runtime_home,
     startup_control_summary::read_startup_control_summary,
@@ -163,6 +164,10 @@ pub(crate) fn run_headless_daemon_with_provider(
     let started_at = crate::time::local_timestamp_now();
     let handler = CliDebugActionHandler::new(user_toml.to_string(), system.clone())?;
     let _ = ensure_entry_agent_presence(system, &runtime_home, &started_at)?;
+    let _qqbot_bridge = match maybe_start_builtin_qqbot_bridge(&runtime_home, &handler) {
+        Ok(bridge) => bridge,
+        Err(e) => { eprintln!("[daemon] qqbot bridge start failed: {e}"); None }
+    };
     let mut cycles_completed = 0usize;
     let mut processed_sessions = 0usize;
     let mut drove_count = 0usize;

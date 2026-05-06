@@ -232,8 +232,9 @@ impl M1Runtime {
         let closure_stopped = dispatched_tools.stop_requested;
         let closure_waiting_external = dispatched_tools.yield_requested;
         let _resume_checkpoint = build_resume_checkpoint();
-        let stop_source = stop_source(closure_waiting_external, closure_stopped);
-        let operation_status = operation_status(closure_waiting_external, closure_stopped);
+        let stop_source = stop_source(closure_waiting_external, closure_stopped, &control_feedback);
+        let operation_status =
+            operation_status(closure_waiting_external, closure_stopped, &control_feedback);
         let progress = ProgressBlock {
             progress_id: format!("progress-{}", operation.operation_id),
             refs: refs.clone(),
@@ -360,7 +361,7 @@ impl M1Runtime {
             &provider_request_records,
             &provider_response_records,
             &step_records,
-            "completed",
+            operation_status,
         );
         let mut events = emit_runtime_events(
             self,
