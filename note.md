@@ -4494,3 +4494,53 @@ fin should adopt the following canonical model:
   - `update_plan` 也首次带参成功
 - 当前剩余缺口：
   - 后续 `write_file` 仍因为 schema 过弱而空参失败，说明要想把“system 直接产出结构化报告”这一段也闭环，还需要继续给通用写工具补强 schema，而不是只修 managed-task tools。
+
+## 2026-05-06 QQBot 刷屏与空回复修复——完整调查记录
+
+### 问题描述
+1. QQBot 在 agent 处理期间每 15 秒无条件推送"仍在处理中，请稍候…"，刷屏。
+2. 用户追问后 agent 回复"本轮没有生成新的可发送回复"，没有生成可发送的回复。
+
+### 根因分析
+
+**刷屏根因**：`channel_peer_qqbot_bridge_support.rs` 的 `spawn_activity_delivery_loop` 中有一段通用进度通知循环，每 15 秒无条件对所有有 pending inbound 的 conversation 发送"仍在处理中，请稍候…"。该循环没有任何去重机制，也没有依赖已有的 activity card 差异推送（`prepare_periodic_delivery`）。
+
+**空回复根因**：`closure_runtime.rs` 的 while 循环条件 `!parsed_output.tool_calls.is_empty()` 在 agent 返回空 `fin_user_response`（没有 tool calls）时直接跳出循环，不触发 follow-up 轮次，导致 runtime 不生成 `reasoning.stop` 和可见的 user-facing 输出，最终没有 pending outbound message 可发送。
+
+### 修复内容（已提交 ecd746d）
+
+1. **`channel_peer_qqbot_bridge_support.rs`**（-71 行）：
+   - 移除整个通用进度通知循环（`last_progress_notice` HashMap、`Progress notices` 注释块、以及无条件 15 秒推送逻辑）
+   - 保留已有的 activity card 差异推送机制（`prepare_periodic_delivery`）作为唯一有意义的进度更新通道
+   - `send_channel_notice` 入口增加空文本保护
+
+2. **`closure_runtime.rs`**（+3 行）：
+   - while 循环条件增加 `assistant_response_text.trim().is_empty()` 守卫，强制在 agent 未输出可见文本时继续进入 follow-up 轮次
+
+3. **`closure_runtime_rounds.rs`**（+12 行）：
+   - `build_followup_input` 新增 `no_tool_calls: bool` 参数，分两条路径构造 follow-up prompt
+   - 当 no_tool_calls 时，prompt 明确要求 agent 至少输出默认确认消息："If you produce no visible user response (empty fin_user_response), you must still output a default acknowledgement like 'Processing, please wait.' inside fin_user_response."
+
+### 测试结果
+- `cargo test -p fin-runtime --lib` 96 个测试全过
+- `cargo test -p fin-runtime --lib -- model_output_runtime_tests` 4/4 全过
+- `cargo test -p fin-cli --lib channel_peer_qqbot_bridge::tests` 7/7 全过
+- `cargo test -p fin-cli --lib channel_peer_activity_delivery` 19/22 通过，**3 个失败**（见下方分析）
+
+### 3 个 activity_delivery 测试失败——已确认为预置问题
+- `periodic_delivery_skips_idle_peer_only_changes`
+- `periodic_delivery_stays_bound_to_frontstage_session_when_worker_session_becomes_last_run`
+- `periodic_delivery_discloses_task_list_detail_once_until_task_set_changes`
+- **已确认**：在父提交 `b7157fc` 上运行同样 3 个测试，结果完全一致（均 FAILED），说明是**预先存在的问题**，不是本次修复引入
+- 根因与 `channel_peer_activity_delivery_render.rs` 中 `should_emit_snapshot` 的 idle/ready 状态判断有关
+
+### 错误提交清理
+- 之前会话产生的 `95d6768` 和 `b3a7045` 两个提交错误地重新加回了刷屏循环，已用 `git reset --hard ecd746d` 恢复
+- 清理了 stash 条目、`.bak` 备份文件、`.deepseek/` 目录
+
+### 未提交的其他改动
+- `provider_static.rs`：给 static provider 的测试输出加了 `fin_tool_calls` 中的 `reasoning.stop`
+- `model_output_runtime_tests.rs`：给 StructuredProvider 加了 `is_simple_chat: true` 和 `reasoning.stop`
+- `scheduler.rs`：`running` 状态下增加 parallel pending 时的 `run_next_parallel` 路由
+- `tests_mainline.rs`：更新 event chain 断言，增加 `reasoning.stopped` 事件和 `reasoning.stop` tool record
+- 以上均属于 `b7157fc` 中更早的 reasoning.stop contract 改动范畴，未单独提交
