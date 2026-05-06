@@ -42,6 +42,7 @@ fn run_closure_emits_expected_event_chain() {
             "control.feedback_round_recorded",
             "tool.dispatch_round_completed",
             "model.output_parsed",
+            "reasoning.stopped",
             "progress.updated",
             "tool.execution_recorded",
             "control.feedback_recorded",
@@ -71,11 +72,11 @@ fn run_closure_emits_expected_event_chain() {
         run.digest.control_feedback,
         Some(run.control_feedback.clone())
     );
-    assert_eq!(run.tool_records.len(), 1);
+    assert_eq!(run.tool_records.len(), 2);
     assert!(
         run.tool_records
             .iter()
-            .all(|record| record.tool_name == "provider.call")
+            .any(|record| record.tool_name == "reasoning.stop" && record.status == "completed")
     );
     assert_eq!(run.provider_request_records.len(), 1);
     assert_eq!(run.provider_response_records.len(), 1);

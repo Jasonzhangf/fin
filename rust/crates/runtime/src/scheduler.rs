@@ -40,12 +40,23 @@ pub fn derive_scheduler_decision(
                 "execution is paused".into()
             },
         ),
-        "running" => (
-            "wait_running",
-            false,
-            Some("running".into()),
-            "closure is still running".into(),
-        ),
+        "running" => {
+            if parallel_pending_count > 0 {
+                (
+                    "run_next_parallel",
+                    true,
+                    None,
+                    format!("running with {parallel_pending_count} parallel user inputs ready"),
+                )
+            } else {
+                (
+                    "wait_running",
+                    false,
+                    Some("running".into()),
+                    "closure is still running".into(),
+                )
+            }
+        },
         "waiting_external" => {
             if parallel_pending_count > 0 {
                 (

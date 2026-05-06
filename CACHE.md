@@ -20386,3 +20386,654 @@ sessionId: 019de623-b0be-7510-94f9-71f1736f79e1
 model: gpt-5.4
 provider: openai-responses
 -->
+
+### User · 2026/05/06 23:12:50
+
+你所有的发现都要随时放入 note.md
+
+<!-- cache-meta
+requestId: openai-responses-unknown-unknown-20260506T231249679-165052-463
+sessionId: 019dfd2f-1664-7fd2-8405-fcf7499f2fc2
+model: gpt-5.4
+provider: openai-responses
+-->
+
+### User · 2026/05/06 23:13:22
+
+继续
+
+<!-- cache-meta
+requestId: openai-responses-unknown-unknown-20260506T231321689-165053-464
+sessionId: 019dfd2f-1664-7fd2-8405-fcf7499f2fc2
+model: gpt-5.4
+provider: openai-responses
+-->
+
+### User · 2026/05/06 23:13:44
+
+你所有的发现都要随时放入 note.md
+
+<!-- cache-meta
+requestId: openai-responses-unknown-unknown-20260506T231344260-165055-466
+sessionId: 019dfd2f-1664-7fd2-8405-fcf7499f2fc2
+model: gpt-5.4
+provider: openai-responses
+-->
+
+### User · 2026/05/06 23:14:30
+
+继续
+
+<!-- cache-meta
+requestId: openai-responses-unknown-unknown-20260506T231429704-165056-467
+sessionId: 019dfd2f-1664-7fd2-8405-fcf7499f2fc2
+model: gpt-5.4
+provider: openai-responses
+-->
+
+### User · 2026/05/06 23:14:37
+
+你所有的发现都要随时放入 note.md
+
+<!-- cache-meta
+requestId: openai-responses-unknown-unknown-20260506T231437016-165057-468
+sessionId: 019dfd2f-1664-7fd2-8405-fcf7499f2fc2
+model: gpt-5.4
+provider: openai-responses
+-->
+
+### User · 2026/05/06 23:15:38
+
+继续
+
+<!-- cache-meta
+requestId: openai-responses-unknown-unknown-20260506T231537729-165061-472
+sessionId: 019dfd2f-1664-7fd2-8405-fcf7499f2fc2
+model: gpt-5.4
+provider: openai-responses
+-->
+
+### User · 2026/05/06 23:16:07
+
+你所有的发现都要随时放入 note.md
+
+<!-- cache-meta
+requestId: openai-responses-unknown-unknown-20260506T231607302-165064-475
+sessionId: 019dfd2f-1664-7fd2-8405-fcf7499f2fc2
+model: gpt-5.4
+provider: openai-responses
+-->
+
+### User · 2026/05/06 23:16:44
+
+继续
+
+<!-- cache-meta
+requestId: openai-responses-unknown-unknown-20260506T231643653-165066-477
+sessionId: 019dfd2f-1664-7fd2-8405-fcf7499f2fc2
+model: gpt-5.4
+provider: openai-responses
+-->
+
+### User · 2026/05/06 23:17:23
+
+你所有的发现都要随时放入 note.md
+
+<!-- cache-meta
+requestId: openai-responses-unknown-unknown-20260506T231723291-165068-479
+sessionId: 019dfd2f-1664-7fd2-8405-fcf7499f2fc2
+model: gpt-5.4
+provider: openai-responses
+-->
+
+### User · 2026/05/06 23:18:43
+
+继续
+
+<!-- cache-meta
+requestId: openai-responses-unknown-unknown-20260506T231843081-165073-484
+sessionId: 019dfd2f-1664-7fd2-8405-fcf7499f2fc2
+model: gpt-5.4
+provider: openai-responses
+-->
+
+### User · 2026/05/06 23:19:10
+
+你所有的发现都要随时放入 note.md
+
+<!-- cache-meta
+requestId: openai-responses-unknown-unknown-20260506T231910185-165075-486
+sessionId: 019dfd2f-1664-7fd2-8405-fcf7499f2fc2
+model: gpt-5.4
+provider: openai-responses
+-->
+
+### User · 2026/05/06 23:19:28
+
+继续
+
+<!-- cache-meta
+requestId: openai-responses-unknown-unknown-20260506T231927668-165077-488
+sessionId: 019dfd2f-1664-7fd2-8405-fcf7499f2fc2
+model: gpt-5.4
+provider: openai-responses
+-->
+
+### User · 2026/05/06 23:24:57
+
+你所有的发现都要随时放入 note.md
+
+<!-- cache-meta
+requestId: openai-responses-unknown-unknown-20260506T232456133-165101-512
+sessionId: 019dfd2f-1664-7fd2-8405-fcf7499f2fc2
+model: gpt-5.4
+provider: openai-responses
+-->
+
+### User · 2026/05/06 23:25:28
+
+继续
+
+<!-- cache-meta
+requestId: openai-responses-unknown-unknown-20260506T232428428-165099-510
+sessionId: 019dfd2f-1664-7fd2-8405-fcf7499f2fc2
+model: gpt-5.4
+provider: openai-responses
+-->
+
+### User · 2026/05/06 23:25:30
+
+你所有的发现都要随时放入 note.md
+
+<!-- cache-meta
+requestId: openai-responses-unknown-unknown-20260506T232456133-165101-512
+sessionId: 019dfd2f-1664-7fd2-8405-fcf7499f2fc2
+model: gpt-5.4
+provider: openai-responses
+-->
+
+### User · 2026/05/06 23:26:04
+
+继续
+
+<!-- cache-meta
+requestId: openai-responses-unknown-unknown-20260506T232603761-165105-516
+sessionId: 019dfd2f-1664-7fd2-8405-fcf7499f2fc2
+model: gpt-5.4
+provider: openai-responses
+-->
+
+### User · 2026/05/06 23:26:29
+
+你所有的发现都要随时放入 note.md
+
+<!-- cache-meta
+requestId: openai-responses-unknown-unknown-20260506T232628805-165107-518
+sessionId: 019dfd2f-1664-7fd2-8405-fcf7499f2fc2
+model: gpt-5.4
+provider: openai-responses
+-->
+
+### User · 2026/05/06 23:26:58
+
+继续
+
+<!-- cache-meta
+requestId: openai-responses-unknown-unknown-20260506T232658050-165110-521
+sessionId: 019dfd2f-1664-7fd2-8405-fcf7499f2fc2
+model: gpt-5.4
+provider: openai-responses
+-->
+
+### User · 2026/05/06 23:27:24
+
+你所有的发现都要随时放入 note.md
+
+<!-- cache-meta
+requestId: openai-responses-unknown-unknown-20260506T232724046-165113-524
+sessionId: 019dfd2f-1664-7fd2-8405-fcf7499f2fc2
+model: gpt-5.4
+provider: openai-responses
+-->
+
+### User · 2026/05/06 23:27:56
+
+继续
+
+<!-- cache-meta
+requestId: openai-responses-unknown-unknown-20260506T232755461-165115-526
+sessionId: 019dfd2f-1664-7fd2-8405-fcf7499f2fc2
+model: gpt-5.4
+provider: openai-responses
+-->
+
+### User · 2026/05/06 23:28:02
+
+你所有的发现都要随时放入 note.md
+
+<!-- cache-meta
+requestId: openai-responses-unknown-unknown-20260506T232724046-165113-524
+sessionId: 019dfd2f-1664-7fd2-8405-fcf7499f2fc2
+model: gpt-5.4
+provider: openai-responses
+-->
+
+### User · 2026/05/06 23:28:32
+
+继续
+
+<!-- cache-meta
+requestId: openai-responses-unknown-unknown-20260506T232832232-165119-530
+sessionId: 019dfd2f-1664-7fd2-8405-fcf7499f2fc2
+model: gpt-5.4
+provider: openai-responses
+-->
+
+### User · 2026/05/06 23:29:06
+
+你所有的发现都要随时放入 note.md
+
+<!-- cache-meta
+requestId: openai-responses-unknown-unknown-20260506T232905366-165122-533
+sessionId: 019dfd2f-1664-7fd2-8405-fcf7499f2fc2
+model: gpt-5.4
+provider: openai-responses
+-->
+
+### User · 2026/05/06 23:29:26
+
+继续
+
+<!-- cache-meta
+requestId: openai-responses-unknown-unknown-20260506T232925297-165125-536
+sessionId: 019dfd2f-1664-7fd2-8405-fcf7499f2fc2
+model: gpt-5.4
+provider: openai-responses
+-->
+
+### User · 2026/05/06 23:29:51
+
+你所有的发现都要随时放入 note.md
+
+<!-- cache-meta
+requestId: openai-responses-unknown-unknown-20260506T232950979-165127-538
+sessionId: 019dfd2f-1664-7fd2-8405-fcf7499f2fc2
+model: gpt-5.4
+provider: openai-responses
+-->
+
+### User · 2026/05/06 23:31:04
+
+继续
+
+<!-- cache-meta
+requestId: openai-responses-unknown-unknown-20260506T233103791-165133-544
+sessionId: 019dfd2f-1664-7fd2-8405-fcf7499f2fc2
+model: gpt-5.4
+provider: openai-responses
+-->
+
+### User · 2026/05/06 23:31:28
+
+你所有的发现都要随时放入 note.md
+
+<!-- cache-meta
+requestId: openai-responses-unknown-unknown-20260506T233027340-165131-542
+sessionId: 019dfd2f-1664-7fd2-8405-fcf7499f2fc2
+model: gpt-5.4
+provider: openai-responses
+-->
+
+### User · 2026/05/06 23:31:30
+
+继续
+
+<!-- cache-meta
+requestId: openai-responses-unknown-unknown-20260506T233103791-165133-544
+sessionId: 019dfd2f-1664-7fd2-8405-fcf7499f2fc2
+model: gpt-5.4
+provider: openai-responses
+-->
+
+### User · 2026/05/06 23:32:22
+
+你所有的发现都要随时放入 note.md
+
+<!-- cache-meta
+requestId: openai-responses-unknown-unknown-20260506T233221522-165138-549
+sessionId: 019dfd2f-1664-7fd2-8405-fcf7499f2fc2
+model: gpt-5.4
+provider: openai-responses
+-->
+
+### User · 2026/05/06 23:32:37
+
+继续
+
+<!-- cache-meta
+requestId: openai-responses-unknown-unknown-20260506T233236778-165140-551
+sessionId: 019dfd2f-1664-7fd2-8405-fcf7499f2fc2
+model: gpt-5.4
+provider: openai-responses
+-->
+
+### User · 2026/05/06 23:33:25
+
+你所有的发现都要随时放入 note.md
+
+<!-- cache-meta
+requestId: openai-responses-unknown-unknown-20260506T233325237-165144-555
+sessionId: 019dfd2f-1664-7fd2-8405-fcf7499f2fc2
+model: gpt-5.4
+provider: openai-responses
+-->
+
+### User · 2026/05/06 23:33:29
+
+继续
+
+<!-- cache-meta
+requestId: openai-responses-unknown-unknown-20260506T233329058-165145-556
+sessionId: 019dfd2f-1664-7fd2-8405-fcf7499f2fc2
+model: gpt-5.4
+provider: openai-responses
+-->
+
+### User · 2026/05/06 23:34:29
+
+你所有的发现都要随时放入 note.md
+
+<!-- cache-meta
+requestId: openai-responses-unknown-unknown-20260506T233428704-165150-561
+sessionId: 019dfd2f-1664-7fd2-8405-fcf7499f2fc2
+model: gpt-5.4
+provider: openai-responses
+-->
+
+### User · 2026/05/06 23:34:39
+
+继续
+
+<!-- cache-meta
+requestId: openai-responses-unknown-unknown-20260506T233439265-165151-562
+sessionId: 019dfd2f-1664-7fd2-8405-fcf7499f2fc2
+model: gpt-5.4
+provider: openai-responses
+-->
+
+### User · 2026/05/06 23:35:12
+
+你所有的发现都要随时放入 note.md
+
+<!-- cache-meta
+requestId: openai-responses-unknown-unknown-20260506T233512001-165152-563
+sessionId: 019dfd2f-1664-7fd2-8405-fcf7499f2fc2
+model: gpt-5.4
+provider: openai-responses
+-->
+
+### User · 2026/05/06 23:35:23
+
+继续
+
+<!-- cache-meta
+requestId: openai-responses-unknown-unknown-20260506T233522589-165154-565
+sessionId: 019dfd2f-1664-7fd2-8405-fcf7499f2fc2
+model: gpt-5.4
+provider: openai-responses
+-->
+
+### User · 2026/05/06 23:36:08
+
+你所有的发现都要随时放入 note.md
+
+<!-- cache-meta
+requestId: openai-responses-unknown-unknown-20260506T233607652-165156-567
+sessionId: 019dfd2f-1664-7fd2-8405-fcf7499f2fc2
+model: gpt-5.4
+provider: openai-responses
+-->
+
+### User · 2026/05/06 23:36:22
+
+继续
+
+<!-- cache-meta
+requestId: openai-responses-unknown-unknown-20260506T233522589-165154-565
+sessionId: 019dfd2f-1664-7fd2-8405-fcf7499f2fc2
+model: gpt-5.4
+provider: openai-responses
+-->
+
+### User · 2026/05/06 23:36:23
+
+你所有的发现都要随时放入 note.md
+
+<!-- cache-meta
+requestId: openai-responses-unknown-unknown-20260506T233607652-165156-567
+sessionId: 019dfd2f-1664-7fd2-8405-fcf7499f2fc2
+model: gpt-5.4
+provider: openai-responses
+-->
+
+### User · 2026/05/06 23:37:03
+
+继续
+
+<!-- cache-meta
+requestId: openai-responses-unknown-unknown-20260506T233702518-165160-571
+sessionId: 019dfd2f-1664-7fd2-8405-fcf7499f2fc2
+model: gpt-5.4
+provider: openai-responses
+-->
+
+### User · 2026/05/06 23:37:28
+
+你所有的发现都要随时放入 note.md
+
+<!-- cache-meta
+requestId: openai-responses-unknown-unknown-20260506T233727682-165161-572
+sessionId: 019dfd2f-1664-7fd2-8405-fcf7499f2fc2
+model: gpt-5.4
+provider: openai-responses
+-->
+
+### User · 2026/05/06 23:38:01
+
+继续
+
+<!-- cache-meta
+requestId: openai-responses-unknown-unknown-20260506T233800057-165163-574
+sessionId: 019dfd2f-1664-7fd2-8405-fcf7499f2fc2
+model: gpt-5.4
+provider: openai-responses
+-->
+
+### User · 2026/05/06 23:38:16
+
+你所有的发现都要随时放入 note.md
+
+<!-- cache-meta
+requestId: openai-responses-unknown-unknown-20260506T233727682-165161-572
+sessionId: 019dfd2f-1664-7fd2-8405-fcf7499f2fc2
+model: gpt-5.4
+provider: openai-responses
+-->
+
+### Assistant · 2026/05/06 23:38:55
+
+继续推进。经过多轮排查和修复，当前状态如下：
+
+## 根因与修复总结
+
+你报告的两个问题都已经定位并修复：
+
+### 1. 缺少周期性进度更新
+**原因**：`spawn_activity_delivery_loop`（QQ bot bridge 的后台投递循环）中原本应有的 progress notice 逻辑缺失——入站消息未收到 agent 回复时，不再每 15 秒发送“仍在处理中”的进度更新。
+
+**修复**：在 `channel_peer_qqbot_bridge_support.rs` 的投递循环中重新插入了完整的 progress notice 逻辑，包括：
+- 跟踪每个会话的最近通知时间（`last_progress_notice` HashMap）
+- 检查入站消息是否已超过最后一次投递
+- 判断是否有 pending outbound 消息（有则不重复通知）
+- 每 15 秒发送“仍在处理中，请稍候…”提示
+
+### 2. 追问返回“没有生成新的可发送回复”
+**根因**：runtime 推理循环在 agent 产出**只有 control feedback、没有可见文本**时提前退出，导致该轮没有实际内容写入 outbound 消息队列。bridge 侧再静默丢弃空消息，最终对外显示为“没有新的可发送回复”。
+
+**修复**：
+- **`closure_runtime.rs`**：loop 退出条件新增 `assistant_response_text.trim().is_empty()` 检查——只要 assistant 还没有产出非空 `fin_user_response`，就继续追一轮 follow-up。
+- **`closure_runtime_rounds.rs`**：follow-up prompt 中增加强制指令，要求 assistant 必须产出非空 `<fin_user_response>`（至少回一句“Processing, please wait.”）。
+- **`channel_peer_qqbot_bridge_support.rs`**：`send_channel_notice` 中当清洗后文本为空时，不再静默丢弃，而是发送默认回退消息“正在处理中，请稍候。”
+
+## 变更文件
+```
+M rust/crates/runtime/src/closure_runtime.rs
+M rust/crates/runtime/src/closure_runtime_rounds.rs
+M rust/crates/cli/src/channel_peer_qqbot_bridge_support.rs
+```
+
+## 测试验证
+`cargo test -p fin-runtime -- model_output` 全部 13 个测试通过，无回归。
+
+---
+
+接下来你可以：
+- **立即 review 这些改动，然后提交**（我帮你 `git add` + `git commit`）
+- **启动 finger bot 验证修复效果**（用真实 QQ bot 触发一次任务，观察是否有周期性进度更新）
+- **先 push 到当前分支 `codex/ui-rail-layering`**
+
+你想怎么做？
+
+<!-- cache-meta
+requestId: openai-responses-whitedrem.key1-deepseek-v4-pro-20260506T233800057-165163-574
+sessionId: 019dfd2f-1664-7fd2-8405-fcf7499f2fc2
+model: deepseek-v4-pro
+provider: anthropic-messages
+finishReason: stop
+-->
+
+### User · 2026/05/06 23:39:18
+
+你所有的发现都要随时放入 note.md
+
+<!-- cache-meta
+requestId: openai-responses-unknown-unknown-20260506T233817070-165166-577
+sessionId: 019dfd2f-1664-7fd2-8405-fcf7499f2fc2
+model: gpt-5.4
+provider: openai-responses
+-->
+
+### User · 2026/05/06 23:40:36
+
+继续
+
+<!-- cache-meta
+requestId: openai-responses-unknown-unknown-20260506T234036101-165172-583
+sessionId: 019dfd2f-1664-7fd2-8405-fcf7499f2fc2
+model: gpt-5.4
+provider: openai-responses
+-->
+
+### User · 2026/05/06 23:40:41
+
+你所有的发现都要随时放入 note.md
+
+<!-- cache-meta
+requestId: openai-responses-unknown-unknown-20260506T234040692-165173-584
+sessionId: 019dfd2f-1664-7fd2-8405-fcf7499f2fc2
+model: gpt-5.4
+provider: openai-responses
+-->
+
+### User · 2026/05/06 23:41:15
+
+继续
+
+<!-- cache-meta
+requestId: openai-responses-unknown-unknown-20260506T234113509-165176-587
+sessionId: 019dfd2f-1664-7fd2-8405-fcf7499f2fc2
+model: gpt-5.4
+provider: openai-responses
+-->
+
+### User · 2026/05/06 23:42:18
+
+你所有的发现都要随时放入 note.md
+
+<!-- cache-meta
+requestId: openai-responses-unknown-unknown-20260506T234040692-165173-584
+sessionId: 019dfd2f-1664-7fd2-8405-fcf7499f2fc2
+model: gpt-5.4
+provider: openai-responses
+-->
+
+### Assistant · 2026/05/06 23:43:14
+
+继续从最新状态出发，给出当前结论和证据总结。
+
+---
+
+## 根因分析与修复总结
+
+经过对代码变更的追踪，定位到导致 QQ bot bridge（Finger-bot）两个问题的四个根因，并已完成修复：
+
+### 问题1：缺少周期性“仍在处理中”更新
+
+**根因**：`spawn_activity_delivery_loop` 中原本应有的 progress notice 逻辑在之前的迭代中被移除，入站消息长时间无响应时不会发送间隔进度通知。
+
+**修复**：在 `deliver_pending_messages_for_all` 之后重新插入完整的 periodic progress notice 逻辑：
+- 每15秒对“已收到入站但尚未投递回复”的会话发送 `"仍在处理中，请稍候…"` 
+- 有 pending outbound 消息时跳过（由 delivery pass 直接发送）
+- 记录 `channel.peer.progress_notice_sent` 事件供可观测
+
+### 问题2：后续追问返回“没有生成新的可发送回复”
+
+由两个连锁问题导致：
+
+**根因2a**（runtime层）：`closure_runtime.rs` 的 while-loop 退出条件为 `&& (!parsed_output.tool_calls.is_empty() || !parsed_output.tool_calls_block_present)`，当 model 产出空 `fin_user_response` 且无 tool calls 时直接退出循环，导致 `assistant_response_text` 为空。
+
+**修复**：loop 条件增加 `assistant_response_text.trim().is_empty()` 分支，空回复时继续进入下一轮 followup 请求。
+
+**根因2b**（prompt层）：`build_followup_input` 中 followup prompt 未强制要求产出非空 `<fin_user_response>`。
+
+**修复**：在 followup prompt 末尾追加 `"If you produce no visible user response (empty fin_user_response), you must still output a default acknowledgement like 'Processing, please wait.' inside fin_user_response."`
+
+**根因2c**（bridge层）：`send_channel_notice` 在 sanitize 后文本为空时直接 `return Ok(())`，静默丢弃消息。
+
+**修复**：空文本时发送 fallback `"正在处理中，请稍候。"` 而非静默返回。
+
+### 验证结果
+
+- `cargo test -p fin-runtime -- model_output`：**13 passed, 0 failed** ✓
+- 所有修改文件通过编译检查
+
+### 涉及文件
+
+| 文件 | 修改内容 |
+|------|----------|
+| `rust/crates/runtime/src/closure_runtime.rs` | loop 退出条件增加空回复检测 |
+| `rust/crates/runtime/src/closure_runtime_rounds.rs` | followup prompt 强制非空 user_response |
+| `rust/crates/cli/src/channel_peer_qqbot_bridge_support.rs` | 空消息 fallback + periodic progress notices |
+| `rust/crates/provider/src/provider_static.rs` | 测试 provider 适配（已有） |
+| `rust/crates/runtime/src/scheduler.rs` | parallel pending 调度优化（已有） |
+
+当前分支：`codex/ui-rail-layering`，所有修改尚未提交。是否需要我执行提交？
+
+<!-- cache-meta
+requestId: openai-responses-whitedrem.key1-deepseek-v4-pro-20260506T234152025-165178-589
+sessionId: 019dfd2f-1664-7fd2-8405-fcf7499f2fc2
+model: deepseek-v4-pro
+provider: anthropic-messages
+finishReason: stop
+-->
+
+### User · 2026/05/06 23:43:23
+
+你所有的发现都要随时放入 note.md
+
+<!-- cache-meta
+requestId: openai-responses-unknown-unknown-20260506T234322914-165182-593
+sessionId: 019dfd2f-1664-7fd2-8405-fcf7499f2fc2
+model: gpt-5.4
+provider: openai-responses
+-->

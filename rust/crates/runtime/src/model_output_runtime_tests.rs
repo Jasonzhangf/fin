@@ -85,7 +85,7 @@ impl InferenceProvider for StructuredProvider {
         Ok(ProviderResponse {
             provider_name: request.provider_name.clone(),
             model: request.model.clone(),
-            output_text: "<fin_user_response>structured answer</fin_user_response>\n<fin_control_feedback>{\"origin\":\"model_output_contract_v1\",\"is_continuation\":true,\"is_simple_query\":false,\"candidate_task_id\":\"task-structured\",\"candidate_topic_thread_id\":\"topic-structured\",\"continuity_confidence\":95,\"topic_shift_confidence\":5,\"simple_query_confidence\":7,\"previous_topic_summary\":\"task\",\"current_topic_summary\":\"task\",\"note_candidate\":\"structured note\",\"digest_candidate\":\"structured digest\",\"reason\":\"explicit control block\"}</fin_control_feedback>".into(),
+            output_text: "<fin_user_response>structured answer</fin_user_response>\n<fin_control_feedback>{\"origin\":\"model_output_contract_v1\",\"is_continuation\":true,\"is_simple_query\":false,\"candidate_task_id\":\"task-structured\",\"candidate_topic_thread_id\":\"topic-structured\",\"continuity_confidence\":95,\"topic_shift_confidence\":5,\"simple_query_confidence\":7,\"previous_topic_summary\":\"task\",\"current_topic_summary\":\"task\",\"is_simple_chat\":true,\"note_candidate\":\"structured note\",\"digest_candidate\":\"structured digest\",\"reason\":\"explicit control block\"}</fin_control_feedback>\n<fin_tool_calls>[{\"tool_name\":\"reasoning.stop\",\"arguments\":{\"summary\":\"structured answer complete\"}}]</fin_tool_calls>".into(),
             response_id: Some("structured-response".into()),
             stop_reason: Some("end_turn".into()),
             status: 200,
@@ -227,13 +227,18 @@ fn runtime_closure_uses_structured_user_response_for_session_visible_output() {
     assert_eq!(run.assistant_response_text, "structured answer");
     assert_eq!(
         run.note.summary,
-        "provider openai returned: structured answer"
+        "provider openai returned: structured answer; reasoning.stop requested; runtime will decide whether closure is valid"
     );
     assert_eq!(run.digest.continuity_tail[1], "structured answer");
     assert!(
         run.events
             .iter()
             .any(|event| event.event_type == "model.output_parsed")
+    );
+    assert!(
+        run.tool_records
+            .iter()
+            .any(|record| record.tool_name == "reasoning.stop" && record.status == "completed")
     );
 }
 

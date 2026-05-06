@@ -37,7 +37,8 @@ impl InferenceProvider for StaticProviderClient {
             model: request.model.clone(),
             output_text: format!(
                 "<fin_user_response>{user_response}</fin_user_response>\n\
-<fin_control_feedback>{{\"origin\":\"model_output_contract_v1\",\"is_continuation\":false,\"is_simple_query\":true,\"task_completed\":false,\"is_simple_chat\":true,\"blocked\":false,\"needs_user_involve\":false,\"candidate_task_id\":null,\"candidate_topic_thread_id\":null,\"continuity_confidence\":72,\"topic_shift_confidence\":28,\"simple_query_confidence\":88,\"previous_topic_summary\":\"static provider\",\"current_topic_summary\":{escaped_current_topic},\"completion_evidence\":[],\"final_conclusions\":[],\"blocked_reason\":null,\"what_needs_to_be_done_by_user\":null,\"note_candidate\":{escaped_response},\"digest_candidate\":{escaped_response},\"reason\":\"structured static provider\"}}</fin_control_feedback>"
+<fin_control_feedback>{{\"origin\":\"model_output_contract_v1\",\"is_continuation\":false,\"is_simple_query\":true,\"task_completed\":false,\"is_simple_chat\":true,\"blocked\":false,\"needs_user_involve\":false,\"candidate_task_id\":null,\"candidate_topic_thread_id\":null,\"continuity_confidence\":72,\"topic_shift_confidence\":28,\"simple_query_confidence\":88,\"previous_topic_summary\":\"static provider\",\"current_topic_summary\":{escaped_current_topic},\"completion_evidence\":[],\"final_conclusions\":[],\"blocked_reason\":null,\"what_needs_to_be_done_by_user\":null,\"note_candidate\":{escaped_response},\"digest_candidate\":{escaped_response},\"reason\":\"structured static provider\"}}</fin_control_feedback>\n\
+<fin_tool_calls>[{{\"tool_name\":\"reasoning.stop\",\"arguments\":{{\"summary\":\"static provider complete\"}}}}]</fin_tool_calls>"
             ),
             response_id: Some("simulated-response".into()),
             stop_reason: Some("end_turn".into()),
@@ -91,9 +92,9 @@ impl InferenceProvider for StructuredStaticProviderClient {
             provider_name: request.provider_name.clone(),
             model: request.model.clone(),
             output_text: format!(
-                "{user_response}\n\
-<fin_control_feedback>{{\"origin\":\"model_output_contract_v1\",\"is_continuation\":false,\"is_simple_query\":{is_simple_query},\"task_completed\":false,\"is_simple_chat\":true,\"blocked\":false,\"needs_user_involve\":false,\"candidate_task_id\":null,\"candidate_topic_thread_id\":null,\"continuity_confidence\":{continuity_confidence},\"topic_shift_confidence\":{topic_shift_confidence},\"simple_query_confidence\":{simple_query_confidence},\"previous_topic_summary\":\"static provider\",\"current_topic_summary\":{escaped_current_topic},\"completion_evidence\":[],\"final_conclusions\":[],\"blocked_reason\":null,\"what_needs_to_be_done_by_user\":null,\"note_candidate\":{escaped_response},\"digest_candidate\":{escaped_response},\"reason\":\"structured static provider\"}}</fin_control_feedback>\
-"
+                "<fin_user_response>{user_response}</fin_user_response>\n\
+<fin_control_feedback>{{\"origin\":\"model_output_contract_v1\",\"is_continuation\":false,\"is_simple_query\":{is_simple_query},\"task_completed\":false,\"is_simple_chat\":true,\"blocked\":false,\"needs_user_involve\":false,\"candidate_task_id\":null,\"candidate_topic_thread_id\":null,\"continuity_confidence\":{continuity_confidence},\"topic_shift_confidence\":{topic_shift_confidence},\"simple_query_confidence\":{simple_query_confidence},\"previous_topic_summary\":\"static provider\",\"current_topic_summary\":{escaped_current_topic},\"completion_evidence\":[],\"final_conclusions\":[],\"blocked_reason\":null,\"what_needs_to_be_done_by_user\":null,\"note_candidate\":{escaped_response},\"digest_candidate\":{escaped_response},\"reason\":\"structured static provider\"}}</fin_control_feedback>\n\
+<fin_tool_calls>[{{\"tool_name\":\"reasoning.stop\",\"arguments\":{{\"summary\":\"structured static complete\"}}}}]</fin_tool_calls>"
             ),
             response_id: Some("structured-static-response".into()),
             stop_reason: Some("end_turn".into()),
