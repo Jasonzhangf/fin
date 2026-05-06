@@ -144,13 +144,16 @@ impl M1Runtime {
 
         while !dispatched_tools.stop_requested
             && !dispatched_tools.yield_requested
-            && !parsed_output.tool_calls.is_empty()
             && round_count < max_auto_tool_rounds
+            && (assistant_response_text.trim().is_empty()
+                || !parsed_output.tool_calls.is_empty()
+                || !parsed_output.tool_calls_block_present)
         {
             let next_round_index = round_count as u32 + 1;
             let followup_input = build_followup_input(
                 operation.payload.input.as_str(),
                 assistant_response_text.as_str(),
+                parsed_output.tool_calls.is_empty(),
             );
             let followup_round_context = build_round_context(DynamicRoundContextInput {
                 role_id: operation.payload.role.role_id.as_str(),

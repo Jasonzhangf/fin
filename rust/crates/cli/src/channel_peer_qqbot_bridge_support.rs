@@ -239,6 +239,9 @@ pub(super) fn send_channel_notice(
     text: &str,
     notice_kind: &str,
 ) -> Result<(), CliError> {
+    if text.trim().is_empty() {
+        return Ok(());
+    }
     let rendered = sanitize_text_channel_output(text);
     if rendered.trim().is_empty() {
         return Ok(());
@@ -330,8 +333,6 @@ pub(super) fn spawn_activity_delivery_loop(
 ) -> JoinHandle<()> {
     thread::spawn(move || {
         let mut was_ready = false;
-        let mut last_progress_notice: std::collections::HashMap<String, u64> =
-            std::collections::HashMap::new();
         while !stop_signal.load(Ordering::SeqCst) {
             let is_ready = ready_signal.load(Ordering::SeqCst);
             let reconnected = is_ready && !was_ready;
@@ -375,70 +376,6 @@ pub(super) fn spawn_activity_delivery_loop(
                 );
             }
 
-            // Progress notices: for conversations with a pending inbound that has
-            // not yet received a delivery response, send periodic updates.
-            let now_secs = SystemTime::now()
-                .duration_since(UNIX_EPOCH)
-                .map(|d| d.as_secs())
-                .unwrap_or(0);
-            if let Ok(conversations) = list_conversations(&runtime_home) {
-                for conv in &conversations {
-                    if conv.session_id.is_none() {
-                        continue;
-                    }
-                    // Inbound arrived but no delivery has followed since.
-                    let inbound_after_delivery =
-                        match (&conv.last_inbound_at, &conv.last_delivery_at) {
-                            (Some(inbound_at), Some(delivery_at)) => {
-                                inbound_at.as_str() > delivery_at.as_str()
-                            }
-                            (Some(_), None) => true,
-                            _ => false,
-                        };
-                    if !inbound_after_delivery {
-                        // No pending response — clear progress tracking.
-                        last_progress_notice.remove(&conv.target);
-                        continue;
-                    }
-                    // Check if there are pending outbound messages (response ready).
-                    let has_pending_outbound = pending_outbound_messages(&runtime_home, &conv.target)
-                        .ok()
-                        .flatten()
-                        .is_some_and(|(_, pending)| !pending.is_empty());
-                    if has_pending_outbound {
-                        // Response is ready but not yet delivered; the delivery pass
-                        // above will send it — skip progress notice this cycle.
-                        last_progress_notice.remove(&conv.target);
-                        continue;
-                    }
-                    let last_notice = last_progress_notice
-                        .get(&conv.target)
-                        .copied()
-                        .unwrap_or(0);
-                    if now_secs.saturating_sub(last_notice) >= 15 {
-                        let _ = write_bridge_request(
-                            &stdin,
-                            "send",
-                            Some(json!({
-                                "to": conv.target,
-                                "text": "仍在处理中，请稍候…",
-                            })),
-                        );
-                        let _ = record_builtin_qqbot_runtime_event(
-                            &runtime_home,
-                            "channel.peer.progress_notice_sent",
-                            None,
-                            None,
-                            None,
-                            json!({
-                                "target": conv.target,
-                                "session_id": conv.session_id,
-                            }),
-                        );
-                        last_progress_notice.insert(conv.target.clone(), now_secs);
-                    }
-                }
-            }
             match prepare_periodic_delivery(&runtime_home) {
                 Ok(Some(prepared)) => {
                     let still_current = current_delivery_signature_if_deliverable(&runtime_home)

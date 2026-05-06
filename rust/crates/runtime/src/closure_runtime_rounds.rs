@@ -366,10 +366,20 @@ pub(super) fn record_round(
     }
 }
 
-pub(super) fn build_followup_input(original_input: &str, assistant_response: &str) -> String {
-    format!(
-        "Continue the same turn.\nOriginal request: {original_input}\nLast assistant response: {assistant_response}\nThe previous round's native tool results are attached in this request; inspect them directly before deciding whether another tool is needed.\nIf the task is now complete, answer directly and emit control feedback that proves completion (task_completed=true plus non-empty completion_evidence and final_conclusions). If this is just a simple chat closure, set is_simple_chat=true. If you are blocked and need the user to do something, set blocked=true, needs_user_involve=true, and fill blocked_reason plus what_needs_to_be_done_by_user.\nOnly request reasoning.stop when the current reasoning cycle should really stop and the control feedback already contains one of those valid closure channels. Otherwise continue reasoning and do not stop yet."
-    )
+pub(super) fn build_followup_input(
+    original_input: &str,
+    assistant_response: &str,
+    no_tool_calls: bool,
+) -> String {
+    if no_tool_calls {
+        format!(
+            "Continue the same turn.\nOriginal request: {original_input}\nLast assistant response: {assistant_response}\nYour last response had no tool calls and no reasoning.stop signal. You must explicitly declare whether the turn should end.\nIf the task is now complete, call reasoning.stop and emit control feedback that proves completion (task_completed=true plus non-empty completion_evidence and final_conclusions). If this is just a simple chat closure, set is_simple_chat=true. If you are blocked and need the user to do something, set blocked=true, needs_user_involve=true, and fill blocked_reason plus what_needs_to_be_done_by_user.\nIf you need to do more work instead, call the appropriate tools.\nOnly request reasoning.stop when the current reasoning cycle should really stop and the control feedback already contains one of those valid closure channels.\nIf you produce no visible user response (empty fin_user_response), you must still output a default acknowledgement like 'Processing, please wait.' inside fin_user_response."
+        )
+    } else {
+        format!(
+            "Continue the same turn.\nOriginal request: {original_input}\nLast assistant response: {assistant_response}\nThe previous round's native tool results are attached in this request; inspect them directly before deciding whether another tool is needed.\nIf the task is now complete, answer directly and emit control feedback that proves completion (task_completed=true plus non-empty completion_evidence and final_conclusions). If this is just a simple chat closure, set is_simple_chat=true. If you are blocked and need the user to do something, set blocked=true, needs_user_involve=true, and fill blocked_reason plus what_needs_to_be_done_by_user.\nOnly request reasoning.stop when the current reasoning cycle should really stop and the control feedback already contains one of those valid closure channels. Otherwise continue reasoning and do not stop yet."
+        )
+    }
 }
 
 pub(super) fn allocate_step(
