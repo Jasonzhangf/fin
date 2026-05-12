@@ -105,7 +105,7 @@ fn view_image_uses_current_attachment_metadata() {
 fn context_history_rebuild_refreshes_rebuild_index() {
     let runtime_home = temp_runtime_home("context-rebuild");
     fs::create_dir_all(runtime_home.join("runtime/current")).expect("runtime current");
-    let session_dir = runtime_home.join("sessions/2026/04/session-tool-dispatch");
+    let session_dir = runtime_home.join("sessions/2026/05/session-tool-dispatch");
     fs::create_dir_all(session_dir.join("context")).expect("session context dir");
     fs::create_dir_all(session_dir.join("digests")).expect("digests");
     fs::create_dir_all(session_dir.join("reasoning")).expect("reasoning");
@@ -167,7 +167,7 @@ fn context_history_rebuild_refreshes_rebuild_index() {
 #[test]
 fn project_task_tools_list_and_status_known_tasks() {
     let runtime_home = temp_runtime_home("project-task-tools");
-    let session_dir = runtime_home.join("sessions/2026/04/session-tool-dispatch");
+    let session_dir = runtime_home.join("sessions/2026/05/session-tool-dispatch");
     fs::create_dir_all(session_dir.join("tasks/routing")).expect("routing");
     fs::create_dir_all(session_dir.join("control")).expect("control");
     fs::create_dir_all(session_dir.join("tasks/plan")).expect("plan");

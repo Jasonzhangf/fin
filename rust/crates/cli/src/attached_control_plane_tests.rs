@@ -67,7 +67,7 @@ fn binding(home: &Path) -> DebugBinding {
         session_id: Some("session-entry".into()),
         task_id: Some("task-entry".into()),
         session_messages_path: Some(
-            "sessions/2026/04/session-entry/conversation/messages.json".into(),
+            "sessions/2026/05/session-entry/conversation/messages.json".into(),
         ),
         recent_contexts_path: None,
         recent_digests_path: None,
@@ -84,7 +84,7 @@ fn write_file(path: &Path, bytes: &[u8]) {
 #[test]
 fn attached_control_plane_cycle_drives_ready_project_resume() {
     let home = temp_runtime_home("resume");
-    let entry_dir = home.join("sessions/2026/04/session-entry");
+    let entry_dir = home.join("sessions/2026/05/session-entry");
     fs::create_dir_all(entry_dir.join("conversation")).expect("entry conversation");
     fs::create_dir_all(entry_dir.join("control")).expect("entry control");
     fs::create_dir_all(entry_dir.join("queue")).expect("entry queue");
@@ -105,7 +105,7 @@ fn attached_control_plane_cycle_drives_ready_project_resume() {
     write_file(&entry_dir.join("queue/pending_inputs.json"), b"[]");
     write_file(&entry_dir.join("tasks/routing/latest_action.json"), b"{}");
 
-    let project_dir = home.join("sessions/2026/04/session-fin");
+    let project_dir = home.join("sessions/2026/05/session-fin");
     fs::create_dir_all(project_dir.join("conversation")).expect("project conversation");
     fs::create_dir_all(project_dir.join("context")).expect("project context");
     fs::create_dir_all(project_dir.join("control")).expect("project control");

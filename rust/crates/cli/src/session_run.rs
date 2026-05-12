@@ -10,7 +10,7 @@ use fin_runtime::{
 use std::{env, path::PathBuf};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct DemoIdentity {
+pub(crate) struct SessionIdentity {
     pub(crate) operation_id: String,
     pub(crate) trace_id: String,
     pub(crate) session_id: String,
@@ -18,7 +18,7 @@ pub(crate) struct DemoIdentity {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct DemoRequest {
+pub(crate) struct SessionRequest {
     pub(crate) operation_id: String,
     pub(crate) trace_id: String,
     pub(crate) session_id: String,
@@ -40,22 +40,22 @@ pub(crate) struct DemoRequest {
     pub(crate) submitted_at: String,
 }
 
-pub(crate) fn run_demo(
+pub(crate) fn run_session(
     system: &SystemConfig,
     provider: &impl InferenceProvider,
     input: &str,
 ) -> Result<ClosureRun, CliError> {
-    let demo_ids = demo_identity(demo_namespace_from_env().as_deref());
-    run_demo_request(
+    let session_ids = build_session_identity(session_namespace_from_env().as_deref());
+    run_session_request(
         system,
         provider,
-        DemoRequest {
-            operation_id: demo_ids.operation_id,
-            trace_id: demo_ids.trace_id,
-            session_id: demo_ids.session_id,
-            task_id: Some(demo_ids.task_id),
+        SessionRequest {
+            operation_id: session_ids.operation_id,
+            trace_id: session_ids.trace_id,
+            session_id: session_ids.session_id,
+            task_id: Some(session_ids.task_id),
             topic_thread_id: None,
-            agent_name: Some("cli-demo".into()),
+            agent_name: Some("cli-session".into()),
             role_id: None,
             input: input.to_string(),
             source: "cli.user".into(),
@@ -75,10 +75,10 @@ pub(crate) fn run_demo(
     )
 }
 
-pub(crate) fn run_demo_request(
+pub(crate) fn run_session_request(
     system: &SystemConfig,
     provider: &impl InferenceProvider,
-    request: DemoRequest,
+    request: SessionRequest,
 ) -> Result<ClosureRun, CliError> {
     let mut runtime = M1Runtime::default();
     let runtime_home = request.runtime_home.as_deref().map(PathBuf::from);
@@ -93,8 +93,8 @@ pub(crate) fn run_demo_request(
     } else {
         fin_runtime::WorkerRuntime::from_system(
             system,
-            "agent-cli-demo",
-            "worker-cli-demo",
+            "agent-cli-session",
+            "worker-cli-session",
             "cli",
             request.role_id.as_deref(),
         )?
@@ -149,16 +149,16 @@ pub(crate) fn runtime_home_override_from_env() -> Option<PathBuf> {
         .map(PathBuf::from)
 }
 
-pub(crate) fn demo_namespace_from_env() -> Option<String> {
+pub(crate) fn session_namespace_from_env() -> Option<String> {
     env::var("FIN_SESSION_NAMESPACE")
         .ok()
         .map(|raw| sanitize_id_fragment(&raw))
         .filter(|value| !value.is_empty())
 }
 
-pub(crate) fn demo_identity(namespace: Option<&str>) -> DemoIdentity {
-    let scope = namespace.unwrap_or("cli-demo");
-    DemoIdentity {
+pub(crate) fn build_session_identity(namespace: Option<&str>) -> SessionIdentity {
+    let scope = namespace.unwrap_or("cli-session");
+    SessionIdentity {
         operation_id: format!("op-{scope}"),
         trace_id: format!("trace-{scope}"),
         session_id: format!("session-{scope}"),

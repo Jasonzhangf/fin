@@ -53,6 +53,7 @@ mod routing_actions;
 mod scheduler;
 mod session_materializer;
 mod session_record_journal;
+mod source_visibility;
 mod skill_loader;
 mod task_board_snapshot;
 mod task_handoff;

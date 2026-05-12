@@ -227,7 +227,7 @@ mod tests {
             .expect("system time")
             .as_nanos();
         let path = std::env::temp_dir().join(format!("fin-project-exec-handoff-{prefix}-{unique}"));
-        fs::create_dir_all(path.join("sessions/2026/04/session-1/tasks/registry"))
+        fs::create_dir_all(path.join("sessions/2026/05/session-1/tasks/registry"))
             .expect("temp runtime home");
         path
     }
@@ -236,7 +236,7 @@ mod tests {
     fn materialize_prepares_local_resume_task_handoff() {
         let home = temp_runtime_home("prepare");
         fs::write(
-            home.join("sessions/2026/04/session-1/tasks/registry/task-1.json"),
+            home.join("sessions/2026/05/session-1/tasks/registry/task-1.json"),
             serde_json::to_vec_pretty(&json!({
                 "task_id":"task-1",
                 "session_id":"session-1",
@@ -275,7 +275,7 @@ mod tests {
         assert_eq!(snapshot.prepared_count, 1);
         assert_eq!(snapshot.projects[0].handoff_state, "prepared");
         let task =
-            fs::read_to_string(home.join("sessions/2026/04/session-1/tasks/registry/task-1.json"))
+            fs::read_to_string(home.join("sessions/2026/05/session-1/tasks/registry/task-1.json"))
                 .expect("task");
         assert!(task.contains("\"status\": \"claimed\""));
     }
@@ -284,7 +284,7 @@ mod tests {
     fn handoff_is_idempotent_for_same_worker() {
         let home = temp_runtime_home("idempotent");
         fs::write(
-            home.join("sessions/2026/04/session-1/tasks/registry/task-1.json"),
+            home.join("sessions/2026/05/session-1/tasks/registry/task-1.json"),
             serde_json::to_vec_pretty(&json!({
                 "task_id":"task-1",
                 "session_id":"session-1",

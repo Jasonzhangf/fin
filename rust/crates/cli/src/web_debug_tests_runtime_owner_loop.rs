@@ -105,7 +105,7 @@ fn tick_command_executes_owner_loop_review_and_updates_task_truth() {
     let review_owner =
         fin_runtime::create_named_local_worker(&handler.system, &home, None, "cli", Some("system"))
             .expect("owner worker");
-    let session_dir = home.join("sessions/2026/04/session-owner-loop-review");
+    let session_dir = home.join("sessions/2026/05/session-owner-loop-review");
     fs::create_dir_all(session_dir.join("conversation")).expect("conversation dir");
     fs::create_dir_all(session_dir.join("control")).expect("control dir");
     fs::create_dir_all(session_dir.join("control/owner_loop")).expect("owner loop dir");
@@ -176,11 +176,11 @@ fn tick_command_executes_owner_loop_review_and_updates_task_truth() {
         br#"{
   "session_id":"session-owner-loop-review",
   "task_id":"task-owner-review",
-  "session_messages_path":"sessions/2026/04/session-owner-loop-review/conversation/messages.json",
-  "session_recent_contexts_path":"sessions/2026/04/session-owner-loop-review/context/recent_contexts.json",
-  "session_recent_digests_path":"sessions/2026/04/session-owner-loop-review/digests/recent_digests.json",
-  "session_recent_reasoning_path":"sessions/2026/04/session-owner-loop-review/reasoning/recent_reasoning_views.json",
-  "session_recent_tool_records_path":"sessions/2026/04/session-owner-loop-review/tools/recent_tool_records.json"
+  "session_messages_path":"sessions/2026/05/session-owner-loop-review/conversation/messages.json",
+  "session_recent_contexts_path":"sessions/2026/05/session-owner-loop-review/context/recent_contexts.json",
+  "session_recent_digests_path":"sessions/2026/05/session-owner-loop-review/digests/recent_digests.json",
+  "session_recent_reasoning_path":"sessions/2026/05/session-owner-loop-review/reasoning/recent_reasoning_views.json",
+  "session_recent_tool_records_path":"sessions/2026/05/session-owner-loop-review/tools/recent_tool_records.json"
 }"#,
     )
     .expect("last_run");
@@ -242,7 +242,7 @@ fn tick_command_executes_owner_loop_dispatch_and_updates_task_and_assignment_tru
     let dispatch_owner =
         fin_runtime::create_named_local_worker(&handler.system, &home, None, "cli", Some("system"))
             .expect("owner worker");
-    let session_dir = home.join("sessions/2026/04/session-owner-loop-dispatch");
+    let session_dir = home.join("sessions/2026/05/session-owner-loop-dispatch");
     fs::create_dir_all(session_dir.join("conversation")).expect("conversation dir");
     fs::create_dir_all(session_dir.join("control")).expect("control dir");
     fs::create_dir_all(session_dir.join("control/owner_loop")).expect("owner loop dir");
@@ -310,11 +310,11 @@ fn tick_command_executes_owner_loop_dispatch_and_updates_task_and_assignment_tru
         br#"{
   "session_id":"session-owner-loop-dispatch",
   "task_id":"task-owner-dispatch",
-  "session_messages_path":"sessions/2026/04/session-owner-loop-dispatch/conversation/messages.json",
-  "session_recent_contexts_path":"sessions/2026/04/session-owner-loop-dispatch/context/recent_contexts.json",
-  "session_recent_digests_path":"sessions/2026/04/session-owner-loop-dispatch/digests/recent_digests.json",
-  "session_recent_reasoning_path":"sessions/2026/04/session-owner-loop-dispatch/reasoning/recent_reasoning_views.json",
-  "session_recent_tool_records_path":"sessions/2026/04/session-owner-loop-dispatch/tools/recent_tool_records.json"
+  "session_messages_path":"sessions/2026/05/session-owner-loop-dispatch/conversation/messages.json",
+  "session_recent_contexts_path":"sessions/2026/05/session-owner-loop-dispatch/context/recent_contexts.json",
+  "session_recent_digests_path":"sessions/2026/05/session-owner-loop-dispatch/digests/recent_digests.json",
+  "session_recent_reasoning_path":"sessions/2026/05/session-owner-loop-dispatch/reasoning/recent_reasoning_views.json",
+  "session_recent_tool_records_path":"sessions/2026/05/session-owner-loop-dispatch/tools/recent_tool_records.json"
 }"#,
     )
     .expect("last_run");

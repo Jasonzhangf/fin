@@ -107,8 +107,8 @@ fn dynamic_tool_catalog_promotes_write_stdin_when_exec_session_exists() {
     let runtime_home = std::env::temp_dir().join("fin-runtime-dynamic-tool-catalog");
     fs::create_dir_all(runtime_home.join("runtime/tools/exec_sessions")).expect("exec session dir");
     fs::write(
-        runtime_home.join("runtime/tools/exec_sessions/demo.json"),
-        br#"{"session_id":"demo"}"#,
+        runtime_home.join("runtime/tools/exec_sessions/sample.json"),
+        br#"{"session_id":"sample"}"#,
     )
     .expect("exec session seed");
 

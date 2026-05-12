@@ -147,7 +147,7 @@ fn refresh_consumes_daemon_ensure_request_and_wakes_project_agent() {
 #[test]
 fn refresh_builds_resume_chain_and_auto_resume_can_drive_claimed_idle_project() {
     let home = temp_home("resume-chain");
-    let session_dir = home.join("sessions/2026/04/session-fin");
+    let session_dir = home.join("sessions/2026/05/session-fin");
     fs::create_dir_all(session_dir.join("conversation")).expect("conversation");
     fs::create_dir_all(session_dir.join("context")).expect("context");
     fs::create_dir_all(session_dir.join("control")).expect("control");

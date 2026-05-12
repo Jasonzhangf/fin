@@ -32,7 +32,7 @@ fn binding(home: &Path) -> DebugBinding {
         session_id: Some("session-scheduler".into()),
         task_id: Some("task-scheduler".into()),
         session_messages_path: Some(
-            "sessions/2026/04/session-scheduler/conversation/messages.json".into(),
+            "sessions/2026/05/session-scheduler/conversation/messages.json".into(),
         ),
         recent_contexts_path: None,
         recent_digests_path: None,
@@ -81,7 +81,7 @@ fn write_task_registry(session_dir: &Path, task_id: &str, status: &str, claimed_
 #[test]
 fn drive_scheduler_runs_pending_until_queue_is_empty() {
     let home = temp_runtime_home();
-    let session_dir = home.join("sessions/2026/04/session-scheduler");
+    let session_dir = home.join("sessions/2026/05/session-scheduler");
     fs::create_dir_all(session_dir.join("conversation")).expect("conversation dir");
     fs::create_dir_all(session_dir.join("control")).expect("control dir");
     fs::create_dir_all(session_dir.join("queue")).expect("queue dir");
@@ -213,7 +213,7 @@ fn drive_scheduler_runs_pending_until_queue_is_empty() {
 #[test]
 fn drive_scheduler_blocks_when_prompt_user_is_required() {
     let home = temp_runtime_home();
-    let session_dir = home.join("sessions/2026/04/session-scheduler");
+    let session_dir = home.join("sessions/2026/05/session-scheduler");
     fs::create_dir_all(session_dir.join("conversation")).expect("conversation dir");
     fs::create_dir_all(session_dir.join("control")).expect("control dir");
     fs::create_dir_all(session_dir.join("queue")).expect("queue dir");
@@ -295,7 +295,7 @@ fn drive_scheduler_blocks_when_prompt_user_is_required() {
 #[test]
 fn drive_scheduler_persists_owner_loop_review_decision_from_managed_tasks() {
     let home = temp_runtime_home();
-    let session_dir = home.join("sessions/2026/04/session-scheduler");
+    let session_dir = home.join("sessions/2026/05/session-scheduler");
     fs::create_dir_all(session_dir.join("conversation")).expect("conversation dir");
     fs::create_dir_all(session_dir.join("control")).expect("control dir");
     fs::create_dir_all(session_dir.join("queue")).expect("queue dir");
@@ -397,7 +397,7 @@ fn drive_scheduler_persists_owner_loop_review_decision_from_managed_tasks() {
 #[test]
 fn drive_scheduler_executes_one_framework_owner_loop_turn_for_submitted_task() {
     let home = temp_runtime_home();
-    let session_dir = home.join("sessions/2026/04/session-scheduler");
+    let session_dir = home.join("sessions/2026/05/session-scheduler");
     fs::create_dir_all(session_dir.join("conversation")).expect("conversation dir");
     fs::create_dir_all(session_dir.join("control")).expect("control dir");
     fs::create_dir_all(session_dir.join("queue")).expect("queue dir");

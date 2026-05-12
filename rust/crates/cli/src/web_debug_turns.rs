@@ -12,7 +12,7 @@ use crate::{
         restore_execution_state,
     },
     runtime_current_snapshot::with_runtime_current_snapshot,
-    runtime_home::persist_runtime_demo,
+    runtime_home::persist_runtime_session,
     session_binding::{ensure_tentative_session_binding, rebind_last_run_binding},
 };
 
@@ -173,7 +173,7 @@ impl CliDebugActionHandler {
         role_id: &str,
         track_entry_presence: bool,
     ) -> Result<ChatSendResponse, CliError> {
-        let default_identity = demo_identity(Some("web-debug"));
+        let default_identity = build_session_identity(Some("web-debug"));
         let binding = ensure_tentative_session_binding(runtime_home, &binding)?;
         let preserved_parallel_state = if is_parallel_source(source) {
             load_execution_state(runtime_home, &binding)?
@@ -289,10 +289,10 @@ impl CliDebugActionHandler {
             )?;
         }
 
-        let run = match run_demo_request(
+        let run = match run_session_request(
             &self.system,
             provider,
-            DemoRequest {
+            SessionRequest {
                 operation_id: operation_id.clone(),
                 trace_id: trace_id.clone(),
                 session_id: session_id.clone(),
@@ -350,7 +350,7 @@ impl CliDebugActionHandler {
                 return Err(err);
             }
         };
-        persist_runtime_demo(&self.user_toml, &self.system, &run, Some(runtime_home))?;
+        persist_runtime_session(&self.user_toml, &self.system, &run, Some(runtime_home))?;
         let binding = if track_entry_presence {
             self.read_binding_internal(runtime_home)?
         } else {

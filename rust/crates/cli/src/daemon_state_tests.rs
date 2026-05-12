@@ -33,7 +33,7 @@ fn binding(home: &Path) -> DebugBinding {
         session_id: Some("session-daemon".into()),
         task_id: Some("task-daemon".into()),
         session_messages_path: Some(
-            "sessions/2026/04/session-daemon/conversation/messages.json".into(),
+            "sessions/2026/05/session-daemon/conversation/messages.json".into(),
         ),
         recent_contexts_path: None,
         recent_digests_path: None,
@@ -87,7 +87,7 @@ fn system() -> SystemConfig {
 #[test]
 fn refresh_attached_daemon_state_records_health_and_recovery() {
     let home = temp_runtime_home();
-    let session_dir = home.join("sessions/2026/04/session-daemon");
+    let session_dir = home.join("sessions/2026/05/session-daemon");
     fs::create_dir_all(session_dir.join("conversation")).expect("conversation");
     fs::create_dir_all(session_dir.join("control/supervisor")).expect("supervisor");
     write_file(&session_dir.join("conversation/messages.json"), b"[]");
@@ -174,10 +174,10 @@ fn refresh_attached_daemon_state_records_health_and_recovery() {
 #[test]
 fn refresh_attached_daemon_state_observes_project_recovery_need() {
     let home = temp_runtime_home();
-    let session_dir = home.join("sessions/2026/04/session-daemon");
+    let session_dir = home.join("sessions/2026/05/session-daemon");
     fs::create_dir_all(session_dir.join("conversation")).expect("conversation");
     write_file(&session_dir.join("conversation/messages.json"), b"[]");
-    let project_session_dir = home.join("sessions/2026/04/session-fin");
+    let project_session_dir = home.join("sessions/2026/05/session-fin");
     fs::create_dir_all(project_session_dir.join("context")).expect("context");
     fs::create_dir_all(project_session_dir.join("control")).expect("control");
     write_file(
@@ -258,11 +258,11 @@ fn refresh_attached_daemon_state_observes_project_recovery_need() {
 #[test]
 fn refresh_attached_daemon_state_materializes_runtime_pickup_summary() {
     let home = temp_runtime_home();
-    let session_dir = home.join("sessions/2026/04/session-daemon");
+    let session_dir = home.join("sessions/2026/05/session-daemon");
     fs::create_dir_all(session_dir.join("conversation")).expect("conversation");
     write_file(&session_dir.join("conversation/messages.json"), b"[]");
 
-    let project_session_dir = home.join("sessions/2026/04/session-fin");
+    let project_session_dir = home.join("sessions/2026/05/session-fin");
     fs::create_dir_all(project_session_dir.join("context")).expect("context");
     fs::create_dir_all(project_session_dir.join("control")).expect("control");
     fs::create_dir_all(project_session_dir.join("conversation")).expect("conversation");

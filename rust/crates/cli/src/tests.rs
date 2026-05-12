@@ -1,14 +1,15 @@
 use crate::{
     command::{Command, parse_command},
     config::{load_system_config, map_system_config},
-    demo::{demo_identity, run_demo, sanitize_id_fragment},
+    session_run::{build_session_identity, run_session, sanitize_id_fragment},
     runtime_home::{
-        SessionMessageRecord, ensure_runtime_home_layout, persist_runtime_demo, read_last_run_value,
+        SessionMessageRecord, ensure_runtime_home_layout, persist_runtime_session, read_last_run_value,
     },
-    transcript::{TranscriptScenario, TranscriptTurn, run_transcript_demo},
+    transcript::{TranscriptScenario, TranscriptTurn, run_transcript_session},
     versioning::resolve_build_version,
 };
 use fin_config::SystemConfig;
+use chrono::{Datelike, Local};
 use fin_contracts::{ContextSnapshotRecord, ControlFeedback, DigestRecord};
 #[cfg(test)]
 use fin_provider::StructuredStaticProviderClient;
@@ -113,22 +114,22 @@ fn parse_command_accepts_daemon_run() {
 }
 
 #[test]
-fn parse_command_accepts_control_boundary_demo() {
-    let args = vec!["control-boundary-demo".into(), "/tmp/user.toml".into()];
+fn parse_command_accepts_control_boundary_scenario() {
+    let args = vec!["control-boundary-scenario".into(), "/tmp/user.toml".into()];
     assert_eq!(
         parse_command(&args).expect("command should parse"),
-        Command::ControlBoundaryDemo {
+        Command::ControlBoundaryScenario {
             path: "/tmp/user.toml".into(),
         }
     );
 }
 
 #[test]
-fn parse_command_accepts_mainline_demo() {
-    let args = vec!["mainline-demo".into(), "/tmp/user.toml".into()];
+fn parse_command_accepts_mainline_scenario() {
+    let args = vec!["mainline-scenario".into(), "/tmp/user.toml".into()];
     assert_eq!(
         parse_command(&args).expect("command should parse"),
-        Command::MainlineDemo {
+        Command::MainlineScenario {
             path: "/tmp/user.toml".into(),
         }
     );
@@ -210,15 +211,15 @@ fn parse_command_accepts_qqbot_live_receipt_with_run_id() {
 }
 
 #[test]
-fn parse_command_accepts_transcript_demo() {
+fn parse_command_accepts_transcript_session() {
     let args = vec![
-        "transcript-demo".into(),
+        "transcript-session".into(),
         "/tmp/user.toml".into(),
         "/tmp/transcript.json".into(),
     ];
     assert_eq!(
         parse_command(&args).expect("command should parse"),
-        Command::TranscriptDemo {
+        Command::TranscriptSession {
             path: "/tmp/user.toml".into(),
             transcript_path: "/tmp/transcript.json".into(),
         }
@@ -277,13 +278,15 @@ fn load_system_config_maps_user_config() {
 }
 
 #[test]
-fn runtime_demo_persists_home_artifacts() {
+fn runtime_session_persists_home_artifacts() {
+    let now = Local::now();
+    let session_prefix = format!("sessions/{:04}/{:02}/session-cli-session", now.year(), now.month());
     let user_toml = sample_user_toml();
     let system = sample_system_config();
     let home = temp_runtime_home();
     let run =
-        run_demo(&system, &static_provider(&system), "hello").expect("runtime demo should run");
-    persist_runtime_demo(&user_toml, &system, &run, Some(home.as_path()))
+        run_session(&system, &static_provider(&system), "hello").expect("runtime session should run");
+    persist_runtime_session(&user_toml, &system, &run, Some(home.as_path()))
         .expect("artifacts should persist");
 
     assert!(home.join("config/user.toml").exists());
@@ -292,31 +295,32 @@ fn runtime_demo_persists_home_artifacts() {
     assert!(system_template.contains("policy.entry_role"));
     assert!(system_template.contains("entry_role = \"system\""));
     assert!(system_template.contains("default_role = \"project\""));
-    for relative in [
-        "runtime/projections/current_projection.json",
-        "sessions/2026/04/session-cli-demo/events/stream.jsonl",
-        "sessions/2026/04/session-cli-demo/conversation/messages.json",
-        "sessions/2026/04/session-cli-demo/digests/recent_digests.json",
-        "sessions/2026/04/session-cli-demo/control/latest.json",
-        "sessions/2026/04/session-cli-demo/reasoning/latest.json",
-        "sessions/2026/04/session-cli-demo/tools/latest.json",
-        "sessions/2026/04/session-cli-demo/provider/latest_requests.json",
-        "sessions/2026/04/session-cli-demo/provider/latest_responses.json",
-        "sessions/2026/04/session-cli-demo/rounds/latest.json",
-        "sessions/2026/04/session-cli-demo/steps/latest.json",
-        "sessions/2026/04/session-cli-demo/turns/latest.json",
-        "sessions/2026/04/session-cli-demo/tasks/routing/latest.json",
-        "sessions/2026/04/session-cli-demo/closures/latest.json",
-        "runtime/current/current_control_feedback.json",
-        "runtime/current/current_reasoning_view.json",
-        "runtime/current/current_provider_requests.json",
-        "runtime/current/current_provider_responses.json",
-        "runtime/current/current_rounds.json",
-        "runtime/current/current_step_records.json",
-        "runtime/current/current_turn.json",
-        "runtime/current/current_routing_decision.json",
-        "runtime/current/current_closure_trace.json",
-    ] {
+    let relative_paths: Vec<String> = vec![
+        "runtime/projections/current_projection.json".to_string(),
+        format!("{session_prefix}/events/stream.jsonl", session_prefix=session_prefix),
+        format!("{session_prefix}/conversation/messages.json", session_prefix=session_prefix),
+        format!("{session_prefix}/digests/recent_digests.json", session_prefix=session_prefix),
+        format!("{session_prefix}/control/latest.json", session_prefix=session_prefix),
+        format!("{session_prefix}/reasoning/latest.json", session_prefix=session_prefix),
+        format!("{session_prefix}/tools/latest.json", session_prefix=session_prefix),
+        format!("{session_prefix}/provider/latest_requests.json", session_prefix=session_prefix),
+        format!("{session_prefix}/provider/latest_responses.json", session_prefix=session_prefix),
+        format!("{session_prefix}/rounds/latest.json", session_prefix=session_prefix),
+        format!("{session_prefix}/steps/latest.json", session_prefix=session_prefix),
+        format!("{session_prefix}/turns/latest.json", session_prefix=session_prefix),
+        format!("{session_prefix}/tasks/routing/latest.json", session_prefix=session_prefix),
+        format!("{session_prefix}/closures/latest.json", session_prefix=session_prefix),
+        "runtime/current/current_control_feedback.json".to_string(),
+        "runtime/current/current_reasoning_view.json".to_string(),
+        "runtime/current/current_provider_requests.json".to_string(),
+        "runtime/current/current_provider_responses.json".to_string(),
+        "runtime/current/current_rounds.json".to_string(),
+        "runtime/current/current_step_records.json".to_string(),
+        "runtime/current/current_turn.json".to_string(),
+        "runtime/current/current_routing_decision.json".to_string(),
+        "runtime/current/current_closure_trace.json".to_string(),
+    ];
+    for relative in &relative_paths {
         assert!(home.join(relative).exists(), "missing {relative}");
     }
 
@@ -351,8 +355,8 @@ fn runtime_demo_persists_home_artifacts() {
 mod tests_runtime_artifacts;
 
 #[test]
-fn demo_identity_uses_test_namespace_when_provided() {
-    let ids = demo_identity(Some("test-provider-smoke"));
+fn build_session_identity_uses_test_namespace_when_provided() {
+    let ids = build_session_identity(Some("test-provider-smoke"));
     assert_eq!(ids.session_id, "session-test-provider-smoke");
     assert_eq!(ids.task_id, "task-test-provider-smoke");
     assert_eq!(ids.operation_id, "op-test-provider-smoke");
@@ -372,8 +376,8 @@ fn debug_projection_command_runs() {
     let system = sample_system_config();
     let home = temp_runtime_home();
     let run =
-        run_demo(&system, &static_provider(&system), "hello").expect("debug projection should run");
-    persist_runtime_demo(&user_toml, &system, &run, Some(home.as_path()))
+        run_session(&system, &static_provider(&system), "hello").expect("debug projection should run");
+    persist_runtime_session(&user_toml, &system, &run, Some(home.as_path()))
         .expect("artifacts should persist");
     assert!(
         home.join("runtime/projections/current_snapshot.json")

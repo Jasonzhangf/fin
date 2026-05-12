@@ -239,7 +239,7 @@ mod tests {
     }
 
     fn binding(home: &Path) -> DebugBinding {
-        let session_rel = "sessions/2026/04/session-qq/conversation/messages.json".to_string();
+        let session_rel = "sessions/2026/05/session-qq/conversation/messages.json".to_string();
         let full = home.join(&session_rel);
         fs::create_dir_all(full.parent().expect("parent")).expect("mkdir");
         fs::write(&full, b"[]").expect("messages");
@@ -274,7 +274,7 @@ mod tests {
         assert!(result.answer.contains("qqbot paired"));
         assert!(result.answer.contains("persistent"));
         let messages =
-            fs::read_to_string(home.join("sessions/2026/04/session-qq/conversation/messages.json"))
+            fs::read_to_string(home.join("sessions/2026/05/session-qq/conversation/messages.json"))
                 .expect("messages");
         assert!(messages.contains("/qqbot pair"));
         assert!(messages.contains("qqbot paired with session session-qq"));

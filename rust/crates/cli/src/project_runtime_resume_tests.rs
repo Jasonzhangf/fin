@@ -68,7 +68,7 @@ fn write_file(path: &Path, bytes: &[u8]) {
 #[test]
 fn drive_ready_project_runtime_resumes_ticks_ready_project_session() {
     let home = temp_runtime_home("tick");
-    let session_dir = home.join("sessions/2026/04/session-fin");
+    let session_dir = home.join("sessions/2026/05/session-fin");
     fs::create_dir_all(session_dir.join("conversation")).expect("conversation");
     fs::create_dir_all(session_dir.join("context")).expect("context");
     fs::create_dir_all(session_dir.join("queue")).expect("queue");
@@ -172,7 +172,7 @@ fn drive_ready_project_runtime_resumes_ticks_ready_project_session() {
 #[test]
 fn drive_ready_project_runtime_resumes_seeds_claimed_idle_project_queue() {
     let home = temp_runtime_home("seed");
-    let session_dir = home.join("sessions/2026/04/session-fin");
+    let session_dir = home.join("sessions/2026/05/session-fin");
     fs::create_dir_all(session_dir.join("conversation")).expect("conversation");
     fs::create_dir_all(session_dir.join("context")).expect("context");
     fs::create_dir_all(session_dir.join("queue")).expect("queue");

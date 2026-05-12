@@ -71,7 +71,7 @@ fn assignment_runtime_resume_executes_worker_turn_and_submits_task() {
         });
     let handler =
         CliDebugActionHandler::new(sample_user_toml(), system).expect("handler should build");
-    let session_dir = home.join("sessions/2026/04/session-owner-loop-dispatch");
+    let session_dir = home.join("sessions/2026/05/session-owner-loop-dispatch");
     fs::create_dir_all(session_dir.join("conversation")).expect("conversation dir");
     fs::create_dir_all(session_dir.join("control")).expect("control dir");
     fs::create_dir_all(session_dir.join("queue")).expect("queue dir");

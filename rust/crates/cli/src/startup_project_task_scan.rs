@@ -219,7 +219,7 @@ mod tests {
     #[test]
     fn scan_counts_unfinished_registry_tasks_for_project_session() {
         let home = temp_runtime_home("registry");
-        let session_dir = home.join("sessions/2026/04/session-fin");
+        let session_dir = home.join("sessions/2026/05/session-fin");
         write_file(
             &session_dir.join("context/current_context.json"),
             br#"{"project":{"primary_project":{"project_id":"fin"}}}"#,

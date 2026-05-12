@@ -1,4 +1,5 @@
 use super::*;
+use crate::source_visibility::is_hidden_session_source;
 use closure_runtime_rounds::allocate_step;
 
 pub(super) fn build_partial_run(
@@ -165,12 +166,7 @@ pub(super) fn build_final_run(
 }
 
 fn conversation_user_input_for_source(source: &str, input: &str) -> Option<String> {
-    if source.starts_with("framework.resume_checkpoint")
-        || source.starts_with("framework.owner_loop.")
-        || source.starts_with("framework.task_kickoff.")
-        || source.starts_with("project.resume_checkpoint")
-        || source == "project.assignment"
-    {
+    if is_hidden_session_source(source) {
         None
     } else {
         Some(input.to_string())

@@ -4,12 +4,12 @@ use super::*;
 fn context_view_builder_exposes_loaded_global_skills() {
     let worker = worker_runtime();
     let home = std::env::temp_dir().join("fin-runtime-global-skills-test");
-    std::fs::create_dir_all(home.join("skills/demo-skill")).expect("skill dir should create");
+    std::fs::create_dir_all(home.join("skills/sample-skill")).expect("skill dir should create");
     std::fs::write(
-        home.join("skills/demo-skill/SKILL.md"),
+        home.join("skills/sample-skill/SKILL.md"),
         "---
-name: demo-skill
-description: Demo skill for prompt loading.
+name: sample-skill
+description: Sample skill for prompt loading.
 ---
 ",
     )
@@ -40,7 +40,7 @@ description: Demo skill for prompt loading.
             .map(|value| value
                 .prompt_lineage
                 .iter()
-                .any(|item| item.contains("demo-skill")))
+                .any(|item| item.contains("sample-skill")))
             .unwrap_or(false)
     );
 }

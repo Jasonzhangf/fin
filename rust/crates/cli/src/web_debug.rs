@@ -4,7 +4,7 @@ use crate::{
     channel_peer::ensure_builtin_qqbot_binding,
     chat_policy::{ChatDisposition, classify_request},
     config::default_provider_facade,
-    demo::{DemoRequest, demo_identity, run_demo_request},
+    session_run::{SessionRequest, build_session_identity, run_session_request},
     execution_segments::{create_interrupted_segment, latest_open_segment},
     execution_state::{load_execution_state, pause_execution},
     routing_prompt_state::{load_pending_routing_action, prompt_user_choice_response},

@@ -1,9 +1,9 @@
 use crate::{
     CliError,
     config::default_provider_facade,
-    demo::{DemoRequest, demo_namespace_from_env, run_demo_request, sanitize_id_fragment},
+    session_run::{SessionRequest, session_namespace_from_env, run_session_request, sanitize_id_fragment},
     process_utils::append_log,
-    runtime_home::{persist_runtime_demo, read_last_run_value, resolved_runtime_home},
+    runtime_home::{persist_runtime_session, read_last_run_value, resolved_runtime_home},
     time::{local_time_base, local_timestamp_for_turn, local_timestamp_now},
     transcript::{
         TranscriptScenario, TranscriptTurn, load_transcript_scenario, scope_from_session_id,
@@ -120,7 +120,7 @@ pub(crate) fn run_provider_live_smoke_with_provider(
     )?;
     let mut artifacts = None;
     for run in &transcript.runs {
-        artifacts = Some(persist_runtime_demo(
+        artifacts = Some(persist_runtime_session(
             user_toml,
             system,
             run,
@@ -218,7 +218,7 @@ fn provider_live_smoke_layout(
 }
 
 fn default_run_id() -> String {
-    let namespace = demo_namespace_from_env().unwrap_or_else(|| {
+    let namespace = session_namespace_from_env().unwrap_or_else(|| {
         let stamp = chrono::Local::now().format("%Y%m%d-%H%M%S").to_string();
         format!("test-live-provider-{stamp}")
     });
@@ -250,7 +250,7 @@ fn run_live_transcript(
             .iter()
             .map(|run| run.digest.clone())
             .collect::<Vec<_>>();
-        let request = DemoRequest {
+        let request = SessionRequest {
             operation_id: format!("op-{}-{:04}", ids.scope, index + 1),
             trace_id: format!("trace-{}-{:04}", ids.scope, index + 1),
             session_id: ids.session_id.clone(),
@@ -274,7 +274,7 @@ fn run_live_transcript(
             attachment_summaries: Vec::new(),
             submitted_at: local_timestamp_for_turn(time_base, index),
         };
-        runs.push(run_demo_request(system, provider, request)?);
+        runs.push(run_session_request(system, provider, request)?);
     }
 
     Ok(LiveTranscriptRun {
@@ -326,7 +326,7 @@ struct LiveTranscriptIds {
 }
 
 fn live_transcript_ids(scenario: &TranscriptScenario) -> LiveTranscriptIds {
-    let namespace = demo_namespace_from_env();
+    let namespace = session_namespace_from_env();
     let default_scope = namespace.as_deref().unwrap_or("provider-live-smoke");
     let scope = sanitize_id_fragment(default_scope);
     let session_id = scenario

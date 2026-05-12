@@ -37,7 +37,7 @@ fn refs(worker_id: &str) -> EntityRefs {
 }
 
 fn ensure_session_dir(runtime_home: &Path) -> PathBuf {
-    let session_dir = runtime_home.join("sessions/2026/04/session-task-write");
+    let session_dir = runtime_home.join("sessions/2026/05/session-task-write");
     fs::create_dir_all(&session_dir).expect("session dir");
     session_dir
 }
@@ -102,7 +102,7 @@ fn project_task_write_tools_create_claim_submit_and_review() {
             arguments: json!({
                 "task_id": "task-owner-loop",
                 "result_summary": "patched runtime and ran smoke",
-                "artifact_refs": ["sessions/2026/04/session-task-write/tests/smoke.log"],
+                "artifact_refs": ["sessions/2026/05/session-task-write/tests/smoke.log"],
             }),
         }],
     );
@@ -145,7 +145,7 @@ fn project_task_write_tools_create_claim_submit_and_review() {
 
     let task_text = fs::read_to_string(
         runtime_home
-            .join("sessions/2026/04/session-task-write/tasks/registry/task-owner-loop.json"),
+            .join("sessions/2026/05/session-task-write/tasks/registry/task-owner-loop.json"),
     )
     .expect("task file");
     assert!(task_text.contains("\"status\": \"done\""));
@@ -356,7 +356,7 @@ fn system_owner_can_assign_worker_and_close_managed_task_loop() {
 
     let task_text = fs::read_to_string(
         runtime_home
-            .join("sessions/2026/04/session-task-write/tasks/registry/task-collab-loop.json"),
+            .join("sessions/2026/05/session-task-write/tasks/registry/task-collab-loop.json"),
     )
     .expect("task file");
     assert!(task_text.contains("\"status\": \"done\""));

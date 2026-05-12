@@ -23,7 +23,7 @@ fn temp_runtime_home() -> PathBuf {
 #[test]
 fn provider_call_is_not_preferred_over_real_tool_actions_in_recent_items() {
     let runtime_home = temp_runtime_home();
-    let session_rel = "sessions/2026/04/session-1";
+    let session_rel = "sessions/2026/05/session-1";
     write_json(
         &runtime_home.join("runtime/current/last_run.json"),
         &serde_json::json!({
@@ -118,7 +118,7 @@ fn write_json(path: &Path, value: &impl serde::Serialize) {
 #[test]
 fn build_activity_cards_collects_system_and_peer_views() {
     let runtime_home = temp_runtime_home();
-    let session_rel = "sessions/2026/04/session-1";
+    let session_rel = "sessions/2026/05/session-1";
     write_json(
         &runtime_home.join("runtime/current/last_run.json"),
         &serde_json::json!({
@@ -308,7 +308,7 @@ fn unbound_peer_card_reports_restore_state_not_stale_bound_session() {
 #[test]
 fn pending_inbound_notice_overrides_stale_system_recent_action() {
     let runtime_home = temp_runtime_home();
-    let session_rel = "sessions/2026/04/session-1";
+    let session_rel = "sessions/2026/05/session-1";
     write_json(
         &runtime_home.join("runtime/current/last_run.json"),
         &serde_json::json!({

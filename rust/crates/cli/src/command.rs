@@ -17,13 +17,13 @@ pub(crate) enum Command {
     HomeInit {
         path: String,
     },
-    ControlBoundaryDemo {
+    ControlBoundaryScenario {
         path: String,
     },
-    MainlineDemo {
+    MainlineScenario {
         path: String,
     },
-    RuntimeDemo {
+    RuntimeSession {
         path: String,
         input: String,
     },
@@ -31,7 +31,7 @@ pub(crate) enum Command {
         path: String,
         input: String,
     },
-    TranscriptDemo {
+    TranscriptSession {
         path: String,
         transcript_path: String,
     },
@@ -72,11 +72,11 @@ pub(crate) fn parse_command(args: &[String]) -> Result<Command, CliError> {
         [cmd, path] if cmd == "daemon-run" => Ok(Command::DaemonRun { path: path.clone() }),
         [cmd, path] if cmd == "config-check" => Ok(Command::ConfigCheck { path: path.clone() }),
         [cmd, path] if cmd == "home-init" => Ok(Command::HomeInit { path: path.clone() }),
-        [cmd, path] if cmd == "control-boundary-demo" => {
-            Ok(Command::ControlBoundaryDemo { path: path.clone() })
+        [cmd, path] if cmd == "control-boundary-scenario" => {
+            Ok(Command::ControlBoundaryScenario { path: path.clone() })
         }
-        [cmd, path] if cmd == "mainline-demo" => Ok(Command::MainlineDemo { path: path.clone() }),
-        [cmd, path, input] if cmd == "runtime-demo" => Ok(Command::RuntimeDemo {
+        [cmd, path] if cmd == "mainline-scenario" => Ok(Command::MainlineScenario { path: path.clone() }),
+        [cmd, path, input] if cmd == "runtime-session" => Ok(Command::RuntimeSession {
             path: path.clone(),
             input: input.clone(),
         }),
@@ -84,7 +84,7 @@ pub(crate) fn parse_command(args: &[String]) -> Result<Command, CliError> {
             path: path.clone(),
             input: input.clone(),
         }),
-        [cmd, path, transcript_path] if cmd == "transcript-demo" => Ok(Command::TranscriptDemo {
+        [cmd, path, transcript_path] if cmd == "transcript-session" => Ok(Command::TranscriptSession {
             path: path.clone(),
             transcript_path: transcript_path.clone(),
         }),

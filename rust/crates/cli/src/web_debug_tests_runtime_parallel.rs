@@ -7,7 +7,7 @@ fn ordinary_user_input_runs_as_parallel_inference_while_waiting_external() {
     let system = map_system_config(&sample_user_toml()).expect("system config");
     let handler =
         CliDebugActionHandler::new(sample_user_toml(), system).expect("handler should build");
-    let session_dir = home.join("sessions/2026/04/session-parallel-waiting");
+    let session_dir = home.join("sessions/2026/05/session-parallel-waiting");
     for relative in [
         "conversation",
         "control",
@@ -84,11 +84,11 @@ fn ordinary_user_input_runs_as_parallel_inference_while_waiting_external() {
         br#"{
   "session_id":"session-parallel-waiting",
   "task_id":"task-parallel-waiting",
-  "session_messages_path":"sessions/2026/04/session-parallel-waiting/conversation/messages.json",
-  "session_recent_contexts_path":"sessions/2026/04/session-parallel-waiting/context/recent_contexts.json",
-  "session_recent_digests_path":"sessions/2026/04/session-parallel-waiting/digests/recent_digests.json",
-  "session_recent_reasoning_path":"sessions/2026/04/session-parallel-waiting/reasoning/recent_reasoning_views.json",
-  "session_recent_tool_records_path":"sessions/2026/04/session-parallel-waiting/tools/recent_tool_records.json"
+  "session_messages_path":"sessions/2026/05/session-parallel-waiting/conversation/messages.json",
+  "session_recent_contexts_path":"sessions/2026/05/session-parallel-waiting/context/recent_contexts.json",
+  "session_recent_digests_path":"sessions/2026/05/session-parallel-waiting/digests/recent_digests.json",
+  "session_recent_reasoning_path":"sessions/2026/05/session-parallel-waiting/reasoning/recent_reasoning_views.json",
+  "session_recent_tool_records_path":"sessions/2026/05/session-parallel-waiting/tools/recent_tool_records.json"
 }"#,
     )
     .expect("last_run");

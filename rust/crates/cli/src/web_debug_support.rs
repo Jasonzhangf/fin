@@ -1,4 +1,4 @@
-use crate::demo::sanitize_id_fragment;
+use crate::session_run::sanitize_id_fragment;
 use fin_debug_server::{ChatSendRequest, ChatSendResponse, DebugBinding};
 use std::path::Path;
 

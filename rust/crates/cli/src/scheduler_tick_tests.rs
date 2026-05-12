@@ -25,7 +25,7 @@ fn binding(home: &Path) -> DebugBinding {
         session_id: Some("session-tick".into()),
         task_id: Some("task-tick".into()),
         session_messages_path: Some(
-            "sessions/2026/04/session-tick/conversation/messages.json".into(),
+            "sessions/2026/05/session-tick/conversation/messages.json".into(),
         ),
         recent_contexts_path: None,
         recent_digests_path: None,
@@ -42,7 +42,7 @@ fn write_file(path: &Path, bytes: &[u8]) {
 #[test]
 fn run_scheduler_tick_routes_framework_events_through_archive_rebalance() {
     let home = temp_runtime_home();
-    let session_dir = home.join("sessions/2026/04/session-tick");
+    let session_dir = home.join("sessions/2026/05/session-tick");
     fs::create_dir_all(session_dir.join("conversation")).expect("conversation");
     fs::create_dir_all(session_dir.join("control")).expect("control");
     fs::create_dir_all(session_dir.join("queue")).expect("queue");

@@ -2,16 +2,16 @@ use crate::{
     CliError,
     command::{Command, parse_command},
     config::{default_provider_facade, load_effective_system_config, load_system_config},
-    control_boundary_demo::run_control_boundary_demo,
-    demo::{run_demo, runtime_home_override_from_env},
+    control_boundary_scenario::run_control_boundary_scenario,
+    session_run::{run_session, runtime_home_override_from_env},
     fs_utils::read_file,
     headless_daemon::{run_headless_daemon, start_headless_daemon, stop_headless_daemon},
     install_flow::{build_dev, promote_existing_build, rollback_install},
-    mainline_demo::run_mainline_demo,
+    mainline_scenario::run_mainline_scenario,
     provider_live_smoke::run_provider_live_smoke,
     qqbot_live_receipt::run_qqbot_live_receipt,
-    runtime_home::{init_runtime_home, persist_runtime_demo, resolved_runtime_home},
-    transcript::{load_transcript_scenario, run_transcript_demo},
+    runtime_home::{init_runtime_home, persist_runtime_session, resolved_runtime_home},
+    transcript::{load_transcript_scenario, run_transcript_session},
     web_debug_entry::serve_web_debug,
 };
 use fin_debug_server::build_projection;
@@ -97,28 +97,28 @@ pub fn run_with_runtime_home(
                 init_runtime_home(&user_toml, &system, runtime_home_override.as_deref())?;
             println!("home init ok: {}", runtime_home.display());
         }
-        Command::ControlBoundaryDemo { path } => {
+        Command::ControlBoundaryScenario { path } => {
             let user_toml = read_file(Path::new(&path))?;
             let system =
                 load_effective_system_config(&user_toml, runtime_home_override.as_deref())?;
             let run =
-                run_control_boundary_demo(&user_toml, &system, runtime_home_override.as_deref())?;
+                run_control_boundary_scenario(&user_toml, &system, runtime_home_override.as_deref())?;
             println!(
-                "control boundary demo ok: session={} task={} responses={} home={}",
+                "control boundary scenario ok: session={} task={} responses={} home={}",
                 run.session_id,
                 run.task_id,
                 run.responses.len(),
                 run.runtime_home.display()
             );
         }
-        Command::MainlineDemo { path } => {
+        Command::MainlineScenario { path } => {
             let user_toml = read_file(Path::new(&path))?;
             let system =
                 load_effective_system_config(&user_toml, runtime_home_override.as_deref())?;
-            let transcript = run_mainline_demo(&system)?;
+            let transcript = run_mainline_scenario(&system)?;
             let mut artifacts = None;
             for run in &transcript.runs {
-                artifacts = Some(persist_runtime_demo(
+                artifacts = Some(persist_runtime_session(
                     &user_toml,
                     &system,
                     run,
@@ -128,7 +128,7 @@ pub fn run_with_runtime_home(
             let artifacts = artifacts.ok_or(CliError::Usage)?;
             let last_run = transcript.runs.last().ok_or(CliError::Usage)?;
             println!(
-                "mainline demo ok: turns={} session={} task={} last_rounds={} last_events={} home={}",
+                "mainline scenario ok: turns={} session={} task={} last_rounds={} last_events={} home={}",
                 transcript.runs.len(),
                 transcript.session_id,
                 transcript.task_id,
@@ -137,16 +137,16 @@ pub fn run_with_runtime_home(
                 artifacts.runtime_home.display()
             );
         }
-        Command::RuntimeDemo { path, input } => {
+        Command::RuntimeSession { path, input } => {
             let user_toml = read_file(Path::new(&path))?;
             let system =
                 load_effective_system_config(&user_toml, runtime_home_override.as_deref())?;
             let provider = default_provider_facade(&system)?;
-            let run = run_demo(&system, &provider, &input)?;
+            let run = run_session(&system, &provider, &input)?;
             let artifacts =
-                persist_runtime_demo(&user_toml, &system, &run, runtime_home_override.as_deref())?;
+                persist_runtime_session(&user_toml, &system, &run, runtime_home_override.as_deref())?;
             println!(
-                "runtime demo ok: provider={} model={} events={} digest={} home={}",
+                "runtime session ok: provider={} model={} events={} digest={} home={}",
                 run.prepared_request.provider_name,
                 run.prepared_request.model,
                 run.events.len(),
@@ -159,14 +159,14 @@ pub fn run_with_runtime_home(
             let system =
                 load_effective_system_config(&user_toml, runtime_home_override.as_deref())?;
             let provider = default_provider_facade(&system)?;
-            let run = run_demo(&system, &provider, &input)?;
-            persist_runtime_demo(&user_toml, &system, &run, runtime_home_override.as_deref())?;
+            let run = run_session(&system, &provider, &input)?;
+            persist_runtime_session(&user_toml, &system, &run, runtime_home_override.as_deref())?;
             println!(
                 "{}",
                 serde_json::to_string_pretty(&build_projection(&run.events))?
             );
         }
-        Command::TranscriptDemo {
+        Command::TranscriptSession {
             path,
             transcript_path,
         } => {
@@ -175,10 +175,10 @@ pub fn run_with_runtime_home(
                 load_effective_system_config(&user_toml, runtime_home_override.as_deref())?;
             let provider = default_provider_facade(&system)?;
             let scenario = load_transcript_scenario(Path::new(&transcript_path))?;
-            let transcript = run_transcript_demo(&system, &provider, &scenario)?;
+            let transcript = run_transcript_session(&system, &provider, &scenario)?;
             let mut artifacts = None;
             for run in &transcript.runs {
-                artifacts = Some(persist_runtime_demo(
+                artifacts = Some(persist_runtime_session(
                     &user_toml,
                     &system,
                     run,
@@ -187,7 +187,7 @@ pub fn run_with_runtime_home(
             }
             let artifacts = artifacts.ok_or(CliError::Usage)?;
             println!(
-                "transcript demo ok: turns={} session={} task={} recent_contexts={} home={}",
+                "transcript session ok: turns={} session={} task={} recent_contexts={} home={}",
                 transcript.runs.len(),
                 transcript.session_id,
                 transcript.task_id,

@@ -1,7 +1,7 @@
 use crate::{
     CliError,
-    demo::{
-        DemoRequest, demo_identity, demo_namespace_from_env, run_demo_request, sanitize_id_fragment,
+    session_run::{
+        SessionRequest, build_session_identity, session_namespace_from_env, run_session_request, sanitize_id_fragment,
     },
     fs_utils::read_file,
     time::{local_time_base, local_timestamp_for_turn},
@@ -36,7 +36,7 @@ pub(crate) fn load_transcript_scenario(path: &Path) -> Result<TranscriptScenario
     Ok(normalize_scenario(scenario))
 }
 
-pub(crate) fn run_transcript_demo(
+pub(crate) fn run_transcript_session(
     system: &SystemConfig,
     provider: &impl InferenceProvider,
     scenario: &TranscriptScenario,
@@ -51,13 +51,13 @@ pub(crate) fn run_transcript_demo(
             .iter()
             .map(|run| run.digest.clone())
             .collect::<Vec<_>>();
-        let request = DemoRequest {
+        let request = SessionRequest {
             operation_id: format!("op-{}-{:04}", ids.scope, index + 1),
             trace_id: format!("trace-{}-{:04}", ids.scope, index + 1),
             session_id: ids.session_id.clone(),
             task_id: Some(ids.task_id.clone()),
             topic_thread_id: None,
-            agent_name: Some("cli-demo".into()),
+            agent_name: Some("cli-session".into()),
             role_id: None,
             input: turn.input.clone(),
             source: "cli.user".into(),
@@ -68,14 +68,14 @@ pub(crate) fn run_transcript_demo(
                 .iter()
                 .flat_map(|run| run.tool_records.iter().cloned())
                 .collect(),
-            project_label: Some("transcript-demo".into()),
+            project_label: Some("transcript-session".into()),
             runtime_home: None,
             cwd: None,
             selected_paths: Vec::new(),
             attachment_summaries: Vec::new(),
             submitted_at: local_timestamp_for_turn(time_base, index),
         };
-        runs.push(run_demo_request(system, provider, request)?);
+        runs.push(run_session_request(system, provider, request)?);
     }
 
     Ok(TranscriptRun {
@@ -112,7 +112,7 @@ fn normalize_scenario(mut scenario: TranscriptScenario) -> TranscriptScenario {
 fn sanitize_identifier(raw: &str, prefix: &str) -> String {
     let cleaned = sanitize_id_fragment(raw);
     if cleaned.is_empty() {
-        format!("{prefix}-transcript-demo")
+        format!("{prefix}-transcript-session")
     } else if cleaned.starts_with(&format!("{prefix}-")) {
         cleaned
     } else {
@@ -134,9 +134,9 @@ struct TranscriptIds {
 }
 
 fn transcript_ids(scenario: &TranscriptScenario) -> TranscriptIds {
-    let namespace = demo_namespace_from_env();
-    let default_scope = namespace.as_deref().unwrap_or("transcript-demo");
-    let base = demo_identity(Some(default_scope));
+    let namespace = session_namespace_from_env();
+    let default_scope = namespace.as_deref().unwrap_or("transcript-session");
+    let base = build_session_identity(Some(default_scope));
     let session_id = scenario.session_id.clone().unwrap_or(base.session_id);
     let task_id = scenario.task_id.clone().unwrap_or(base.task_id);
     let scope = scope_from_session_id(&session_id);

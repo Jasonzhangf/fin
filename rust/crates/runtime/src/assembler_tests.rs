@@ -84,8 +84,8 @@ fn model_input_assembler_renders_role_tools_history_and_project_scope() {
                 trace_id: "trace-1".into(),
                 attachments: vec![InputAttachmentSummary {
                     kind: "image/png".into(),
-                    name: Some("demo.png".into()),
-                    url: Some("https://example.com/demo.png".into()),
+                    name: Some("sample.png".into()),
+                    url: Some("https://example.com/sample.png".into()),
                     width: Some(100),
                     height: Some(50),
                     ..Default::default()
@@ -115,7 +115,7 @@ fn model_input_assembler_renders_role_tools_history_and_project_scope() {
     assert!(rendered.contains("Current request"));
     assert!(rendered.contains("Request envelope"));
     assert!(rendered.contains("Input attachments"));
-    assert!(rendered.contains("demo.png"));
+    assert!(rendered.contains("sample.png"));
     assert!(rendered.contains("Mandatory final answer format"));
     assert!(rendered.contains("Mandatory final answer example"));
     assert!(rendered.contains("0.98 -> 98"));

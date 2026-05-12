@@ -22,11 +22,11 @@ fn temp_runtime_home(prefix: &str) -> PathBuf {
         .expect("system time")
         .as_nanos();
     let path = std::env::temp_dir().join(format!("fin-project-runtime-pickup-{prefix}-{unique}"));
-    fs::create_dir_all(path.join("sessions/2026/04/session-1/tasks/registry"))
+    fs::create_dir_all(path.join("sessions/2026/05/session-1/tasks/registry"))
         .expect("temp runtime home");
-    fs::create_dir_all(path.join("sessions/2026/04/session-1/control")).expect("control");
-    fs::create_dir_all(path.join("sessions/2026/04/session-1/queue")).expect("queue");
-    fs::create_dir_all(path.join("sessions/2026/04/session-1/conversation")).expect("conversation");
+    fs::create_dir_all(path.join("sessions/2026/05/session-1/control")).expect("control");
+    fs::create_dir_all(path.join("sessions/2026/05/session-1/queue")).expect("queue");
+    fs::create_dir_all(path.join("sessions/2026/05/session-1/conversation")).expect("conversation");
     path
 }
 
@@ -71,7 +71,7 @@ fn system() -> SystemConfig {
 fn materialize_marks_ready_to_resume_when_claimed_task_has_pending_inputs() {
     let home = temp_runtime_home("ready");
     fs::write(
-        home.join("sessions/2026/04/session-1/tasks/registry/task-1.json"),
+        home.join("sessions/2026/05/session-1/tasks/registry/task-1.json"),
         serde_json::to_vec_pretty(&json!({
             "task_id":"task-1",
             "session_id":"session-1",
@@ -85,7 +85,7 @@ fn materialize_marks_ready_to_resume_when_claimed_task_has_pending_inputs() {
     )
     .expect("task");
     fs::write(
-        home.join("sessions/2026/04/session-1/control/execution_state.json"),
+        home.join("sessions/2026/05/session-1/control/execution_state.json"),
         serde_json::to_vec_pretty(&ExecutionStateRecord {
             state_id: "state-1".into(),
             refs: EntityRefs {
@@ -103,7 +103,7 @@ fn materialize_marks_ready_to_resume_when_claimed_task_has_pending_inputs() {
     )
     .expect("state");
     fs::write(
-        home.join("sessions/2026/04/session-1/queue/pending_inputs.json"),
+        home.join("sessions/2026/05/session-1/queue/pending_inputs.json"),
         serde_json::to_vec_pretty(&json!([{
             "pending_input_id":"pending-1",
             "refs":{"session_id":"session-1","task_id":"task-1"},
@@ -118,7 +118,7 @@ fn materialize_marks_ready_to_resume_when_claimed_task_has_pending_inputs() {
     )
     .expect("pending");
     fs::write(
-        home.join("sessions/2026/04/session-1/conversation/messages.json"),
+        home.join("sessions/2026/05/session-1/conversation/messages.json"),
         serde_json::to_vec_pretty(&json!([])).expect("messages"),
     )
     .expect("messages");
@@ -160,7 +160,7 @@ fn materialize_marks_ready_to_resume_when_claimed_task_has_pending_inputs() {
 fn materialize_marks_handoff_idle_when_same_worker_already_claimed_task() {
     let home = temp_runtime_home("handoff-idle");
     fs::write(
-        home.join("sessions/2026/04/session-1/tasks/registry/task-1.json"),
+        home.join("sessions/2026/05/session-1/tasks/registry/task-1.json"),
         serde_json::to_vec_pretty(&json!({
             "task_id":"task-1",
             "session_id":"session-1",
@@ -175,7 +175,7 @@ fn materialize_marks_handoff_idle_when_same_worker_already_claimed_task() {
     )
     .expect("task");
     fs::write(
-        home.join("sessions/2026/04/session-1/control/execution_state.json"),
+        home.join("sessions/2026/05/session-1/control/execution_state.json"),
         serde_json::to_vec_pretty(&ExecutionStateRecord {
             state_id: "state-1".into(),
             refs: EntityRefs {
@@ -193,12 +193,12 @@ fn materialize_marks_handoff_idle_when_same_worker_already_claimed_task() {
     )
     .expect("state");
     fs::write(
-        home.join("sessions/2026/04/session-1/queue/pending_inputs.json"),
+        home.join("sessions/2026/05/session-1/queue/pending_inputs.json"),
         serde_json::to_vec_pretty(&json!([])).expect("pending"),
     )
     .expect("pending");
     fs::write(
-        home.join("sessions/2026/04/session-1/conversation/messages.json"),
+        home.join("sessions/2026/05/session-1/conversation/messages.json"),
         serde_json::to_vec_pretty(&json!([])).expect("messages"),
     )
     .expect("messages");

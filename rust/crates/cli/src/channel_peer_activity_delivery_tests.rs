@@ -186,7 +186,7 @@ fn render_recent_action_for_provider_uses_model_only() {
 #[test]
 fn periodic_delivery_emits_once_for_changed_snapshot() {
     let runtime_home = temp_runtime_home();
-    let session_rel = "sessions/2026/04/session-1";
+    let session_rel = "sessions/2026/05/session-1";
     write_json(
         &runtime_home.join("runtime/current/last_run.json"),
         &serde_json::json!({
@@ -241,7 +241,7 @@ fn periodic_delivery_emits_once_for_changed_snapshot() {
 #[test]
 fn periodic_delivery_does_not_emit_heartbeat_for_unchanged_waiting_snapshot() {
     let runtime_home = temp_runtime_home();
-    let session_rel = "sessions/2026/04/session-1";
+    let session_rel = "sessions/2026/05/session-1";
     write_json(
         &runtime_home.join("runtime/current/last_run.json"),
         &serde_json::json!({
@@ -293,7 +293,7 @@ fn periodic_delivery_does_not_emit_heartbeat_for_unchanged_waiting_snapshot() {
 #[test]
 fn periodic_delivery_skips_idle_peer_only_changes() {
     let runtime_home = temp_runtime_home();
-    let session_rel = "sessions/2026/04/session-1";
+    let session_rel = "sessions/2026/05/session-1";
     write_json(
         &runtime_home.join("runtime/current/last_run.json"),
         &serde_json::json!({
@@ -355,7 +355,7 @@ fn periodic_delivery_skips_idle_peer_only_changes() {
 #[test]
 fn current_delivery_signature_only_exists_for_deliverable_snapshot() {
     let runtime_home = temp_runtime_home();
-    let session_rel = "sessions/2026/04/session-1";
+    let session_rel = "sessions/2026/05/session-1";
     write_json(
         &runtime_home.join("runtime/current/last_run.json"),
         &serde_json::json!({

@@ -29,7 +29,7 @@ fn binding(home: &Path) -> DebugBinding {
         session_id: Some("session-heartbeat".into()),
         task_id: Some("task-heartbeat".into()),
         session_messages_path: Some(
-            "sessions/2026/04/session-heartbeat/conversation/messages.json".into(),
+            "sessions/2026/05/session-heartbeat/conversation/messages.json".into(),
         ),
         recent_contexts_path: None,
         recent_digests_path: None,
@@ -46,7 +46,7 @@ fn write_file(path: &Path, bytes: &[u8]) {
 #[test]
 fn supervisor_heartbeat_records_observation_without_due_cycle() {
     let home = temp_runtime_home();
-    let session_dir = home.join("sessions/2026/04/session-heartbeat");
+    let session_dir = home.join("sessions/2026/05/session-heartbeat");
     fs::create_dir_all(session_dir.join("conversation")).expect("conversation");
     fs::create_dir_all(session_dir.join("control/supervisor")).expect("supervisor");
     write_file(&session_dir.join("conversation/messages.json"), b"[]");
@@ -101,7 +101,7 @@ fn supervisor_heartbeat_records_observation_without_due_cycle() {
 #[test]
 fn supervisor_heartbeat_triggers_due_cycle_when_next_check_elapsed() {
     let home = temp_runtime_home();
-    let session_dir = home.join("sessions/2026/04/session-heartbeat");
+    let session_dir = home.join("sessions/2026/05/session-heartbeat");
     fs::create_dir_all(session_dir.join("conversation")).expect("conversation");
     fs::create_dir_all(session_dir.join("control")).expect("control");
     fs::create_dir_all(session_dir.join("queue")).expect("queue");

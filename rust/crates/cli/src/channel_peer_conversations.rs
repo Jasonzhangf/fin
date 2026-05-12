@@ -326,7 +326,7 @@ mod tests {
 
     fn seed_session(home: &Path, session_id: &str, messages: &[SessionMessageRecord]) {
         let session_dir = home
-            .join("sessions/2026/04")
+            .join("sessions/2026/05")
             .join(session_id)
             .join("conversation");
         fs::create_dir_all(&session_dir).expect("conversation dir");

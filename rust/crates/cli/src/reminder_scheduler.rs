@@ -195,7 +195,7 @@ mod tests {
     #[test]
     fn inject_due_reminders_appends_system_message_once() {
         let home = temp_runtime_home();
-        let session_dir = home.join("sessions/2026/04/session-reminder");
+        let session_dir = home.join("sessions/2026/05/session-reminder");
         fs::create_dir_all(session_dir.join("conversation")).expect("conversation dir");
         fs::create_dir_all(home.join("runtime/reminders")).expect("reminders dir");
         write_json(
@@ -229,7 +229,7 @@ mod tests {
             session_id: Some("session-reminder".into()),
             task_id: Some("task-reminder".into()),
             session_messages_path: Some(
-                "sessions/2026/04/session-reminder/conversation/messages.json".into(),
+                "sessions/2026/05/session-reminder/conversation/messages.json".into(),
             ),
             recent_contexts_path: None,
             recent_digests_path: None,

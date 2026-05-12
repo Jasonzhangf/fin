@@ -284,7 +284,7 @@ mod tests {
     #[test]
     fn materialize_writes_always_on_project_and_wake_queue() {
         let home = temp_home("always-on");
-        let session_dir = home.join("sessions/2026/04/session-fin");
+        let session_dir = home.join("sessions/2026/05/session-fin");
         fs::create_dir_all(session_dir.join("context")).expect("context");
         fs::create_dir_all(session_dir.join("control")).expect("control");
         fs::write(

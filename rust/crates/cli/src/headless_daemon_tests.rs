@@ -129,7 +129,7 @@ fn headless_daemon_cycle_resumes_checkpoint_without_frontstage() {
     ensure_runtime_home_layout(&home).expect("runtime home should init");
     let user_toml = sample_user_toml();
     let system = map_system_config(&user_toml).expect("system config");
-    let session_dir = home.join("sessions/2026/04/session-checkpoint-resume");
+    let session_dir = home.join("sessions/2026/05/session-checkpoint-resume");
     for relative in [
         "conversation",
         "control",
@@ -217,11 +217,11 @@ fn headless_daemon_cycle_resumes_checkpoint_without_frontstage() {
         br#"{
   "session_id":"session-checkpoint-resume",
   "task_id":"task-auto-resume",
-  "session_messages_path":"sessions/2026/04/session-checkpoint-resume/conversation/messages.json",
-  "session_recent_contexts_path":"sessions/2026/04/session-checkpoint-resume/context/recent_contexts.json",
-  "session_recent_digests_path":"sessions/2026/04/session-checkpoint-resume/digests/recent_digests.json",
-  "session_recent_reasoning_path":"sessions/2026/04/session-checkpoint-resume/reasoning/recent_reasoning_views.json",
-  "session_recent_tool_records_path":"sessions/2026/04/session-checkpoint-resume/tools/recent_tool_records.json"
+  "session_messages_path":"sessions/2026/05/session-checkpoint-resume/conversation/messages.json",
+  "session_recent_contexts_path":"sessions/2026/05/session-checkpoint-resume/context/recent_contexts.json",
+  "session_recent_digests_path":"sessions/2026/05/session-checkpoint-resume/digests/recent_digests.json",
+  "session_recent_reasoning_path":"sessions/2026/05/session-checkpoint-resume/reasoning/recent_reasoning_views.json",
+  "session_recent_tool_records_path":"sessions/2026/05/session-checkpoint-resume/tools/recent_tool_records.json"
 }"#,
     )
     .expect("last_run");
@@ -295,7 +295,7 @@ fn headless_daemon_cycle_autonomously_resumes_local_project_agent_without_fronts
             auto_connect: true,
         });
 
-    let session_dir = home.join("sessions/2026/04/session-fin-detached");
+    let session_dir = home.join("sessions/2026/05/session-fin-detached");
     for relative in [
         "conversation",
         "control",
@@ -363,11 +363,11 @@ fn headless_daemon_cycle_autonomously_resumes_local_project_agent_without_fronts
         serde_json::to_vec_pretty(&json!({
             "session_id":"session-fin-detached",
             "task_id":"task-fin-1",
-            "session_messages_path":"sessions/2026/04/session-fin-detached/conversation/messages.json",
-            "session_recent_contexts_path":"sessions/2026/04/session-fin-detached/context/recent_contexts.json",
-            "session_recent_digests_path":"sessions/2026/04/session-fin-detached/digests/recent_digests.json",
-            "session_recent_reasoning_path":"sessions/2026/04/session-fin-detached/reasoning/recent_reasoning_views.json",
-            "session_recent_tool_records_path":"sessions/2026/04/session-fin-detached/tools/recent_tool_records.json"
+            "session_messages_path":"sessions/2026/05/session-fin-detached/conversation/messages.json",
+            "session_recent_contexts_path":"sessions/2026/05/session-fin-detached/context/recent_contexts.json",
+            "session_recent_digests_path":"sessions/2026/05/session-fin-detached/digests/recent_digests.json",
+            "session_recent_reasoning_path":"sessions/2026/05/session-fin-detached/reasoning/recent_reasoning_views.json",
+            "session_recent_tool_records_path":"sessions/2026/05/session-fin-detached/tools/recent_tool_records.json"
         }))
         .expect("last run")
         .as_slice(),

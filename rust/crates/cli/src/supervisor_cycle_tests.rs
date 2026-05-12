@@ -29,7 +29,7 @@ fn binding(home: &Path) -> DebugBinding {
         session_id: Some("session-supervisor".into()),
         task_id: Some("task-supervisor".into()),
         session_messages_path: Some(
-            "sessions/2026/04/session-supervisor/conversation/messages.json".into(),
+            "sessions/2026/05/session-supervisor/conversation/messages.json".into(),
         ),
         recent_contexts_path: None,
         recent_digests_path: None,
@@ -46,7 +46,7 @@ fn write_file(path: &Path, bytes: &[u8]) {
 #[test]
 fn run_supervisor_cycle_persists_cycle_and_events() {
     let home = temp_runtime_home();
-    let session_dir = home.join("sessions/2026/04/session-supervisor");
+    let session_dir = home.join("sessions/2026/05/session-supervisor");
     fs::create_dir_all(session_dir.join("conversation")).expect("conversation");
     fs::create_dir_all(session_dir.join("control")).expect("control");
     fs::create_dir_all(session_dir.join("queue")).expect("queue");
@@ -134,7 +134,7 @@ fn run_supervisor_cycle_persists_cycle_and_events() {
 #[test]
 fn run_supervisor_cycle_derives_wait_running_next_check() {
     let home = temp_runtime_home();
-    let session_dir = home.join("sessions/2026/04/session-supervisor");
+    let session_dir = home.join("sessions/2026/05/session-supervisor");
     fs::create_dir_all(session_dir.join("conversation")).expect("conversation");
     fs::create_dir_all(session_dir.join("control")).expect("control");
     fs::create_dir_all(session_dir.join("queue")).expect("queue");

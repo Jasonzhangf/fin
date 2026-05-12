@@ -4,7 +4,7 @@ use super::*;
 fn update_plan_persists_runtime_plan_artifact() {
     let runtime_home = temp_runtime_home("plan");
     fs::create_dir_all(&runtime_home).expect("runtime_home");
-    let session_dir = runtime_home.join("sessions/2026/04/session-tool-dispatch");
+    let session_dir = runtime_home.join("sessions/2026/05/session-tool-dispatch");
     fs::create_dir_all(&session_dir).expect("session_dir");
     let context = context_with_runtime_home(&runtime_home);
 
@@ -53,8 +53,8 @@ fn update_plan_persists_runtime_plan_artifact() {
 #[test]
 fn session_list_returns_recent_session_ids() {
     let runtime_home = temp_runtime_home("session-list");
-    fs::create_dir_all(runtime_home.join("sessions/2026/04/session-a")).expect("session-a");
-    fs::create_dir_all(runtime_home.join("sessions/2026/04/session-b")).expect("session-b");
+    fs::create_dir_all(runtime_home.join("sessions/2026/05/session-a")).expect("session-a");
+    fs::create_dir_all(runtime_home.join("sessions/2026/05/session-b")).expect("session-b");
     fs::create_dir_all(runtime_home.join("sessions/2026/05/session-c")).expect("session-c");
     let context = context_with_runtime_home(&runtime_home);
 

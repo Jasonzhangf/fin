@@ -44,7 +44,7 @@ fn worker_runtime() -> WorkerRuntime {
 fn context_view_includes_task_board_digest_in_project_block() {
     let worker = worker_runtime();
     let runtime_home = temp_runtime_home("task-board");
-    let session_dir = runtime_home.join("sessions/2026/04/session-rich");
+    let session_dir = runtime_home.join("sessions/2026/05/session-rich");
     fs::create_dir_all(session_dir.join("tasks/routing")).expect("routing");
     fs::create_dir_all(session_dir.join("control")).expect("control");
     fs::create_dir_all(session_dir.join("tasks/plan")).expect("plan");
@@ -148,7 +148,7 @@ fn context_view_combines_task_board_and_collab_backlog_for_same_active_task() {
         .expect("system worker runtime")
     };
     let runtime_home = temp_runtime_home("task-board-collab");
-    let session_dir = runtime_home.join("sessions/2026/04/session-collab");
+    let session_dir = runtime_home.join("sessions/2026/05/session-collab");
     fs::create_dir_all(session_dir.join("tasks/routing")).expect("routing");
     fs::create_dir_all(session_dir.join("control")).expect("control");
     fs::create_dir_all(session_dir.join("tasks/plan")).expect("plan");

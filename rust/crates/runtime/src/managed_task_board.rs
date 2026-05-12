@@ -147,7 +147,7 @@ mod tests {
     }
 
     fn make_session(home: &Path, session_id: &str) {
-        let session_dir = home.join("sessions/2026/04").join(session_id);
+        let session_dir = home.join("sessions/2026/05").join(session_id);
         fs::create_dir_all(session_dir.join("tasks/registry")).expect("session registry dir");
         fs::create_dir_all(session_dir.join("tasks/board")).expect("session board dir");
     }

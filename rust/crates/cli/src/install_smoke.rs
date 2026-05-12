@@ -26,10 +26,10 @@ pub(crate) fn run_installed_smoke(
             ],
         ),
         (
-            "runtime-demo",
+            "runtime-session",
             vec![
                 binary_path.display().to_string(),
-                "runtime-demo".into(),
+                "runtime-session".into(),
                 config_path.display().to_string(),
                 format!("installed smoke {build_version}"),
             ],
@@ -98,7 +98,7 @@ fn run_smoke_command(
     smoke_namespace: &str,
     log_path: &Path,
 ) -> Result<(), CliError> {
-    let attempts = if matches!(label, "runtime-demo" | "debug-projection") {
+    let attempts = if matches!(label, "runtime-session" | "debug-projection") {
         3
     } else {
         1
@@ -213,17 +213,17 @@ mod tests {
         fs::create_dir_all(runtime_home.join("runtime/current")).expect("runtime current dir");
         fs::create_dir_all(runtime_home.join("runtime/projections"))
             .expect("runtime projections dir");
-        fs::create_dir_all(runtime_home.join("sessions/2026/04/session-test-install/conversation"))
+        fs::create_dir_all(runtime_home.join("sessions/2026/05/session-test-install/conversation"))
             .expect("conversation dir");
-        fs::create_dir_all(runtime_home.join("sessions/2026/04/session-test-install/context"))
+        fs::create_dir_all(runtime_home.join("sessions/2026/05/session-test-install/context"))
             .expect("context dir");
 
         for relative in [
             "runtime/current/current_context.json",
             "runtime/projections/current_snapshot.json",
             "runtime/projections/current_projection.json",
-            "sessions/2026/04/session-test-install/conversation/messages.json",
-            "sessions/2026/04/session-test-install/context/recent_contexts.json",
+            "sessions/2026/05/session-test-install/conversation/messages.json",
+            "sessions/2026/05/session-test-install/context/recent_contexts.json",
         ] {
             write_file(&runtime_home.join(relative), b"[]").expect("fixture file should write");
         }
@@ -233,8 +233,8 @@ mod tests {
                 "session_id": "session-test-install",
                 "task_id": "task-test-install",
                 "operation_id": "op-test-install-0001",
-                "session_recent_contexts_path": "sessions/2026/04/session-test-install/context/recent_contexts.json",
-                "session_messages_path": "sessions/2026/04/session-test-install/conversation/messages.json"
+                "session_recent_contexts_path": "sessions/2026/05/session-test-install/context/recent_contexts.json",
+                "session_messages_path": "sessions/2026/05/session-test-install/conversation/messages.json"
             }))
             .expect("last run json")
             .as_slice(),
@@ -265,7 +265,7 @@ mod tests {
             .expect("verified paths should be array");
         assert!(verified.iter().any(|item| {
             item.as_str()
-                == Some("sessions/2026/04/session-test-install/conversation/messages.json")
+                == Some("sessions/2026/05/session-test-install/conversation/messages.json")
         }));
     }
 }

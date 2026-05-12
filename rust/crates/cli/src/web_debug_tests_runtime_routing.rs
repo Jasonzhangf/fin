@@ -240,7 +240,7 @@ fn formalize_can_reuse_existing_task_from_pending_routing_action() {
     let handler =
         CliDebugActionHandler::new(sample_user_toml(), system).expect("handler should build");
 
-    let old_session_dir = home.join("sessions/2026/04/session-existing");
+    let old_session_dir = home.join("sessions/2026/05/session-existing");
     fs::create_dir_all(old_session_dir.join("tasks/registry")).expect("old registry");
     fs::create_dir_all(old_session_dir.join("topics/registry")).expect("old topics registry");
     fs::create_dir_all(old_session_dir.join("conversation")).expect("old conversation");
@@ -272,7 +272,7 @@ fn formalize_can_reuse_existing_task_from_pending_routing_action() {
     )
     .expect("topic registry");
 
-    let tentative_session_dir = home.join("sessions/2026/04/session-tentative-reuse");
+    let tentative_session_dir = home.join("sessions/2026/05/session-tentative-reuse");
     fs::create_dir_all(tentative_session_dir.join("tasks/routing")).expect("routing dir");
     fs::create_dir_all(tentative_session_dir.join("conversation")).expect("conversation dir");
     write_file(
@@ -336,9 +336,9 @@ fn formalize_can_reuse_existing_task_from_pending_routing_action() {
         &home.join("runtime/current/last_run.json"),
         br#"{
   "session_id":"session-tentative-reuse",
-  "session_messages_path":"sessions/2026/04/session-tentative-reuse/conversation/messages.json",
-  "session_recent_contexts_path":"sessions/2026/04/session-tentative-reuse/context/recent_contexts.json",
-  "session_recent_digests_path":"sessions/2026/04/session-tentative-reuse/digests/recent_digests.json"
+  "session_messages_path":"sessions/2026/05/session-tentative-reuse/conversation/messages.json",
+  "session_recent_contexts_path":"sessions/2026/05/session-tentative-reuse/context/recent_contexts.json",
+  "session_recent_digests_path":"sessions/2026/05/session-tentative-reuse/digests/recent_digests.json"
 }"#,
     )
     .expect("last run");

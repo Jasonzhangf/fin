@@ -1,4 +1,4 @@
-use crate::{ClosureRun, RuntimeError, session_record_journal};
+use crate::{ClosureRun, RuntimeError, session_record_journal, source_visibility::is_hidden_session_source};
 use fin_config::RuntimeRetentionConfig;
 use fin_contracts::EventEnvelope;
 use fin_contracts::{
@@ -98,6 +98,33 @@ impl SessionMaterializer {
             "artifacts/candidates",
         ] {
             create_dir_all(&session_dir.join(relative))?;
+        }
+
+        // Hidden-turn boundary: framework-owned control-plane turns
+        // (heartbeat, checkpoint-resume, owner-loop, task-kickoff, assignment-resume)
+        // only write runtime/current truth for control plane visibility.
+        // They must NOT pollute session-visible history:
+        //   conversation, digests, reasoning, tools, provider, rounds, steps, turns, closures.
+        let is_hidden = is_hidden_session_source(&run.operation.source);
+        if is_hidden {
+            write_json_file(
+                &runtime_home.join("runtime/current/current_control_feedback.json"),
+                &run.control_feedback,
+            )?;
+            return Ok(SessionMaterializationReceipt {
+                runtime_home: runtime_home.to_path_buf(),
+                session_dir,
+                session_id: session_id.clone(),
+                session_recent_contexts_path: format!(
+                    "sessions/{year}/{month}/{session_id}/context/recent_contexts.json"
+                ),
+                session_recent_digests_path: format!(
+                    "sessions/{year}/{month}/{session_id}/digests/recent_digests.json"
+                ),
+                session_messages_path: format!(
+                    "sessions/{year}/{month}/{session_id}/conversation/messages.json"
+                ),
+            });
         }
 
         persist_event_stream(

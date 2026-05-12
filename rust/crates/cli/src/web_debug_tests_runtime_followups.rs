@@ -47,7 +47,7 @@ fn due_reminder_auto_ticks_scheduler_and_drains_pending_queue() {
     let system = map_system_config(&sample_user_toml()).expect("system config");
     let handler =
         CliDebugActionHandler::new(sample_user_toml(), system).expect("handler should build");
-    let session_dir = home.join("sessions/2026/04/session-auto-wake");
+    let session_dir = home.join("sessions/2026/05/session-auto-wake");
     fs::create_dir_all(session_dir.join("conversation")).expect("conversation dir");
     fs::create_dir_all(session_dir.join("control")).expect("control dir");
     fs::create_dir_all(session_dir.join("queue")).expect("queue dir");
@@ -110,11 +110,11 @@ fn due_reminder_auto_ticks_scheduler_and_drains_pending_queue() {
             br#"{
   "session_id":"session-auto-wake",
   "task_id":"task-auto-wake",
-  "session_messages_path":"sessions/2026/04/session-auto-wake/conversation/messages.json",
-  "session_recent_contexts_path":"sessions/2026/04/session-auto-wake/context/recent_contexts.json",
-  "session_recent_digests_path":"sessions/2026/04/session-auto-wake/digests/recent_digests.json",
-  "session_recent_reasoning_path":"sessions/2026/04/session-auto-wake/reasoning/recent_reasoning_views.json",
-  "session_recent_tool_records_path":"sessions/2026/04/session-auto-wake/tools/recent_tool_records.json"
+  "session_messages_path":"sessions/2026/05/session-auto-wake/conversation/messages.json",
+  "session_recent_contexts_path":"sessions/2026/05/session-auto-wake/context/recent_contexts.json",
+  "session_recent_digests_path":"sessions/2026/05/session-auto-wake/digests/recent_digests.json",
+  "session_recent_reasoning_path":"sessions/2026/05/session-auto-wake/reasoning/recent_reasoning_views.json",
+  "session_recent_tool_records_path":"sessions/2026/05/session-auto-wake/tools/recent_tool_records.json"
 }"#,
         )
         .expect("last_run");
@@ -183,7 +183,7 @@ fn slash_compact_rebuilds_current_context_without_provider_call() {
     let system = map_system_config(&sample_user_toml()).expect("system config");
     let handler =
         CliDebugActionHandler::new(sample_user_toml(), system).expect("handler should build");
-    let session_dir = home.join("sessions/2026/04/session-compact");
+    let session_dir = home.join("sessions/2026/05/session-compact");
     fs::create_dir_all(session_dir.join("conversation")).expect("conversation dir");
     fs::create_dir_all(session_dir.join("digests")).expect("digests dir");
     fs::create_dir_all(session_dir.join("context")).expect("context dir");
@@ -207,9 +207,9 @@ fn slash_compact_rebuilds_current_context_without_provider_call() {
         br#"{
   "session_id":"session-compact",
   "task_id":"task-compact",
-  "session_messages_path":"sessions/2026/04/session-compact/conversation/messages.json",
-  "session_recent_contexts_path":"sessions/2026/04/session-compact/context/recent_contexts.json",
-  "session_recent_digests_path":"sessions/2026/04/session-compact/digests/recent_digests.json"
+  "session_messages_path":"sessions/2026/05/session-compact/conversation/messages.json",
+  "session_recent_contexts_path":"sessions/2026/05/session-compact/context/recent_contexts.json",
+  "session_recent_digests_path":"sessions/2026/05/session-compact/digests/recent_digests.json"
 }"#,
     )
     .expect("last_run");
@@ -239,7 +239,7 @@ fn due_reminder_prefers_execution_checkpoint_resume_without_fake_user_message() 
     let system = map_system_config(&sample_user_toml()).expect("system config");
     let handler =
         CliDebugActionHandler::new(sample_user_toml(), system).expect("handler should build");
-    let session_dir = home.join("sessions/2026/04/session-checkpoint-resume");
+    let session_dir = home.join("sessions/2026/05/session-checkpoint-resume");
     for relative in [
         "conversation",
         "control",
@@ -333,11 +333,11 @@ fn due_reminder_prefers_execution_checkpoint_resume_without_fake_user_message() 
         br#"{
   "session_id":"session-checkpoint-resume",
   "task_id":"task-auto-resume",
-  "session_messages_path":"sessions/2026/04/session-checkpoint-resume/conversation/messages.json",
-  "session_recent_contexts_path":"sessions/2026/04/session-checkpoint-resume/context/recent_contexts.json",
-  "session_recent_digests_path":"sessions/2026/04/session-checkpoint-resume/digests/recent_digests.json",
-  "session_recent_reasoning_path":"sessions/2026/04/session-checkpoint-resume/reasoning/recent_reasoning_views.json",
-  "session_recent_tool_records_path":"sessions/2026/04/session-checkpoint-resume/tools/recent_tool_records.json"
+  "session_messages_path":"sessions/2026/05/session-checkpoint-resume/conversation/messages.json",
+  "session_recent_contexts_path":"sessions/2026/05/session-checkpoint-resume/context/recent_contexts.json",
+  "session_recent_digests_path":"sessions/2026/05/session-checkpoint-resume/digests/recent_digests.json",
+  "session_recent_reasoning_path":"sessions/2026/05/session-checkpoint-resume/reasoning/recent_reasoning_views.json",
+  "session_recent_tool_records_path":"sessions/2026/05/session-checkpoint-resume/tools/recent_tool_records.json"
 }"#,
     )
     .expect("last_run");

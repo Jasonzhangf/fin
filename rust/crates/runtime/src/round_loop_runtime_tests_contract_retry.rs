@@ -402,3 +402,98 @@ fn session_materializer_persists_retry_attempt_provider_truth() {
 
     fs::remove_dir_all(&runtime_home).expect("temp runtime home should be cleaned");
 }
+
+#[test]
+fn session_materializer_hidden_turn_skips_visible_artifacts() {
+    let mut runtime = M1Runtime::default();
+    let worker = worker_runtime();
+    let provider = ContractRetryProvider::new();
+    let operation = InferenceOperationBuilder
+        .build(
+            &worker,
+            InferenceRequest {
+                operation_id: "op-hidden-turn-boundary".into(),
+                trace_id: "trace-hidden-turn-boundary".into(),
+                submitted_at: "2026-05-12T12:00:00+08:00".into(),
+                refs: EntityRefs {
+                    session_id: Some("session-hidden-turn-boundary".into()),
+                    task_id: Some("task-hidden-turn-boundary".into()),
+                    ..EntityRefs::default()
+                },
+                input: "hidden turn test".into(),
+                context: MinimalContextView::default(),
+            },
+        )
+        .expect("operation");
+
+    let mut run = runtime
+        .run_closure(operation, &provider)
+        .expect("closure should run");
+
+    // Mutate source to simulate a hidden control-plane turn
+    run.operation.source = "framework.owner_loop.dispatch".into();
+
+    let runtime_home = temp_runtime_home("hidden-turn-boundary");
+    fs::create_dir_all(runtime_home.join("runtime/current"))
+        .expect("runtime current dir should exist");
+    let receipt = SessionMaterializer
+        .persist(
+            &runtime_home,
+            &run,
+            &fin_config::RuntimeRetentionConfig::default(),
+        )
+        .expect("materialization should succeed");
+
+    // Hidden turns MUST write runtime/current control feedback
+    assert!(
+        runtime_home
+            .join("runtime/current/current_control_feedback.json")
+            .exists(),
+        "hidden turn should write current_control_feedback.json"
+    );
+
+    // Hidden turns MUST NOT write session-visible artifacts
+    assert!(
+        !receipt.session_dir.join("conversation/messages.json").exists(),
+        "hidden turn must not write conversation/messages.json"
+    );
+    assert!(
+        !receipt.session_dir.join("digests/recent_digests.json").exists(),
+        "hidden turn must not write digests/recent_digests.json"
+    );
+    assert!(
+        !receipt
+            .session_dir
+            .join("tools/recent_tool_records.json")
+            .exists(),
+        "hidden turn must not write tools/recent_tool_records.json"
+    );
+    assert!(
+        !receipt
+            .session_dir
+            .join("reasoning/recent_reasoning_views.json")
+            .exists(),
+        "hidden turn must not write reasoning/recent_reasoning_views.json"
+    );
+    assert!(
+        !receipt
+            .session_dir
+            .join("provider/recent_provider_requests.json")
+            .exists(),
+        "hidden turn must not write provider/recent_provider_requests.json"
+    );
+    assert!(
+        !receipt.session_dir.join("rounds/recent_rounds.json").exists(),
+        "hidden turn must not write rounds/recent_rounds.json"
+    );
+    assert!(
+        !receipt.session_dir.join("turns/recent_turns.json").exists(),
+        "hidden turn must not write turns/recent_turns.json"
+    );
+    assert!(
+        !receipt.session_dir.join("closures/recent_closures.json").exists(),
+        "hidden turn must not write closures/recent_closures.json"
+    );
+
+    fs::remove_dir_all(&runtime_home).expect("temp runtime home should be cleaned");
+}

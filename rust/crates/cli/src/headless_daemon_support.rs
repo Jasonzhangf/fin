@@ -334,7 +334,7 @@ fn session_dirs(runtime_home: &Path) -> Result<Vec<PathBuf>, CliError> {
 }
 
 fn sanitize_id(value: &str) -> String {
-    crate::demo::sanitize_id_fragment(value)
+    crate::session_run::sanitize_id_fragment(value)
 }
 
 fn read_json_or_empty<T: for<'de> Deserialize<'de>>(path: &Path) -> Result<Vec<T>, CliError> {

@@ -45,8 +45,8 @@ fn context_view_builder_populates_rich_blocks() {
             attachment_summaries: vec![InputAttachmentSummary {
                 attachment_id: Some("att-1".into()),
                 kind: "image/png".into(),
-                name: Some("demo.png".into()),
-                url: Some("https://example.com/demo.png".into()),
+                name: Some("sample.png".into()),
+                url: Some("https://example.com/sample.png".into()),
                 width: Some(128),
                 height: Some(64),
                 ..InputAttachmentSummary::default()

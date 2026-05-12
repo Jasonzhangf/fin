@@ -9,7 +9,7 @@ use serde_json::Value;
 use std::{collections::BTreeMap, fs, path::Path, path::PathBuf};
 
 #[derive(Debug, Clone, PartialEq)]
-pub(crate) struct ControlBoundaryDemoRun {
+pub(crate) struct ControlBoundaryScenarioRun {
     pub(crate) runtime_home: PathBuf,
     pub(crate) session_id: String,
     pub(crate) task_id: String,
@@ -73,18 +73,18 @@ impl InferenceProvider for ControlBoundaryProvider {
             provider_name: request.provider_name.clone(),
             model: request.model.clone(),
             output_text,
-            response_id: Some("control-boundary-demo-response".into()),
+            response_id: Some("control-boundary-scenario-response".into()),
             stop_reason: Some("end_turn".into()),
             status: 200,
         })
     }
 }
 
-pub(crate) fn run_control_boundary_demo(
+pub(crate) fn run_control_boundary_scenario(
     user_toml: &str,
     system: &SystemConfig,
     override_path: Option<&Path>,
-) -> Result<ControlBoundaryDemoRun, CliError> {
+) -> Result<ControlBoundaryScenarioRun, CliError> {
     let runtime_home = init_runtime_home(user_toml, system, override_path)?;
     let handler = CliDebugActionHandler::new(user_toml.into(), system.clone())?;
     let provider = ControlBoundaryProvider::new();
@@ -92,12 +92,12 @@ pub(crate) fn run_control_boundary_demo(
 
     for request in [
         chat("/new"),
-        chat("seed control boundary demo"),
-        chat("/pause control-boundary-demo"),
+        chat("seed control boundary scenario"),
+        chat("/pause control-boundary-scenario"),
         chat("queued control task 1"),
         chat("queued control task 2"),
         chat("/resume-run"),
-        status("/status control boundary demo status"),
+        status("/status control boundary scenario status"),
         chat("wait for external logs"),
     ] {
         let response = handler.send_message_for_provider(&runtime_home, request, &provider)?;
@@ -122,7 +122,7 @@ pub(crate) fn run_control_boundary_demo(
     let binding = heartbeat_response.binding.clone();
     responses.push(heartbeat_response);
 
-    Ok(ControlBoundaryDemoRun {
+    Ok(ControlBoundaryScenarioRun {
         runtime_home,
         session_id: binding.session_id.clone().ok_or(CliError::Usage)?,
         task_id: binding.task_id.clone().ok_or(CliError::Usage)?,
@@ -137,12 +137,12 @@ fn stop_output(
     topic_shift_confidence: u8,
 ) -> String {
     format!(
-        "<fin_user_response>{user_response}</fin_user_response>\n<fin_control_feedback>{{\"origin\":\"model_output_contract_v1\",\"is_continuation\":true,\"is_simple_query\":false,\"candidate_task_id\":\"task-control-boundary-demo\",\"candidate_topic_thread_id\":\"topic-control-boundary-demo\",\"continuity_confidence\":{continuity_confidence},\"topic_shift_confidence\":{topic_shift_confidence},\"simple_query_confidence\":5,\"previous_topic_summary\":\"control boundary demo\",\"current_topic_summary\":\"control boundary demo\",\"note_candidate\":\"{summary}\",\"digest_candidate\":\"{summary}\",\"reason\":\"deterministic control-boundary demo\"}}</fin_control_feedback>\n<fin_tool_calls>[{{\"tool_name\":\"reasoning.stop\",\"arguments\":{{\"summary\":\"{summary}\"}}}}]</fin_tool_calls>"
+        "<fin_user_response>{user_response}</fin_user_response>\n<fin_control_feedback>{{\"origin\":\"model_output_contract_v1\",\"is_continuation\":true,\"is_simple_query\":false,\"candidate_task_id\":\"task-control-boundary-scenario\",\"candidate_topic_thread_id\":\"topic-control-boundary-scenario\",\"continuity_confidence\":{continuity_confidence},\"topic_shift_confidence\":{topic_shift_confidence},\"simple_query_confidence\":5,\"previous_topic_summary\":\"control boundary scenario\",\"current_topic_summary\":\"control boundary scenario\",\"note_candidate\":\"{summary}\",\"digest_candidate\":\"{summary}\",\"reason\":\"deterministic control-boundary scenario\"}}</fin_control_feedback>\n<fin_tool_calls>[{{\"tool_name\":\"reasoning.stop\",\"arguments\":{{\"summary\":\"{summary}\"}}}}]</fin_tool_calls>"
     )
 }
 
 fn wait_output() -> String {
-    "<fin_user_response>先等待外部日志。</fin_user_response>\n<fin_control_feedback>{\"origin\":\"model_output_contract_v1\",\"is_continuation\":true,\"is_simple_query\":false,\"candidate_task_id\":\"task-control-boundary-demo\",\"candidate_topic_thread_id\":\"topic-control-boundary-demo\",\"continuity_confidence\":90,\"topic_shift_confidence\":10,\"simple_query_confidence\":8,\"previous_topic_summary\":\"control boundary demo\",\"current_topic_summary\":\"control boundary demo\",\"note_candidate\":\"scheduled async wait\",\"digest_candidate\":\"scheduled async wait\",\"reason\":\"waiting external result\"}</fin_control_feedback>\n<fin_tool_calls>[{\"tool_name\":\"wait.remind\",\"arguments\":{\"wait_minutes\":2,\"reminder\":\"check external logs\"}}]</fin_tool_calls>".into()
+    "<fin_user_response>先等待外部日志。</fin_user_response>\n<fin_control_feedback>{\"origin\":\"model_output_contract_v1\",\"is_continuation\":true,\"is_simple_query\":false,\"candidate_task_id\":\"task-control-boundary-scenario\",\"candidate_topic_thread_id\":\"topic-control-boundary-scenario\",\"continuity_confidence\":90,\"topic_shift_confidence\":10,\"simple_query_confidence\":8,\"previous_topic_summary\":\"control boundary scenario\",\"current_topic_summary\":\"control boundary scenario\",\"note_candidate\":\"scheduled async wait\",\"digest_candidate\":\"scheduled async wait\",\"reason\":\"waiting external result\"}</fin_control_feedback>\n<fin_tool_calls>[{\"tool_name\":\"wait.remind\",\"arguments\":{\"wait_minutes\":2,\"reminder\":\"check external logs\"}}]</fin_tool_calls>".into()
 }
 
 fn chat(message: &str) -> ChatSendRequest {
@@ -288,7 +288,7 @@ api_key_env = "OPENAI_API_KEY"
 
     fn temp_runtime_home() -> PathBuf {
         std::env::temp_dir().join(format!(
-            "fin-control-boundary-demo-{}",
+            "fin-control-boundary-scenario-{}",
             SystemTime::now()
                 .duration_since(UNIX_EPOCH)
                 .expect("time should work")
@@ -312,12 +312,12 @@ api_key_env = "OPENAI_API_KEY"
     }
 
     #[test]
-    fn control_boundary_demo_persists_queue_interrupt_and_scheduler_truth() {
+    fn control_boundary_scenario_persists_queue_interrupt_and_scheduler_truth() {
         let user_toml = sample_user_toml();
         let system = map_system_config(&user_toml).expect("system config");
         let home = temp_runtime_home();
         let run =
-            run_control_boundary_demo(&user_toml, &system, Some(home.as_path())).expect("demo");
+            run_control_boundary_scenario(&user_toml, &system, Some(home.as_path())).expect("control boundary scenario");
         let session_dir = find_session_dir(&home, &run.session_id).expect("session dir");
         assert_eq!(run.responses.len(), 10);
         assert!(session_dir.join("control/execution_state.json").exists());

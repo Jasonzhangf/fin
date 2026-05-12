@@ -104,7 +104,7 @@ mod tests {
             .expect("system time")
             .as_nanos();
         let path = std::env::temp_dir().join(format!("fin-task-handoff-{prefix}-{unique}"));
-        fs::create_dir_all(path.join("sessions/2026/04/session-1")).expect("temp runtime home");
+        fs::create_dir_all(path.join("sessions/2026/05/session-1")).expect("temp runtime home");
         path
     }
 
@@ -136,7 +136,7 @@ mod tests {
         assert_eq!(receipt.previous_status, "ready");
         assert_eq!(receipt.next_status, "claimed");
         let updated =
-            fs::read_to_string(home.join("sessions/2026/04/session-1/tasks/registry/task-1.json"))
+            fs::read_to_string(home.join("sessions/2026/05/session-1/tasks/registry/task-1.json"))
                 .expect("task");
         assert!(updated.contains("\"claimed_by_worker_id\": \"worker-mbp-builder\""));
     }

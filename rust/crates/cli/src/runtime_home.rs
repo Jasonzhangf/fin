@@ -9,6 +9,7 @@ use fin_debug_server::persist_snapshot;
 use fin_runtime::{ClosureRun, SessionMaterializer};
 use fin_shared::expand_home_path;
 use serde::de::DeserializeOwned;
+
 use std::{
     fs,
     path::{Path, PathBuf},
@@ -135,7 +136,7 @@ pub(crate) fn ensure_runtime_home_layout(runtime_home: &Path) -> Result<(), CliE
     Ok(())
 }
 
-pub(crate) fn persist_runtime_demo(
+pub(crate) fn persist_runtime_session(
     user_toml: &str,
     system: &SystemConfig,
     run: &ClosureRun,
@@ -190,3 +191,4 @@ pub(crate) fn read_last_run_value(runtime_home: &Path) -> Result<serde_json::Val
     )?)
     .map_err(CliError::Serialize)
 }
+

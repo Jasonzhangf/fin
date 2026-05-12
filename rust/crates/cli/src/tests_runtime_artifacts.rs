@@ -1,7 +1,8 @@
 use super::*;
+use chrono::Datelike;
 
 #[test]
-fn transcript_demo_persists_recent_context_history() {
+fn transcript_session_persists_recent_context_history() {
     let user_toml = sample_user_toml();
     let system = sample_system_config();
     let home = temp_runtime_home();
@@ -21,11 +22,11 @@ fn transcript_demo_persists_recent_context_history() {
         ],
     };
 
-    let transcript = run_transcript_demo(&system, &static_provider(&system), &scenario)
-        .expect("transcript demo should run");
+    let transcript = run_transcript_session(&system, &static_provider(&system), &scenario)
+        .expect("transcript session should run");
     let mut last_session_dir = None;
     for run in &transcript.runs {
-        let artifacts = persist_runtime_demo(&user_toml, &system, run, Some(home.as_path()))
+        let artifacts = persist_runtime_session(&user_toml, &system, run, Some(home.as_path()))
             .expect("turn artifacts should persist");
         last_session_dir = Some(artifacts.session_dir);
     }
@@ -157,7 +158,7 @@ fn transcript_demo_persists_recent_context_history() {
             .as_ref()
             .and_then(|value| value.primary_project.as_ref())
             .map(|value| value.label.as_str()),
-        Some("transcript-demo")
+        Some("transcript-session")
     );
     assert_eq!(
         recent_contexts[2]
@@ -200,7 +201,7 @@ fn transcript_demo_persists_recent_context_history() {
     );
     assert_eq!(
         current_context.refs.worker_id.as_deref(),
-        Some("worker-cli-demo")
+        Some("worker-cli-session")
     );
 
     let recent_digests: Vec<DigestRecord> = serde_json::from_str(
@@ -295,11 +296,11 @@ fn runtime_retention_limits_trim_recent_records_and_messages() {
         ],
     };
 
-    let transcript = run_transcript_demo(&system, &static_provider(&system), &scenario)
-        .expect("transcript demo should run");
+    let transcript = run_transcript_session(&system, &static_provider(&system), &scenario)
+        .expect("transcript session should run");
     let mut last_session_dir = None;
     for run in &transcript.runs {
-        let artifacts = persist_runtime_demo(&user_toml, &system, run, Some(home.as_path()))
+        let artifacts = persist_runtime_session(&user_toml, &system, run, Some(home.as_path()))
             .expect("turn artifacts should persist");
         last_session_dir = Some(artifacts.session_dir);
     }
@@ -349,8 +350,8 @@ fn event_stream_rotation_moves_old_segments_into_archive_without_losing_truth() 
         ],
     };
 
-    let transcript = run_transcript_demo(&system, &static_provider(&system), &scenario)
-        .expect("transcript demo should run");
+    let transcript = run_transcript_session(&system, &static_provider(&system), &scenario)
+        .expect("transcript session should run");
     let expected_event_count = transcript
         .runs
         .iter()
@@ -358,7 +359,7 @@ fn event_stream_rotation_moves_old_segments_into_archive_without_losing_truth() 
         .sum::<usize>();
     let mut last_session_dir = None;
     for run in &transcript.runs {
-        let artifacts = persist_runtime_demo(&user_toml, &system, run, Some(home.as_path()))
+        let artifacts = persist_runtime_session(&user_toml, &system, run, Some(home.as_path()))
             .expect("turn artifacts should persist");
         last_session_dir = Some(artifacts.session_dir);
     }
@@ -366,7 +367,8 @@ fn event_stream_rotation_moves_old_segments_into_archive_without_losing_truth() 
     let session_dir = last_session_dir.expect("session dir should exist");
     let live_stream_path = session_dir.join("events/stream.jsonl");
     let local_archive_dir = session_dir.join("events/archive");
-    let cold_archive_dir = home.join("archive/sessions/2026/04/session-event-archive/events");
+    let now = chrono::Local::now();
+    let cold_archive_dir = home.join(format!("archive/sessions/{}/{:02}/session-event-archive/events", now.year(), now.month()));
     let live_event_count = fs::read_to_string(&live_stream_path)
         .expect("live stream")
         .lines()

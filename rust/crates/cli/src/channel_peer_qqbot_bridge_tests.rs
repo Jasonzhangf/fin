@@ -47,8 +47,8 @@ fn attachment_summaries_keep_whitelisted_fields() {
     let attachments = serde_json::json!([{
         "id": "att-1",
         "content_type": "image/png",
-        "filename": "demo.png",
-        "url": "https://example.com/demo.png",
+        "filename": "sample.png",
+        "url": "https://example.com/sample.png",
         "size": "42",
         "width": 128,
         "height": 64,
@@ -58,7 +58,7 @@ fn attachment_summaries_keep_whitelisted_fields() {
     assert_eq!(items.len(), 1);
     assert_eq!(items[0].attachment_id.as_deref(), Some("att-1"));
     assert_eq!(items[0].content_type.as_deref(), Some("image/png"));
-    assert_eq!(items[0].name.as_deref(), Some("demo.png"));
+    assert_eq!(items[0].name.as_deref(), Some("sample.png"));
     assert_eq!(items[0].size_bytes, Some(42));
     assert_eq!(items[0].width, Some(128));
     assert_eq!(items[0].height, Some(64));
@@ -67,12 +67,12 @@ fn attachment_summaries_keep_whitelisted_fields() {
 #[test]
 fn attachment_only_message_gets_fallback_prompt() {
     let attachments = vec![fin_contracts::InputAttachmentSummary {
-        name: Some("demo.png".into()),
+        name: Some("sample.png".into()),
         ..fin_contracts::InputAttachmentSummary::default()
     }];
     let normalized = support::normalize_inbound_content("", &attachments);
     assert!(normalized.contains("用户发送了附件"));
-    assert!(normalized.contains("demo.png"));
+    assert!(normalized.contains("sample.png"));
 }
 
 #[test]
@@ -124,7 +124,7 @@ fn write_json(path: &Path, value: &impl serde::Serialize) {
 
 fn seed_session(home: &Path, session_id: &str, messages: &[SessionMessageRecord]) {
     let session_dir = home
-        .join("sessions/2026/04")
+        .join("sessions/2026/05")
         .join(session_id)
         .join("conversation");
     fs::create_dir_all(&session_dir).expect("conversation dir");

@@ -50,7 +50,7 @@ fn status_probe_returns_latest_framework_state_without_new_closure() {
     let system = map_system_config(&sample_user_toml()).expect("system config");
     let handler =
         CliDebugActionHandler::new(sample_user_toml(), system).expect("handler should build");
-    let session_dir = home.join("sessions/2026/04/session-web-debug");
+    let session_dir = home.join("sessions/2026/05/session-web-debug");
     fs::create_dir_all(session_dir.join("conversation")).expect("conversation dir");
     fs::create_dir_all(session_dir.join("progress")).expect("progress dir");
     fs::create_dir_all(session_dir.join("notes")).expect("notes dir");
@@ -156,8 +156,8 @@ fn status_probe_returns_latest_framework_state_without_new_closure() {
   "session_id":"session-web-debug",
   "task_id":"task-web-debug",
   "digest_id":"digest-existing",
-  "session_messages_path":"sessions/2026/04/session-web-debug/conversation/messages.json",
-  "session_control_feedback_path":"sessions/2026/04/session-web-debug/control/latest.json",
+  "session_messages_path":"sessions/2026/05/session-web-debug/conversation/messages.json",
+  "session_control_feedback_path":"sessions/2026/05/session-web-debug/control/latest.json",
   "current_execution_state_path":"runtime/current/current_execution_state.json",
   "current_pending_inputs_path":"runtime/current/current_pending_inputs.json"
 }"#,
@@ -275,7 +275,7 @@ fn paused_session_runs_parallel_user_message_and_restores_paused_state() {
     let system = map_system_config(&sample_user_toml()).expect("system config");
     let handler =
         CliDebugActionHandler::new(sample_user_toml(), system).expect("handler should build");
-    let session_dir = home.join("sessions/2026/04/session-paused");
+    let session_dir = home.join("sessions/2026/05/session-paused");
     fs::create_dir_all(session_dir.join("conversation")).expect("conversation dir");
     fs::create_dir_all(session_dir.join("control")).expect("control dir");
     fs::create_dir_all(session_dir.join("queue")).expect("queue dir");
@@ -303,7 +303,7 @@ fn paused_session_runs_parallel_user_message_and_restores_paused_state() {
         br#"{
   "session_id":"session-paused",
   "task_id":"task-paused",
-  "session_messages_path":"sessions/2026/04/session-paused/conversation/messages.json"
+  "session_messages_path":"sessions/2026/05/session-paused/conversation/messages.json"
 }"#,
     )
     .expect("last_run");
@@ -336,7 +336,7 @@ fn paused_session_channel_parallel_input_persists_attachments_into_context() {
     let system = map_system_config(&sample_user_toml()).expect("system config");
     let handler =
         CliDebugActionHandler::new(sample_user_toml(), system).expect("handler should build");
-    let session_dir = home.join("sessions/2026/04/session-paused-attachments");
+    let session_dir = home.join("sessions/2026/05/session-paused-attachments");
     fs::create_dir_all(session_dir.join("conversation")).expect("conversation dir");
     fs::create_dir_all(session_dir.join("control")).expect("control dir");
     fs::create_dir_all(session_dir.join("queue")).expect("queue dir");
@@ -364,7 +364,7 @@ fn paused_session_channel_parallel_input_persists_attachments_into_context() {
         br#"{
   "session_id":"session-paused-attachments",
   "task_id":"task-paused-attachments",
-  "session_messages_path":"sessions/2026/04/session-paused-attachments/conversation/messages.json"
+  "session_messages_path":"sessions/2026/05/session-paused-attachments/conversation/messages.json"
 }"#,
     )
     .expect("last_run");

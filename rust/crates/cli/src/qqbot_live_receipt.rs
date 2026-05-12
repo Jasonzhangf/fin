@@ -300,7 +300,7 @@ mod tests {
     }
 
     fn seed_session(home: &Path, session_id: &str) -> PathBuf {
-        let session_dir = home.join("sessions/2026/04").join(session_id);
+        let session_dir = home.join("sessions/2026/05").join(session_id);
         fs::create_dir_all(session_dir.join("conversation")).expect("conversation dir");
         fs::create_dir_all(session_dir.join("provider")).expect("provider dir");
         session_dir
