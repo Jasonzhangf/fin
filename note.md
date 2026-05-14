@@ -3829,3 +3829,21 @@ fin should adopt the following canonical model:
   - `runtime_followup_round_includes_full_exec_receipt_in_current_history` ✅
   - `runtime_followup_round_includes_full_patch_receipt_arguments` ✅
   - `cargo test -p fin-runtime --manifest-path rust/Cargo.toml --quiet` ✅
+
+## 2026-05-14 qqbot event consumer gate tests (Gate 1/2/3)
+Added channel_peer_qqbot_bridge_events_tests.rs (3 tests, 3 PASS):
+- Gate 1: qqbot_event_recorder_writes_events_jsonl: events.jsonl written with channel.peer events
+- Gate 2: qqbot_recent_contexts_bounded: recent_contexts bounded <= 10 after 5 ops
+- Gate 3: qqbot_read_last_run_value_parses_correctly: last_run turn_id/session_id parse OK
+Live smoke skipped: no QQ credentials (~/.rcc/provider/qqbot/credentials.toml absent
+Gate 1+2+3 PASS, live smoke SKIPPED per execution rule
+
+Files:
+- rust/crates/cli/src/channel_peer_qqbot_bridge_events_tests.rs (new)
+- rust/crates/cli/src/channel_peer_qqbot_bridge.rs (+events_tests module)
+Test cmd: cargo test -p fin-cli channel_peer_qqbot_bridge::events_tests
+3/3 PASS
+---
+Credentials absent: live smoke SKIPPED per execution rules
+---
+Live smoke: TODO

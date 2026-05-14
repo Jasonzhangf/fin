@@ -403,3 +403,7 @@ mod tests;
 #[cfg(test)]
 #[path = "channel_peer_qqbot_bridge_e2e_tests.rs"]
 mod e2e_tests;
+
+#[cfg(test)]
+#[path = "channel_peer_qqbot_bridge_events_tests.rs"]
+mod events_tests;
