@@ -32,3 +32,6 @@ reports/android-mvp-receipt-bundle-*.tgz
 # local temp backups
 *.bak
 *.bak2
+
+# local memory cache
+CACHE.md
