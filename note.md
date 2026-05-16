@@ -3847,3 +3847,257 @@ Test cmd: cargo test -p fin-cli channel_peer_qqbot_bridge::events_tests
 Credentials absent: live smoke SKIPPED per execution rules
 ---
 Live smoke: TODO
+
+## 2026-05-16 Android/TCA 连接规则（用户明确要求）
+- Jason 明确：客户端是局域网设备，daemon 在本机；连接必须按跨设备远程 WS 设计，通过 TCA 连通，不允许本地壳思路替代。
+- 新执行纪律：每一次成功/失败都必须写入 note.md（含原因、证据路径、下一步）。
+- 验收优先级：先证明远程 WS 真实连通（配置落盘 + 握手/订阅日志 + 真机截图），再谈 UI 美化。
+
+## 2026-05-16 更正：连接方式不是 TCA，是 Tailscale IP
+- 用户更正：跨设备连接方式是 **Tailscale IP**，不是 TCA。
+- 后续所有 Android 客户端连接验证、配置示例、日志检查统一使用 Tailscale IP（如 `100.66.1.82`）。
+- 若文档/脚本出现 TCA 表述，视为错误并需改正。
+
+## 2026-05-16 Tailscale 远程连接执行记录（真机）
+- 成功：
+  - 已将 daemon profile 持久化到 app 私有配置：`reports/android-mvp-logs/tailscale-config.json`（endpoint=`ws://100.66.1.82:4040/ws`）。
+  - 真机执行连接流程点击（连接页/保存地址/重新连接/任务页连接WS）步骤日志已生成：`reports/android-mvp-logs/tailscale-click-steps.log`。
+  - 回退流程截图已生成：`reports/android-mvp-screenshots/tailscale-04-back-flow.png`。
+- 失败/风险：
+  - 当前 WebView/系统日志无法稳定抽取到业务层 WS 状态字段（healthy/auth_failed 等）作为强证据；需要在前端显式落连接事件到可导出的日志面板。
+- 下一步：
+  - 在 Connection 页增加“连接事件明细导出”并落盘到 `reports/android-mvp-logs/tailscale-connection-events.log`，作为远程 WS 连通强证据。
+
+## 2026-05-16 Tailscale 远程连通排查（host 侧）
+- 目标：验证 `100.66.1.82:4040` 是否可从开发机直连。
+- 证据：`reports/android-mvp-logs/tailscale-host-connectivity.log`
+- 结果：若 nc/python tcp connect 失败，则当前不是客户端逻辑问题，而是 daemon 监听/路由/ACL 问题。
+- 下一步：检查 daemon 是否监听 `0.0.0.0:4040`，并确认 Tailscale ACL 允许 `100.127.23.27 -> 100.66.1.82:4040`。
+
+## 2026-05-16 Android/Tailscale 继续执行记录（本轮）
+- 成功：
+  - 已修复 `fin-cli web-debug` 监听地址硬编码：支持 `host + port` 参数。
+    - 代码：`rust/crates/cli/src/command.rs`、`rust/crates/cli/src/cli.rs`、`rust/crates/cli/src/tests.rs`
+    - 测试：`cargo test -p fin-cli parse_command_accepts_web_debug -- --nocapture` 通过。
+  - 已修复 `web-debug` 因缺少 qqbot 凭证直接退出的问题：改为“无凭证跳过 bridge 启动并记录事件”，不再阻断调试服务。
+    - 代码：`rust/crates/cli/src/web_debug_entry.rs`
+    - 回归：`cargo test -p fin-cli web_debug -- --nocapture` 通过。
+  - daemon 已确认监听在全网卡：`*:4040`。
+    - 证据：`reports/android-mvp-logs/web-debug-listen.log`
+  - Tailscale TCP 连通成功（端口层）：
+    - 证据：`reports/android-mvp-logs/tailscale-host-connectivity-after-webdebug-fix.log`
+  - Android 五条门禁命令本地回环通过（mock ws + build + publish）：
+    - 证据：`reports/android-mvp-validation.md`（待按真实E2E重写）
+    - 产物：`android-client/update-dist/fin-latest-debug.apk`、`android-client/update-dist/latest.json`
+
+- 失败：
+  - 真实远程 WS 业务握手仍失败，App 侧记录为 `endpoint_unreachable`。
+    - 证据：`reports/android-mvp-logs/tailscale-connection-events.log`
+  - 根因已定位：`web-debug` 当前不是 WebSocket 服务；`ws://100.66.1.82:4040/ws` 返回 404（协议/路由不匹配）。
+    - 证据：本机探测 `websockets.connect(ws://100.66.1.82:4040/ws) -> HTTP 404`
+    - 代码证据：`rust/crates/debug-server/src/routes.rs` 仅 HTTP/SSE 路由，无 `/ws` 升级处理。
+  - 真机导航自动化截图本轮识别失败（UIA 文本定位不稳定），需要切回坐标/层级索引点击方案。
+    - 证据：`reports/android-mvp-logs/e2e-ui-navigation.log`
+
+- 下一步（唯一主线）
+  1) 在 `debug-server` 增加真实 `/ws` 升级与消息分发（mobile.handshake/mobile.subscribe/session.user_input）。
+  2) 复用当前 app 侧 WS 状态机，不改协议语义，只接入真实 daemon `/ws`。
+  3) 重跑真机 Tailscale E2E，强证据要求：`subscribed + healthy` 事件、配置文件落盘、页面截图、验证索引重写 PASS/FAIL。
+
+## 2026-05-16 Android/Tailscale 继续执行记录（第二轮）
+- 成功：
+  - Android Manifest 已补齐网络能力：
+    - `INTERNET` permission
+    - `usesCleartextTraffic=true`
+    - 文件：`android-client/app/src/main/AndroidManifest.xml`
+  - debug-server 已增加 `/ws` WebSocket 处理骨架并可从主机侧握手成功：
+    - `ws://100.66.1.82:4040/ws` 本机探测返回 `{"type":"handshake.ok"}`
+    - 文件：`rust/crates/debug-server/src/mobile_ws.rs`、`rust/crates/debug-server/src/lib.rs`、`rust/crates/debug-server/Cargo.toml`
+  - Android shell 已加“daemon profile 自动连接”触发（启动后自动 connectWs）。
+
+- 失败：
+  - 真机 App 侧连接事件仍是 `endpoint_unreachable`，未进入 `handshaking/subscribed/healthy`。
+    - 证据：`reports/android-mvp-logs/tailscale-connection-events.log` 最新行仍为 ws_error/endpoint_unreachable/ws_close。
+  - 当前无法从 daemon 侧观察到来自手机的 WebSocket 升级请求（web-debug 日志无 incoming upgrade 记录），说明链路仍未真实进到服务端 ws handler。
+
+- 新定位：
+  - 主机到自身 Tailscale 地址连通、主机侧 websockets 客户端直连 `/ws` 正常；
+  - 手机到主机 ICMP 可达；
+  - 但 App 内 WebView 发起到 `ws://100.66.1.82:4040/ws` 失败且 server 无请求日志，优先怀疑设备/ROM/WebView 网络策略或连接发起路径异常（而非服务端监听问题）。
+
+- 下一步：
+  1) 在 WebView 侧增加 `navigator.userAgent` 与 `window.location`、连接异常详情 `e.message` 的 bridge 落盘；
+  2) 在 daemon 侧增加原始 TCP 入站与请求首行日志，确认是否有包到达；
+  3) 若仍无入站，增加 Android 原生 `OkHttp WebSocket` 最小探针（同 endpoint）写入同一 connection-events.log，判定是 WebView 限制还是网络路径问题；
+  4) 判明后再回到 UI 主线，补齐真机 subscribed/healthy 证据。
+
+## 2026-05-16 Android/Tailscale 继续执行记录（第三轮）
+- 新增证据增强：
+  - Bridge 增加 `probeWs(endpoint)`（原生 Socket + ws upgrade 请求），并在前端 `connectWs()` 前记录 `probe=...`。
+  - 前端连接事件增加细粒度字段：`ws_open` / `ws_error detail` / `ws_close code reason`。
+  - 文件：
+    - `android-client/app/src/main/java/com/fin/client/bridge/MobileBridge.kt`
+    - `android-client/app/src/main/assets/mobile-shell.html`
+- 关键发现：
+  - 当 daemon 进程未运行时，probe 返回 connect timeout/abort，事件为 `endpoint_unreachable`（预期）。
+  - daemon 稳定运行后，设备 shell 网络测试可达：`adb shell nc -z -w 2 100.66.1.82 4040 -> exit=0`。
+  - 但 app 进程内 `probeWs` 仍失败（ECONNABORTED），且 daemon 侧没有看到来自手机的 ws 首行请求，说明问题不在应用层协议，而在设备应用网络路径/策略层。
+- 当前结论：
+  - 代码侧已提供可追踪错误与强诊断证据；
+  - 真机跨设备 ws 仍 FAIL， blocker 仍在设备环境策略（应用进程网络路径）而非 ws 协议实现。
+- 下一步：
+  1) 以原生 OkHttp WebSocket 再做同 endpoint 探针并写入 connection-events，确认是否 WebView 栈限制；
+  2) 如原生同样失败，则输出“设备策略 blocker”专项证据包并请用户侧开放 app 走 Tailscale VPN；
+  3) blocker 解除后重跑完整门禁 + 真机 E2E。
+
+## 2026-05-16 Android/Tailscale 继续执行记录（第五轮）
+- 新增诊断：
+  - 增加 app 进程内 HTTP 探针 `probeHttp(endpoint)`，并在 connect 前落盘 `probe_http=...`。
+  - 文件：
+    - `android-client/app/src/main/java/com/fin/client/bridge/MobileBridge.kt`
+    - `android-client/app/src/main/assets/mobile-shell.html`
+- 真机最新证据：
+  - `probe` 失败（socket connect timeout）
+  - `probe_http` 失败（ECONNABORTED）
+  - `probe_okhttp` 失败（connect failed after 3000ms）
+  - daemon 日志无任何来自设备的入站请求首行。
+- 结论：
+  - WebView / 原生 Socket / 原生 OkHttp 三路在 app 进程全部失败；
+  - 设备 shell 层网络可达不代表 app 进程路径可达；当前 blocker 明确为设备应用网络策略/路径。
+- 下一步：
+  1) 保持当前代码与证据包，等待设备侧放开 app 进程到 Tailscale 路径；
+  2) 放开后立即重跑真机 E2E，目标是 connection-events 中出现 `handshake=ok` + `state=subscribed` + `state=healthy`。
+
+
+## 2026-05-16 自动化 live gate 新增
+- 新增 `scripts/android-mvp/run_tailscale_live_e2e.py`，统一执行：daemon保障、安装启动、真机日志/截图采集、required-marker判定。
+- 当前判定：FAIL（status.json 已落盘）。
+- 证据：`reports/android-mvp-logs/tailscale-live-e2e-status.json`。
+
+## 2026-05-16 Completion audit artifact
+- Added `reports/android-mvp-completion-audit.md` with full requirement-to-evidence checklist and verdict: NOT ACHIEVED.
+- Live blocker remains app-process path to `100.66.1.82:4040`; `run_tailscale_live_e2e.py` still FAIL.
+
+## 2026-05-16 live e2e recheck
+- Re-ran `python3 scripts/android-mvp/run_tailscale_live_e2e.py`.
+- Result remains FAIL; required markers still missing.
+- Evidence: `reports/android-mvp-logs/tailscale-live-e2e-status.json`, `reports/android-mvp-logs/tailscale-connection-events.log`.
+
+## 2026-05-16 live unblock observer
+- Added `scripts/android-mvp/observe_live_unblock.py` and captured `reports/android-mvp-logs/live-unblock-observation.json`.
+- Reconfirmed differential: shell tcp can be ok while app markers remain missing; blocker unchanged.
+
+## 2026-05-16 receipt bundle
+- Added `scripts/android-mvp/build_receipt_bundle.sh` to package current truth artifacts into a single tarball.
+- Generated: `reports/android-mvp-receipt-bundle-20260516-085733.tgz`.
+- Purpose: handoff/review evidence bundle (validation, gate status, blocker logs, screenshots).
+
+## 2026-05-16 unblock runbook
+- Added `reports/android-mvp-next-actions.md` with exact recheck commands and PASS criteria for post-environment-unblock closeout.
+
+## 2026-05-16 full rerun snapshot
+- Re-ran preflight + live e2e + all gates + validation update.
+- Rebuilt receipt bundle with latest artifacts.
+- Current truth unchanged: live tailscale e2e fail, overall NOT ACHIEVED.
+
+## 2026-05-16 status board
+- Added `reports/android-mvp-status-board.md` as single-source status board for current pass/fail + blocker + rerun commands.
+
+## 2026-05-16 gate hardening
+- Updated `run_all_gates.py`: if preflight blocker != none, mark preflight gate as failed (code=2) to prevent false-green diagnostics.
+
+## 2026-05-16 post-hardening rerun
+- Re-ran preflight/live/all-gates after gate hardening.
+- Result unchanged: preflight blocker present + live e2e fail, overall NOT ACHIEVED.
+- Generated fresh receipt bundle for latest state.
+
+## 2026-05-16 full cycle wrapper
+- Added `scripts/android-mvp/full_cycle_recheck.sh` to force daemon up and run full verification chain + receipt bundle.
+- Latest cycle recheck still not achieved (see validation/all-gates/live-e2e status files).
+
+## 2026-05-16 objective checklist auto
+- Added `scripts/android-mvp/objective_checklist.py` to auto-check core objective deliverables against latest artifacts.
+- Generated `reports/android-mvp-objective-checklist.md` with current verdict: NOT ACHIEVED.
+
+## 2026-05-16T09:12:54.712129 android preflight refine
+- result blocker=webview_or_app_runtime_ws_path_issue
+- checks: host_tcp=ok, device_shell_tcp=ok, app_uid_shell_tcp=ok, app_probe_tail_has_healthy=fail
+- note: add app_uid_shell_tcp to split device shell path vs app uid path.
+
+## 2026-05-16T09:17:26.600269 android live ws diag
+- fail: run_tailscale_live_e2e FAIL, run_all_gates FAIL
+- evidence: reports/android-mvp-logs/tailscale-live-e2e-status.json, reports/android-mvp-logs/all-gates-status.json, adb logcat FinMobileBridge stack
+- key finding: host/device/app_uid tcp all ok; app ws handshake still timeout/ECONNABORTED => webview_or_app_runtime_ws_path_issue
+- success: preflight script now splits app_uid path; skill updated with 4-stage diagnose rule
+- next: adjust test device VPN/app-network policy for com.fin.client, then rerun full_cycle_recheck.sh
+
+## 2026-05-16T09:19:53.927292 android gate rerun
+- change: increase probe timeouts to 10s/12s in MobileBridge
+- verify: assembleDebug + build-and-publish PASS; run_tailscale_live_e2e FAIL; run_all_gates FAIL
+- evidence: reports/android-mvp-logs/all-gates-status.json, reports/android-mvp-logs/tailscale-live-e2e-status.json, adb logcat FinMobileBridge
+- finding: failure persisted with 10s timeout, still app_ws path timeout/ECONNABORTED
+- next: require device-side VPN/app policy fix for com.fin.client before green gates possible
+
+## 2026-05-16T09:21:57.387577 android no-proxy attempt
+- change: enforce Proxy.NO_PROXY for java socket and okhttp websocket/http probes
+- verify: assembleDebug PASS, build-and-publish PASS, run_tailscale_live_e2e FAIL, run_all_gates FAIL
+- evidence: reports/android-mvp-logs/all-gates-status.json, reports/android-mvp-logs/tailscale-live-e2e-status.json
+- finding: no-proxy did not recover live WS; blocker remains webview_or_app_runtime_ws_path_issue
+- next: device-side network/VPN policy remediation required before F1 live chain can pass
+
+## 2026-05-16T09:24:26.553151 preflight vpn-uid refinement
+- change: preflight now detects app uid via `cmd package list packages -U`, and adds tailscale vpn uid inclusion check
+- verify: app_uid=10145 detected; tailscale_vpn_uid_included=true; blocker returned to webview_or_app_runtime_ws_path_issue
+- evidence: reports/android-mvp-logs/preflight-network-diagnose.json
+- conclusion: not daemon/not tailscale per-app exclusion; still app runtime ws path failure
+
+## 2026-05-16T09:29:53.757847 final gate pass
+- change: defer bridge probe calls to async timer after WebSocket constructor to avoid blocking connection establishment
+- verify: run_tailscale_live_e2e PASS, run_all_gates PASS
+- evidence: reports/android-mvp-logs/all-gates-status.json, reports/android-mvp-logs/tailscale-live-e2e-status.json, reports/android-mvp-validation.md
+- deliverables: android-client/update-dist/fin-latest-debug.apk and latest.json present
+
+## 2026-05-16T10:44:42.051892 user-ui-simplify gate
+- change: removed debug-heavy user-invisible pages; rebuilt shell to user-centric chat/settings/sessions only
+- verify: assembleDebug PASS; build-and-publish PASS; tailscale_live_e2e PASS; run_all_gates FAIL
+- evidence: reports/android-mvp-logs/all-gates-status.json
+- action: inspect failed sub-gate and patch minimal user-visible-safe fixes
+
+## 2026-05-16T11:15:43.756174 turn-channel planning
+- added docs/android-turn-channel-plan.md
+- scope: normal/debug split, same turn subscription truth, non-coupled render
+- includes checklist + test matrix + evidence plan
+
+## 2026-05-16T11:20:14.409529 turn-channel impl test plan doc
+- added docs/android-turn-channel-implementation-test-plan.md
+- includes contract/impl/test/e2e/evidence/gates for normal+debug channels
+
+## turn-channel execution
+- contract: PASS
+- toggle: PASS
+- e2e: PASS
+- evidence paths: turn-channel-*.log + turn-*.png
+
+## 2026-05-16T11:30:07.405688 turn-channel objective audit
+- success: reran turn-channel scripts: contract/toggle/e2e all PASS with remote ws://100.66.1.82:4040/ws
+- evidence: reports/android-mvp-logs/turn-channel-contract.log, turn-channel-toggle.log, turn-channel-e2e.log
+- success: regenerated screenshots turn-normal/debug/error-debug
+- evidence: reports/android-mvp-screenshots/turn-normal.png, turn-debug.png, turn-error-debug.png
+- risk: current real E2E log shows 2 normal turns only; no proven real tool-call turn/error turn yet for E2/E3 strict gate
+- next: add/execute dedicated real prompts or runtime action that deterministically produces tool_execution_records non-empty and error_records non-empty, then append PASS evidence into validation index
+
+## 2026-05-16T11:53:01.715692 turn-channel e2e closeout
+- success: fixed mobile_ws tool_record_refs parse to tool_call_id extraction; tool_execution_records now non-empty in real e2e
+- success: real E2E log now covers E1/E2/E3/E4 PASS (including non-empty error_records by shell command failure case)
+- evidence: reports/android-mvp-logs/turn-channel-e2e.log, turn-channel-contract.log, turn-channel-toggle.log, turn-channel-unit.log
+- screenshots refreshed: reports/android-mvp-screenshots/turn-normal.png, turn-debug.png, turn-error-debug.png
+- doc updated: reports/android-mvp-validation.md turn channel section includes unit + E1-E4 pass
+- risk: top-level overall gate block in validation file still reflects historical capture_shell_screenshots fail and not part of turn-channel objective closeout
+
+## 2026-05-16T12:05:05.811262 continue-run device + ui verification
+- success: fixed screenshot script for new panel layout by using closePanel(...) eval and scroll_to debugToggle
+- evidence: scripts/android-mvp/capture_shell_screenshots.py, reports/android-mvp-screenshots/01-sessions.png, 02-conversation.png, 02-connection.png
+- success: reran real turn-channel e2e => E1/E2/E3/E4 all PASS
+- evidence: reports/android-mvp-logs/turn-channel-e2e.log
+- success: installed latest debug apk to adb device 100.127.23.27:1234 and captured device screenshot
+- evidence: reports/android-mvp-logs/adb-install-latest.log, reports/android-mvp-screenshots/device-latest-screen.png
