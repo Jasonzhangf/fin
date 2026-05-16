@@ -10,12 +10,14 @@ use std::{
     net::TcpListener,
     path::{Path, PathBuf},
     thread,
+    time::Duration,
 };
 use thiserror::Error;
 
 mod chat_api;
 mod event_stream;
 mod http;
+mod mobile_ws;
 mod routes;
 mod session_view;
 mod web_app;
@@ -306,7 +308,32 @@ pub fn serve_debug_mvp_with_handler(
             })?;
             let runtime_home = runtime_home.to_path_buf();
             scope.spawn(move || {
-                let _ = routes::handle_connection(&mut stream, &runtime_home, handler);
+                let mut probe = [0_u8; 2048];
+                let mut head = String::new();
+                for _ in 0..10 {
+                    if let Ok(n) = stream.peek(&mut probe)
+                        && n > 0
+                    {
+                        head = String::from_utf8_lossy(&probe[..n]).to_string();
+                        if head.contains("\r\n\r\n") {
+                            break;
+                        }
+                    }
+                    thread::sleep(Duration::from_millis(5));
+                }
+                let lower = head.to_ascii_lowercase();
+                let ws_upgrade = lower.starts_with("get /ws ")
+                    || (lower.starts_with("get / ") && lower.contains("upgrade: websocket"));
+                eprintln!(
+                    "incoming first_line='{}' ws_upgrade={}",
+                    lower.lines().next().unwrap_or(""),
+                    ws_upgrade
+                );
+                if ws_upgrade {
+                    let _ = mobile_ws::handle_mobile_ws(stream, &runtime_home, handler);
+                } else {
+                    let _ = routes::handle_connection(&mut stream, &runtime_home, handler);
+                }
             });
         }
 

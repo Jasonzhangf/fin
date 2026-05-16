@@ -171,7 +171,9 @@ impl CliDebugActionHandler {
             return Ok(response);
         }
         if let Some(action) = load_pending_routing_action(runtime_home, &existing_binding)? {
-            return Ok(prompt_user_choice_response(existing_binding, &action));
+            if request.input_kind.as_deref() != Some("mobile_user_input") {
+                return Ok(prompt_user_choice_response(existing_binding, &action));
+            }
         }
         let state = load_execution_state(runtime_home, &existing_binding)?;
         match classify_request(&request, state.as_ref()) {

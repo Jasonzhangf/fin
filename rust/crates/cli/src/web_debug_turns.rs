@@ -405,16 +405,10 @@ impl CliDebugActionHandler {
         if let Some(segment) = merge_segment {
             let _ = merge_segment_into_run(runtime_home, &binding, segment, &run)?;
         }
-        let answer = if run.routing_action.prompt_user {
-            let prompt = run
-                .routing_action
-                .prompt_text
-                .as_deref()
-                .unwrap_or("当前需要 framework routing 确认。输入 /formalize 或 /stay。");
-            format!("{}\n\n[Framework] {}", run.assistant_response_text, prompt)
-        } else {
-            run.assistant_response_text.clone()
-        };
+        // User-visible answer must remain model-visible output only.
+        // Framework routing decisions are passive runtime internals and should
+        // not inject extra framework-authored prompt text into conversation UI.
+        let answer = run.assistant_response_text.clone();
 
         Ok(ChatSendResponse {
             binding,

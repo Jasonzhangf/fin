@@ -14,3 +14,21 @@ coverage/
 .tmp/
 .fin/
 rust/crates/debug-server/webui/dist/
+
+# android generated artifacts
+android-client/.gradle/
+android-client/.kotlin/
+android-client/**/build/
+android-client/update-dist/*.apk
+android-client/update-dist/fin-latest-debug.apk
+android-client/update-dist/latest.json
+
+# mvp generated reports/artifacts
+reports/android-mvp-logs/
+reports/android-mvp-screenshots/
+reports/android-mvp-receipt-bundle/
+reports/android-mvp-receipt-bundle-*.tgz
+
+# local temp backups
+*.bak
+*.bak2
