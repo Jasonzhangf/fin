@@ -240,13 +240,13 @@ pub fn run_with_runtime_home(
                 report.target, report.session_id, report.status, report.receipt_path
             );
         }
-        Command::WebDebug { path, port } => {
+        Command::WebDebug { path, host, port } => {
             let user_toml = read_file(Path::new(&path))?;
             let system =
                 load_effective_system_config(&user_toml, runtime_home_override.as_deref())?;
             let runtime_home =
                 init_runtime_home(&user_toml, &system, runtime_home_override.as_deref())?;
-            let bind_addr = format!("127.0.0.1:{port}");
+            let bind_addr = format!("{host}:{port}");
             println!(
                 "web debug serving: http://{bind_addr} (runtime_home={})",
                 runtime_home.display()

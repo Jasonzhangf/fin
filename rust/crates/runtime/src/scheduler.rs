@@ -80,7 +80,7 @@ pub fn derive_scheduler_decision(
                     None,
                     format!("idle with {parallel_pending_count} parallel user inputs"),
                 )
-            } else if state.is_some_and(|value| value.resume_checkpoint_ready) {
+            } else if state.is_some_and(|value| value.resume_checkpoint_ready.unwrap_or(false)) {
                 (
                     "resume_checkpoint",
                     true,
@@ -177,7 +177,7 @@ mod tests {
                 active_turn_id: None,
                 active_step_id: None,
                 resume_from_step_id: None,
-                resume_checkpoint_ready: false,
+                resume_checkpoint_ready: Some(false),
                 resume_checkpoint_id: None,
                 pending_input_count: 2,
                 accepts_user_input: true,
@@ -243,7 +243,7 @@ mod tests {
                 active_turn_id: None,
                 active_step_id: None,
                 resume_from_step_id: None,
-                resume_checkpoint_ready: false,
+                resume_checkpoint_ready: Some(false),
                 resume_checkpoint_id: None,
                 pending_input_count: 1,
                 accepts_user_input: true,
@@ -296,7 +296,7 @@ mod tests {
                 active_turn_id: Some("turn-op-1".into()),
                 active_step_id: Some("step-op-1-04-tool_dispatch".into()),
                 resume_from_step_id: Some("step-op-1-04-tool_dispatch".into()),
-                resume_checkpoint_ready: true,
+                resume_checkpoint_ready: Some(true),
                 resume_checkpoint_id: Some("checkpoint-op-1-r02".into()),
                 pending_input_count: 2,
                 accepts_user_input: true,
@@ -346,7 +346,7 @@ mod tests {
                 active_turn_id: Some("turn-op-2".into()),
                 active_step_id: Some("step-op-2-05-finalize".into()),
                 resume_from_step_id: Some("step-op-2-05-finalize".into()),
-                resume_checkpoint_ready: true,
+                resume_checkpoint_ready: Some(true),
                 resume_checkpoint_id: Some("checkpoint-op-2-r02".into()),
                 pending_input_count: 1,
                 accepts_user_input: true,
@@ -383,7 +383,7 @@ mod tests {
                 active_turn_id: None,
                 active_step_id: None,
                 resume_from_step_id: None,
-                resume_checkpoint_ready: false,
+                resume_checkpoint_ready: Some(false),
                 resume_checkpoint_id: None,
                 pending_input_count: 0,
                 accepts_user_input: true,

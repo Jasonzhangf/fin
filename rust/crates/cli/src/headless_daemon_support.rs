@@ -275,7 +275,7 @@ fn session_has_work(session_dir: &Path) -> Result<bool, CliError> {
     )?;
     if state
         .as_ref()
-        .is_some_and(|value| value.status != "idle" || value.resume_checkpoint_ready)
+        .is_some_and(|value| value.status != "idle" || value.resume_checkpoint_ready.unwrap_or(false))
     {
         return Ok(true);
     }

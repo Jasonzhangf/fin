@@ -27,7 +27,7 @@ pub fn running_state(
         active_turn_id: Some(format!("turn-{operation_id}")),
         active_step_id: Some(format!("step-{operation_id}-01-context_build")),
         resume_from_step_id: Some(format!("step-{operation_id}-01-context_build")),
-        resume_checkpoint_ready: false,
+        resume_checkpoint_ready: Some(false),
         resume_checkpoint_id: None,
         pending_input_count,
         accepts_user_input: false,
@@ -58,7 +58,7 @@ pub fn state_after_run(run: &ClosureRun, pending_input_count: usize) -> Executio
         active_turn_id: Some(run.turn_record.turn_id.clone()),
         active_step_id: last_step_id.clone(),
         resume_from_step_id,
-        resume_checkpoint_ready: run.resume_checkpoint.is_some(),
+        resume_checkpoint_ready: Some(run.resume_checkpoint.is_some()),
         resume_checkpoint_id: run
             .resume_checkpoint
             .as_ref()
@@ -96,7 +96,7 @@ pub fn failed_state(
         active_turn_id: Some(format!("turn-{operation_id}")),
         active_step_id: None,
         resume_from_step_id: None,
-        resume_checkpoint_ready: false,
+        resume_checkpoint_ready: Some(false),
         resume_checkpoint_id: None,
         pending_input_count,
         accepts_user_input: true,
@@ -133,7 +133,7 @@ pub fn paused_state(
         active_turn_id: turn_id,
         active_step_id: step_id.clone(),
         resume_from_step_id: step_id,
-        resume_checkpoint_ready: checkpoint.resume_checkpoint_id.is_some(),
+        resume_checkpoint_ready: Some(checkpoint.resume_checkpoint_id.is_some()),
         resume_checkpoint_id: checkpoint.resume_checkpoint_id.clone(),
         pending_input_count,
         accepts_user_input: false,
@@ -157,8 +157,8 @@ pub fn resumed_state(
         active_turn_id: checkpoint.and_then(|value| value.turn_id.clone()),
         active_step_id: checkpoint.and_then(|value| value.active_step_id.clone()),
         resume_from_step_id: checkpoint.and_then(|value| value.resume_from_step_id.clone()),
-        resume_checkpoint_ready: checkpoint
-            .is_some_and(|value| value.resume_checkpoint_id.is_some()),
+        resume_checkpoint_ready: Some(checkpoint
+            .is_some_and(|value| value.resume_checkpoint_id.is_some())),
         resume_checkpoint_id: checkpoint.and_then(|value| value.resume_checkpoint_id.clone()),
         pending_input_count,
         accepts_user_input: true,

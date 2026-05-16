@@ -142,7 +142,43 @@ fn parse_command_accepts_web_debug_default_port() {
         parse_command(&args).expect("command should parse"),
         Command::WebDebug {
             path: "/tmp/user.toml".into(),
+            host: "127.0.0.1".into(),
             port: 4040,
+        }
+    );
+}
+
+#[test]
+fn parse_command_accepts_web_debug_with_host() {
+    let args = vec![
+        "web-debug".into(),
+        "/tmp/user.toml".into(),
+        "0.0.0.0".into(),
+    ];
+    assert_eq!(
+        parse_command(&args).expect("command should parse"),
+        Command::WebDebug {
+            path: "/tmp/user.toml".into(),
+            host: "0.0.0.0".into(),
+            port: 4040,
+        }
+    );
+}
+
+#[test]
+fn parse_command_accepts_web_debug_with_host_and_port() {
+    let args = vec![
+        "web-debug".into(),
+        "/tmp/user.toml".into(),
+        "0.0.0.0".into(),
+        "5050".into(),
+    ];
+    assert_eq!(
+        parse_command(&args).expect("command should parse"),
+        Command::WebDebug {
+            path: "/tmp/user.toml".into(),
+            host: "0.0.0.0".into(),
+            port: 5050,
         }
     );
 }

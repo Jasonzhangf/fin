@@ -389,7 +389,7 @@ pub struct ExecutionStateRecord {
     #[serde(default)]
     pub resume_from_step_id: Option<String>,
     #[serde(default)]
-    pub resume_checkpoint_ready: bool,
+    pub resume_checkpoint_ready: Option<bool>,
     #[serde(default)]
     pub resume_checkpoint_id: Option<String>,
     pub pending_input_count: usize,

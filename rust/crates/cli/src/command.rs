@@ -37,6 +37,7 @@ pub(crate) enum Command {
     },
     WebDebug {
         path: String,
+        host: String,
         port: u16,
     },
     ProviderLiveSmoke {
@@ -112,10 +113,27 @@ pub(crate) fn parse_command(args: &[String]) -> Result<Command, CliError> {
         }
         [cmd, path] if cmd == "web-debug" => Ok(Command::WebDebug {
             path: path.clone(),
+            host: "127.0.0.1".into(),
             port: 4040,
         }),
-        [cmd, path, port] if cmd == "web-debug" => Ok(Command::WebDebug {
+        [cmd, path, host_or_port] if cmd == "web-debug" => {
+            if let Ok(port) = host_or_port.parse::<u16>() {
+                Ok(Command::WebDebug {
+                    path: path.clone(),
+                    host: "127.0.0.1".into(),
+                    port,
+                })
+            } else {
+                Ok(Command::WebDebug {
+                    path: path.clone(),
+                    host: host_or_port.clone(),
+                    port: 4040,
+                })
+            }
+        }
+        [cmd, path, host, port] if cmd == "web-debug" => Ok(Command::WebDebug {
             path: path.clone(),
+            host: host.clone(),
             port: port
                 .parse::<u16>()
                 .map_err(|_| CliError::InvalidPort(port.clone()))?,

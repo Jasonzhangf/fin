@@ -1,5 +1,5 @@
 use crate::{
-    config::map_system_config,
+    config::{map_system_config, load_effective_system_config},
     fs_utils::write_file,
     headless_daemon::{run_headless_daemon_with_provider, stop_headless_daemon},
     runtime_home::ensure_runtime_home_layout,
