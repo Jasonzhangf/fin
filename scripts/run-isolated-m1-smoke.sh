@@ -28,7 +28,7 @@ echo "  user_toml=${user_toml}"
 echo "  runtime_home=${runtime_home}"
 
 cargo run -p fin-cli --manifest-path rust/Cargo.toml -- config-check "${user_toml}"
-cargo run -p fin-cli --manifest-path rust/Cargo.toml -- runtime-demo "${user_toml}" "isolated smoke ${run_id}"
+cargo run -p fin-cli --manifest-path rust/Cargo.toml -- runtime-session "${user_toml}" "isolated smoke ${run_id}"
 cargo run -p fin-cli --manifest-path rust/Cargo.toml -- debug-projection "${user_toml}" "isolated smoke ${run_id}"
 
 echo "[fin] smoke artifacts written under ${run_root}"

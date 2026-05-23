@@ -7,7 +7,11 @@ use crate::{
     web_debug::CliDebugActionHandler,
 };
 use fin_config::SystemConfig;
-use fin_debug_server::{ChatSendResponse, DebugBinding};
+use fin_debug_server::{
+    ChatSendResponse, DebugBinding,
+    agent_rpc::{AgentRpcConfig, serve_agent_rpc},
+    serve_debug_mvp_with_owned_handler,
+};
 use fin_provider::InferenceProvider;
 use headless_daemon_support::{
     HeadlessCycleSummary, HeadlessDaemonLeaseRecord, HeadlessDaemonPaths, ManagedSession,
@@ -162,6 +166,8 @@ pub(crate) fn run_headless_daemon_with_provider(
         .unwrap_or(usize::MAX);
     let started_at = crate::time::local_timestamp_now();
     let handler = CliDebugActionHandler::new(user_toml.to_string(), system.clone())?;
+    let _control_plane = start_daemon_control_plane(&runtime_home, handler.clone())?;
+    let _agent_rpc = start_agent_rpc_if_enabled(&runtime_home, system)?;
     let _ = ensure_entry_agent_presence(system, &runtime_home, &started_at)?;
     let mut cycles_completed = 0usize;
     let mut processed_sessions = 0usize;
@@ -274,6 +280,103 @@ pub(crate) fn run_headless_daemon_with_provider(
         drove_count,
         runtime_home,
     })
+}
+
+fn start_agent_rpc_if_enabled(
+    runtime_home: &Path,
+    system: &SystemConfig,
+) -> Result<Option<std::thread::JoinHandle<()>>, CliError> {
+    let network = &system.runtime.agent_network;
+    if !network.enabled {
+        return Ok(None);
+    }
+    let bearer_token = resolve_agent_rpc_bearer_token(system)?;
+    let runtime_home = runtime_home.to_path_buf();
+    let config = AgentRpcConfig {
+        bind_addr: network.bind_addr.clone(),
+        bearer_token,
+        lease_ttl_ms: network.lease_ttl_ms,
+        heartbeat_ttl_ms: network.heartbeat_ttl_ms,
+    };
+    thread::Builder::new()
+        .name("fin-agent-rpc".into())
+        .spawn(move || {
+            if let Err(err) = serve_agent_rpc(runtime_home, config) {
+                eprintln!("agent rpc stopped: {err}");
+            }
+        })
+        .map(Some)
+        .map_err(|source| CliError::ReadFile {
+            path: "spawn agent rpc".into(),
+            source,
+        })
+}
+
+fn resolve_agent_rpc_bearer_token(system: &SystemConfig) -> Result<String, CliError> {
+    let auth = &system.runtime.agent_network.auth;
+    if let Some(env_var) = &auth.token_env {
+        let token = std::env::var(env_var).map_err(|_| {
+            CliError::InvalidInstallState(format!(
+                "runtime.agent_network.auth.token_env '{}' is not set",
+                env_var
+            ))
+        })?;
+        if token.trim().is_empty() {
+            return Err(CliError::InvalidInstallState(format!(
+                "runtime.agent_network.auth.token_env '{}' is empty",
+                env_var
+            )));
+        }
+        return Ok(token);
+    }
+    if let Some(token_file) = &auth.token_file {
+        let token = fs::read_to_string(token_file).map_err(|source| CliError::ReadFile {
+            path: token_file.clone(),
+            source,
+        })?;
+        if token.trim().is_empty() {
+            return Err(CliError::InvalidInstallState(format!(
+                "runtime.agent_network.auth.token_file '{}' is empty",
+                token_file
+            )));
+        }
+        return Ok(token.trim().to_string());
+    }
+    Err(CliError::InvalidInstallState(
+        "runtime.agent_network.enabled requires auth.token_env or auth.token_file".into(),
+    ))
+}
+
+fn start_daemon_control_plane(
+    runtime_home: &Path,
+    handler: CliDebugActionHandler,
+) -> Result<std::thread::JoinHandle<()>, CliError> {
+    let bind_addr = daemon_control_plane_bind_addr();
+    let listener =
+        std::net::TcpListener::bind(bind_addr.as_str()).map_err(|source| CliError::ReadFile {
+            path: format!("bind daemon control plane {bind_addr}"),
+            source,
+        })?;
+    let runtime_home = runtime_home.to_path_buf();
+    thread::Builder::new()
+        .name("fin-daemon-control-plane".into())
+        .spawn(move || {
+            if let Err(err) = serve_debug_mvp_with_owned_handler(runtime_home, listener, handler) {
+                eprintln!("daemon control plane stopped: {err}");
+            }
+        })
+        .map_err(|source| CliError::ReadFile {
+            path: "spawn daemon control plane".into(),
+            source,
+        })
+}
+
+fn daemon_control_plane_bind_addr() -> String {
+    std::env::var("FIN_DAEMON_CONTROL_PLANE_BIND")
+        .ok()
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
+        .unwrap_or_else(|| "0.0.0.0:4040".into())
 }
 
 fn run_headless_cycle(

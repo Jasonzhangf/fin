@@ -5,7 +5,9 @@ use crate::{
 };
 use fin_config::{ProjectAgentMode, ProjectAgentStartupConfig, SystemConfig};
 use serde::{Deserialize, Serialize};
-use std::{fs, path::Path};
+use std::{fs, net::TcpListener, path::Path};
+
+const DYNAMIC_PROJECT_AGENTS_PATH: &str = "runtime/agents/project_agents.json";
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub(crate) struct StartupTopologySnapshot {
@@ -64,7 +66,8 @@ pub(crate) fn materialize_startup_topology(
     let scan = scan_project_tasks(runtime_home)?;
     let _ = ensure_system_worker_pool(system, runtime_home, updated_at)?;
 
-    for project in &system.runtime.startup.project_agents {
+    let project_agents = effective_project_agents(runtime_home, system)?;
+    for project in &project_agents {
         let presence = ensure_project_agent_presence(system, runtime_home, project, updated_at)?;
         let project_scan = scan
             .iter()
@@ -116,6 +119,123 @@ pub(crate) fn materialize_startup_topology(
     };
     persist_snapshot(runtime_home, &snapshot)?;
     Ok(snapshot)
+}
+
+pub(crate) fn effective_project_agents(
+    runtime_home: &Path,
+    system: &SystemConfig,
+) -> Result<Vec<ProjectAgentStartupConfig>, CliError> {
+    let mut projects = system.runtime.startup.project_agents.clone();
+    let dynamic = read_dynamic_project_agents(runtime_home)?;
+    for project in dynamic {
+        if let Some(existing) = projects
+            .iter_mut()
+            .find(|item| item.project_id == project.project_id)
+        {
+            *existing = project;
+        } else {
+            projects.push(project);
+        }
+    }
+    projects.sort_by(|left, right| left.project_id.cmp(&right.project_id));
+    Ok(projects)
+}
+
+pub(crate) fn read_dynamic_project_agents(
+    runtime_home: &Path,
+) -> Result<Vec<ProjectAgentStartupConfig>, CliError> {
+    let path = runtime_home.join(DYNAMIC_PROJECT_AGENTS_PATH);
+    let Some(projects) = read_json_optional::<Vec<ProjectAgentStartupConfig>>(&path)? else {
+        return Ok(Vec::new());
+    };
+    for project in &projects {
+        project
+            .validate()
+            .map_err(|err| CliError::InvalidInstallState(err.to_string()))?;
+    }
+    Ok(projects)
+}
+
+pub(crate) fn persist_dynamic_project_agents(
+    runtime_home: &Path,
+    projects: &[ProjectAgentStartupConfig],
+) -> Result<(), CliError> {
+    let mut projects = projects.to_vec();
+    for project in &projects {
+        project
+            .validate()
+            .map_err(|err| CliError::InvalidInstallState(err.to_string()))?;
+    }
+    projects.sort_by(|left, right| left.project_id.cmp(&right.project_id));
+    write_json(&runtime_home.join(DYNAMIC_PROJECT_AGENTS_PATH), &projects)
+}
+
+pub(crate) fn upsert_dynamic_project_agent(
+    runtime_home: &Path,
+    project: ProjectAgentStartupConfig,
+) -> Result<Vec<ProjectAgentStartupConfig>, CliError> {
+    project
+        .validate()
+        .map_err(|err| CliError::InvalidInstallState(err.to_string()))?;
+    let mut projects = read_dynamic_project_agents(runtime_home)?;
+    projects.retain(|item| item.project_id != project.project_id);
+    projects.push(project);
+    persist_dynamic_project_agents(runtime_home, &projects)?;
+    Ok(projects)
+}
+
+pub(crate) fn remove_dynamic_project_agent(
+    runtime_home: &Path,
+    project_id: &str,
+) -> Result<Vec<ProjectAgentStartupConfig>, CliError> {
+    let mut projects = read_dynamic_project_agents(runtime_home)?;
+    projects.retain(|item| item.project_id != project_id);
+    persist_dynamic_project_agents(runtime_home, &projects)?;
+    Ok(projects)
+}
+
+pub(crate) fn configure_local_project_agent(
+    runtime_home: &Path,
+    project_id: &str,
+    project_root: &str,
+    agent_name: Option<String>,
+) -> Result<ProjectAgentStartupConfig, CliError> {
+    let existing = read_dynamic_project_agents(runtime_home)?
+        .into_iter()
+        .find(|project| project.project_id == project_id);
+    let endpoint = match existing
+        .as_ref()
+        .and_then(|project| project.endpoint.clone())
+    {
+        Some(endpoint) => endpoint,
+        None => allocate_local_project_endpoint()?,
+    };
+    let project = ProjectAgentStartupConfig {
+        project_id: project_id.into(),
+        mode: ProjectAgentMode::Local,
+        project_root: Some(project_root.into()),
+        endpoint: Some(endpoint),
+        agent_name,
+        worker_budget: existing
+            .as_ref()
+            .map(|project| project.worker_budget)
+            .unwrap_or(1),
+        always_on: true,
+        auto_resume: true,
+        auto_connect: true,
+    };
+    upsert_dynamic_project_agent(runtime_home, project.clone())?;
+    Ok(project)
+}
+
+fn allocate_local_project_endpoint() -> Result<String, CliError> {
+    let listener = TcpListener::bind("127.0.0.1:0").map_err(|error| {
+        CliError::InvalidInstallState(format!("failed to allocate project agent port: {error}"))
+    })?;
+    let port = listener.local_addr().map_err(|error| {
+        CliError::InvalidInstallState(format!("failed to read project agent port: {error}"))
+    })?;
+    Ok(format!("http://127.0.0.1:{}", port.port()))
 }
 
 pub(crate) fn render_project_registry_summary(runtime_home: &Path) -> Result<String, CliError> {
@@ -345,6 +465,98 @@ mod tests {
                 .filter(|item| item["agent_kind"] == "project_worker")
                 .count(),
             2
+        );
+    }
+
+    #[test]
+    fn dynamic_project_agents_are_persisted_merged_and_removed() {
+        let home = temp_home("dynamic-projects");
+        let mut dynamic = ProjectAgentStartupConfig {
+            project_id: "alpha".into(),
+            mode: ProjectAgentMode::Local,
+            project_root: Some("/tmp/alpha".into()),
+            endpoint: None,
+            agent_name: Some("alpha-agent".into()),
+            worker_budget: 1,
+            always_on: true,
+            auto_resume: true,
+            auto_connect: true,
+        };
+        upsert_dynamic_project_agent(&home, dynamic.clone()).expect("upsert alpha");
+
+        let projects = effective_project_agents(&home, &system()).expect("effective projects");
+        assert!(projects.iter().any(|project| project.project_id == "fin"));
+        assert!(projects.iter().any(|project| project.project_id == "alpha"));
+
+        dynamic.worker_budget = 3;
+        upsert_dynamic_project_agent(&home, dynamic).expect("update alpha");
+        let projects = read_dynamic_project_agents(&home).expect("dynamic projects");
+        assert_eq!(projects.len(), 1);
+        assert_eq!(projects[0].worker_budget, 3);
+
+        remove_dynamic_project_agent(&home, "alpha").expect("remove alpha");
+        assert!(
+            read_dynamic_project_agents(&home)
+                .expect("dynamic projects")
+                .is_empty()
+        );
+    }
+
+    #[test]
+    fn materialize_uses_dynamic_project_agent_config() {
+        let home = temp_home("dynamic-materialize");
+        upsert_dynamic_project_agent(
+            &home,
+            ProjectAgentStartupConfig {
+                project_id: "alpha".into(),
+                mode: ProjectAgentMode::Local,
+                project_root: Some("/tmp/alpha".into()),
+                endpoint: None,
+                agent_name: Some("alpha-agent".into()),
+                worker_budget: 1,
+                always_on: true,
+                auto_resume: true,
+                auto_connect: true,
+            },
+        )
+        .expect("upsert alpha");
+
+        let snapshot = materialize_startup_topology(&home, &system(), "2026-05-23T12:00:00+08:00")
+            .expect("snapshot");
+        assert!(
+            snapshot
+                .projects
+                .iter()
+                .any(|project| project.project_id == "alpha")
+        );
+        assert!(
+            snapshot
+                .wake_queue
+                .iter()
+                .any(|wake| wake.project_id == "alpha")
+        );
+        assert!(home.join("runtime/agents/project_agents.json").exists());
+    }
+
+    #[test]
+    fn configure_local_project_agent_allocates_and_preserves_endpoint() {
+        let home = temp_home("dynamic-port");
+        let first =
+            configure_local_project_agent(&home, "alpha", "/tmp/alpha", Some("alpha-agent".into()))
+                .expect("configure alpha");
+        let endpoint = first.endpoint.clone().expect("endpoint");
+        assert!(endpoint.starts_with("http://127.0.0.1:"));
+
+        let second = configure_local_project_agent(&home, "alpha", "/tmp/alpha-renamed", None)
+            .expect("configure alpha again");
+        assert_eq!(second.endpoint, Some(endpoint.clone()));
+
+        let projects = read_dynamic_project_agents(&home).expect("dynamic projects");
+        assert_eq!(projects.len(), 1);
+        assert_eq!(projects[0].endpoint.as_deref(), Some(endpoint.as_str()));
+        assert_eq!(
+            projects[0].project_root.as_deref(),
+            Some("/tmp/alpha-renamed")
         );
     }
 }

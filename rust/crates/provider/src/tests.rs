@@ -59,6 +59,7 @@ fn client_prepares_request_from_descriptor() {
         input: "hello".into(),
         rendered_input: None,
         override_model: None,
+        prompt_cache_key: None,
     });
 
     assert_eq!(client.protocol(), ProviderProtocol::OpenAiCompatible);
@@ -91,6 +92,7 @@ fn anthropic_descriptor_prepares_messages_endpoint() {
         input: "hello".into(),
         rendered_input: None,
         override_model: None,
+        prompt_cache_key: None,
     });
     assert_eq!(
         prepared.endpoint,
@@ -206,6 +208,7 @@ fn anthropic_execute_retries_retryable_request_failures() {
         input: "hello".into(),
         rendered_input: Some("hello".into()),
         override_model: None,
+        prompt_cache_key: None,
     });
 
     let response = facade
@@ -256,6 +259,7 @@ fn anthropic_execute_uses_larger_output_budget() {
         input: "hello".into(),
         rendered_input: Some("hello".into()),
         override_model: None,
+        prompt_cache_key: None,
     });
 
     let response = facade
@@ -305,6 +309,7 @@ fn anthropic_execute_does_not_retry_http_status_errors() {
         input: "hello".into(),
         rendered_input: Some("hello".into()),
         override_model: None,
+        prompt_cache_key: None,
     });
 
     let err = facade
@@ -319,4 +324,57 @@ fn anthropic_execute_does_not_retry_http_status_errors() {
     }
     assert_eq!(attempts.load(Ordering::SeqCst), 1);
     server.join().expect("server thread");
+}
+
+#[test]
+fn prepare_request_preserves_prompt_cache_key() {
+    let descriptor = ProviderDescriptor::from_resolved(&openai_config());
+    let client = StaticProviderClient::new(descriptor);
+    let prepared = client.prepare_request(&ProviderRequest {
+        input: "hello".into(),
+        rendered_input: Some("rendered hello".into()),
+        override_model: None,
+        prompt_cache_key: Some("session-cache-key".into()),
+    });
+
+    assert_eq!(
+        prepared.prompt_cache_key.as_deref(),
+        Some("session-cache-key")
+    );
+    assert_eq!(prepared.rendered_input, "rendered hello");
+}
+
+#[test]
+fn anthropic_response_parses_usage_and_cached_tokens() {
+    let prepared = PreparedRequest {
+        provider_name: "anthropic".into(),
+        protocol: ProviderProtocol::AnthropicWire,
+        endpoint: "http://example.test/v1/messages".into(),
+        model: "claude-test".into(),
+        input: "hello".into(),
+        rendered_input: "hello".into(),
+        prompt_cache_key: Some("thread-1".into()),
+        user_agent: None,
+        sanitized_headers: BTreeMap::new(),
+    };
+    let body = r#"{
+        "id":"msg-usage",
+        "content":[{"type":"text","text":"OK"}],
+        "stop_reason":"end_turn",
+        "usage":{
+            "input_tokens":100,
+            "output_tokens":25,
+            "cache_read_input_tokens":60,
+            "completion_tokens_details":{"reasoning_tokens":7}
+        }
+    }"#;
+
+    let response = parse_anthropic_response(&prepared, 200, body).expect("parse response");
+    let usage = response.usage.expect("usage parsed");
+    assert_eq!(usage.prompt_tokens, Some(100));
+    assert_eq!(usage.completion_tokens, Some(25));
+    assert_eq!(usage.total_tokens, Some(125));
+    assert_eq!(usage.cached_tokens, Some(60));
+    assert_eq!(usage.reasoning_tokens, Some(7));
+    assert_eq!(usage.usage_source, "provider_anthropic");
 }

@@ -1,15 +1,16 @@
 use crate::{
     command::{Command, parse_command},
     config::{load_system_config, map_system_config},
-    session_run::{build_session_identity, run_session, sanitize_id_fragment},
     runtime_home::{
-        SessionMessageRecord, ensure_runtime_home_layout, persist_runtime_session, read_last_run_value,
+        SessionMessageRecord, ensure_runtime_home_layout, persist_runtime_session,
+        read_last_run_value,
     },
+    session_run::{build_session_identity, run_session, sanitize_id_fragment},
     transcript::{TranscriptScenario, TranscriptTurn, run_transcript_session},
     versioning::resolve_build_version,
 };
-use fin_config::SystemConfig;
 use chrono::{Datelike, Local};
+use fin_config::SystemConfig;
 use fin_contracts::{ContextSnapshotRecord, ControlFeedback, DigestRecord};
 #[cfg(test)]
 use fin_provider::StructuredStaticProviderClient;
@@ -142,7 +143,7 @@ fn parse_command_accepts_web_debug_default_port() {
         parse_command(&args).expect("command should parse"),
         Command::WebDebug {
             path: "/tmp/user.toml".into(),
-            host: "127.0.0.1".into(),
+            host: "0.0.0.0".into(),
             port: 4040,
         }
     );
@@ -224,6 +225,59 @@ fn parse_command_accepts_qqbot_live_receipt() {
             path: "/tmp/user.toml".into(),
             target: "qqbot:c2c:user-1".into(),
             run_id: None,
+        }
+    );
+}
+
+#[test]
+fn parse_command_accepts_project_agent_add() {
+    let args = vec![
+        "project-agent".into(),
+        "/tmp/user.toml".into(),
+        "add".into(),
+        "fin".into(),
+        "/tmp/fin".into(),
+        "builder".into(),
+    ];
+    assert_eq!(
+        parse_command(&args).expect("command should parse"),
+        Command::ProjectAgentAdd {
+            path: "/tmp/user.toml".into(),
+            project_id: "fin".into(),
+            project_root: "/tmp/fin".into(),
+            agent_name: Some("builder".into()),
+        }
+    );
+}
+
+#[test]
+fn parse_command_accepts_project_agent_remove() {
+    let args = vec![
+        "project-agent".into(),
+        "/tmp/user.toml".into(),
+        "remove".into(),
+        "fin".into(),
+    ];
+    assert_eq!(
+        parse_command(&args).expect("command should parse"),
+        Command::ProjectAgentRemove {
+            path: "/tmp/user.toml".into(),
+            project_id: "fin".into(),
+        }
+    );
+}
+
+#[test]
+fn parse_command_accepts_project_agent_list() {
+    let args = vec![
+        "project-agent".into(),
+        "/tmp/user.toml".into(),
+        "list".into(),
+    ];
+    assert_eq!(
+        parse_command(&args).expect("command should parse"),
+        Command::ProjectAgentList {
+            path: "/tmp/user.toml".into(),
         }
     );
 }
@@ -316,12 +370,16 @@ fn load_system_config_maps_user_config() {
 #[test]
 fn runtime_session_persists_home_artifacts() {
     let now = Local::now();
-    let session_prefix = format!("sessions/{:04}/{:02}/session-cli-session", now.year(), now.month());
+    let session_prefix = format!(
+        "sessions/{:04}/{:02}/session-cli-session",
+        now.year(),
+        now.month()
+    );
     let user_toml = sample_user_toml();
     let system = sample_system_config();
     let home = temp_runtime_home();
-    let run =
-        run_session(&system, &static_provider(&system), "hello").expect("runtime session should run");
+    let run = run_session(&system, &static_provider(&system), "hello")
+        .expect("runtime session should run");
     persist_runtime_session(&user_toml, &system, &run, Some(home.as_path()))
         .expect("artifacts should persist");
 
@@ -333,19 +391,58 @@ fn runtime_session_persists_home_artifacts() {
     assert!(system_template.contains("default_role = \"project\""));
     let relative_paths: Vec<String> = vec![
         "runtime/projections/current_projection.json".to_string(),
-        format!("{session_prefix}/events/stream.jsonl", session_prefix=session_prefix),
-        format!("{session_prefix}/conversation/messages.json", session_prefix=session_prefix),
-        format!("{session_prefix}/digests/recent_digests.json", session_prefix=session_prefix),
-        format!("{session_prefix}/control/latest.json", session_prefix=session_prefix),
-        format!("{session_prefix}/reasoning/latest.json", session_prefix=session_prefix),
-        format!("{session_prefix}/tools/latest.json", session_prefix=session_prefix),
-        format!("{session_prefix}/provider/latest_requests.json", session_prefix=session_prefix),
-        format!("{session_prefix}/provider/latest_responses.json", session_prefix=session_prefix),
-        format!("{session_prefix}/rounds/latest.json", session_prefix=session_prefix),
-        format!("{session_prefix}/steps/latest.json", session_prefix=session_prefix),
-        format!("{session_prefix}/turns/latest.json", session_prefix=session_prefix),
-        format!("{session_prefix}/tasks/routing/latest.json", session_prefix=session_prefix),
-        format!("{session_prefix}/closures/latest.json", session_prefix=session_prefix),
+        format!(
+            "{session_prefix}/events/stream.jsonl",
+            session_prefix = session_prefix
+        ),
+        format!(
+            "{session_prefix}/conversation/messages.json",
+            session_prefix = session_prefix
+        ),
+        format!(
+            "{session_prefix}/digests/recent_digests.json",
+            session_prefix = session_prefix
+        ),
+        format!(
+            "{session_prefix}/control/latest.json",
+            session_prefix = session_prefix
+        ),
+        format!(
+            "{session_prefix}/reasoning/latest.json",
+            session_prefix = session_prefix
+        ),
+        format!(
+            "{session_prefix}/tools/latest.json",
+            session_prefix = session_prefix
+        ),
+        format!(
+            "{session_prefix}/provider/latest_requests.json",
+            session_prefix = session_prefix
+        ),
+        format!(
+            "{session_prefix}/provider/latest_responses.json",
+            session_prefix = session_prefix
+        ),
+        format!(
+            "{session_prefix}/rounds/latest.json",
+            session_prefix = session_prefix
+        ),
+        format!(
+            "{session_prefix}/steps/latest.json",
+            session_prefix = session_prefix
+        ),
+        format!(
+            "{session_prefix}/turns/latest.json",
+            session_prefix = session_prefix
+        ),
+        format!(
+            "{session_prefix}/tasks/routing/latest.json",
+            session_prefix = session_prefix
+        ),
+        format!(
+            "{session_prefix}/closures/latest.json",
+            session_prefix = session_prefix
+        ),
         "runtime/current/current_control_feedback.json".to_string(),
         "runtime/current/current_reasoning_view.json".to_string(),
         "runtime/current/current_provider_requests.json".to_string(),
@@ -411,8 +508,8 @@ fn debug_projection_command_runs() {
     let user_toml = sample_user_toml();
     let system = sample_system_config();
     let home = temp_runtime_home();
-    let run =
-        run_session(&system, &static_provider(&system), "hello").expect("debug projection should run");
+    let run = run_session(&system, &static_provider(&system), "hello")
+        .expect("debug projection should run");
     persist_runtime_session(&user_toml, &system, &run, Some(home.as_path()))
         .expect("artifacts should persist");
     assert!(

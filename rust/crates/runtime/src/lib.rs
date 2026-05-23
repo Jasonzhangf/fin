@@ -13,13 +13,20 @@ use thiserror::Error;
 mod activity_cards;
 #[cfg(test)]
 mod activity_cards_tests;
+mod agent_control;
+#[cfg(test)]
+mod agent_control_tests;
 mod agent_naming;
 #[cfg(test)]
 mod assembler_tests;
 mod assignment_queue;
 mod closure_runtime;
+mod context_assembly_plan;
+mod context_baseline;
 mod context_block_render;
 mod context_blocks;
+mod context_budget;
+mod context_compaction;
 mod context_project_support;
 mod context_view;
 #[cfg(test)]
@@ -53,8 +60,8 @@ mod routing_actions;
 mod scheduler;
 mod session_materializer;
 mod session_record_journal;
-mod source_visibility;
 mod skill_loader;
+mod source_visibility;
 mod task_board_snapshot;
 mod task_handoff;
 mod task_store;
@@ -88,6 +95,11 @@ mod tool_semantics;
 mod trace_records;
 mod turn_records;
 pub use activity_cards::build_activity_cards;
+pub use agent_control::{
+    AgentControlStore, AgentIdentity, AgentKind, AgentMailboxMessage, AgentRunRecord,
+    CapabilityDescriptor, CloseAgentResult, ContextMode, ContextPolicy, RegisterPrimaryAgentInput,
+    ResumeAgentResult, SendAgentInput, SpawnSubagentInput, WaitAgentResult,
+};
 pub use agent_naming::{
     AgentAssignmentSummary, AllocatedAgentIdentity, allocate_local_agent_identity,
     create_named_local_worker, persist_assignment_summary, read_assignment_summary,
@@ -97,6 +109,15 @@ pub use assignment_queue::{
     AssignmentRecord, append_assignment_record, read_assignment_queue,
     target_agent_name_from_worker_id, update_assignment_record,
 };
+pub use context_assembly_plan::{
+    ContextAssemblyPlan, ContextAssemblyPlanner, ContextAssemblySection, ContextBudgetSnapshot,
+    ContextStabilityClass,
+};
+pub use context_baseline::{ContextBaselineDiff, ContextBaselineManager, ContextBaselineRecord};
+pub use context_budget::{
+    ContextBudgetDecision, ContextBudgetManager, ContextCompactionDecisionKind,
+};
+pub use context_compaction::{CompactedHistoryRecord, CompactionInput, ContextCompactionEngine};
 pub use context_view::{ContextAssemblyInput, ContextViewBuilder};
 pub use control_feedback::ControlFeedbackBuilder;
 pub use control_plane::{
@@ -257,6 +278,7 @@ pub struct ClosureRun {
     pub routing_decision: RoutingDecisionRecord,
     pub routing_action: RoutingActionRecord,
     pub resume_checkpoint: Option<ExecutionCheckpointRecord>,
+    pub compacted_history_records: Vec<CompactedHistoryRecord>,
     pub closure_trace: ClosureTraceRecord,
     pub events: Vec<EventEnvelope<Value>>,
 }

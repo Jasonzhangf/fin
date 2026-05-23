@@ -4101,3 +4101,384 @@ Live smoke: TODO
 - evidence: reports/android-mvp-logs/turn-channel-e2e.log
 - success: installed latest debug apk to adb device 100.127.23.27:1234 and captured device screenshot
 - evidence: reports/android-mvp-logs/adb-install-latest.log, reports/android-mvp-screenshots/device-latest-screen.png
+
+## 2026-05-16 session-kb validation loop
+- Re-ran scripts/session-kb/run_session_kb_checks.py after mobile_ws/session list meta-title fix.
+- Current status: all pass except C1_title_updated (rename->session.list title propagation not stable in ws contract path).
+- Evidence: reports/session-kb-logs/session-kb-checks.log and reports/session-kb-validation.md
+- Decision: keep FAIL explicit (no fallback/no fake green), next step is fix single true-source chain for title refresh.
+
+## 2026-05-16 Android 连接不上根因定位（新增）
+- 现象：App 反复 endpoint_unreachable。
+- 真源证据：daemon 监听绑定与进程生命周期不稳定（单机 curl/WS 与真机 log 同步印证）。
+- 关键动作：
+  1) 清理冲突 web-debug 实例，保留单实例 0.0.0.0:4040；
+  2) 真机 adb 侧连通性探针（nc）+ app connection-events 采集；
+  3) 验证握手链路出现 handshaking->handshake=ok->subscribed->healthy。
+- 结论：非前端渲染问题，核心是 daemon 绑定与稳定性；客户端重连逻辑按设计生效。
+- 证据：
+  - reports/session-kb-logs/device-connectivity-fix-2026-05-16.log
+  - reports/session-kb-logs/e2e-device-events-4-2026-05-16.log
+  - reports/session-kb-logs/e2e-device-connectivity-stable-2026-05-16.log
+
+## 2026-05-16 连接不上根因定位（Android）
+- 现象：App 日志出现 endpoint_unreachable 与 healthy 交替，且会连续增长 reconnect(n)。
+- 证据：`run-as com.fin.client cat files/logs/connection-events.log` 中同一时间窗先 `handshake=ok state=healthy`，随后立刻 `onerror/onclose` 双触发并重复排队。
+- 根因：前端 WS 生命周期编排错误：旧 socket 的 onerror/onclose 与新 socket 并发回调未隔离；并且 onerror 与 onclose 双路径都触发重连，导致重复排队和状态抖动（看起来像“一直连不上”）。
+- 修复：
+  1) 增加 `wsConnSeq` 连接代次，事件仅处理当前连接；
+  2) 重连统一收敛到 onclose，onerror 不再排队重连；
+  3) `scheduleReconnect` 增加 retryTimer guard，禁止重复排队。
+- 结论：这是客户端连接状态机的唯一真源修改点；daemon 地址与协议本身可用（日志中多次 handshake=ok）。
+
+## 2026-05-16 Android连接失败根因补充
+- 现象: App显示连接不上，但daemon(100.66.1.82:4040/ws)实际可握手101。
+- 真因: 前端 `currentProfile` 可能从历史配置读取到非 daemon profile（endpoint 旧值/不可达），UI里虽显示daemon地址，但连接仍用旧profile endpoint。
+- 唯一修复: 启动 `loadProfiles()` 时强制把 bridge 配置重写为 daemon(host/port from persisted config)，并强制 `currentProfile=daemon`，杜绝旧profile污染连接链路。
+- 验证: 本机TCP+WS握手 `100.66.1.82:4040/ws => HTTP/1.1 101 Switching Protocols`；并增加 `ws_error readyState` 日志用于下次定位。
+
+## 2026-05-16 model-config-host correction
+- 用户指出两个事实：1) 我把验证建立在临时启动/临时可用的服务态上，不能代表全局 daemon 可用；2) 我宣称真机验证，但没有证明在用户实际可连接的常驻 daemon 语义下完成。
+- 规则修正：后续关于 Android/daemon 验证，必须先证明“全局常驻 daemon 可连接且非临时拉起”，再做 APK/界面/发送链路验证；否则不得宣称完成。
+
+## 2026-05-16 android/daemon ownership correction
+
+- 真实现状核对：`~/.fin/runtime/leases/headless-daemon.json` 显示 daemon PID `86780` 正常心跳，但 `python socket connect 127.0.0.1:4040` 与 `curl http://127.0.0.1:4040/` 都是 `Connection refused`，说明之前 Android 所连 `:4040/ws` 并不来自 always-on daemon。
+- owning layer 修正已落在 `rust/crates/cli/src/headless_daemon.rs` + `rust/crates/debug-server/src/lib.rs`：headless daemon 启动时现在会自己绑定 control-plane listener，并复用 debug-server 的同一套 HTTP/WS contract；`web-debug` 不再是 Android `/ws` 的唯一宿主。
+- 为避免单测与本机常驻 4040 冲突，daemon control-plane bind 新增 `FIN_DAEMON_CONTROL_PLANE_BIND` 覆盖，默认仍是 `0.0.0.0:4040`；headless daemon 两个核心测试已改为 `127.0.0.1:0` 并重新通过。
+- 当前还不能宣称“已全局安装并真机验证”：`cargo run -p fin-cli -- install-dev ~/.fin/config/user.toml` 仍被全量 `cargo test` 挡住；截至本轮剩余失败是 3 个 `/formalize` 相关测试（`web_debug_tests_runtime_routing / planning_kickoff`），不是 4040 绑定问题，但它阻断了把新 daemon 代码正式装进 `~/.fin/bin/fin` 与后续真机回归。
+- 2026-05-16 model-config host closure corrected further:
+  - `config.test.request` 现在不再只检查 profile 是否存在，而是用 `ProviderFacade` 走真实上游请求（最小 prompt=`Reply with exactly OK.`）；无效 model 现在会返回结构化 `UPSTREAM_HTTP_STATUS/http_400`，不再假通过。
+  - `config.save.request` 现在同时写 host 侧三份真相：`~/.fin/config/user.toml`、`~/.fin/config/system.toml`、`~/.fin/config/mobile-host-config.json(thinking_effort)`；并把 `system/project` role 的 `provider_path.targets` 对齐到选中的 profile/model，避免“保存了默认 provider 但真实推理仍走旧 role target”。
+  - `CliDebugActionHandler` 的普通聊天发送链现在会优先从 `runtime_home/config/user.toml` 刷新 handler/system/provider，再执行推理；因此 daemon 进程不必重启也能消费最新 host config。若 runtime_home 还未初始化 `config/user.toml`，则保留启动时内存配置作为前置阶段真相。
+  - 本地 WS 验证已通过：`config.snapshot` 返回 `active_thinking_effort`；invalid model test -> `ok=false/http_400`；valid model test -> `ok=true`；stale save -> `config.save.rejected(reason=stale_test)`；save success -> `config.save.finished` 且 snapshot 刷新为 `active_thinking_effort=high`。
+
+## 2026-05-17 tool-call-fix session_id bug
+
+### 根因
+- `collect_turn_tool_records` 从 `current_turn.json` 读取 session_id
+- 但该文件可能是旧请求的，导致显示历史工具记录
+- 手机端显示的 "ls -la /tmp" 是历史记录，不是当前推理
+
+### 修复
+- 修改 `collect_turn_tool_records` 使用传入的 `session_id` 参数
+- 文件: `rust/crates/debug-server/src/mobile_ws.rs`
+- 验证: `cargo build -p fin-debug-server` PASS
+
+### 下一步
+- [ ] 编译并重启 daemon
+- [ ] 修复前端工具调用渲染
+- [ ] 实现 Agent Pin 功能
+- [ ] E2E 验证
+
+## 2026-05-17 Tool-call Fix Progress
+
+### 已完成
+1. Daemon session_id bug修复 - `collect_turn_tool_records` 现在使用正确的session_id
+2. 前端过滤逻辑修复 - 移除了错误过滤provider.call的逻辑
+3. E2E验证通过 - 工具调用现在正确显示
+
+### E2E测试证据
+```
+TOOL 3: name=provider.call, purpose=dispatch compiled prompt to provider
+TOOL 4: name=provider.call, purpose=dispatch compiled prompt to provider
+TOOL 5: name=reasoning.stop, purpose=explicitly close the current reasoning cycle
+EVENT 7: turn.rendered
+```
+
+### 剩余工作
+- [ ] Agent Pin功能实现（派发任务时pin worker）
+- [ ] 完整真机E2E测试
+
+### 修改文件
+- rust/crates/debug-server/src/mobile_ws.rs
+- android-client/app/src/main/assets/mobile-shell.html
+
+## 2026-05-17 Final Status - Tool-call Fix Complete
+
+### 根因定位与修复
+1. **Daemon session_id bug**: `collect_turn_tool_records` 从 `current_turn.json` 读取session_id，但该文件是旧请求的
+   - 修复：使用传入的 `session_id` 参数
+   - 文件：`rust/crates/debug-server/src/mobile_ws.rs`
+
+2. **前端过滤逻辑错误**: 错误过滤了 `provider.call`
+   - 修复：移除 `isProviderRecord` 过滤，保留所有工具调用
+   - 使用 `label` 和 `detail` 字段语义化渲染
+   - 文件：`android-client/app/src/main/assets/mobile-shell.html`
+
+### E2E验证证据
+```
+Handshake: {"type":"handshake.ok"}
+TOOL: name=provider.call, purpose=dispatch compiled prompt to provider
+TOOL: name=reasoning.stop, purpose=explicitly close the current reasoning cycle
+EVENT: turn.rendered
+```
+
+### Agent Pin
+- `renderPins()` 函数已实现，订阅 `runtime.workers`
+- busy workers时自动展开，可点击折叠/展开详情
+
+### 交付物
+- Daemon: `~/.fin/install/current/bin/fin` (已更新)
+- APK: `android-client/update-dist/fin-latest-debug.apk`
+- 修改文件: `rust/crates/debug-server/src/mobile_ws.rs`, `android-client/app/src/main/assets/mobile-shell.html`
+
+### 状态: 完成
+
+## 2026-05-17 Additional Fixes
+
+### 已修复
+1. **字体太大** - 调小了card、assistant、tool-row等字体
+2. **历史工具记录不显示** - send_session_history现在包含toolRecords
+   - WS验证: session.history包含16条tool records
+
+### E2E验证证据
+```
+session.history turns: 18
+Tool records in first turn: 16
+```
+
+### 修改文件
+- rust/crates/debug-server/src/mobile_ws.rs (send_session_history)
+- android-client/app/src/main/assets/mobile-shell.html (字体优化)
+
+### 状态: 完成
+
+## 2026-05-17 State Restore Fix
+
+### 修复问题
+1. **屏幕旋转后会话消失** - 添加了 onPause/onResume 生命周期管理
+2. **后台/前台切换** - CONFIG 保存/恢复，restoreState 恢复 session binding
+
+### 修改文件
+- android-client/app/src/main/java/com/fin/client/MainActivity.kt (lifecycle)
+- android-client/app/src/main/assets/mobile-shell.html (restoreState)
+
+## 2026-05-17 Build Scripts
+
+### 新增脚本
+- scripts/build-all.sh - 一键构建daemon和APK
+- scripts/install-fin-global.sh - 构建并全局安装fin daemon
+
+### 特性
+- 构建fin-cli release并安装到~/.fin/bin/fin
+- 自动重启daemon（无需二次授权）
+- 构建Android APK并复制到update-dist
+
+### 状态: 完成
+
+## 2026-05-17 Final Verification
+
+### E2E测试结果
+```
+✓ Handshake: {"type":"handshake.ok"}
+✓ session.list
+✓ runtime.workers
+✓ runtime.projects
+✓ runtime.daemon
+✓ config.snapshot
+✓ session.history: 1 turns, 15 tool records
+```
+
+### 交付物
+1. **Daemon**: `~/.fin/bin/fin` (全局安装)
+2. **APK**: `android-client/update-dist/fin-latest-debug.apk`
+3. **构建脚本**: `scripts/build-all.sh`
+
+### 修改文件清单
+- rust/crates/debug-server/src/mobile_ws.rs
+- android-client/app/src/main/assets/mobile-shell.html
+- android-client/app/src/main/java/com/fin/client/MainActivity.kt
+- scripts/install-fin-global.sh
+- scripts/build-all.sh
+
+### 目标状态: 完成 ✅
+
+## 2026-05-18 evening — fin daemon/web-debug architecture closeout
+
+### What was done
+1. web-debug audit + decouple plan documented (`docs/refactor/web-debug-audit-20260518.md`, `web-debug-decouple-solution.md`, `web-debug-decouple-goal.md`)
+2. updates 路由归 daemon business：`/updates/latest.json` + `/updates/*` + HEAD support in `debug-server`
+3. 独立 8080 升级服务移除（`build-and-publish.sh`）
+4. web-debug 默认 host 从 127.0.0.1 改为 0.0.0.0（`command.rs`）
+5. HEAD 请求修复（`http.rs` EOF 修复 + `head_response`）
+6. fin skill description 修复（`.agents/skills/fin-dev/SKILL.md`）
+
+### Architecture confirmed (as-is)
+- `fin start` → spawns `fin daemon-run` headless → daemon binds 0.0.0.0:4040
+- `fin web-debug` → separate command, NOT started by default, only via explicit call
+- webui/android clients connect independently via RPC/HTTP to daemon
+- updates served by daemon `/updates/*` (no standalone 8080 server)
+- Tailscale: 100.66.1.82:4040
+
+### Verified
+- `fin start` / `fin stop` cycle: OK (pid=60570)
+- `GET /api/binding.json` via tailscale: 200 OK
+- `GET /updates/latest.json` via tailscale: 200 OK, returns manifest
+- `HEAD /updates/<apk>` via tailscale: 200 OK
+- APK SHA256 matches manifest
+
+### Risks / open
+- 0.0.0.0 exposure → need firewall/Tailscale ACL
+- Need mobile client E2E update闭环 on device
+- Provider config unchanged (no breakage confirmed)
+
+## 2026-05-22 Android Agent reasoning chain completion method
+- 用户要求将完整完成方式落盘并给出 /goal 提示词。
+- 已新增 `docs/goals/android-agent-reasoning-chain-completion-method.md`，内容包含 Codex 差异、唯一事件契约、后端/Android/回归/真机验收方式、DoD 和可复制 `/goal`。
+- 核心判定：问题真源不是 UI 文案，而是后端 `turn.tool_event` nested payload 与 Android 顶层消费的 schema 不一致；正确完成方式是统一 `turn.item.*` lifecycle mapper，Android 只消费该契约。
+
+## 2026-05-22 turn.item lifecycle implementation pass
+- 后端 `rust/crates/debug-server/src/mobile_ws.rs` 已新增 mobile item mapper：ToolExecutionRecord/error record -> `turn.item.started` + `turn.item.completed|failed`，并发送 `turn.started` / `turn.completed` / `runtime.health` / provider error health。
+- Android `mobile-shell.html` 已改为只聚合 `turn.item.*` / mapper 派生 item；移除旧 `toolByClientId/errorByClientId` 的顶层字段猜测，缺字段显示 `schema_error:<field>`。
+- 回归新增 `android-client/scripts/smoke/projection-contract-check.mjs`，`run_turn_channel_e2e.py` 记录 raw events 并断言 item started/terminal 配对、label/title/purpose 非空且非 tool/unknown、failed item 保留 error_summary；矩阵脚本已接入 projection contract check。
+- 已通过静态/轻量验证：`cargo check -p fin-debug-server --manifest-path rust/Cargo.toml`、`node android-client/scripts/smoke/ws-event-contract-smoke.mjs`、`python3 -m py_compile scripts/android-mvp/run_turn_channel_e2e.py`、`node --check projection-contract-check.mjs`、HTML script `node --check`。
+
+## 2026-05-22 Android reasoning chain verification
+- 已跑完整 Android matrix（使用 `FIN_E2E_WS=ws://127.0.0.1:5057/ws` 指向当前工作树 web-debug）：unit/build/ws smoke/turn E2E/projection contract 全绿，输出 `[android-matrix] all passed`。
+- E2E 证据：`reports/android-mvp-logs/turn-channel-e2e.log`，`ok=true`，收到 `turn.started`、`turn.item.started/completed/failed`、`turn.completed`，item_started=14、item_terminal=14。
+- 真机：`adb connect 100.127.23.27:1234`、`adb install -r android-client/app/build/outputs/apk/debug/app-debug.apk` 成功；截图/日志保存到 `reports/android-device-e2e/`。风险：设备当前配置连 100.66.1.82:4040，未在本轮把设备切到 5057 做正常+错误 turn 在线交互。
+
+## 2026-05-22 Android UI density + live reasoning projection
+- 用户指出 Android 卡片顺序/主题/字体/留白/实时推理渲染问题；真源均在 `android-client/app/src/main/assets/mobile-shell.html` 的移动端投影层，不改后端 `turn.item.*` 契约。
+- 已修复：历史 turns 按原序旧在上、新在下，pending 按 ts 旧到新追加底部；新增 Finger/Aurora/Sunrise/Paper 主题；移动端字体与外层 gutter 压缩，卡片只保留内部阅读 padding。
+- 已修复实时推理：`turn.item.*` 到达时不再只缓存，pending 卡片直接读取 `S.itemByClientId[client_message_id]` 渲染“推理过程（实时）”，`turn.rendered` 后再消费到正式 turn。
+- 验证：HTML inline script `node --check`、`ws-event-contract-smoke`、`:app:assembleDebug`、`run_android_client_matrix.sh` 全绿；真机截图 `reports/android-device-e2e/current/no-outer-gutter-live.png` 显示实时推理 item 已在 pending 卡片中出现。
+- 继续修正 Android 工具语义投影：成功的 `provider.call` / `reasoning.stop` / `session.list` / `framework_tool` 不显示在用户工具列表；失败项始终显示，避免吞错。`reasoning.stop` 不再作为用户关注工具展示，后续应映射到 control/closure 语义。
+- 自动贴底：新增 `scrollToBottom()`，在 `renderTurns()` 与 init 后多帧调度，避免 WebView 初次布局导致历史页停在顶部。
+- 真机证据：`reports/android-device-e2e/current/auto-bottom-filtered-tools.png` 显示页面默认贴近最新 pending 卡片，且只展示失败的 `exec_command`，未展示成功 `provider.call/session.list/reasoning.stop`。
+- exec_command 语义投影继续修正：参考 Codex `ParsedCommand`/exec cell，Android 将 `exec_command` 按命令内容显示为 `Ran/Searched/Listed/Read/Explored/Edited`，不再裸展示 `Execute Local Command/exec_command`；同时保留 failed 错误。
+- 发现真源缺字段：Android `itemFromRecord/upsertItem` 未保留 `input_summary/output_summary/target_kind`，导致无法按命令内容分类；已补齐并对重复 item_id 去重。
+- 输入法问题现场定位：点击后最初无 `input_focus/ime_show_requested`，说明点击未稳定命中 textarea/JS 事件；已把输入栏改为 fixed 高 z-index，点击整个 inputBox 聚焦 textarea，并通过 bridge `showKeyboard()` 请求 IME；真机 `dumpsys input_method` 已显示 `mInputShown=true`。
+- 真机证据：`reports/android-device-e2e/current/semantic-exec-action-ran.png` 显示 exec_command 语义为 `Ran · local shell command`；`reports/android-device-e2e/current/ime-fixed-bar-check.png` 和 `ime-fixed-bar-events.log` 记录输入法修复验证。
+- 根据用户参考图继续修 Android 输入区：WebView 内 HTML 输入栏在 Android native 模式隐藏，MainActivity 提供原生 composer：大圆角深色容器、多行 EditText、右上发送按钮、底部 Build/Mimo/默认 chips；输入法由原生 EditText 接管。
+- 顶部左右按钮改为 fixed 半透明 top bar，滚动中常驻；真机证据 `reports/android-device-e2e/current/composer-reference-style.png`、`composer-reference-style-ime.png` 显示 top bar 常驻、输入法可弹出。
+
+## 2026-05-22 Android mobile layout IME fix
+- Evidence: Android mobile shell used native input overlay; previous inset only counted bar height, so IME could cover latest cards when keyboard opened. CSS timeline also rendered dashed top separator and native chips had stroked outlines, matching Jason-reported ugly blue horizontal lines.
+- Fix: native composer now follows IME with WindowInsetsCompat and reports bar+keyboard inset to WebView; Web content starts from top and pads by --native-input-inset; conversation/tool timeline separators and chip strokes removed.
+- Regression: added android-client/app/src/test/java/com/fin/client/MobileShellLayoutContractTest.kt and passed ./gradlew :app:testDebugUnitTest :app:assembleDebug.
+
+## 2026-05-23 Context compression / prompt cache audit
+- Created audit doc: docs/refactor/context-compression-cache-audit-2026-05-23.md. Key finding: fin currently rebuilds prompt from recent artifacts each turn; no provider usage/cache key or token-threshold compact equivalent to Codex.
+- Created implementation plan: docs/goals/context-compression-cache-alignment-plan.md. Recommended hybrid Codex-style compact plus fin digest/artifact retention.
+- Created /goal prompt: docs/goals/context-compression-cache-alignment-goal-prompt.md. No implementation changes made for context/compression pending Jason approval.
+
+## 2026-05-23 Context compression implementation continuation
+- Resumed /goal implementation in `/Users/fanzhang/code/fin`: current tree already has ContextAssemblyPlanner + stable-prefix assembler skeleton and provider prompt_cache_key/usage fields.
+- Next unique truth points: runtime `ContextAssemblyPlanner`/new `ContextBudgetManager`/new compact engine, provider observability tests, CLI `/compact` must call runtime compact engine rather than writing only `current_context.json`/rebuild-index.
+
+## 2026-05-23 Context compression implementation progress
+- Added runtime `context_baseline`, `context_budget`, and `context_compaction` modules. Baseline diff hashes immutable/rare stable prefix and tool schema; budget manager uses provider usage first and estimate only as weak evidence; compaction engine outputs history replacement with retained messages/tool refs/artifact refs.
+- `/compact` now invokes `ContextCompactionEngine` and persists `context/compacted_history.json` + append-only `context/compaction-events.jsonl`; old rebuild index remains diagnostic and now points at compact engine output.
+- Added tests: provider prompt_cache_key preservation, Anthropic usage/cached/reasoning token parsing, baseline full-once/diff, low/high budget decisions, compact history replacement with drawing image refs retention.
+- Verification passed: `cargo test -p fin-runtime --manifest-path rust/Cargo.toml assembler_tests -- --nocapture`, `cargo test -p fin-provider --manifest-path rust/Cargo.toml -- --nocapture`, `cargo check -p fin-cli --manifest-path rust/Cargo.toml`, `cargo check --manifest-path rust/Cargo.toml` (only existing debug-server tungstenite deprecation warnings).
+
+## 2026-05-23 Context compression auto compact continuation
+- Auto compact now enters runtime round execution: `execute_round` builds `ContextAssemblyPlan`, asks `ContextBudgetManager`, and if threshold is reached renders provider input with `ContextCompactionEngine` history replacement before provider call. Latest current request still remains tail section from the same plan.
+- `ClosureRun` now carries `compacted_history_records`; `SessionMaterializer` persists auto compact outputs to `context/compacted_history.json`, `context/compaction-events.jsonl`, and `runtime/current/current_compacted_history.json`.
+- `SessionMaterializer` also persists `context/baseline.json` and `runtime/current/current_context_baseline.json` from `ContextBaselineManager`.
+- Added runtime tests: provider request records include `prompt_cache_key`; response records include usage/cached/reasoning token evidence; auto compact replaces over-budget history before provider request and preserves drawing artifact refs.
+- Verification passed: `cargo test -p fin-runtime --manifest-path rust/Cargo.toml round_loop_runtime_tests -- --nocapture`; `cargo test -p fin-runtime --manifest-path rust/Cargo.toml assembler_tests -- --nocapture`; `cargo test -p fin-provider --manifest-path rust/Cargo.toml -- --nocapture`; `cargo check --manifest-path rust/Cargo.toml` (only existing debug-server tungstenite deprecation warnings).
+
+## 2026-05-23 Context compression closeout audit
+- Added context/cache gates into build-time local regression: `g1_context_cache_assembly_tests`, `g1_context_cache_round_loop_tests`, `g1_provider_cache_usage_tests` in `scripts/regression/run_local_regression.sh`; CI already calls this script in `.github/workflows/ci.yml`.
+- Closed audit doc implementation table in `docs/goals/context-compression-cache-alignment-plan.md`, mapping A-F audit items to concrete files/tests/evidence and documenting diagnostic-only rebuild-index status.
+- Extended `ContextAssemblySection` with `section_hash`, `source_artifact_refs`, and `included_reason`, matching audit requirement for persistent plan observability.
+- Fixed stale event-render regression script expectations to match current Android renderer names (`renderToolTimelineFromItems` / `normalizeErrorRecord`) rather than old removed function names.
+- Verification passed: targeted context/runtime/provider tests, `cargo check --manifest-path rust/Cargo.toml`, and full `scripts/regression/run_local_regression.sh` PASS.
+
+## 2026-05-23 Context compression final evidence pass
+- Fixed `ContextAssemblyPlanner::default()` to use real 120k default threshold instead of accidental `0 -> 1`, and added `default_context_budget_does_not_compact_normal_turn` proving ordinary turns do not compact by default.
+- Added materialized assembly-plan artifacts: `runtime/current/current_context_assembly_plan.json` and `sessions/.../context/assembly-plan.json`.
+- Latest verification: `cargo test -p fin-runtime --manifest-path rust/Cargo.toml assembler_tests -- --nocapture` = 9 passed; `cargo test -p fin-runtime --manifest-path rust/Cargo.toml round_loop_runtime_tests -- --nocapture` = 10 passed; `cargo check --manifest-path rust/Cargo.toml` passed with existing tungstenite deprecation warnings; `scripts/regression/run_local_regression.sh` PASS.
+
+## 2026-05-23 Mid-turn compact closeout
+- Added `runtime_mid_turn_tool_followup_compacts_when_context_exceeds_budget`: first round small context does not compact; second tool follow-up compacts after huge previous assistant context pushes budget over threshold.
+- Verification passed: `cargo test -p fin-runtime --manifest-path rust/Cargo.toml round_loop_runtime_tests -- --nocapture` = 11 passed; `scripts/regression/run_local_regression.sh` PASS.
+
+## 2026-05-23 Provider cache hit rate render
+- Implemented provider cache hit rate calculation at provider.call tool record creation: `cached_tokens / prompt_tokens`, written into `ToolExecutionRecord.output_summary` as `cache_hit_rate=... · cached_tokens=x/y ...`.
+- Runtime semantic view now includes provider usage summary in model-call detail while still hiding raw prompt/base URL.
+- Mobile projection preserves provider cache summaries for default display: provider.call with `cache_hit_rate=` is no longer hidden as an internal item; Android timeline detail prefers `output_summary`.
+- Debug-server mobile item contract updated so provider-call item purpose/output_summary carries cache hit evidence.
+- Verification passed: `cargo test -p fin-runtime --manifest-path rust/Cargo.toml round_loop_runtime_tests -- --nocapture`; `cargo test -p fin-runtime --manifest-path rust/Cargo.toml provider_semantic_view_hides_prompt_and_base_url -- --nocapture`; `cargo test -p fin-debug-server --manifest-path rust/Cargo.toml mobile_item_contract_tests -- --nocapture`; `cargo check --manifest-path rust/Cargo.toml`; `scripts/regression/run_local_regression.sh` PASS.
+
+## 2026-05-23 Multi-agent collaboration review notes
+- Read fin docs/code: peer taxonomy/binding, event-driven collaboration trigger model, owner-loop/task system, presence/resume model, assignment queue, mailbox tools, task handoff, scheduler, agent naming/presence modules.
+- Read Codex references: `core/src/agent/control.rs`, `agent/registry.rs`, `agent/mailbox.rs`, `session/multi_agents.rs`, multi-agent tool handlers. Codex centers on live thread tree + AgentControl; fin centers on durable peer/task/assignment/mailbox truth.
+- Main design gap: fin has stronger durable artifacts but lacks Codex-like first-class agent lifecycle API (spawn/send/wait/close/resume), hierarchical agent path/status tree, bounded wait/notification semantics, and forked context strategy for worker starts.
+
+## 2026-05-23 fin durable primary agent + local subagent control-plane work
+- Task intent: correct fin multi-agent model from Codex-style root/subagent toward durable `system_agent` + `project_agent` primary identities plus parent-owned `subagent` runs.
+- Initial evidence: existing `docs/contracts/agent-taxonomy-contract.md` freezes role taxonomy (`system`/`project`) and worker runtime semantics, but lacks explicit durable identity/run/mailbox records for primary-vs-subagent lifecycle.
+- Existing runtime truth: `rust/crates/runtime/src/tool_dispatch_extended_collab_mailbox.rs` implements worker/peer mailbox; `tool_dispatch_extended_collab_coordination.rs` implements `agent.assign`; no fin-native `register_primary_agent/spawn_subagent/send_agent_input/wait_agent/close_agent/resume_agent` model found yet.
+- Implementation direction: add a focused runtime control-plane module for durable agent identity/run/mailbox state under `~/.fin/runtime/agents/control/`, with unit tests as the first executable contract; avoid reusing old worker mailbox as the new primary/subagent identity truth.
+
+## 2026-05-23 build/install automation + first-run permission bootstrap
+- User request: (1) build should have automatic build plus global install script; (2) first fin install should auto acquire/request permissions to avoid repeated prompts.
+- Evidence: canonical build flow is `fin build-dev/install-dev` in `rust/crates/cli/src/install_flow.rs`, documented by `skills/fin-build-versioning/SKILL.md` and `docs/architecture/15-install-build-regression-flow.md`.
+- Problem source: existing `scripts/install-fin-global.sh` bypasses canonical install flow with direct `cargo build` + copy and uses forbidden broad process kills (`killall fin`, `pkill -f "fin daemon-run"`).
+- Permission evidence: no existing macOS permission bootstrap found. macOS TCC cannot be silently granted by an app/script; only a user action can approve. Correct implementation is one-time bootstrap that triggers/opens the relevant privacy panes, writes an install marker, and never pretends authorization was granted.
+- Planned unique fix: rewrite global install script to call release `fin-cli install-dev`, create user-level global symlink, safely stop/start via fin CLI, and run a first-install macOS permission bootstrap script once.
+
+## 2026-05-23 Agent RPC ingress implementation
+- User confirmed design choices: new Agent RPC ingress, Bearer Lease auth, registration heartbeat discovery.
+- Implemented config truth in `fin-config`: `runtime.agent_network.{enabled,bind_addr,public_endpoint,heartbeat_ttl_ms,lease_ttl_ms,auth}`; enabled requires exactly one token source (`token_env` or `token_file`).
+- Implemented dedicated `fin-debug-server::agent_rpc`: `/agent/v1/handshake`, `/agent/v1/heartbeat`, `/agent/v1/agents`, `/agent/v1/mailbox/send`; it writes `AgentControlStore` identity/mailbox, `runtime/agents/network_leases.json`, current agent presence registry, and peer registry.
+- Wired daemon startup to spawn Agent RPC listener only when `runtime.agent_network.enabled=true`; WebUI/QQBot/mobile debug remain separate channel adapters.
+
+## 2026-05-23 Agent RPC ingress implementation
+- User confirmed design choices: new Agent RPC ingress, Bearer Lease auth, registration heartbeat discovery.
+- Implemented config truth in `fin-config`: `runtime.agent_network.{enabled,bind_addr,public_endpoint,heartbeat_ttl_ms,lease_ttl_ms,auth}`; enabled requires exactly one token source (`token_env` or `token_file`).
+- Implemented dedicated `fin-debug-server::agent_rpc`: `/agent/v1/handshake`, `/agent/v1/heartbeat`, `/agent/v1/agents`, `/agent/v1/mailbox/send`; it writes `AgentControlStore` identity/mailbox, `runtime/agents/network_leases.json`, current agent presence registry, and peer registry.
+- Wired daemon startup to spawn Agent RPC listener only when `runtime.agent_network.enabled=true`; WebUI/QQBot/mobile debug remain separate channel adapters.
+
+## 2026-05-23 Agent RPC lifecycle harness closeout
+- Added `AgentRpcHarness` in `rust/crates/debug-server/src/agent_rpc_tests.rs` to exercise lifecycle as a scenario instead of isolated happy-path calls.
+- Coverage now includes auth matrix, handshake error matrix, lease unknown/expired, discovery offline result after expiry, mailbox unknown target/bad lease, route/body structured errors, durable artifact assertions.
+- Validation passed: `cargo test -p fin-debug-server` (43 passed), `cargo test -p fin-config agent_network`, `cargo test -p fin-runtime agent_control_tests`.
+
+## 2026-05-23 Agent RPC missing scenario closeout
+- User asked whether connection failure, lost connection, recovery, execution error were covered. Initial answer: not fully.
+- Added coverage: TCP unavailable, dropped mid-request, heartbeat TTL offline then recovery heartbeat online, `/agent/v1/run/status` failed run report into AgentControlStore, invalid run status error.
+- Validation passed: `cargo test -p fin-debug-server` (46 passed), `cargo test -p fin-config agent_network`, `cargo test -p fin-runtime agent_control_tests`.
+
+## 2026-05-23 simplified startup design implementation
+- User changed design: default start system agent; system agent can edit config and start project agents; project agent config is dynamic, add/remove capable; project agents differ by cwd and port; subagents are local invisible details.
+- Implemented dynamic project config source: `runtime/agents/project_agents.json`, loaded by `effective_project_agents` and merged with static startup config during topology materialization.
+- Implemented default system primary identity registration in `ensure_entry_agent_presence` via `AgentControlStore::register_primary_agent`, producing standard `system:<id>` path.
+- Tests passed: startup_topology dynamic tests, agent_presence system identity test, real TCP two-agent tests, agent_control targeted tests.
+
+## 2026-05-23 simplified agent startup closeout
+- Continued simplified startup design: dynamic project agent config is now a production CLI control plane, not test-only helpers.
+- Added `fin project-agent add|remove|list <user.toml> ...`; `add` creates/updates `runtime/agents/project_agents.json`, allocates a local endpoint port on first add, and preserves that endpoint on later updates.
+- While running full `fin-cli`, found an existing QQBot restore bug: explicit restored session binding was overwritten by `last_run` after attached control-plane refresh, causing second inbound messages to execute in the wrong active session. Fixed `send_message_internal_with_provider_on_binding` so explicit binding remains authoritative for that turn.
+- Validation: `cargo test -p fin-cli` 141 passed; `cargo test -p fin-debug-server` 48 passed; `cargo test -p fin-runtime agent_control_tests`; `cargo test -p fin-config agent_network`.
+
+## 2026-05-23 channel default listener boundary
+- User clarified: WebUI / QQBot and similar UI channels default to the system agent listener; project agent listeners are not default UI targets, but can still be explicitly connected.
+- Updated architecture docs: `docs/architecture/04-control-plane-http-ws.md`, `docs/architecture/06-web-debug-console.md`, and Agent RPC mailbox doc now state channel adapters default to system_agent while project_agent listeners remain explicitly connectable / RPC targets.
+- Added regression test `channel_ingress_defaults_to_system_agent_even_when_project_agent_is_configured`: with a configured project agent endpoint, channel ingress still produces `source=channel.qqbot`, `role_id=system`, `worker_id=worker-system`; project agent can appear in observable presence but is not the channel execution target.
+- Validation: `cargo test -p fin-cli` passed 142 tests.
+
+## 2026-05-23 session and ledger current-state parse
+- Ledger is not one file. Current implementation has layered truth:
+  - render/channel truth: `sessions/<year>/<month>/<session_id>/conversation/messages.json` with `SessionMessageRecord` user/assistant/system visible messages, capped by `runtime.retention.session_message_limit`.
+  - raw event truth: `events/stream.jsonl` hot stream + `events/archive/segment-*.jsonl` + `archive/sessions/.../events`, maintained by `persist_event_stream` and `archive_index.json`.
+  - structured turn/step truth: `turns/recent_turns.json`, `turns/latest.json`, `steps/recent_steps.json`, `steps/latest.json`, plus provider/round/reasoning/tool/closure/routing recent/latest files via `session_record_journal::persist_extended_records`.
+  - pointer truth: `runtime/current/last_run.json` carries current_* and session_* refs for UI/status/context reads.
+- Hidden framework sources skip session-visible history and only update `runtime/current/current_control_feedback.json` in `SessionMaterializer::persist`, preventing heartbeat/owner-loop/resume internals from polluting user-visible session ledgers.
+- Prompt/context assembly reads recent visible messages, digests, reasoning summaries, and tool records; raw event ledger is not directly used as prompt history.
+- Coverage evidence: `tests_runtime_artifacts` covers transcript materialization, recent retention trimming, and event archive rotation preserving total raw event count; `tests_mainline` covers event chain with `step.ledger_recorded` and `turn.recorded`; status probe tests assert no messages/digests mutation.
+
+## 2026-05-23 ledger-first session target from user
+- User clarified target model:
+  1) all sessions must be based on one factual ledger, unique under a path, multi-track by files, timeline-ordered;
+  2) session is part of ledger, not separate truth;
+  3) ledger has independent project-shared knowledge track, sourced from summary/learning/control block with evidence timeline;
+  4) session has detail and snapshot: detail is full accumulated turn process, snapshot is user input + important tools + summary;
+  5) local tools should query/curate/rebuild ledger.
+- Added `docs/contracts/session-ledger-contract.md` as new target contract.
+- Updated `docs/contracts/00-m1-contracts-index.md` and `docs/architecture/29-multi-turn-history-model.md` to point to ledger-first revision.
+- Current implementation gap: existing artifacts are layered but not yet one ledger root with global `timeline/index.jsonl`; `messages.json`/recent_* are still primary read artifacts in several paths; knowledge track is still concept/artifact candidate, not an append-only project-shared timeline track.

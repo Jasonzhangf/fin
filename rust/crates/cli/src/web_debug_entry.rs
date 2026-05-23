@@ -1,8 +1,9 @@
 use crate::{
     CliError, agent_presence::ensure_entry_agent_presence, channel_peer::ensure_builtin_qqbot_peer,
-    channel_peer::record_builtin_qqbot_runtime_event, channel_peer_connectivity::resolve_qqbot_credentials,
-    channel_peer_qqbot_bridge::BuiltinQqbotBridge, startup_wakeup::refresh_startup_control_plane, time::local_timestamp_now,
-    web_debug::CliDebugActionHandler,
+    channel_peer::record_builtin_qqbot_runtime_event,
+    channel_peer_connectivity::resolve_qqbot_credentials,
+    channel_peer_qqbot_bridge::BuiltinQqbotBridge, startup_wakeup::refresh_startup_control_plane,
+    time::local_timestamp_now, web_debug::CliDebugActionHandler,
 };
 use fin_config::SystemConfig;
 use fin_contracts::InputAttachmentSummary;

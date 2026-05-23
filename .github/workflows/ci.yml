@@ -19,3 +19,62 @@ jobs:
       - name: Cargo test
         working-directory: rust
         run: cargo test --workspace
+
+  local-regression-l0l1:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install ws deps
+        run: python -m pip install --upgrade pip websockets
+      - name: Run local regression (L0/L1)
+        run: ./scripts/regression/run_local_regression.sh
+
+      - name: Verify bug red/green evidence if present
+        run: |
+          if [ -d reports/regression/bug-repro ]; then
+            for d in reports/regression/bug-repro/*; do
+              [ -d "$d" ] || continue
+              test -f "$d/red.log"
+              test -f "$d/green.log"
+            done
+          fi
+
+  local-regression-live-optional:
+    if: github.event_name == 'workflow_dispatch' || github.event_name == 'schedule'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install ws deps
+        run: python -m pip install --upgrade pip websockets
+      - name: Run local regression with live
+        run: ./scripts/regression/run_local_regression.sh --with-live
+
+  android-client-regression-matrix:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+      - name: Run android client regression matrix
+        run: ./scripts/regression/run_android_client_matrix.sh

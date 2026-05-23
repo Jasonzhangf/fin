@@ -71,6 +71,7 @@ description: Project-local default development workflow for fin. Use for feature
 - channel gateway 的正常回复与异步补充回复都必须从 session truth 发出；禁止直接拿 handler 返回文本绕过 session/message ledger，否则会丢上下文恢复与重复发送判定真源
 - progress / activity card 的语义层禁止回显用户提示词、provider base URL 等内部输入细节；`provider.call` 只允许显示模型标识，且 recent actions 优先展示真实工具动作，provider.call 只在没有其他动作时兜底显示
 - Web debug 实例纪律必须单一；当前对外只允许引用 `4040`，禁止把历史测试端口混进当前验证与汇报
+- Android / WebUI 若宣称“已连 daemon”，必须先证明 `:4040` 监听者就是 always-on headless daemon（例如 lease/state + 4040 连通性 + 非 web-debug 临时前台）；未完成该 ownership 证明前，不得把临时 web-debug 验证当成 daemon 验证
 - `ControlFeedback` / continuity / topic-shift / simple-query 判断必须由 runtime 产出单一事实，并进入 event + session artifact + note/digest；Web 只消费，不得二次推断
 - framework-owned resume/checkpoint prompt 允许进入 turn/step/provider/debug truth，但禁止写入用户可见 conversation；pause/resume 真相由 execution checkpoint + consumed event 维护，不允许 UI/adapter 伪造恢复语义
 - detached/headless always-on 的生命周期真相必须落在 framework-owned pid/lease/state/recovery artifacts；前台请求链只能消费或唤起，不能冒充 daemon supervision 真源
@@ -101,3 +102,33 @@ description: Project-local default development workflow for fin. Use for feature
 - 只改 docs 不补验证
 - 只跑 unit 就宣称多 agent 行为完成
 - 模块实现没有 operation/event/debug/test 骨架
+
+## 6) Android 每轮更新标准流程（强制）
+
+每次 Android 客户端改动后，必须执行并留证据：
+
+1. **构建与升级包产出（必做）**
+   - `cd android-client && ./gradlew :app:assembleDebug`
+   - `cd android-client && ./scripts/build-and-publish.sh`
+   - 必须产出：
+     - `android-client/update-dist/fin-latest-debug.apk`
+     - `android-client/update-dist/latest.json`
+
+2. **真机安装（必做）**
+   - 使用指定 adb 测试机安装最新 APK
+   - 记录安装日志到 `reports/android-mvp-logs/` 或 `reports/session-kb-logs/`
+
+3. **在线测试（必做）**
+   - 客户端内执行“检查更新 -> 下载 -> 安装”链路，至少跑一轮在线更新检查
+   - 同时验证核心对话链路可连接 daemon 并收发一次真实推理
+   - 记录日志 + 截图
+
+4. **验收索引（必做）**
+   - 将本轮 PASS/FAIL 与证据路径写入验收 md
+   - 无在线测试证据，不得宣称完成
+
+5. **前端语义约束（必做）**
+   - 用户端禁止直接输入/编辑 JSON 配置。
+   - 前端只提供语义化交互入口（模式、模型、effort、选项等）。
+   - 后端负责生成/写入唯一语义解析 block（JSON 真源）。
+   - 禁止前端实现第二套业务 JSON 解析与拼装真相。

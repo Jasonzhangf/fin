@@ -1,7 +1,10 @@
 use crate::CliError;
 use fin_config::{ProjectAgentStartupConfig, SystemConfig};
 use fin_contracts::ExecutionStateRecord;
-use fin_runtime::{allocate_local_agent_identity, resolve_device_name};
+use fin_runtime::{
+    AgentControlStore, AgentKind, CapabilityDescriptor, RegisterPrimaryAgentInput,
+    allocate_local_agent_identity, resolve_device_name,
+};
 use serde::{Deserialize, Serialize};
 use std::path::Path;
 
@@ -103,8 +106,32 @@ pub(crate) fn ensure_entry_agent_presence(
         source: "framework.startup".into(),
     };
     write_presence(runtime_home, &record)?;
+    ensure_system_agent_identity(runtime_home, &record, updated_at)?;
     ensure_system_worker_pool(system, runtime_home, updated_at)?;
     Ok(record)
+}
+
+fn ensure_system_agent_identity(
+    runtime_home: &Path,
+    record: &AgentPresenceRecord,
+    updated_at: &str,
+) -> Result<(), CliError> {
+    AgentControlStore::new(runtime_home)
+        .register_primary_agent(RegisterPrimaryAgentInput {
+            agent_id: record.agent_id.clone(),
+            kind: AgentKind::SystemAgent,
+            project_id: None,
+            device_binding: record.device_name.clone(),
+            auth_subject: format!("local-system-agent:{}", record.agent_id),
+            auth_lease_id: format!("local-system-agent-{}", updated_at),
+            capability_descriptor: CapabilityDescriptor {
+                capability_ids: vec!["system_orchestration".into(), "mailbox".into()],
+                tool_allowlist: vec!["mailbox.send".into(), "agent.assign".into()],
+            },
+            now: updated_at.into(),
+        })
+        .map(|_| ())
+        .map_err(CliError::InvalidInstallState)
 }
 
 pub(crate) fn mark_entry_agent_busy(

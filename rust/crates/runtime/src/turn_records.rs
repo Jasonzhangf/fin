@@ -1,6 +1,7 @@
 use fin_contracts::{
     ControlFeedback, EntityRefs, ExecutionNote, ProgressBlock, ProviderRequestRecord,
-    ProviderResponseRecord, RoutingDecisionRecord, StepRecord, ToolExecutionRecord, TurnRecord,
+    ProviderResponseRecord, RoutingDecisionRecord, StepRecord, TokenUsageRecord,
+    ToolExecutionRecord, TurnRecord,
 };
 use fin_provider::{PreparedRequest, ProviderResponse};
 
@@ -31,6 +32,7 @@ pub(super) fn provider_request_record(
         endpoint: request.endpoint.clone(),
         input: request.input.clone(),
         rendered_input: request.rendered_input.clone(),
+        prompt_cache_key: request.prompt_cache_key.clone(),
         user_agent: request.user_agent.clone(),
         sanitized_headers: request.sanitized_headers.clone(),
         created_at: created_at.into(),
@@ -65,6 +67,14 @@ pub(super) fn provider_response_record(
         response_id: response.response_id.clone(),
         stop_reason: response.stop_reason.clone(),
         output_text: response.output_text.clone(),
+        usage: response.usage.as_ref().map(|usage| TokenUsageRecord {
+            prompt_tokens: usage.prompt_tokens,
+            completion_tokens: usage.completion_tokens,
+            total_tokens: usage.total_tokens,
+            cached_tokens: usage.cached_tokens,
+            reasoning_tokens: usage.reasoning_tokens,
+            usage_source: usage.usage_source.clone(),
+        }),
         created_at: created_at.into(),
     }
 }

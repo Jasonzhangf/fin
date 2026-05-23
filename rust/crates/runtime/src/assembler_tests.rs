@@ -1,9 +1,14 @@
-use crate::ModelInputAssembler;
-use fin_contracts::{
-    CurrentInputBlock, DaemonStateSummary, HistoryBlock, InputAttachmentSummary,
-    MinimalContextView, PeerBindingSummary, PeerContextBlock, PeerDescriptorSummary,
-    ProjectContextBlock, RolePromptBlock, ToolCatalogBlock, ToolCatalogEntry,
+use crate::{
+    ContextBaselineManager, ContextBudgetManager, ContextCompactionDecisionKind,
+    ContextCompactionEngine, ModelInputAssembler,
 };
+use fin_contracts::{
+    CurrentInputBlock, DaemonStateSummary, DigestRecord, EntityRefs, HistoryBlock,
+    InputAttachmentSummary, MinimalContextView, PeerBindingSummary, PeerContextBlock,
+    PeerDescriptorSummary, ProjectContextBlock, RolePromptBlock, ToolCatalogBlock,
+    ToolCatalogEntry, ToolExecutionRecord,
+};
+use fin_provider::TokenUsage;
 
 #[test]
 fn model_input_assembler_renders_role_tools_history_and_project_scope() {
@@ -170,4 +175,364 @@ fn model_input_assembler_renders_apply_patch_guidance_verbatim_in_tool_catalog()
     assert!(rendered.contains("patch receipt + modified file refs"));
     assert!(rendered.contains("replace one exact function body in src/runtime.rs"));
     assert!(rendered.contains("multi-file V4A patch"));
+}
+
+#[test]
+fn model_input_assembler_orders_stable_prefix_before_history_and_current_tail() {
+    let context = MinimalContextView {
+        summary: Some("slow compacted summary".into()),
+        continuity_tail: vec!["slow continuity".into()],
+        role_prompt: Some(RolePromptBlock {
+            role_id: "project".into(),
+            current_prompt_summary: "stable role".into(),
+            behavior_rules: vec!["stable behavior".into()],
+            output_contract: vec!["stable output contract".into()],
+            ..Default::default()
+        }),
+        tools: Some(ToolCatalogBlock {
+            model_tools: vec![ToolCatalogEntry {
+                tool_name: "stable.tool".into(),
+                summary: "stable tool schema".into(),
+                ..Default::default()
+            }],
+            ..Default::default()
+        }),
+        history: Some(HistoryBlock {
+            recent_messages: vec!["user: older".into(), "assistant: older".into()],
+            recent_tool_activity: vec!["latest tool result".into()],
+            ..Default::default()
+        }),
+        current_input: Some(CurrentInputBlock {
+            input: "latest user input".into(),
+            source: "test".into(),
+            operation_id: "op-cache".into(),
+            trace_id: "trace-cache".into(),
+            attachments: Vec::new(),
+        }),
+        ..Default::default()
+    };
+    let rendered = ModelInputAssembler::default().assemble("latest user input", &context);
+
+    let agent = rendered.find("Agent prompt:").expect("agent prompt");
+    let mandatory = rendered
+        .find("Mandatory final answer format:")
+        .expect("mandatory format");
+    let tools = rendered.find("Model tools:").expect("tools");
+    let summary = rendered.find("Context summary:").expect("summary");
+    let history = rendered
+        .find("Current interaction ledger:")
+        .expect("history");
+    let tool_tail = rendered
+        .find("Current tool execution history:")
+        .expect("tool history");
+    let request = rendered.find("Current request:").expect("request");
+
+    assert!(
+        agent < mandatory,
+        "stable role prompt must start stable prefix"
+    );
+    assert!(
+        mandatory < tools,
+        "mandatory output format belongs to stable prefix"
+    );
+    assert!(
+        tools < summary,
+        "static tool schema must precede slow context"
+    );
+    assert!(
+        summary < history,
+        "slow summary must precede append-only history"
+    );
+    assert!(history < tool_tail, "tool results belong near history tail");
+    assert!(
+        tool_tail < request,
+        "latest current request must be last tail section"
+    );
+    assert!(rendered.trim_end().ends_with("latest user input"));
+}
+
+#[test]
+fn context_assembly_plan_reports_budget_threshold_without_triggering_below_limit() {
+    let context = MinimalContextView {
+        role_prompt: Some(RolePromptBlock {
+            role_id: "project".into(),
+            current_prompt_summary: "stable".into(),
+            output_contract: vec!["stable contract".into()],
+            ..Default::default()
+        }),
+        current_input: Some(CurrentInputBlock {
+            input: "small".into(),
+            source: "test".into(),
+            operation_id: "op-small".into(),
+            trace_id: "trace-small".into(),
+            attachments: Vec::new(),
+        }),
+        ..Default::default()
+    };
+    let plan = crate::ContextAssemblyPlanner {
+        compact_threshold_tokens: 100_000,
+    }
+    .build_plan("small", &context);
+
+    assert!(!plan.budget.should_compact);
+    assert_eq!(plan.budget.trigger_reason, "below_threshold");
+    assert!(
+        plan.sections
+            .iter()
+            .all(|section| section.token_estimate > 0)
+    );
+}
+
+#[test]
+fn context_assembly_plan_reports_threshold_compact_when_estimate_exceeds_limit() {
+    let context = MinimalContextView {
+        role_prompt: Some(RolePromptBlock {
+            role_id: "project".into(),
+            current_prompt_summary: "stable".into(),
+            output_contract: vec!["stable contract".into()],
+            ..Default::default()
+        }),
+        history: Some(HistoryBlock {
+            recent_messages: vec!["x".repeat(500)],
+            ..Default::default()
+        }),
+        current_input: Some(CurrentInputBlock {
+            input: "small".into(),
+            source: "test".into(),
+            operation_id: "op-large".into(),
+            trace_id: "trace-large".into(),
+            attachments: Vec::new(),
+        }),
+        ..Default::default()
+    };
+    let plan = crate::ContextAssemblyPlanner {
+        compact_threshold_tokens: 10,
+    }
+    .build_plan("small", &context);
+
+    assert!(plan.budget.should_compact);
+    assert_eq!(plan.budget.trigger_reason, "estimated_prompt_tokens>=10");
+}
+
+#[test]
+fn context_baseline_requires_full_once_then_diff_when_stable_prefix_unchanged() {
+    let context = MinimalContextView {
+        role_prompt: Some(RolePromptBlock {
+            role_id: "project".into(),
+            current_prompt_summary: "stable role".into(),
+            output_contract: vec!["stable contract".into()],
+            ..Default::default()
+        }),
+        tools: Some(ToolCatalogBlock {
+            model_tools: vec![ToolCatalogEntry {
+                tool_name: "stable.tool".into(),
+                summary: "stable tool schema".into(),
+                ..Default::default()
+            }],
+            ..Default::default()
+        }),
+        history: Some(HistoryBlock {
+            recent_messages: vec!["user: old".into()],
+            ..Default::default()
+        }),
+        current_input: Some(CurrentInputBlock {
+            input: "first".into(),
+            source: "test".into(),
+            operation_id: "op-1".into(),
+            trace_id: "trace-1".into(),
+            attachments: Vec::new(),
+        }),
+        ..Default::default()
+    };
+    let planner = crate::ContextAssemblyPlanner {
+        compact_threshold_tokens: 100_000,
+    };
+    let first_plan = planner.build_plan("first", &context);
+    let manager = ContextBaselineManager;
+    let first_diff = manager.diff(None, &first_plan, "project");
+    assert!(first_diff.requires_full_reinject);
+    assert_eq!(first_diff.changed_fields, vec!["missing_baseline"]);
+
+    let baseline = manager.create("session-1", &first_plan, "project", "2026-05-23T00:00:00Z");
+    let mut next_context = context.clone();
+    next_context.history = Some(HistoryBlock {
+        recent_messages: vec!["user: old".into(), "assistant: new append".into()],
+        ..Default::default()
+    });
+    next_context.current_input = Some(CurrentInputBlock {
+        input: "second".into(),
+        source: "test".into(),
+        operation_id: "op-2".into(),
+        trace_id: "trace-2".into(),
+        attachments: Vec::new(),
+    });
+    let second_plan = planner.build_plan("second", &next_context);
+    let second_diff = manager.diff(Some(&baseline), &second_plan, "project");
+    assert!(!second_diff.requires_full_reinject);
+    assert!(second_diff.changed_fields.is_empty());
+}
+
+#[test]
+fn context_budget_manager_uses_provider_usage_for_threshold_decisions() {
+    let context = MinimalContextView {
+        role_prompt: Some(RolePromptBlock {
+            role_id: "project".into(),
+            current_prompt_summary: "stable".into(),
+            ..Default::default()
+        }),
+        current_input: Some(CurrentInputBlock {
+            input: "small".into(),
+            source: "test".into(),
+            operation_id: "op-budget".into(),
+            trace_id: "trace-budget".into(),
+            attachments: Vec::new(),
+        }),
+        ..Default::default()
+    };
+    let plan = crate::ContextAssemblyPlanner {
+        compact_threshold_tokens: 100_000,
+    }
+    .build_plan("small", &context);
+    let manager = ContextBudgetManager::new(1_000);
+    let low = TokenUsage {
+        prompt_tokens: Some(500),
+        completion_tokens: Some(20),
+        total_tokens: Some(520),
+        cached_tokens: Some(250),
+        reasoning_tokens: Some(3),
+        usage_source: "provider_anthropic".into(),
+    };
+    let low_decision = manager.decide(&plan, Some(&low));
+    assert_eq!(
+        low_decision.decision,
+        ContextCompactionDecisionKind::NoCompact
+    );
+    assert_eq!(low_decision.evidence_strength, "strong");
+    assert_eq!(low_decision.reason, "below_threshold");
+
+    let high = TokenUsage {
+        prompt_tokens: Some(1_500),
+        completion_tokens: Some(20),
+        total_tokens: Some(1_520),
+        cached_tokens: Some(900),
+        reasoning_tokens: Some(8),
+        usage_source: "provider_anthropic".into(),
+    };
+    let high_decision = manager.decide(&plan, Some(&high));
+    assert_eq!(
+        high_decision.decision,
+        ContextCompactionDecisionKind::PreTurnCompact
+    );
+    assert_eq!(high_decision.reason, "prompt_tokens>=1000");
+}
+
+#[test]
+fn compact_engine_replaces_history_and_retains_drawing_artifact_refs() {
+    let refs = EntityRefs {
+        session_id: Some("session-draw".into()),
+        task_id: Some("task-draw".into()),
+        ..Default::default()
+    };
+    let digest = DigestRecord {
+        digest_id: "digest-1".into(),
+        closure_id: "closure-1".into(),
+        refs: refs.clone(),
+        summary: "iteration 1 produced a cat image".into(),
+        continuity_tail: vec!["next edit target is iter-1".into()],
+        note_refs: Vec::new(),
+        artifact_candidates: vec!["images/iter-1.png".into(), "images/iter-2.png".into()],
+        control_feedback: None,
+        created_at: "2026-05-23T00:00:00Z".into(),
+    };
+    let tool = ToolExecutionRecord {
+        tool_call_id: "tool-image-edit-1".into(),
+        operation_id: "op-draw".into(),
+        trace_id: "trace-draw".into(),
+        refs,
+        tool_name: "image.edit".into(),
+        tool_kind: "model_tool".into(),
+        title: "Edited image".into(),
+        purpose: "draw iteration".into(),
+        target_kind: Some("image".into()),
+        target_ref: Some("images/iter-2.png".into()),
+        input_summary: Some("make the cat blue".into()),
+        output_summary: Some("created iter-2".into()),
+        status: "completed".into(),
+        started_at: "2026-05-23T00:00:00Z".into(),
+        ended_at: Some("2026-05-23T00:00:01Z".into()),
+        duration_ms: Some(1000),
+        side_effects: Vec::new(),
+        artifact_refs: vec!["images/iter-2.png".into(), "images/mask-1.png".into()],
+        error_summary: None,
+    };
+
+    let record = ContextCompactionEngine.compact(crate::CompactionInput {
+        session_id: "session-draw".into(),
+        task_id: Some("task-draw".into()),
+        trigger_reason: "prompt_tokens>=1000".into(),
+        recent_messages: vec![
+            "user: draw cat".into(),
+            "assistant: created iter-1".into(),
+            "user: make it blue".into(),
+            "assistant: created iter-2".into(),
+        ],
+        digest_records: vec![digest],
+        tool_records: vec![tool],
+        retain_recent_count: 2,
+        compacted_at: "2026-05-23T00:00:02Z".into(),
+    });
+
+    assert_eq!(record.replaced_message_count, 2);
+    assert_eq!(
+        record.retained_messages,
+        vec!["user: make it blue", "assistant: created iter-2"]
+    );
+    assert!(record.summary.contains("iteration 1 produced a cat image"));
+    assert!(
+        record
+            .retained_artifact_refs
+            .contains(&"images/iter-1.png".into())
+    );
+    assert!(
+        record
+            .retained_artifact_refs
+            .contains(&"images/iter-2.png".into())
+    );
+    assert!(
+        record
+            .retained_artifact_refs
+            .contains(&"images/mask-1.png".into())
+    );
+    assert_eq!(record.retained_tool_refs, vec!["tool-image-edit-1"]);
+}
+
+#[test]
+fn default_context_budget_does_not_compact_normal_turn() {
+    let context = MinimalContextView {
+        role_prompt: Some(RolePromptBlock {
+            role_id: "project".into(),
+            current_prompt_summary: "stable normal role".into(),
+            output_contract: vec!["stable contract".into()],
+            ..Default::default()
+        }),
+        history: Some(HistoryBlock {
+            recent_messages: vec!["user: hello".into(), "assistant: hi".into()],
+            ..Default::default()
+        }),
+        current_input: Some(CurrentInputBlock {
+            input: "normal turn".into(),
+            source: "test".into(),
+            operation_id: "op-normal".into(),
+            trace_id: "trace-normal".into(),
+            attachments: Vec::new(),
+        }),
+        ..Default::default()
+    };
+
+    let plan = crate::ContextAssemblyPlanner::default().build_plan("normal turn", &context);
+    let decision = ContextBudgetManager::default().decide(&plan, None);
+
+    assert!(!plan.budget.should_compact);
+    assert_eq!(decision.decision, ContextCompactionDecisionKind::NoCompact);
+    assert_eq!(decision.evidence_strength, "weak");
 }

@@ -439,3 +439,16 @@ session/
 - continuity and rebuild live in digest families
 - cross-worker sharing lives in knowledge artifacts + retrieval scope
 - model input always comes from a framework-built `ContextView`, never directly from raw history
+
+## 10. Ledger-first revision
+
+最新 ledger-first contract 见 `docs/contracts/session-ledger-contract.md`。
+
+修正后的长期方向：
+
+- 每个 ledger root 下只有一个事实 ledger identity。
+- ledger 用同一条 timeline 管理多 track；track 可分文件，但顺序由 `timeline/index.jsonl` 和 `seq` 决定。
+- session 是 ledger 的一组 track / projection，不是 ledger 外的第二事实源。
+- session 分 `detail` 与 `snapshot`：detail 保存每个 turn 的完整累加过程，snapshot 保存用户输入、重要工具合集、summary 与 channel 快速展示材料。
+- knowledge 是独立 track，同 project 共享；summary / learning / control block 只有带 evidence refs 后才能进入 knowledge。
+- 查询、重建、整理优先由本地 ledger 工具完成，UI/channel 只消费派生 snapshot/projection。

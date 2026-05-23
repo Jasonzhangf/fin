@@ -28,6 +28,24 @@
 ---
 
 ## 2. 连接层设计
+### 2.0 唯一链路图（冻结）
+```text
+Android Client / WebUI / QQ Bot
+            │
+            │  WS (same contract, same event stream)
+            ▼
+         daemon (:4040/ws)
+            │
+            │  runtime/session projection (single source of truth)
+            ▼
+   ~/.fin/runtime + session durable artifacts
+```
+
+约束：
+1. 所有 channel 都是同一 daemon 的适配层，不是多真源。
+2. channel 不做业务语义推断；只消费 daemon 结构化事件。
+3. 历史渲染来自 session 持久化，WS 仅用于增量实时事件。
+
 ### 2.1 状态机
 `idle -> scanned -> resolving -> connecting -> handshaking -> subscribed -> healthy`
 
@@ -187,3 +205,84 @@ Turn 卡片：
 ### 11.5 验收增补
 - 同一条 WS 事件在 webui_core 与 webui_debug 的关键字段渲染一致。
 - Android 端切换 profile 后连接态与 webui_debug 观测一致。
+
+## 12. Session 真源与默认绑定（冻结）
+### 12.1 默认绑定规则
+1. WebUI / Android / QQ BOT 只是 channel，默认启动会话统一绑定 `system agent`。
+2. 客户端启动后先尝试恢复本地 `last_session_id`；若不存在或失效，回退到 `session-system-entry`。
+3. channel adapter 不拥有会话业务语义；只做接入、订阅、渲染。
+
+### 12.2 Session 与 Ledger 关系（冻结语义）
+1. Agent 只感知 session，不感知 ledger。
+2. 底层采用 `track = session_id`：
+   - 逻辑上单一 ledger truth（append-only event chain）
+   - 物理上按 session track 分轨写入，互不串写
+3. UI 渲染：
+   - 历史来自 session 持久化/投影
+   - WS 仅提供增量事件
+4. 删除/清理 session 不得破坏已沉淀知识（见 14 节）。
+
+### 12.3 多 session 恢复与切换
+1. 启动后自动连接 daemon，拉取 session 列表并绑定默认会话。
+2. session 列表按 `updated_at desc` 排序。
+3. 用户可手动切换 `session_id`；切换后：
+   - 更新本地 `last_session_id`
+   - 只订阅/渲染当前绑定 session 的增量
+4. 每个 session 展示：
+   - `session_id`
+   - `updated_at`
+   - `title`（自动或手工）
+   - `preview_100`（最近内容 100 字）
+
+## 13. Session CRUD 命令与 UI 编辑
+### 13.1 命令面（CLI/Channel）
+- 已有：
+  - `/new`：创建并切换新 session
+  - `/resume <session_id>`：恢复并切换到指定 session
+- 规划新增（冻结 contract，后续实现）：
+  - `/sessions`：列出可见 session（含 title/updated_at/preview）
+  - `/session rename <session_id> <title>`：手工改名
+  - `/session delete <session_id> [--force]`：删除 session（默认先做精华提取）
+  - `/session archive <session_id>`：归档，不在默认列表显示
+  - `/clear`：仅清理当前前端显示缓冲，不删除 ledger/session truth
+
+### 13.2 UI 面（Android/Web）
+1. Session 列表页支持：
+   - 切换
+   - 重命名（编辑 title）
+   - 删除（带“先提取精华”确认）
+   - 归档/取消归档
+2. 操作反馈必须结构化显示（成功/失败/原因/证据路径）。
+
+## 14. Knowledge Base 目录与“先提取再删除”
+### 14.1 目录结构（project 级）
+```text
+~/.fin/projects/<project_id>/knowledge-base/
+  entries/
+    kb-<id>.json
+  indexes/
+    by_session.json
+    by_topic.json
+```
+
+### 14.2 精华提取来源
+模型 control block 中已存在可用于沉淀的字段（当前已见）：
+- `note_candidate`
+- `digest_candidate`
+- `reason`
+- 以及 closure/tool/error 相关结构化证据
+
+后续可扩展 `learning` 字段，但不阻塞当前流程。
+
+### 14.3 删除前流程（强约束）
+`session delete` 默认流程：
+1. 扫描该 session 最新 N 轮 control block / digest / tool receipt
+2. 自动生成 knowledge entries（自动提取）
+3. 允许用户补充/编辑（手工提取）
+4. 写入 knowledge-base 并建立 `session_id -> kb_entry_ids` 索引
+5. 仅在 2~4 成功后，才允许删除 session（除 `--force`）
+
+### 14.4 验收要求
+1. 删除 session 后，knowledge-base 中可检索到对应精华条目。
+2. 任一 channel（Web/Android/QQ）删除会话时流程一致。
+3. 无精华落盘证据，不允许宣称“删除完成”。

@@ -45,3 +45,5 @@ JSON
 
 echo "published: update-dist/$APK_NAME"
 echo "manifest: update-dist/latest.json"
+
+echo "update distribution is served by daemon business plane (/updates/* on daemon HTTP port)"

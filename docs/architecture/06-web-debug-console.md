@@ -46,9 +46,10 @@
 ## 生命周期规则
 
 1. Web 是观察层，不是状态真源。
-2. `web-debug` 当前保持前台阻塞运行，不引入 detached daemon。
-3. 前端刷新采用消息驱动：通过 `/api/watch` SSE 推送触发 refresh；页面 hidden 时关闭 watch，恢复可见后重连。
-4. UI 问题排查必须先回到 raw event，再看页面投影。
+2. WebUI 默认连接 `system_agent` control listener；project agent listener 可以被显式连接，但不是 WebUI 默认目标。
+3. `web-debug` 当前保持前台阻塞运行，不引入 detached daemon。
+4. 前端刷新采用消息驱动：通过 `/api/watch` SSE 推送触发 refresh；页面 hidden 时关闭 watch，恢复可见后重连。
+5. UI 问题排查必须先回到 raw event，再看页面投影。
 
 ## 当前交互规则
 

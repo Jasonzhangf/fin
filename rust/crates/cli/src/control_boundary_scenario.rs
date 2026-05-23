@@ -76,6 +76,7 @@ impl InferenceProvider for ControlBoundaryProvider {
             response_id: Some("control-boundary-scenario-response".into()),
             stop_reason: Some("end_turn".into()),
             status: 200,
+            usage: None,
         })
     }
 }
@@ -316,8 +317,8 @@ api_key_env = "OPENAI_API_KEY"
         let user_toml = sample_user_toml();
         let system = map_system_config(&user_toml).expect("system config");
         let home = temp_runtime_home();
-        let run =
-            run_control_boundary_scenario(&user_toml, &system, Some(home.as_path())).expect("control boundary scenario");
+        let run = run_control_boundary_scenario(&user_toml, &system, Some(home.as_path()))
+            .expect("control boundary scenario");
         let session_dir = find_session_dir(&home, &run.session_id).expect("session dir");
         assert_eq!(run.responses.len(), 10);
         assert!(session_dir.join("control/execution_state.json").exists());

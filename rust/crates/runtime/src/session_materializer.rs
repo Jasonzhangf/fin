@@ -1,4 +1,7 @@
-use crate::{ClosureRun, RuntimeError, session_record_journal, source_visibility::is_hidden_session_source};
+use crate::{
+    ClosureRun, ContextBaselineManager, RuntimeError, session_record_journal,
+    source_visibility::is_hidden_session_source,
+};
 use fin_config::RuntimeRetentionConfig;
 use fin_contracts::EventEnvelope;
 use fin_contracts::{
@@ -145,6 +148,9 @@ impl SessionMaterializer {
         write_json_file(&session_dir.join("digests/latest.json"), &run.digest)?;
         persist_recent_digests(&session_dir, &run.digest, retention)?;
         persist_context_snapshots(runtime_home, &session_dir, &run.context_snapshot, retention)?;
+        persist_context_assembly_plan(runtime_home, &session_dir, run)?;
+        persist_context_baseline(runtime_home, &session_dir, run)?;
+        persist_auto_compactions(runtime_home, &session_dir, run)?;
         persist_reasoning_views(runtime_home, &session_dir, &run.reasoning_view, retention)?;
         persist_tool_records(runtime_home, &session_dir, &run.tool_records, retention)?;
         persist_closure_traces(runtime_home, &session_dir, &run.closure_trace, retention)?;
@@ -271,6 +277,89 @@ pub fn append_framework_events(
         events,
         retention,
     )
+}
+
+fn persist_context_assembly_plan(
+    runtime_home: &Path,
+    session_dir: &Path,
+    run: &ClosureRun,
+) -> Result<(), RuntimeError> {
+    let plan = crate::ContextAssemblyPlanner::default()
+        .build_plan(&run.operation.payload.input, &run.operation.payload.context);
+    write_json_file(
+        &runtime_home.join("runtime/current/current_context_assembly_plan.json"),
+        &plan,
+    )?;
+    write_json_file(&session_dir.join("context/assembly-plan.json"), &plan)
+}
+
+fn persist_context_baseline(
+    runtime_home: &Path,
+    session_dir: &Path,
+    run: &ClosureRun,
+) -> Result<(), RuntimeError> {
+    let plan = crate::ContextAssemblyPlanner::default()
+        .build_plan(&run.operation.payload.input, &run.operation.payload.context);
+    let baseline = ContextBaselineManager.create(
+        run.progress
+            .refs
+            .session_id
+            .as_deref()
+            .unwrap_or("session-m1"),
+        &plan,
+        run.operation.payload.role.role_id.as_str(),
+        run.operation.submitted_at.as_str(),
+    );
+    write_json_file(&session_dir.join("context/baseline.json"), &baseline)?;
+    write_json_file(
+        &runtime_home.join("runtime/current/current_context_baseline.json"),
+        &baseline,
+    )
+}
+
+fn persist_auto_compactions(
+    runtime_home: &Path,
+    session_dir: &Path,
+    run: &ClosureRun,
+) -> Result<(), RuntimeError> {
+    let records = run.compacted_history_records.clone();
+    if records.is_empty() {
+        return Ok(());
+    }
+    let latest = records.last().expect("records not empty");
+    write_json_file(&session_dir.join("context/compacted_history.json"), latest)?;
+    write_json_file(
+        &runtime_home.join("runtime/current/current_compacted_history.json"),
+        latest,
+    )?;
+    let events_path = session_dir.join("context/compaction-events.jsonl");
+    for record in &records {
+        append_jsonl(&events_path, record)?;
+    }
+    Ok(())
+}
+
+fn append_jsonl<T: Serialize>(path: &Path, value: &T) -> Result<(), RuntimeError> {
+    if let Some(parent) = path.parent() {
+        create_dir_all(parent)?;
+    }
+    let mut line = serde_json::to_string(value)?;
+    line.push('\n');
+    let mut existing = fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(path)
+        .map_err(|source| RuntimeError::Io {
+            path: path.display().to_string(),
+            source,
+        })?;
+    use std::io::Write;
+    existing
+        .write_all(line.as_bytes())
+        .map_err(|source| RuntimeError::Io {
+            path: path.display().to_string(),
+            source,
+        })
 }
 
 fn persist_context_snapshots(

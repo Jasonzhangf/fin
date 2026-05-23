@@ -81,6 +81,11 @@ impl M1Runtime {
             operation.payload.input.clone(),
         )?;
         let initial_round = initial_retry_bundle.final_round.clone();
+        let mut compacted_history_records = initial_retry_bundle
+            .attempts
+            .iter()
+            .filter_map(|attempt| attempt.round.compacted_history.clone())
+            .collect::<Vec<_>>();
         let mut prepared_request = initial_round.prepared_request.clone();
         let mut provider_response = initial_round.provider_response.clone();
         let mut provider_debug = initial_round.provider_debug.clone();
@@ -174,6 +179,12 @@ impl M1Runtime {
             )?;
             contract_retry_summaries.push(followup_retry_bundle.summary.clone());
             let followup_round = followup_retry_bundle.final_round.clone();
+            compacted_history_records.extend(
+                followup_retry_bundle
+                    .attempts
+                    .iter()
+                    .filter_map(|attempt| attempt.round.compacted_history.clone()),
+            );
             for attempt in &followup_retry_bundle.attempts {
                 tool_records.push(trace_records::provider_tool_record(
                     &operation.operation_id,
@@ -421,6 +432,7 @@ impl M1Runtime {
             &routing_decision,
             &routing_action,
             resume_checkpoint.as_ref(),
+            &compacted_history_records,
             &events,
         );
         let closure_trace = trace_records::closure_trace_record(&partial_run);
@@ -472,6 +484,7 @@ impl M1Runtime {
             routing_decision,
             routing_action,
             resume_checkpoint,
+            compacted_history_records,
             closure_trace,
             events,
         ))

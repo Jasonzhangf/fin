@@ -48,6 +48,7 @@ impl fin_provider::InferenceProvider for PlanningKickoffProvider {
             response_id: Some(self.response_id.into()),
             stop_reason: Some("end_turn".into()),
             status: 200,
+            usage: None,
         })
     }
 }
@@ -89,7 +90,14 @@ fn formalize_auto_kickoff_runs_managed_planning_and_forms_task_board() {
             &static_provider(&handler.system),
         )
         .expect("tentative turn should run");
-    assert!(tentative.answer.contains("/formalize"));
+    assert!(!tentative.answer.contains("/formalize"));
+    assert!(
+        tentative
+            .routing_action
+            .as_ref()
+            .and_then(|action| action.prompt_text.as_deref())
+            .is_some_and(|text| text.contains("/formalize"))
+    );
     let session_id = tentative.binding.session_id.clone().expect("session id");
     let session_dir = kickoff_session_dir(&home, &session_id);
 
@@ -158,7 +166,14 @@ fn formalize_auto_kickoff_can_take_direct_path_and_persist_plan_artifact() {
             &static_provider(&handler.system),
         )
         .expect("tentative turn should run");
-    assert!(tentative.answer.contains("/formalize"));
+    assert!(!tentative.answer.contains("/formalize"));
+    assert!(
+        tentative
+            .routing_action
+            .as_ref()
+            .and_then(|action| action.prompt_text.as_deref())
+            .is_some_and(|text| text.contains("/formalize"))
+    );
     let session_id = tentative.binding.session_id.clone().expect("session id");
     let session_dir = kickoff_session_dir(&home, &session_id);
 

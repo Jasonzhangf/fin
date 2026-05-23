@@ -15,6 +15,7 @@ pub(super) struct RoundExecution {
     pub(super) dispatched_tools: tool_dispatch::ToolDispatchOutcome,
     pub(super) assistant_response_text: String,
     pub(super) control_feedback: ControlFeedback,
+    pub(super) compacted_history: Option<CompactedHistoryRecord>,
 }
 
 pub(super) fn execute_round(
@@ -25,7 +26,22 @@ pub(super) fn execute_round(
     round_index: u32,
     input: String,
 ) -> Result<RoundExecution, RuntimeError> {
-    let rendered_input = ModelInputAssembler::default().assemble(&input, round_context);
+    let assembler = ModelInputAssembler::default();
+    let assembly_plan = assembler.assembly_plan(&input, round_context);
+    let budget_decision = ContextBudgetManager::default().decide(&assembly_plan, None);
+    let compacted_history =
+        if budget_decision.decision == ContextCompactionDecisionKind::PreTurnCompact {
+            Some(compact_round_history(
+                operation,
+                refs,
+                round_context,
+                &budget_decision,
+            ))
+        } else {
+            None
+        };
+    let rendered_input =
+        render_input_for_budget_decision(&assembly_plan, compacted_history.as_ref());
     let prepared_request = provider.prepare_request(&ProviderRequest {
         input,
         rendered_input: Some(rendered_input),
@@ -37,6 +53,7 @@ pub(super) fn execute_round(
                 .model
                 .clone(),
         ),
+        prompt_cache_key: operation.refs.session_id.clone(),
     });
     let provider_response = provider.execute_prepared(&prepared_request)?;
     let provider_debug = SanitizedProviderDebug {
@@ -76,6 +93,86 @@ pub(super) fn execute_round(
         dispatched_tools,
         assistant_response_text,
         control_feedback,
+        compacted_history,
+    })
+}
+
+fn render_input_for_budget_decision(
+    plan: &ContextAssemblyPlan,
+    compacted_history: Option<&CompactedHistoryRecord>,
+) -> String {
+    let sections = plan
+        .sections
+        .iter()
+        .map(|section| {
+            let body = if section.section_id == "history.current_interaction_ledger" {
+                compacted_history
+                    .map(render_compacted_history_body)
+                    .unwrap_or_else(|| section.body.clone())
+            } else {
+                section.body.clone()
+            };
+            format!("{}:\n{}", section.title, body)
+        })
+        .collect::<Vec<_>>();
+    sections.join("\n\n")
+}
+
+fn render_compacted_history_body(record: &CompactedHistoryRecord) -> String {
+    let mut lines = Vec::new();
+    if !record.summary.trim().is_empty() {
+        lines.push(format!("Compacted summary:\n{}", record.summary));
+    }
+    if !record.retained_messages.is_empty() {
+        lines.push(format!(
+            "Retained recent messages:\n- {}",
+            record.retained_messages.join("\n- ")
+        ));
+    }
+    if !record.retained_artifact_refs.is_empty() {
+        lines.push(format!(
+            "Retained artifact refs:\n- {}",
+            record.retained_artifact_refs.join("\n- ")
+        ));
+    }
+    lines.join("\n")
+}
+
+fn compact_round_history(
+    operation: &OperationEnvelope<InferenceOperationPayload>,
+    refs: &EntityRefs,
+    round_context: &MinimalContextView,
+    decision: &ContextBudgetDecision,
+) -> CompactedHistoryRecord {
+    let history = round_context.history.clone().unwrap_or_default();
+    let digest_records = round_context
+        .knowledge
+        .as_ref()
+        .map(|knowledge| fin_contracts::DigestRecord {
+            digest_id: format!("digest-context-{}", operation.operation_id),
+            closure_id: format!("closure-{}", operation.operation_id),
+            refs: refs.clone(),
+            summary: round_context.summary.clone().unwrap_or_default(),
+            continuity_tail: round_context.continuity_tail.clone(),
+            note_refs: Vec::new(),
+            artifact_candidates: knowledge.artifact_candidates.clone(),
+            control_feedback: None,
+            created_at: operation.submitted_at.clone(),
+        })
+        .into_iter()
+        .collect();
+    ContextCompactionEngine.compact(CompactionInput {
+        session_id: refs
+            .session_id
+            .clone()
+            .unwrap_or_else(|| "session-m1".into()),
+        task_id: refs.task_id.clone(),
+        trigger_reason: decision.reason.clone(),
+        recent_messages: history.recent_messages,
+        digest_records,
+        tool_records: Vec::new(),
+        retain_recent_count: 8,
+        compacted_at: operation.submitted_at.clone(),
     })
 }
 

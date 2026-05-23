@@ -44,6 +44,7 @@ M1-A 当前先冻结七类最小 contract：
 10. `docs/contracts/context-rebuild-index-contract.md`
 11. `docs/contracts/peer-routing-feedback-contract.md`
 12. `docs/contracts/model-output-repair-contract.md`
+13. `docs/contracts/session-ledger-contract.md`
 
 补充冻结说明：
 

@@ -49,6 +49,8 @@ pub struct ProviderRequest {
     pub input: String,
     pub rendered_input: Option<String>,
     pub override_model: Option<String>,
+    #[serde(default)]
+    pub prompt_cache_key: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -59,8 +61,20 @@ pub struct PreparedRequest {
     pub model: String,
     pub input: String,
     pub rendered_input: String,
+    #[serde(default)]
+    pub prompt_cache_key: Option<String>,
     pub user_agent: Option<String>,
     pub sanitized_headers: BTreeMap<String, String>,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct TokenUsage {
+    pub prompt_tokens: Option<u64>,
+    pub completion_tokens: Option<u64>,
+    pub total_tokens: Option<u64>,
+    pub cached_tokens: Option<u64>,
+    pub reasoning_tokens: Option<u64>,
+    pub usage_source: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -71,6 +85,8 @@ pub struct ProviderResponse {
     pub response_id: Option<String>,
     pub stop_reason: Option<String>,
     pub status: u16,
+    #[serde(default)]
+    pub usage: Option<TokenUsage>,
 }
 
 impl ProviderDescriptor {
@@ -98,6 +114,7 @@ impl ProviderDescriptor {
                 .rendered_input
                 .clone()
                 .unwrap_or_else(|| request.input.clone()),
+            prompt_cache_key: request.prompt_cache_key.clone(),
             user_agent: None,
             sanitized_headers: BTreeMap::new(),
         }
@@ -206,6 +223,14 @@ impl InferenceProvider for StaticProviderClient {
             response_id: Some("simulated-response".into()),
             stop_reason: Some("end_turn".into()),
             status: 200,
+            usage: Some(TokenUsage {
+                prompt_tokens: Some(request.rendered_input.chars().count() as u64 / 4),
+                completion_tokens: Some(8),
+                total_tokens: None,
+                cached_tokens: None,
+                reasoning_tokens: None,
+                usage_source: "static_estimate".into(),
+            }),
         })
     }
 }
@@ -261,6 +286,14 @@ impl InferenceProvider for StructuredStaticProviderClient {
             response_id: Some("structured-static-response".into()),
             stop_reason: Some("end_turn".into()),
             status: 200,
+            usage: Some(TokenUsage {
+                prompt_tokens: Some(request.rendered_input.chars().count() as u64 / 4),
+                completion_tokens: Some(16),
+                total_tokens: None,
+                cached_tokens: None,
+                reasoning_tokens: None,
+                usage_source: "static_estimate".into(),
+            }),
         })
     }
 }
@@ -489,6 +522,7 @@ impl InferenceProvider for ProviderFacade {
                 .unwrap_or_else(|| request.input.clone()),
             user_agent: Some(self.effective_user_agent().into()),
             sanitized_headers: self.build_sanitized_request_headers(),
+            prompt_cache_key: request.prompt_cache_key.clone(),
         }
     }
 
@@ -538,6 +572,28 @@ fn parse_anthropic_response(
             .and_then(Value::as_str)
             .map(str::to_string),
         status,
+        usage: parse_anthropic_usage(&parsed),
+    })
+}
+
+fn parse_anthropic_usage(parsed: &Value) -> Option<TokenUsage> {
+    let usage = parsed.get("usage")?;
+    Some(TokenUsage {
+        prompt_tokens: usage.get("input_tokens").and_then(Value::as_u64),
+        completion_tokens: usage.get("output_tokens").and_then(Value::as_u64),
+        total_tokens: match (
+            usage.get("input_tokens").and_then(Value::as_u64),
+            usage.get("output_tokens").and_then(Value::as_u64),
+        ) {
+            (Some(input), Some(output)) => Some(input + output),
+            _ => usage.get("total_tokens").and_then(Value::as_u64),
+        },
+        cached_tokens: usage.get("cache_read_input_tokens").and_then(Value::as_u64),
+        reasoning_tokens: usage
+            .get("completion_tokens_details")
+            .and_then(|value| value.get("reasoning_tokens"))
+            .and_then(Value::as_u64),
+        usage_source: "provider_anthropic".into(),
     })
 }
 

@@ -11,7 +11,7 @@ pub(super) fn provider_tool_record(
     refs: &EntityRefs,
     prepared_request: &PreparedRequest,
     provider_response: &ProviderResponse,
-    assistant_response_text: &str,
+    _assistant_response_text: &str,
     occurred_at: &str,
 ) -> ToolExecutionRecord {
     ToolExecutionRecord {
@@ -29,7 +29,7 @@ pub(super) fn provider_tool_record(
             prepared_request.provider_name, prepared_request.model, prepared_request.endpoint
         )),
         input_summary: Some(short_text(&prepared_request.input, 240)),
-        output_summary: Some(short_text(assistant_response_text, 240)),
+        output_summary: Some(provider_cache_usage_summary(provider_response)),
         status: if provider_response.status >= 400 {
             "failed".into()
         } else {
@@ -123,6 +123,36 @@ pub(super) fn closure_trace_record(run: &ClosureRun) -> ClosureTraceRecord {
             .map(|event| event.event_id.clone())
             .collect(),
     }
+}
+
+fn provider_cache_usage_summary(response: &ProviderResponse) -> String {
+    let Some(usage) = response.usage.as_ref() else {
+        return "cache_hit_rate=unknown · usage_source=missing".into();
+    };
+    let prompt_tokens = usage.prompt_tokens.unwrap_or(0);
+    let cached_tokens = usage.cached_tokens.unwrap_or(0);
+    let hit_rate = if prompt_tokens > 0 {
+        format!(
+            "{:.1}%",
+            (cached_tokens as f64 / prompt_tokens as f64) * 100.0
+        )
+    } else {
+        "unknown".into()
+    };
+    let mut parts = vec![
+        format!("cache_hit_rate={hit_rate}"),
+        format!("cached_tokens={cached_tokens}/{prompt_tokens}"),
+    ];
+    if let Some(completion_tokens) = usage.completion_tokens {
+        parts.push(format!("completion_tokens={completion_tokens}"));
+    }
+    if let Some(reasoning_tokens) = usage.reasoning_tokens {
+        parts.push(format!("reasoning_tokens={reasoning_tokens}"));
+    }
+    if !usage.usage_source.trim().is_empty() {
+        parts.push(format!("usage_source={}", usage.usage_source));
+    }
+    parts.join(" · ")
 }
 
 fn short_text(value: &str, limit: usize) -> String {

@@ -77,7 +77,12 @@ fn direct_message(sender: &str, msg_id: &str, content: &str) -> QqbotBridgeInbou
     }
 }
 
-fn spawn_sink(sink_path: &Path) -> (std::process::Child, Arc<Mutex<Option<std::process::ChildStdin>>>) {
+fn spawn_sink(
+    sink_path: &Path,
+) -> (
+    std::process::Child,
+    Arc<Mutex<Option<std::process::ChildStdin>>>,
+) {
     let mut child = Command::new("sh")
         .arg("-c")
         .arg("cat > \"$FIN_SINK\"")
@@ -89,7 +94,10 @@ fn spawn_sink(sink_path: &Path) -> (std::process::Child, Arc<Mutex<Option<std::p
     (child, stdin)
 }
 
-fn finish_sink(stdin: &Arc<Mutex<Option<std::process::ChildStdin>>>, mut child: std::process::Child) {
+fn finish_sink(
+    stdin: &Arc<Mutex<Option<std::process::ChildStdin>>>,
+    mut child: std::process::Child,
+) {
     drop(stdin.lock().expect("lock").take());
     let _ = child.wait();
 }
@@ -98,14 +106,22 @@ fn read_http_body_simple(stream: &mut std::net::TcpStream) -> String {
     let mut buf = Vec::new();
     let mut tmp = [0u8; 4096];
     while let Ok(n) = stream.read(&mut tmp) {
-        if n == 0 { break; }
+        if n == 0 {
+            break;
+        }
         buf.extend_from_slice(&tmp[..n]);
         let text = String::from_utf8_lossy(&buf);
         if let Some(pos) = text.find("\r\n\r\n") {
             let body_start = pos + 4;
             for line in text[..pos].lines() {
                 if line.to_lowercase().starts_with("content-length:") {
-                    if let Ok(len) = line.split(":").nth(1).unwrap_or("0").trim().parse::<usize>() {
+                    if let Ok(len) = line
+                        .split(":")
+                        .nth(1)
+                        .unwrap_or("0")
+                        .trim()
+                        .parse::<usize>()
+                    {
                         let body_bytes = &buf[body_start..];
                         if body_bytes.len() >= len {
                             return String::from_utf8_lossy(&body_bytes[..len]).to_string();
@@ -119,9 +135,7 @@ fn read_http_body_simple(stream: &mut std::net::TcpStream) -> String {
 }
 
 /// Mock provider: bind in main thread, share via Arc, Barrier(2) to sync.
-fn spawn_mock_provider(
-    responses: Vec<&str>,
-) -> (String, Arc<Barrier>, thread::JoinHandle<()>) {
+fn spawn_mock_provider(responses: Vec<&str>) -> (String, Arc<Barrier>, thread::JoinHandle<()>) {
     let responses: Vec<String> = responses.into_iter().map(str::to_string).collect();
     let listener = TcpListener::bind("127.0.0.1:0").expect("bind");
     let addr = listener.local_addr().expect("addr");
@@ -181,9 +195,19 @@ fn qqbot_event_recorder_writes_events_jsonl() {
     let events_path = home.join("runtime/peers/qqbot/events.jsonl");
     assert!(events_path.exists(), "events.jsonl must be written");
     let ev_content = fs::read_to_string(&events_path).expect("read events");
-    assert!(ev_content.contains("channel.peer.message_ingested"), "events.jsonl should contain channel.peer.message_ingested");
-    let lines: Vec<&str> = ev_content.lines().filter(|l| !l.trim().is_empty()).collect();
-    assert!(lines.len() >= 2, "events.jsonl should have >= 2 events, got {}", lines.len());
+    assert!(
+        ev_content.contains("channel.peer.message_ingested"),
+        "events.jsonl should contain channel.peer.message_ingested"
+    );
+    let lines: Vec<&str> = ev_content
+        .lines()
+        .filter(|l| !l.trim().is_empty())
+        .collect();
+    assert!(
+        lines.len() >= 2,
+        "events.jsonl should have >= 2 events, got {}",
+        lines.len()
+    );
 
     let _ = fs::remove_dir_all(&home);
 }
@@ -205,17 +229,28 @@ fn qqbot_recent_contexts_bounded_after_multiple_operations() {
     let sink_path = home.join("runtime/peers/qqbot/outbound-bound.jsonl");
     let (child, stdin) = spawn_sink(&sink_path);
     for i in 0..5 {
-        let inbound = direct_message("user-bound", &format!("msg-bound-{}", i), &format!("bound test {}", i));
+        let inbound = direct_message(
+            "user-bound",
+            &format!("msg-bound-{}", i),
+            &format!("bound test {}", i),
+        );
         let _ = process_inbound_message(&home, &handler, &stdin, inbound);
     }
     finish_sink(&stdin, child);
 
     // Gate 2: recent_contexts bounded if it exists
-    let recent = home.join("sessions/2026/05").join(&session_id).join("recent_contexts.json");
+    let recent = home
+        .join("sessions/2026/05")
+        .join(&session_id)
+        .join("recent_contexts.json");
     if recent.exists() {
         let c = fs::read_to_string(&recent).expect("read recent");
         let contexts: Vec<serde_json::Value> = serde_json::from_str(&c).expect("parse");
-        assert!(contexts.len() <= 10, "recent_contexts bounded <= 10, got {}", contexts.len());
+        assert!(
+            contexts.len() <= 10,
+            "recent_contexts bounded <= 10, got {}",
+            contexts.len()
+        );
     }
 
     let _ = fs::remove_dir_all(&home);
@@ -236,15 +271,29 @@ fn qqbot_read_last_run_value_parses_correctly() {
     fs::write(&last_run_path, last_run_json).expect("write last_run");
 
     let parsed = read_last_run_value(&home).expect("parse last_run");
-    assert_eq!(parsed.get("turn_id").and_then(|v| v.as_str()), Some("turn-2026-05-14-001"), "turn_id should match written value");
-    assert_eq!(parsed.get("session_id").and_then(|v| v.as_str()), Some("s-test-123"), "session_id should match");
+    assert_eq!(
+        parsed.get("turn_id").and_then(|v| v.as_str()),
+        Some("turn-2026-05-14-001"),
+        "turn_id should match written value"
+    );
+    assert_eq!(
+        parsed.get("session_id").and_then(|v| v.as_str()),
+        Some("s-test-123"),
+        "session_id should match"
+    );
 
     // Tentative turn_id also parses (validation is caller responsibility)
     let tentative = "{\"turn_id\":\"turn-tentative-abc123\"}";
     fs::write(&last_run_path, tentative).expect("write tentative");
     let parsed_t = read_last_run_value(&home).expect("parse tentative");
-    let tid = parsed_t.get("turn_id").and_then(|v| v.as_str()).unwrap_or("");
-    assert!(tid.starts_with("turn-tentative"), "tentative should parse correctly");
+    let tid = parsed_t
+        .get("turn_id")
+        .and_then(|v| v.as_str())
+        .unwrap_or("");
+    assert!(
+        tid.starts_with("turn-tentative"),
+        "tentative should parse correctly"
+    );
 
     let _ = fs::remove_dir_all(&home);
 }

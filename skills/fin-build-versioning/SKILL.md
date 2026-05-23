@@ -151,6 +151,9 @@ description: Standard build, regression, install, promote, rollback, and version
 
 - 把 Cargo crate version 当成产品 build version
 - 在裸 `cargo build` 上塞自动改版本逻辑
+- 全局安装脚本手动复制二进制、绕过 `fin-cli install-dev` 正式 flow
+- 安装/重启 daemon 时使用 `killall` / `pkill` / broad kill；必须走 `fin stop` / `fin start`
+- 声称 macOS TCC 权限已自动授予；首次安装只能触发授权入口、打开 System Settings pane 并记录 marker
 - build 成功就直接 promote，不跑自动回归
 - 回归不隔离 runtime home / session namespace
 - 还没进入模块化阶段，就先做复杂版本编排系统

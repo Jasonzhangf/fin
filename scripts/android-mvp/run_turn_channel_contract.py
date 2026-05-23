@@ -5,7 +5,7 @@ ROOT = pathlib.Path('/Volumes/extension/code/fin')
 LOG = ROOT/'reports/android-mvp-logs'
 LOG.mkdir(parents=True, exist_ok=True)
 
-STATUS={"ts":datetime.datetime.now(datetime.UTC).isoformat().replace('+00:00','Z'),"ok":True,"checks":[]}
+STATUS={"ts":datetime.datetime.utcnow().isoformat()+'Z',"ok":True,"checks":[]}
 
 p = ROOT/'rust/crates/debug-server/src/mobile_ws.rs'
 text = p.read_text()

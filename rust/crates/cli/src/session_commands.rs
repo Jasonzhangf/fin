@@ -21,9 +21,12 @@ use chrono::{Datelike, Local};
 use fin_config::SystemConfig;
 use fin_contracts::{ContextSnapshotRecord, EntityRefs};
 use fin_debug_server::{ChatSendRequest, ChatSendResponse, DebugBinding};
-use fin_runtime::{ContextAssemblyInput, ContextViewBuilder, create_named_local_worker};
+use fin_runtime::{
+    CompactionInput, ContextAssemblyInput, ContextCompactionEngine, ContextViewBuilder,
+    create_named_local_worker,
+};
 use serde_json::json;
-use std::path::Path;
+use std::{fs, path::Path};
 
 const RECENT_CONTEXT_LIMIT: usize = 8;
 
@@ -51,7 +54,10 @@ pub(crate) fn try_handle_local_command(
     let args = parts.collect::<Vec<_>>();
     let response = match command {
         "/new" => handle_new(runtime_home, binding)?,
+        "/clear" => handle_clear(binding)?,
+        "/sessions" => handle_sessions(runtime_home, binding)?,
         "/resume" => handle_resume(runtime_home, binding, &args)?,
+        "/session" => handle_session_subcommand(runtime_home, binding, &args)?,
         "/pause" => handle_pause(runtime_home, binding, &args)?,
         "/resume-run" => handle_resume_run(runtime_home, binding)?,
         "/tick" => handle_tick(runtime_home, binding)?,
@@ -59,6 +65,338 @@ pub(crate) fn try_handle_local_command(
         _ => return Ok(None),
     };
     Ok(Some(response))
+}
+
+fn handle_clear(binding: &DebugBinding) -> Result<ChatSendResponse, CliError> {
+    Ok(ChatSendResponse {
+        binding: binding.clone(),
+        answer: "clear done: ui should clear current rendered buffer only; runtime/session truth unchanged".into(),
+        digest_id: "digest-local-command-clear".into(),
+        events_count: 0,
+        response_kind: "system_notice".into(),
+        freshness: Some("instant".into()),
+        control_feedback: None,
+        progress: None,
+        note: None,
+        routing_action: None,
+    })
+}
+
+fn handle_sessions(
+    runtime_home: &Path,
+    binding: &DebugBinding,
+) -> Result<ChatSendResponse, CliError> {
+    let list = list_sessions(runtime_home)?;
+    let preview = list
+        .iter()
+        .take(20)
+        .map(|item| {
+            format!(
+                "{}{} | {} | {}",
+                if item.archived { "[archived] " } else { "" },
+                item.session_id,
+                item.updated_at,
+                item.title.as_deref().unwrap_or("-")
+            )
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
+    let answer = if preview.is_empty() {
+        "sessions: none".into()
+    } else {
+        format!("sessions ({})\n{}", list.len(), preview)
+    };
+    Ok(ChatSendResponse {
+        binding: binding.clone(),
+        answer,
+        digest_id: "digest-local-command-sessions".into(),
+        events_count: 0,
+        response_kind: "system_notice".into(),
+        freshness: Some("instant".into()),
+        control_feedback: None,
+        progress: None,
+        note: None,
+        routing_action: None,
+    })
+}
+
+fn handle_session_subcommand(
+    runtime_home: &Path,
+    binding: &DebugBinding,
+    args: &[&str],
+) -> Result<ChatSendResponse, CliError> {
+    let Some(sub) = args.first().copied() else {
+        return Ok(system_notice(
+            binding,
+            "usage: /session <rename|delete|archive> ...",
+            "session-usage",
+        ));
+    };
+    match sub {
+        "rename" => {
+            if args.len() < 3 {
+                return Ok(system_notice(
+                    binding,
+                    "usage: /session rename <session_id> <title>",
+                    "session-rename-usage",
+                ));
+            }
+            let session_id = args[1];
+            let title = args[2..].join(" ");
+            set_session_meta(runtime_home, session_id, Some(title.as_str()), None)?;
+            Ok(system_notice(
+                binding,
+                &format!("session renamed: {session_id}"),
+                "session-rename-ok",
+            ))
+        }
+        "archive" => {
+            if args.len() < 2 {
+                return Ok(system_notice(
+                    binding,
+                    "usage: /session archive <session_id>",
+                    "session-archive-usage",
+                ));
+            }
+            let session_id = args[1];
+            set_session_meta(runtime_home, session_id, None, Some(true))?;
+            Ok(system_notice(
+                binding,
+                &format!("session archived: {session_id}"),
+                "session-archive-ok",
+            ))
+        }
+        "delete" => {
+            if args.len() < 2 {
+                return Ok(system_notice(
+                    binding,
+                    "usage: /session delete <session_id> [--force]",
+                    "session-delete-usage",
+                ));
+            }
+            let session_id = args[1];
+            let force = args.iter().any(|value| *value == "--force");
+            let manual_note = parse_delete_manual_note(args);
+            if !force {
+                extract_session_knowledge(runtime_home, session_id, manual_note.as_deref())?;
+            }
+            delete_session(runtime_home, session_id)?;
+            let message = if force {
+                format!("session deleted by force: {session_id}")
+            } else {
+                format!("session deleted with knowledge extracted: {session_id}")
+            };
+            Ok(system_notice(
+                binding,
+                message.as_str(),
+                "session-delete-ok",
+            ))
+        }
+        _ => Ok(system_notice(
+            binding,
+            "unsupported subcommand",
+            "session-unsupported",
+        )),
+    }
+}
+
+fn system_notice(binding: &DebugBinding, answer: &str, suffix: &str) -> ChatSendResponse {
+    ChatSendResponse {
+        binding: binding.clone(),
+        answer: answer.into(),
+        digest_id: format!("digest-local-command-{suffix}"),
+        events_count: 0,
+        response_kind: "system_notice".into(),
+        freshness: Some("instant".into()),
+        control_feedback: None,
+        progress: None,
+        note: None,
+        routing_action: None,
+    }
+}
+
+#[derive(Debug, Clone)]
+struct SessionListItem {
+    session_id: String,
+    updated_at: String,
+    title: Option<String>,
+    archived: bool,
+}
+
+fn list_sessions(runtime_home: &Path) -> Result<Vec<SessionListItem>, CliError> {
+    let root = runtime_home.join("sessions");
+    if !root.exists() {
+        return Ok(Vec::new());
+    }
+    let mut items = Vec::new();
+    for year in fs::read_dir(&root).map_err(|source| CliError::ReadFile {
+        path: root.display().to_string(),
+        source,
+    })? {
+        let year = match year {
+            Ok(value) => value,
+            Err(_) => continue,
+        };
+        for month in match fs::read_dir(year.path()) {
+            Ok(value) => value,
+            Err(_) => continue,
+        } {
+            let month = match month {
+                Ok(value) => value,
+                Err(_) => continue,
+            };
+            for session in match fs::read_dir(month.path()) {
+                Ok(value) => value,
+                Err(_) => continue,
+            } {
+                let session = match session {
+                    Ok(value) => value,
+                    Err(_) => continue,
+                };
+                if !session.path().is_dir() {
+                    continue;
+                }
+                let session_id = session.file_name().to_string_lossy().to_string();
+                let message_path = session.path().join("conversation/messages.json");
+                let updated_at = fs::metadata(&message_path)
+                    .ok()
+                    .and_then(|m| m.modified().ok())
+                    .map(|t| format!("{t:?}"))
+                    .unwrap_or_else(|| "unknown".into());
+                let meta = read_session_meta(runtime_home, &session_id);
+                items.push(SessionListItem {
+                    session_id,
+                    updated_at,
+                    title: meta
+                        .as_ref()
+                        .and_then(|v| v.get("title").and_then(|x| x.as_str()).map(str::to_string)),
+                    archived: meta
+                        .as_ref()
+                        .and_then(|v| v.get("archived").and_then(|x| x.as_bool()))
+                        .unwrap_or(false),
+                });
+            }
+        }
+    }
+    items.sort_by(|a, b| b.updated_at.cmp(&a.updated_at));
+    Ok(items)
+}
+
+fn session_meta_path(runtime_home: &Path, session_id: &str) -> std::path::PathBuf {
+    runtime_home
+        .join("sessions")
+        .join("meta")
+        .join(format!("{session_id}.json"))
+}
+
+fn read_session_meta(runtime_home: &Path, session_id: &str) -> Option<serde_json::Value> {
+    let path = session_meta_path(runtime_home, session_id);
+    fs::read_to_string(path)
+        .ok()
+        .and_then(|content| serde_json::from_str::<serde_json::Value>(&content).ok())
+}
+
+fn set_session_meta(
+    runtime_home: &Path,
+    session_id: &str,
+    title: Option<&str>,
+    archived: Option<bool>,
+) -> Result<(), CliError> {
+    let path = session_meta_path(runtime_home, session_id);
+    let mut value = read_session_meta(runtime_home, session_id)
+        .unwrap_or_else(|| json!({"session_id":session_id}));
+    if let Some(title) = title {
+        value["title"] = json!(title);
+    }
+    if let Some(archived) = archived {
+        value["archived"] = json!(archived);
+    }
+    write_json(&path, &value)
+}
+
+fn parse_delete_manual_note(args: &[&str]) -> Option<String> {
+    let idx = args.iter().position(|value| *value == "--note")?;
+    if idx + 1 >= args.len() {
+        return None;
+    }
+    let note = args[idx + 1..].join(" ").trim().to_string();
+    if note.is_empty() { None } else { Some(note) }
+}
+
+fn extract_session_knowledge(
+    runtime_home: &Path,
+    session_id: &str,
+    manual_note: Option<&str>,
+) -> Result<(), CliError> {
+    let Some((_y, _m, session_dir)) = find_session_dir(runtime_home, session_id) else {
+        return Ok(());
+    };
+    let control_path = session_dir.join("control/latest.json");
+    let digest_path = session_dir.join("digests/recent_digests.json");
+    let control = fs::read_to_string(&control_path)
+        .ok()
+        .and_then(|content| serde_json::from_str::<serde_json::Value>(&content).ok())
+        .unwrap_or_else(|| json!({}));
+    let digests = fs::read_to_string(&digest_path)
+        .ok()
+        .and_then(|content| serde_json::from_str::<serde_json::Value>(&content).ok())
+        .unwrap_or_else(|| json!([]));
+    let kb_root = runtime_home
+        .join("projects")
+        .join("fin")
+        .join("knowledge-base");
+    let entries_dir = kb_root.join("entries");
+    let indexes_dir = kb_root.join("indexes");
+    fs::create_dir_all(&entries_dir).map_err(|source| CliError::WriteFile {
+        path: entries_dir.display().to_string(),
+        source,
+    })?;
+    fs::create_dir_all(&indexes_dir).map_err(|source| CliError::WriteFile {
+        path: indexes_dir.display().to_string(),
+        source,
+    })?;
+    let entry_id = format!("kb-{}-{}", session_id, Local::now().format("%Y%m%d%H%M%S"));
+    let entry = json!({
+        "entry_id": entry_id,
+        "session_id": session_id,
+        "extracted_at": local_timestamp_now(),
+        "manual_note": manual_note.unwrap_or(""),
+        "learning_candidates": {
+            "note_candidate": control.get("note_candidate"),
+            "digest_candidate": control.get("digest_candidate"),
+            "reason": control.get("reason"),
+        },
+        "digests": digests,
+    });
+    write_json(&entries_dir.join(format!("{entry_id}.json")), &entry)?;
+
+    let by_session_path = indexes_dir.join("by_session.json");
+    let mut by_session = fs::read_to_string(&by_session_path)
+        .ok()
+        .and_then(|content| serde_json::from_str::<serde_json::Value>(&content).ok())
+        .unwrap_or_else(|| json!({}));
+    let list = by_session
+        .get(session_id)
+        .and_then(|v| v.as_array().cloned())
+        .unwrap_or_default();
+    let mut updated = list;
+    updated.push(json!(entry_id));
+    by_session[session_id] = json!(updated);
+    write_json(&by_session_path, &by_session)?;
+    Ok(())
+}
+
+fn delete_session(runtime_home: &Path, session_id: &str) -> Result<(), CliError> {
+    let Some((_year, _month, session_dir)) = find_session_dir(runtime_home, session_id) else {
+        return Ok(());
+    };
+    fs::remove_dir_all(&session_dir).map_err(|source| CliError::WriteFile {
+        path: session_dir.display().to_string(),
+        source,
+    })?;
+    let meta = session_meta_path(runtime_home, session_id);
+    let _ = fs::remove_file(meta);
+    Ok(())
 }
 
 fn handle_new(runtime_home: &Path, binding: &DebugBinding) -> Result<ChatSendResponse, CliError> {
@@ -259,9 +597,9 @@ fn handle_compact(
             input: "compact rebuild".into(),
             source: "local_command".into(),
             recent_messages,
-            recent_digests,
+            recent_digests: recent_digests.clone(),
             recent_reasoning_views,
-            recent_tool_records,
+            recent_tool_records: recent_tool_records.clone(),
             project_label: Some(binding.project_label.clone()),
             runtime_home: Some(runtime_home.display().to_string()),
             cwd: std::env::current_dir()
@@ -294,6 +632,24 @@ fn handle_compact(
     trim_head(&mut recent_contexts, RECENT_CONTEXT_LIMIT);
     write_json(&recent_context_path, &recent_contexts)?;
 
+    let compacted = ContextCompactionEngine.compact(CompactionInput {
+        session_id: session_id.to_string(),
+        task_id: Some(task_id.clone()),
+        trigger_reason: "manual_slash_compact".into(),
+        recent_messages: messages
+            .iter()
+            .map(|item| format!("{}: {}", item.role, item.content))
+            .collect(),
+        digest_records: recent_digests.clone(),
+        tool_records: recent_tool_records.clone(),
+        retain_recent_count: 8,
+        compacted_at: now.clone(),
+    });
+    let compacted_path = session_dir.join("context/compacted_history.json");
+    write_json(&compacted_path, &compacted)?;
+    let compact_event_path = session_dir.join("context/compaction-events.jsonl");
+    append_jsonl(&compact_event_path, &compacted)?;
+
     let rebuild_index = json!({
         "rebuilt_at": now,
         "reason": "slash_compact",
@@ -302,6 +658,10 @@ fn handle_compact(
         "operation_id": operation_id,
         "trace_id": trace_id,
         "recent_context_count": recent_contexts.len(),
+        "compact_engine": "ContextCompactionEngine",
+        "compacted_history_path": relative_to_runtime(runtime_home, &compacted_path),
+        "replaced_message_count": compacted.replaced_message_count,
+        "retained_artifact_refs": compacted.retained_artifact_refs,
     });
     write_json(
         &runtime_home.join("runtime/current/current_rebuild_index.json"),
@@ -316,7 +676,7 @@ fn handle_compact(
         session_id,
         Some(task_id.as_str()),
         "/compact",
-        "context rebuilt from recent session artifacts",
+        "context compacted via ContextCompactionEngine from recent session artifacts",
     )?;
     let rebound = rebind_last_run_binding(
         runtime_home,
@@ -339,7 +699,8 @@ fn handle_compact(
             recent_digests_path: rebound.recent_digests_path.clone(),
         },
         answer: format!(
-            "compact done: rebuilt context for {session_id}/{task_id}, recent_contexts={}",
+            "compact done: ContextCompactionEngine replaced {} messages for {session_id}/{task_id}, recent_contexts={}",
+            compacted.replaced_message_count,
             recent_contexts.len()
         ),
         digest_id: format!("digest-local-command-compact-{op_suffix}"),
@@ -437,4 +798,29 @@ fn handle_tick(runtime_home: &Path, binding: &DebugBinding) -> Result<ChatSendRe
         note: None,
         routing_action: None,
     })
+}
+
+fn append_jsonl<T: serde::Serialize>(path: &Path, value: &T) -> Result<(), CliError> {
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent).map_err(|source| CliError::WriteFile {
+            path: parent.display().to_string(),
+            source,
+        })?;
+    }
+    let mut line = serde_json::to_string(value)?;
+    line.push('\n');
+    use std::io::Write;
+    let mut file = fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(path)
+        .map_err(|source| CliError::WriteFile {
+            path: path.display().to_string(),
+            source,
+        })?;
+    file.write_all(line.as_bytes())
+        .map_err(|source| CliError::WriteFile {
+            path: path.display().to_string(),
+            source,
+        })
 }

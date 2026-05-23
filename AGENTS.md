@@ -29,6 +29,8 @@
 8. inference/provider/tool 改动默认按真实 provider E2E 验收；没有真实 session/provider/tool artifacts，不算闭环。
 9. live provider/harness timeout 必须按阶段设置（connect / waiting provider / tool wait）；禁止用 180s/240s 这类短 wall-clock 总超时截断整条真实推理链。
 10. 不得把 prompt 压缩当作通过真实业务测试的手段；context 工程只能在“正常会塞满上下文”的前提下优化装配与重建。
+11. **Channel 统一绑定事实**：WebUI / Android 客户端 / QQ BOT 只是不同 channel，默认启动会话统一绑定到 `system agent`；channel adapter 只负责接入与渲染，不拥有会话业务语义，不得绕过 system agent 维护第二套会话真相。
+12. **前端语义交互唯一解析块**：用户侧不得输入/编辑 JSON；前端与用户交互只允许语义化输入（选项/自然语言/表单），由后端统一解析并写入唯一语义解析 block（JSON 真源）。前端不得实现第二套 JSON 语义解析或本地拼装业务 JSON 真相。
 
 ## route-map
 1. 通用开发流程：`skills/fin-general-dev/SKILL.md`

@@ -70,6 +70,7 @@ fn model_output_parser_extracts_response_and_control_feedback() {
         model: "gpt-5".into(),
         input: payload.input.clone(),
         rendered_input: "compiled".into(),
+        prompt_cache_key: None,
         user_agent: None,
         sanitized_headers: BTreeMap::new(),
     };
@@ -80,6 +81,7 @@ fn model_output_parser_extracts_response_and_control_feedback() {
         response_id: Some("resp-1".into()),
         stop_reason: Some("end_turn".into()),
         status: 200,
+        usage: None,
     };
 
     let parsed = ModelOutputParser::default().parse(&payload, &request, &response);
@@ -106,6 +108,7 @@ fn control_feedback_builder_falls_back_when_no_structured_output_exists() {
         model: "gpt-5".into(),
         input: payload.input.clone(),
         rendered_input: "compiled".into(),
+        prompt_cache_key: None,
         user_agent: None,
         sanitized_headers: BTreeMap::new(),
     };
@@ -116,6 +119,7 @@ fn control_feedback_builder_falls_back_when_no_structured_output_exists() {
         response_id: Some("resp-2".into()),
         stop_reason: Some("end_turn".into()),
         status: 200,
+        usage: None,
     };
 
     let parsed = ModelOutputParser::default().parse(&payload, &request, &response);
@@ -140,6 +144,7 @@ fn model_output_parser_rejects_unrecognized_control_feedback_shape() {
         model: "gpt-5".into(),
         input: payload.input.clone(),
         rendered_input: "compiled".into(),
+        prompt_cache_key: None,
         user_agent: None,
         sanitized_headers: BTreeMap::new(),
     };
@@ -150,6 +155,7 @@ fn model_output_parser_rejects_unrecognized_control_feedback_shape() {
         response_id: Some("resp-3".into()),
         stop_reason: Some("end_turn".into()),
         status: 200,
+        usage: None,
     };
 
     let parsed = ModelOutputParser::default().parse(&payload, &request, &response);
@@ -171,6 +177,7 @@ fn model_output_parser_salvages_whitelisted_feedback_fields_with_mask() {
         model: "gpt-5".into(),
         input: payload.input.clone(),
         rendered_input: "compiled".into(),
+        prompt_cache_key: None,
         user_agent: None,
         sanitized_headers: BTreeMap::new(),
     };
@@ -181,6 +188,7 @@ fn model_output_parser_salvages_whitelisted_feedback_fields_with_mask() {
         response_id: Some("resp-4".into()),
         stop_reason: Some("end_turn".into()),
         status: 200,
+        usage: None,
     };
 
     let parsed = ModelOutputParser::default().parse(&payload, &request, &response);
@@ -216,6 +224,7 @@ fn model_output_parser_extracts_tool_calls_block() {
         model: "gpt-5".into(),
         input: payload.input.clone(),
         rendered_input: "compiled".into(),
+        prompt_cache_key: None,
         user_agent: None,
         sanitized_headers: BTreeMap::new(),
     };
@@ -226,6 +235,7 @@ fn model_output_parser_extracts_tool_calls_block() {
         response_id: Some("resp-tool-1".into()),
         stop_reason: Some("end_turn".into()),
         status: 200,
+        usage: None,
     };
 
     let parsed = ModelOutputParser::default().parse(&payload, &request, &response);
@@ -255,6 +265,7 @@ fn model_output_parser_repairs_missing_user_response_closing_tag() {
         model: "gpt-5".into(),
         input: payload.input.clone(),
         rendered_input: "compiled".into(),
+        prompt_cache_key: None,
         user_agent: None,
         sanitized_headers: BTreeMap::new(),
     };
@@ -265,6 +276,7 @@ fn model_output_parser_repairs_missing_user_response_closing_tag() {
         response_id: Some("resp-repair-user-response".into()),
         stop_reason: Some("end_turn".into()),
         status: 200,
+        usage: None,
     };
 
     let parsed = ModelOutputParser::default().parse(&payload, &request, &response);
@@ -282,6 +294,7 @@ fn model_output_parser_repairs_deterministic_tool_call_shape() {
         model: "gpt-5".into(),
         input: payload.input.clone(),
         rendered_input: "compiled".into(),
+        prompt_cache_key: None,
         user_agent: None,
         sanitized_headers: BTreeMap::new(),
     };
@@ -292,6 +305,7 @@ fn model_output_parser_repairs_deterministic_tool_call_shape() {
         response_id: Some("resp-repair-tool".into()),
         stop_reason: Some("end_turn".into()),
         status: 200,
+        usage: None,
     };
 
     let parsed = ModelOutputParser::default().parse(&payload, &request, &response);
@@ -310,6 +324,44 @@ fn model_output_parser_repairs_deterministic_tool_call_shape() {
 }
 
 #[test]
+fn model_output_parser_repairs_xmlish_tool_call_shape() {
+    let payload = payload_with_task();
+    let request = PreparedRequest {
+        provider_name: "openai".into(),
+        protocol: ProviderProtocol::OpenAiCompatible,
+        endpoint: "https://api.example.com/v1/chat/completions".into(),
+        model: "gpt-5".into(),
+        input: payload.input.clone(),
+        rendered_input: "compiled".into(),
+        prompt_cache_key: None,
+        user_agent: None,
+        sanitized_headers: BTreeMap::new(),
+    };
+    let response = ProviderResponse {
+        provider_name: "openai".into(),
+        model: "gpt-5".into(),
+        output_text: "<fin_user_response><tool_call>\n<function=exec_command>\n<parameter=cmd>nonexistent_command_abc123</parameter>\n</function>\n</tool_call></fin_user_response>\n<fin_tool_calls><tool_call>\n<function=exec_command>\n<parameter=cmd>nonexistent_command_abc123</parameter>\n</function>\n</tool_call></fin_tool_calls>".into(),
+        response_id: Some("resp-repair-xmlish-tool".into()),
+        stop_reason: Some("end_turn".into()),
+        status: 200,
+        usage: None,
+    };
+
+    let parsed = ModelOutputParser::default().parse(&payload, &request, &response);
+    assert!(parsed.tool_calls_block_present);
+    assert_eq!(parsed.tool_calls_parse_status, "repaired_deterministic");
+    assert_eq!(parsed.tool_calls.len(), 1);
+    assert_eq!(parsed.tool_calls[0].tool_name, "exec_command");
+    assert_eq!(
+        parsed.tool_calls[0]
+            .arguments
+            .get("cmd")
+            .and_then(serde_json::Value::as_str),
+        Some("nonexistent_command_abc123")
+    );
+}
+
+#[test]
 fn model_output_parser_does_not_salvage_truncated_tool_call_value() {
     let payload = payload_with_task();
     let request = PreparedRequest {
@@ -319,6 +371,7 @@ fn model_output_parser_does_not_salvage_truncated_tool_call_value() {
         model: "gpt-5".into(),
         input: payload.input.clone(),
         rendered_input: "compiled".into(),
+        prompt_cache_key: None,
         user_agent: None,
         sanitized_headers: BTreeMap::new(),
     };
@@ -329,6 +382,7 @@ fn model_output_parser_does_not_salvage_truncated_tool_call_value() {
         response_id: Some("resp-invalid-tool".into()),
         stop_reason: Some("max_tokens".into()),
         status: 200,
+        usage: None,
     };
 
     let parsed = ModelOutputParser::default().parse(&payload, &request, &response);

@@ -101,6 +101,7 @@ impl InferenceProvider for ContractRetryProvider {
             response_id: Some("contract-retry-response".into()),
             stop_reason: Some("end_turn".into()),
             status: 200,
+            usage: None,
         })
     }
 }
@@ -158,6 +159,7 @@ impl InferenceProvider for ContractRetryLimitProvider {
             response_id: Some("contract-retry-limit-response".into()),
             stop_reason: Some("end_turn".into()),
             status: 200,
+            usage: None,
         })
     }
 }
@@ -454,11 +456,17 @@ fn session_materializer_hidden_turn_skips_visible_artifacts() {
 
     // Hidden turns MUST NOT write session-visible artifacts
     assert!(
-        !receipt.session_dir.join("conversation/messages.json").exists(),
+        !receipt
+            .session_dir
+            .join("conversation/messages.json")
+            .exists(),
         "hidden turn must not write conversation/messages.json"
     );
     assert!(
-        !receipt.session_dir.join("digests/recent_digests.json").exists(),
+        !receipt
+            .session_dir
+            .join("digests/recent_digests.json")
+            .exists(),
         "hidden turn must not write digests/recent_digests.json"
     );
     assert!(
@@ -483,7 +491,10 @@ fn session_materializer_hidden_turn_skips_visible_artifacts() {
         "hidden turn must not write provider/recent_provider_requests.json"
     );
     assert!(
-        !receipt.session_dir.join("rounds/recent_rounds.json").exists(),
+        !receipt
+            .session_dir
+            .join("rounds/recent_rounds.json")
+            .exists(),
         "hidden turn must not write rounds/recent_rounds.json"
     );
     assert!(
@@ -491,7 +502,10 @@ fn session_materializer_hidden_turn_skips_visible_artifacts() {
         "hidden turn must not write turns/recent_turns.json"
     );
     assert!(
-        !receipt.session_dir.join("closures/recent_closures.json").exists(),
+        !receipt
+            .session_dir
+            .join("closures/recent_closures.json")
+            .exists(),
         "hidden turn must not write closures/recent_closures.json"
     );
 

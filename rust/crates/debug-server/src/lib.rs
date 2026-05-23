@@ -9,11 +9,13 @@ use std::{
     io::Write,
     net::TcpListener,
     path::{Path, PathBuf},
+    sync::Arc,
     thread,
     time::Duration,
 };
 use thiserror::Error;
 
+pub mod agent_rpc;
 mod chat_api;
 mod event_stream;
 mod http;
@@ -25,13 +27,15 @@ mod web_assets;
 mod web_styles;
 
 #[cfg(test)]
+mod agent_rpc_tests;
+#[cfg(test)]
 mod tests_activity_cards;
 
 pub use chat_api::{ChatSendRequest, ChatSendResponse, DebugBinding};
 
 pub(crate) use http::{
-    HttpRequest, HttpResponse, bad_request_response, css_response, file_response, html_response,
-    internal_error_response, javascript_response, json_response, not_found_response,
+    HttpRequest, HttpResponse, bad_request_response, css_response, file_response, head_response,
+    html_response, internal_error_response, javascript_response, json_response, not_found_response,
     read_http_request, write_http_response,
 };
 
@@ -67,6 +71,10 @@ pub(crate) const API_QQBOT_EVENTS_PATH: &str = "/api/qqbot_events.jsonl";
 pub(crate) const API_QQBOT_CONVERSATIONS_PATH: &str = "/api/qqbot_conversations.json";
 pub(crate) const API_CHAT_SEND_PATH: &str = "/api/chat/send";
 pub(crate) const API_WATCH_PATH: &str = "/api/watch";
+pub(crate) const API_LOG_INGEST_PATH: &str = "/api/log/ingest";
+pub(crate) const API_LOG_LATEST_PATH: &str = "/api/log/latest";
+pub(crate) const API_UPDATE_LATEST_PATH: &str = "/updates/latest.json";
+pub(crate) const API_UPDATE_DIR: &str = "update-dist";
 
 #[derive(Debug, Error)]
 pub enum DebugDataError {
@@ -82,11 +90,30 @@ pub enum DebugDataError {
 
 pub trait DebugActionHandler {
     fn read_binding(&self, runtime_home: &Path) -> Result<DebugBinding, String>;
+    fn resolve_session_binding(
+        &self,
+        runtime_home: &Path,
+        session_id: &str,
+    ) -> Result<DebugBinding, String> {
+        let mut binding = self.read_binding(runtime_home)?;
+        binding.session_id = Some(session_id.to_string());
+        Ok(binding)
+    }
     fn send_chat_message(
         &self,
         runtime_home: &Path,
         request: ChatSendRequest,
     ) -> Result<ChatSendResponse, String>;
+    fn send_chat_message_on_binding(
+        &self,
+        runtime_home: &Path,
+        _binding: DebugBinding,
+        request: ChatSendRequest,
+    ) -> Result<ChatSendResponse, String> {
+        self.send_chat_message(runtime_home, request)
+    }
+    fn append_mobile_log_event(&self, runtime_home: &Path, event: &str) -> Result<(), String>;
+    fn read_mobile_log_events(&self, runtime_home: &Path) -> Result<Vec<String>, String>;
 }
 
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
@@ -118,6 +145,35 @@ impl DebugActionHandler for NoopDebugActionHandler {
         _request: ChatSendRequest,
     ) -> Result<ChatSendResponse, String> {
         Err("chat send handler not configured".into())
+    }
+
+    fn append_mobile_log_event(&self, runtime_home: &Path, event: &str) -> Result<(), String> {
+        let log_dir = runtime_home.join("runtime/logs/mobile");
+        std::fs::create_dir_all(&log_dir).map_err(|e| e.to_string())?;
+        let log_file = log_dir.join("connection-events.logl");
+        let ts = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_millis().to_string())
+            .unwrap_or_else(|_| "0".to_string());
+        std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(&log_file)
+            .and_then(|mut f| {
+                use std::io::Write;
+                writeln!(f, "{{\"ts\":\"{}\",\"event\":{}}}", ts, event)
+            })
+            .map_err(|e| e.to_string())
+    }
+
+    fn read_mobile_log_events(&self, runtime_home: &Path) -> Result<Vec<String>, String> {
+        let log_file = runtime_home.join("runtime/logs/mobile/connection-events.logl");
+        if !log_file.exists() {
+            return Ok(Vec::new());
+        }
+        std::fs::read_to_string(&log_file)
+            .map(|content| content.lines().map(|l| l.to_string()).collect())
+            .map_err(|e| e.to_string())
     }
 }
 
@@ -299,18 +355,38 @@ pub fn serve_debug_mvp_with_handler(
         path: bind_addr.to_string(),
         source,
     })?;
+    serve_debug_mvp_on_listener(runtime_home, listener, handler)
+}
 
+pub fn serve_debug_mvp_with_owned_handler<H>(
+    runtime_home: PathBuf,
+    listener: TcpListener,
+    handler: H,
+) -> Result<(), DebugDataError>
+where
+    H: DebugActionHandler + Sync + Send + 'static,
+{
+    serve_debug_mvp_on_listener_owned(runtime_home, listener, Arc::new(handler))
+}
+
+fn serve_debug_mvp_on_listener(
+    runtime_home: &Path,
+    listener: TcpListener,
+    handler: &(impl DebugActionHandler + Sync),
+) -> Result<(), DebugDataError> {
     thread::scope(|scope| {
         for stream in listener.incoming() {
             let mut stream = stream.map_err(|source| DebugDataError::Io {
-                path: bind_addr.to_string(),
+                path: "debug-server-listener".into(),
                 source,
             })?;
             let runtime_home = runtime_home.to_path_buf();
             scope.spawn(move || {
                 let mut probe = [0_u8; 2048];
                 let mut head = String::new();
-                for _ in 0..10 {
+                // WebView/移动网络下首包可能到达较慢；过早判定为 HTTP 会误路由到非 WS 分支。
+                // 这里拉长 peek 窗口，优先拿到请求头首行再做路由判断。
+                for _ in 0..200 {
                     if let Ok(n) = stream.peek(&mut probe)
                         && n > 0
                     {
@@ -339,6 +415,54 @@ pub fn serve_debug_mvp_with_handler(
 
         Ok(())
     })
+}
+
+fn serve_debug_mvp_on_listener_owned<H>(
+    runtime_home: PathBuf,
+    listener: TcpListener,
+    handler: Arc<H>,
+) -> Result<(), DebugDataError>
+where
+    H: DebugActionHandler + Sync + Send + 'static,
+{
+    for stream in listener.incoming() {
+        let mut stream = stream.map_err(|source| DebugDataError::Io {
+            path: "debug-server-listener".into(),
+            source,
+        })?;
+        let runtime_home = runtime_home.clone();
+        let handler = handler.clone();
+        thread::spawn(move || {
+            let mut probe = [0_u8; 2048];
+            let mut head = String::new();
+            for _ in 0..200 {
+                if let Ok(n) = stream.peek(&mut probe)
+                    && n > 0
+                {
+                    head = String::from_utf8_lossy(&probe[..n]).to_string();
+                    if head.contains("\r\n\r\n") {
+                        break;
+                    }
+                }
+                thread::sleep(Duration::from_millis(5));
+            }
+            let lower = head.to_ascii_lowercase();
+            let ws_upgrade = lower.starts_with("get /ws ")
+                || (lower.starts_with("get / ") && lower.contains("upgrade: websocket"));
+            eprintln!(
+                "incoming first_line='{}' ws_upgrade={}",
+                lower.lines().next().unwrap_or(""),
+                ws_upgrade
+            );
+            if ws_upgrade {
+                let _ = mobile_ws::handle_mobile_ws(stream, &runtime_home, handler.as_ref());
+            } else {
+                let _ = routes::handle_connection(&mut stream, &runtime_home, handler.as_ref());
+            }
+        });
+    }
+
+    Ok(())
 }
 #[cfg(test)]
 pub(crate) use routes::response_for_path;

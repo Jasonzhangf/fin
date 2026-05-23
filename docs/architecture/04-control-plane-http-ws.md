@@ -10,6 +10,13 @@
 
 ## 平面拆分
 
+## Channel 默认连接边界
+
+- WebUI / Android / QQBot 等用户界面 channel 默认只连接本机 `system_agent` 的 control listener。
+- `project_agent` 可以按配置启动自己的 listener，并允许被显式连接，但它不是任何 UI/channel 的默认连接目标。
+- UI/channel 不枚举并直连 project agent；需要 project 协作时，由 `system_agent` 读取 runtime truth / Agent RPC presence 后路由或发 mailbox。
+- `project_agent` listener 的存在只表示可被 Agent RPC / 显式调试工具连接，不改变 channel adapter 的 system-agent 入口语义。
+
 ### Control Plane（HTTP）
 - 注册 / 注销 worker
 - 查询 capability

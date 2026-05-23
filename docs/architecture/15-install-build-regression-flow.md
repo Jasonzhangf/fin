@@ -94,6 +94,32 @@ Cargo crate version 必须满足 Rust/Cargo 的 semver 约束。
 
 的前置条件。
 
+## 2.3 全局安装脚本
+
+全局安装脚本的唯一入口是：
+
+```bash
+scripts/install-fin-global.sh [~/.fin/config/user.toml]
+```
+
+该脚本必须：
+
+1. 先构建 release `fin-cli`，再调用 `fin-cli install-dev`，不得手动复制二进制绕过正式 build flow。
+2. 安装完成后只创建用户级 symlink：`${FIN_GLOBAL_BIN_DIR:-~/.local/bin}/fin -> ~/.fin/bin/fin`。
+3. daemon 重启只能调用 `fin stop` / `fin start`，禁止 `killall` / `pkill` / `kill $(...)` / `xargs kill`。
+4. 首次安装在 macOS 上调用 `scripts/bootstrap-macos-permissions.sh`，只负责触发/打开权限授权入口并记录 marker，不得伪造系统授权结果。
+
+## 2.4 首次安装权限 bootstrap
+
+macOS TCC 权限（辅助功能、屏幕录制、输入监听、完全磁盘访问等）不能被普通 CLI 静默授予。
+
+fin 的正确策略是：
+
+1. 首次全局安装时自动触发 Apple Events 检查并打开相关 System Settings Privacy pane。
+2. 写入 `~/.fin/install/macos-permissions-bootstrap.json`，表示权限 bootstrap 已经展示过。
+3. 后续安装不重复弹出；如需重新打开，使用 `FIN_FORCE_PERMISSION_BOOTSTRAP=1 scripts/bootstrap-macos-permissions.sh`。
+4. 若运行时仍缺权限，必须明确报错并指向 marker/log，不允许吞异常或假装权限已获得。
+
 ## 3. 标准闭环阶段
 
 ## Phase A：源码校验

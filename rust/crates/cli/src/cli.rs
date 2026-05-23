@@ -3,7 +3,6 @@ use crate::{
     command::{Command, parse_command},
     config::{default_provider_facade, load_effective_system_config, load_system_config},
     control_boundary_scenario::run_control_boundary_scenario,
-    session_run::{run_session, runtime_home_override_from_env},
     fs_utils::read_file,
     headless_daemon::{run_headless_daemon, start_headless_daemon, stop_headless_daemon},
     install_flow::{build_dev, promote_existing_build, rollback_install},
@@ -11,6 +10,10 @@ use crate::{
     provider_live_smoke::run_provider_live_smoke,
     qqbot_live_receipt::run_qqbot_live_receipt,
     runtime_home::{init_runtime_home, persist_runtime_session, resolved_runtime_home},
+    session_run::{run_session, runtime_home_override_from_env},
+    startup_topology::{
+        configure_local_project_agent, effective_project_agents, remove_dynamic_project_agent,
+    },
     transcript::{load_transcript_scenario, run_transcript_session},
     web_debug_entry::serve_web_debug,
 };
@@ -101,8 +104,11 @@ pub fn run_with_runtime_home(
             let user_toml = read_file(Path::new(&path))?;
             let system =
                 load_effective_system_config(&user_toml, runtime_home_override.as_deref())?;
-            let run =
-                run_control_boundary_scenario(&user_toml, &system, runtime_home_override.as_deref())?;
+            let run = run_control_boundary_scenario(
+                &user_toml,
+                &system,
+                runtime_home_override.as_deref(),
+            )?;
             println!(
                 "control boundary scenario ok: session={} task={} responses={} home={}",
                 run.session_id,
@@ -143,8 +149,12 @@ pub fn run_with_runtime_home(
                 load_effective_system_config(&user_toml, runtime_home_override.as_deref())?;
             let provider = default_provider_facade(&system)?;
             let run = run_session(&system, &provider, &input)?;
-            let artifacts =
-                persist_runtime_session(&user_toml, &system, &run, runtime_home_override.as_deref())?;
+            let artifacts = persist_runtime_session(
+                &user_toml,
+                &system,
+                &run,
+                runtime_home_override.as_deref(),
+            )?;
             println!(
                 "runtime session ok: provider={} model={} events={} digest={} home={}",
                 run.prepared_request.provider_name,
@@ -239,6 +249,57 @@ pub fn run_with_runtime_home(
                 "qqbot live receipt ok: target={} session={} status={} receipt={}",
                 report.target, report.session_id, report.status, report.receipt_path
             );
+        }
+        Command::ProjectAgentAdd {
+            path,
+            project_id,
+            project_root,
+            agent_name,
+        } => {
+            let user_toml = read_file(Path::new(&path))?;
+            let system =
+                load_effective_system_config(&user_toml, runtime_home_override.as_deref())?;
+            let runtime_home =
+                init_runtime_home(&user_toml, &system, runtime_home_override.as_deref())?;
+            let project = configure_local_project_agent(
+                &runtime_home,
+                &project_id,
+                &project_root,
+                agent_name,
+            )?;
+            println!(
+                "project agent configured: project_id={} endpoint={} config={}",
+                project.project_id,
+                project.endpoint.unwrap_or_else(|| "-".into()),
+                runtime_home
+                    .join("runtime/agents/project_agents.json")
+                    .display()
+            );
+        }
+        Command::ProjectAgentRemove { path, project_id } => {
+            let user_toml = read_file(Path::new(&path))?;
+            let system =
+                load_effective_system_config(&user_toml, runtime_home_override.as_deref())?;
+            let runtime_home =
+                init_runtime_home(&user_toml, &system, runtime_home_override.as_deref())?;
+            let projects = remove_dynamic_project_agent(&runtime_home, &project_id)?;
+            println!(
+                "project agent removed: project_id={} remaining={} config={}",
+                project_id,
+                projects.len(),
+                runtime_home
+                    .join("runtime/agents/project_agents.json")
+                    .display()
+            );
+        }
+        Command::ProjectAgentList { path } => {
+            let user_toml = read_file(Path::new(&path))?;
+            let system =
+                load_effective_system_config(&user_toml, runtime_home_override.as_deref())?;
+            let runtime_home =
+                init_runtime_home(&user_toml, &system, runtime_home_override.as_deref())?;
+            let projects = effective_project_agents(&runtime_home, &system)?;
+            println!("{}", serde_json::to_string_pretty(&projects)?);
         }
         Command::WebDebug { path, host, port } => {
             let user_toml = read_file(Path::new(&path))?;

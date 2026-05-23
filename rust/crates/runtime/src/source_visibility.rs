@@ -13,7 +13,9 @@ mod tests {
     #[test]
     fn hidden_sources_are_correctly_identified() {
         // framework resume_checkpoint
-        assert!(is_hidden_session_source("framework.resume_checkpoint.tool_wait"));
+        assert!(is_hidden_session_source(
+            "framework.resume_checkpoint.tool_wait"
+        ));
         assert!(is_hidden_session_source("framework.resume_checkpoint"));
 
         // framework owner_loop
@@ -24,10 +26,12 @@ mod tests {
         assert!(is_hidden_session_source("framework.task_kickoff.formalize"));
 
         // project resume_checkpoint
-        assert!(is_hidden_session_source("project.resume_checkpoint.anything"));
+        assert!(is_hidden_session_source(
+            "project.resume_checkpoint.anything"
+        ));
 
         // project assignment (exact match)
- assert!(is_hidden_session_source("project.assignment"));
+        assert!(is_hidden_session_source("project.assignment"));
     }
 
     #[test]

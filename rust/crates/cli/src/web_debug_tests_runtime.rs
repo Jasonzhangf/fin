@@ -364,6 +364,48 @@ fn tick_command_drives_pending_queue_when_scheduler_allows() {
     assert!(events.contains("supervisor.cycle_completed"));
 }
 
+#[test]
+fn channel_ingress_defaults_to_system_agent_even_when_project_agent_is_configured() {
+    let home = temp_runtime_home();
+    ensure_runtime_home_layout(&home).expect("runtime home should init");
+    let mut system = map_system_config(&sample_user_toml()).expect("system config");
+    system
+        .runtime
+        .startup
+        .project_agents
+        .push(fin_config::ProjectAgentStartupConfig {
+            project_id: "fin-project".into(),
+            mode: fin_config::ProjectAgentMode::Local,
+            project_root: Some("/tmp/fin-project".into()),
+            endpoint: Some("http://127.0.0.1:47001".into()),
+            agent_name: Some("project-listener".into()),
+            worker_budget: 1,
+            always_on: true,
+            auto_resume: true,
+            auto_connect: true,
+        });
+    let handler = CliDebugActionHandler::new(sample_user_toml(), system).expect("handler");
+
+    handler
+        .send_message_internal_with_provider(
+            &home,
+            ChatSendRequest {
+                message: "来自 QQBot 的默认入口消息".into(),
+                input_kind: Some("channel_ingress".into()),
+                attachments: Vec::new(),
+            },
+            &static_provider(&handler.system),
+        )
+        .expect("channel ingress should run");
+
+    let current_context =
+        fs::read_to_string(home.join("runtime/current/current_context.json")).expect("context");
+    assert!(current_context.contains("\"source\": \"channel.qqbot\""));
+    assert!(current_context.contains("\"role_id\": \"system\""));
+    assert!(current_context.contains("\"worker_id\": \"worker-system\""));
+    assert!(current_context.contains("project-listener"));
+}
+
 #[path = "web_debug_tests_runtime_followups.rs"]
 mod web_debug_tests_runtime_followups;
 #[path = "web_debug_tests_runtime_parallel.rs"]

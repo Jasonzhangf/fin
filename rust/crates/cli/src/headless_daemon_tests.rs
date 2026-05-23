@@ -1,5 +1,5 @@
 use crate::{
-    config::{map_system_config, load_effective_system_config},
+    config::map_system_config,
     fs_utils::write_file,
     headless_daemon::{run_headless_daemon_with_provider, stop_headless_daemon},
     runtime_home::ensure_runtime_home_layout,
@@ -51,6 +51,7 @@ impl InferenceProvider for HeadlessResumeProvider {
             response_id: Some("headless-resume-response".into()),
             stop_reason: Some("end_turn".into()),
             status: 200,
+            usage: None,
         })
     }
 }
@@ -90,6 +91,7 @@ impl InferenceProvider for HeadlessProjectProvider {
             response_id: Some("headless-project-response".into()),
             stop_reason: Some("end_turn".into()),
             status: 200,
+            usage: None,
         })
     }
 }
@@ -121,8 +123,10 @@ fn temp_runtime_home(prefix: &str) -> PathBuf {
 fn headless_daemon_cycle_resumes_checkpoint_without_frontstage() {
     let _guard = env_lock().lock().expect("env lock");
     let previous = std::env::var("FIN_HEADLESS_DAEMON_MAX_CYCLES").ok();
+    let previous_bind = std::env::var("FIN_DAEMON_CONTROL_PLANE_BIND").ok();
     unsafe {
         std::env::set_var("FIN_HEADLESS_DAEMON_MAX_CYCLES", "1");
+        std::env::set_var("FIN_DAEMON_CONTROL_PLANE_BIND", "127.0.0.1:0");
     }
 
     let home = temp_runtime_home("resume");
@@ -264,14 +268,25 @@ fn headless_daemon_cycle_resumes_checkpoint_without_frontstage() {
             std::env::remove_var("FIN_HEADLESS_DAEMON_MAX_CYCLES");
         }
     }
+    if let Some(value) = previous_bind {
+        unsafe {
+            std::env::set_var("FIN_DAEMON_CONTROL_PLANE_BIND", value);
+        }
+    } else {
+        unsafe {
+            std::env::remove_var("FIN_DAEMON_CONTROL_PLANE_BIND");
+        }
+    }
 }
 
 #[test]
 fn headless_daemon_cycle_autonomously_resumes_local_project_agent_without_frontstage() {
     let _guard = env_lock().lock().expect("env lock");
     let previous = std::env::var("FIN_HEADLESS_DAEMON_MAX_CYCLES").ok();
+    let previous_bind = std::env::var("FIN_DAEMON_CONTROL_PLANE_BIND").ok();
     unsafe {
         std::env::set_var("FIN_HEADLESS_DAEMON_MAX_CYCLES", "1");
+        std::env::set_var("FIN_DAEMON_CONTROL_PLANE_BIND", "127.0.0.1:0");
     }
 
     let home = temp_runtime_home("project-detached");
@@ -421,6 +436,15 @@ fn headless_daemon_cycle_autonomously_resumes_local_project_agent_without_fronts
     } else {
         unsafe {
             std::env::remove_var("FIN_HEADLESS_DAEMON_MAX_CYCLES");
+        }
+    }
+    if let Some(value) = previous_bind {
+        unsafe {
+            std::env::set_var("FIN_DAEMON_CONTROL_PLANE_BIND", value);
+        }
+    } else {
+        unsafe {
+            std::env::remove_var("FIN_DAEMON_CONTROL_PLANE_BIND");
         }
     }
 }

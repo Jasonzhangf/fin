@@ -27,7 +27,8 @@ pub use records::{
     PauseCheckpointRecord, PendingInputRecord, ProviderRequestRecord, ProviderResponseRecord,
     ReasoningViewRecord, RoundRecord, RoutingActionRecord, RoutingDecisionRecord,
     SchedulerDecisionRecord, SchedulerTickRecord, SegmentMergeRecord, StepRecord,
-    SupervisorCycleRecord, SupervisorHeartbeatRecord, ToolExecutionRecord, TurnRecord,
+    SupervisorCycleRecord, SupervisorHeartbeatRecord, TokenUsageRecord, ToolExecutionRecord,
+    TurnRecord,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]

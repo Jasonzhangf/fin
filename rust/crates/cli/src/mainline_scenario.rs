@@ -1,8 +1,8 @@
 use crate::{
     CliError,
     session_run::{
-        SessionRequest, session_namespace_from_env, run_session_request, runtime_home_override_from_env,
-        sanitize_id_fragment,
+        SessionRequest, run_session_request, runtime_home_override_from_env, sanitize_id_fragment,
+        session_namespace_from_env,
     },
     time::{local_time_base, local_timestamp_for_turn},
 };
@@ -118,11 +118,14 @@ impl InferenceProvider for MainlineReceiptProvider {
             response_id: Some("mainline-scenario-response".into()),
             stop_reason: Some("end_turn".into()),
             status: 200,
+            usage: None,
         })
     }
 }
 
-pub(crate) fn run_mainline_scenario(system: &SystemConfig) -> Result<MainlineScenarioRun, CliError> {
+pub(crate) fn run_mainline_scenario(
+    system: &SystemConfig,
+) -> Result<MainlineScenarioRun, CliError> {
     let provider = MainlineReceiptProvider::new();
     let ids = mainline_ids();
     let time_base = local_time_base();

@@ -145,6 +145,10 @@ fn parse_tool_calls(raw: &str, extraction_repaired: bool) -> ParsedToolCalls {
         }
     }
 
+    if let Some(value) = parse_xmlish_tool_call(&working) {
+        return finalize_tool_calls(value, true, true, None);
+    }
+
     let invalid_reason = classify_invalid_tool_calls(&working);
     ParsedToolCalls {
         block_present: true,
@@ -156,6 +160,40 @@ fn parse_tool_calls(raw: &str, extraction_repaired: bool) -> ParsedToolCalls {
         invalid_reason: Some(invalid_reason),
         calls: Vec::new(),
     }
+}
+
+fn parse_xmlish_tool_call(raw: &str) -> Option<Value> {
+    let trimmed = raw.trim();
+    if !trimmed.contains("<tool_call>") || !trimmed.contains("<function=") {
+        return None;
+    }
+    let function_start = trimmed.find("<function=")? + "<function=".len();
+    let function_end = trimmed[function_start..].find('>')? + function_start;
+    let tool_name = trimmed[function_start..function_end].trim();
+    if tool_name.is_empty() {
+        return None;
+    }
+    let mut arguments = serde_json::Map::new();
+    let mut rest = &trimmed[function_end + 1..];
+    while let Some(parameter_pos) = rest.find("<parameter=") {
+        let name_start = parameter_pos + "<parameter=".len();
+        let name_end = rest[name_start..].find('>')? + name_start;
+        let name = rest[name_start..name_end].trim();
+        if name.is_empty() {
+            return None;
+        }
+        let value_start = name_end + 1;
+        let value_end = rest[value_start..].find("</parameter>")? + value_start;
+        arguments.insert(
+            name.to_string(),
+            Value::String(rest[value_start..value_end].trim().to_string()),
+        );
+        rest = &rest[value_end + "</parameter>".len()..];
+    }
+    Some(serde_json::json!({
+        "tool_name": tool_name,
+        "arguments": Value::Object(arguments),
+    }))
 }
 
 fn finalize_tool_calls(

@@ -25,7 +25,6 @@ mod daemon_state;
 mod daemon_state_support;
 #[cfg(test)]
 mod daemon_state_tests;
-mod session_run;
 mod error;
 mod execution_checkpoint;
 mod execution_segments;
@@ -65,6 +64,7 @@ mod scheduler_tick_tests;
 mod session_binding;
 mod session_commands;
 mod session_routing_commands;
+mod session_run;
 mod startup_control_summary;
 mod startup_daemon_ensure;
 mod startup_project_task_scan;

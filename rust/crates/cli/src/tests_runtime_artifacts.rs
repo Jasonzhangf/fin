@@ -368,7 +368,11 @@ fn event_stream_rotation_moves_old_segments_into_archive_without_losing_truth() 
     let live_stream_path = session_dir.join("events/stream.jsonl");
     let local_archive_dir = session_dir.join("events/archive");
     let now = chrono::Local::now();
-    let cold_archive_dir = home.join(format!("archive/sessions/{}/{:02}/session-event-archive/events", now.year(), now.month()));
+    let cold_archive_dir = home.join(format!(
+        "archive/sessions/{}/{:02}/session-event-archive/events",
+        now.year(),
+        now.month()
+    ));
     let live_event_count = fs::read_to_string(&live_stream_path)
         .expect("live stream")
         .lines()

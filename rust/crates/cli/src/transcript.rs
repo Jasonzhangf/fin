@@ -1,9 +1,10 @@
 use crate::{
     CliError,
-    session_run::{
-        SessionRequest, build_session_identity, session_namespace_from_env, run_session_request, sanitize_id_fragment,
-    },
     fs_utils::read_file,
+    session_run::{
+        SessionRequest, build_session_identity, run_session_request, sanitize_id_fragment,
+        session_namespace_from_env,
+    },
     time::{local_time_base, local_timestamp_for_turn},
 };
 use fin_config::SystemConfig;

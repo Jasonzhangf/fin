@@ -3,6 +3,22 @@ use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct TokenUsageRecord {
+    #[serde(default)]
+    pub prompt_tokens: Option<u64>,
+    #[serde(default)]
+    pub completion_tokens: Option<u64>,
+    #[serde(default)]
+    pub total_tokens: Option<u64>,
+    #[serde(default)]
+    pub cached_tokens: Option<u64>,
+    #[serde(default)]
+    pub reasoning_tokens: Option<u64>,
+    #[serde(default)]
+    pub usage_source: String,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ToolExecutionRecord {
     pub tool_call_id: String,
     pub operation_id: String,
@@ -101,6 +117,8 @@ pub struct ProviderRequestRecord {
     pub input: String,
     pub rendered_input: String,
     #[serde(default)]
+    pub prompt_cache_key: Option<String>,
+    #[serde(default)]
     pub user_agent: Option<String>,
     #[serde(default)]
     pub sanitized_headers: BTreeMap<String, String>,
@@ -124,6 +142,8 @@ pub struct ProviderResponseRecord {
     pub response_id: Option<String>,
     pub stop_reason: Option<String>,
     pub output_text: String,
+    #[serde(default)]
+    pub usage: Option<TokenUsageRecord>,
     pub created_at: String,
 }
 

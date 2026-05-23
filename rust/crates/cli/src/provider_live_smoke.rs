@@ -1,9 +1,11 @@
 use crate::{
     CliError,
     config::default_provider_facade,
-    session_run::{SessionRequest, session_namespace_from_env, run_session_request, sanitize_id_fragment},
     process_utils::append_log,
     runtime_home::{persist_runtime_session, read_last_run_value, resolved_runtime_home},
+    session_run::{
+        SessionRequest, run_session_request, sanitize_id_fragment, session_namespace_from_env,
+    },
     time::{local_time_base, local_timestamp_for_turn, local_timestamp_now},
     transcript::{
         TranscriptScenario, TranscriptTurn, load_transcript_scenario, scope_from_session_id,

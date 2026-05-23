@@ -124,6 +124,7 @@ impl InferenceProvider for InspectingTwoRoundProvider {
             response_id: Some("inspect-two-round-response".into()),
             stop_reason: Some("end_turn".into()),
             status: 200,
+            usage: None,
         })
     }
 }
@@ -160,6 +161,7 @@ impl InferenceProvider for FailedToolStopProvider {
             response_id: Some("failed-tool-stop-response".into()),
             stop_reason: Some("end_turn".into()),
             status: 200,
+            usage: None,
         })
     }
 }
@@ -282,4 +284,270 @@ fn runtime_allows_reasoning_stop_after_failed_tool_when_model_chooses_failed_clo
     );
     assert_eq!(run.round_records.len(), 1);
     let _ = fs::remove_dir_all(&workspace_root);
+}
+
+#[derive(Debug, Clone)]
+struct UsageRecordProvider {
+    descriptor: ProviderDescriptor,
+}
+
+impl UsageRecordProvider {
+    fn new() -> Self {
+        Self {
+            descriptor: ProviderDescriptor::from_resolved(&ResolvedProviderConfig {
+                name: "openai".into(),
+                protocol: ProviderProtocol::OpenAiCompatible,
+                base_url: "https://api.example.com/v1".into(),
+                model: "gpt-5".into(),
+                credential: ProviderCredential::ApiKeyEnv {
+                    env_var: "OPENAI_API_KEY".into(),
+                },
+                user_agent: None,
+                headers: BTreeMap::new(),
+            }),
+        }
+    }
+}
+
+impl InferenceProvider for UsageRecordProvider {
+    fn descriptor(&self) -> &ProviderDescriptor {
+        &self.descriptor
+    }
+
+    fn prepare_request(&self, request: &ProviderRequest) -> PreparedRequest {
+        self.descriptor.prepare_request(request)
+    }
+
+    fn execute_prepared(
+        &self,
+        request: &PreparedRequest,
+    ) -> Result<ProviderResponse, fin_provider::ProviderError> {
+        Ok(ProviderResponse {
+            provider_name: request.provider_name.clone(),
+            model: request.model.clone(),
+            output_text: "<fin_user_response>done</fin_user_response>\n<fin_control_feedback>{\"origin\":\"model_output_contract_v1\",\"is_continuation\":true,\"is_simple_query\":false,\"candidate_task_id\":\"task-usage-record\",\"candidate_topic_thread_id\":\"topic-usage-record\",\"continuity_confidence\":90,\"topic_shift_confidence\":5,\"simple_query_confidence\":3,\"previous_topic_summary\":\"usage\",\"current_topic_summary\":\"usage\",\"note_candidate\":\"usage recorded\",\"digest_candidate\":\"usage recorded\",\"reason\":\"test\"}</fin_control_feedback>\n<fin_tool_calls>[{\"tool_name\":\"reasoning.stop\",\"arguments\":{\"summary\":\"done\"}}]</fin_tool_calls>".into(),
+            response_id: Some("usage-response".into()),
+            stop_reason: Some("end_turn".into()),
+            status: 200,
+            usage: Some(fin_provider::TokenUsage {
+                prompt_tokens: Some(123),
+                completion_tokens: Some(45),
+                total_tokens: Some(168),
+                cached_tokens: Some(100),
+                reasoning_tokens: Some(12),
+                usage_source: "provider_anthropic".into(),
+            }),
+        })
+    }
+}
+
+#[test]
+fn runtime_records_provider_prompt_cache_key_and_usage() {
+    let mut runtime = M1Runtime::default();
+    let worker = worker_runtime();
+    let provider = UsageRecordProvider::new();
+    let operation = InferenceOperationBuilder
+        .build(
+            &worker,
+            InferenceRequest {
+                operation_id: "op-usage-record".into(),
+                trace_id: "trace-usage-record".into(),
+                submitted_at: "2026-05-23T01:00:00+08:00".into(),
+                refs: EntityRefs {
+                    session_id: Some("session-usage-record".into()),
+                    task_id: Some("task-usage-record".into()),
+                    ..EntityRefs::default()
+                },
+                input: "record usage".into(),
+                context: MinimalContextView::default(),
+            },
+        )
+        .expect("operation");
+
+    let run = runtime.run_closure(operation, &provider).expect("closure");
+    let request = run
+        .provider_request_records
+        .first()
+        .expect("provider request record");
+    assert_eq!(
+        request.prompt_cache_key.as_deref(),
+        Some("session-usage-record")
+    );
+    let usage = run
+        .provider_response_records
+        .first()
+        .and_then(|record| record.usage.as_ref())
+        .expect("usage record");
+    assert_eq!(usage.prompt_tokens, Some(123));
+    assert_eq!(usage.cached_tokens, Some(100));
+    assert_eq!(usage.reasoning_tokens, Some(12));
+    let provider_tool = run
+        .tool_records
+        .iter()
+        .find(|record| record.tool_name == "provider.call")
+        .expect("provider.call tool record");
+    let output_summary = provider_tool
+        .output_summary
+        .as_deref()
+        .expect("provider usage output summary");
+    assert!(output_summary.contains("cache_hit_rate=81.3%"));
+    assert!(output_summary.contains("cached_tokens=100/123"));
+}
+
+#[test]
+fn runtime_auto_compact_replaces_history_before_provider_request_when_budget_exceeds_threshold() {
+    let mut runtime = M1Runtime::default();
+    let worker = worker_runtime();
+    let provider = InspectingTwoRoundProvider::new();
+    let long_history = (0..25000)
+        .map(|idx| format!("user: historical drawing edit {idx}"))
+        .collect::<Vec<_>>();
+    let operation = InferenceOperationBuilder
+        .build(
+            &worker,
+            InferenceRequest {
+                operation_id: "op-auto-compact".into(),
+                trace_id: "trace-auto-compact".into(),
+                submitted_at: "2026-05-23T01:10:00+08:00".into(),
+                refs: EntityRefs {
+                    session_id: Some("session-auto-compact".into()),
+                    task_id: Some("task-auto-compact".into()),
+                    ..EntityRefs::default()
+                },
+                input: "continue drawing".into(),
+                context: MinimalContextView {
+                    history: Some(fin_contracts::HistoryBlock {
+                        recent_messages: long_history,
+                        ..Default::default()
+                    }),
+                    knowledge: Some(fin_contracts::KnowledgeArtifactBlock {
+                        artifact_candidates: vec!["images/iter-1.png".into()],
+                        ..Default::default()
+                    }),
+                    summary: Some("old drawing iterations".into()),
+                    ..MinimalContextView::default()
+                },
+            },
+        )
+        .expect("operation");
+
+    let run = runtime.run_closure(operation, &provider).expect("closure");
+    let first_request = provider
+        .captured_requests()
+        .first()
+        .expect("provider request")
+        .clone();
+    assert!(first_request.rendered_input.contains("Compacted summary:"));
+    assert!(
+        first_request
+            .rendered_input
+            .contains("Retained artifact refs:")
+    );
+    assert!(first_request.rendered_input.contains("images/iter-1.png"));
+    assert!(!run.compacted_history_records.is_empty());
+    assert!(run.compacted_history_records.iter().any(|record| {
+        record
+            .retained_artifact_refs
+            .contains(&"images/iter-1.png".into())
+    }));
+}
+
+#[derive(Debug, Clone)]
+struct HugeFollowupProvider {
+    descriptor: ProviderDescriptor,
+    requests: Arc<Mutex<Vec<PreparedRequest>>>,
+}
+
+impl HugeFollowupProvider {
+    fn new() -> Self {
+        Self {
+            descriptor: ProviderDescriptor::from_resolved(&ResolvedProviderConfig {
+                name: "openai".into(),
+                protocol: ProviderProtocol::OpenAiCompatible,
+                base_url: "https://api.example.com/v1".into(),
+                model: "gpt-5".into(),
+                credential: ProviderCredential::ApiKeyEnv {
+                    env_var: "OPENAI_API_KEY".into(),
+                },
+                user_agent: None,
+                headers: BTreeMap::new(),
+            }),
+            requests: Arc::new(Mutex::new(Vec::new())),
+        }
+    }
+
+    fn captured_requests(&self) -> Vec<PreparedRequest> {
+        self.requests.lock().expect("requests lock").clone()
+    }
+}
+
+impl InferenceProvider for HugeFollowupProvider {
+    fn descriptor(&self) -> &ProviderDescriptor {
+        &self.descriptor
+    }
+
+    fn prepare_request(&self, request: &ProviderRequest) -> PreparedRequest {
+        self.descriptor.prepare_request(request)
+    }
+
+    fn execute_prepared(
+        &self,
+        request: &PreparedRequest,
+    ) -> Result<ProviderResponse, fin_provider::ProviderError> {
+        self.requests
+            .lock()
+            .expect("requests lock")
+            .push(request.clone());
+        let is_followup = request
+            .input
+            .starts_with("Continue the same turn with the latest tool results.");
+        let output_text = if is_followup {
+            "<fin_user_response>followup compacted and done</fin_user_response>\n<fin_control_feedback>{\"origin\":\"model_output_contract_v1\",\"is_continuation\":true,\"is_simple_query\":false,\"candidate_task_id\":\"task-mid-compact\",\"candidate_topic_thread_id\":\"topic-mid-compact\",\"continuity_confidence\":90,\"topic_shift_confidence\":5,\"simple_query_confidence\":3,\"previous_topic_summary\":\"mid compact\",\"current_topic_summary\":\"mid compact\",\"note_candidate\":\"mid compact done\",\"digest_candidate\":\"mid compact done\",\"reason\":\"test\"}</fin_control_feedback>\n<fin_tool_calls>[{\"tool_name\":\"reasoning.stop\",\"arguments\":{\"summary\":\"done\"}}]</fin_tool_calls>".into()
+        } else {
+            let huge = "large assistant context ".repeat(30_000);
+            format!(
+                "<fin_user_response>{huge}</fin_user_response>\n<fin_control_feedback>{{\"origin\":\"model_output_contract_v1\",\"is_continuation\":true,\"is_simple_query\":false,\"candidate_task_id\":\"task-mid-compact\",\"candidate_topic_thread_id\":\"topic-mid-compact\",\"continuity_confidence\":90,\"topic_shift_confidence\":5,\"simple_query_confidence\":3,\"previous_topic_summary\":\"mid compact\",\"current_topic_summary\":\"mid compact\",\"note_candidate\":\"need tool followup\",\"digest_candidate\":\"need tool followup\",\"reason\":\"test\"}}</fin_control_feedback>\n<fin_tool_calls>[{{\"tool_name\":\"peer.list\",\"arguments\":{{}}}}]</fin_tool_calls>"
+            )
+        };
+        Ok(ProviderResponse {
+            provider_name: request.provider_name.clone(),
+            model: request.model.clone(),
+            output_text,
+            response_id: Some("huge-followup-response".into()),
+            stop_reason: Some("end_turn".into()),
+            status: 200,
+            usage: None,
+        })
+    }
+}
+
+#[test]
+fn runtime_mid_turn_tool_followup_compacts_when_context_exceeds_budget() {
+    let mut runtime = M1Runtime::default();
+    let worker = worker_runtime();
+    let provider = HugeFollowupProvider::new();
+    let operation = InferenceOperationBuilder
+        .build(
+            &worker,
+            InferenceRequest {
+                operation_id: "op-mid-compact".into(),
+                trace_id: "trace-mid-compact".into(),
+                submitted_at: "2026-05-23T01:20:00+08:00".into(),
+                refs: EntityRefs {
+                    session_id: Some("session-mid-compact".into()),
+                    task_id: Some("task-mid-compact".into()),
+                    ..EntityRefs::default()
+                },
+                input: "start with small context then tool followup explodes".into(),
+                context: MinimalContextView::default(),
+            },
+        )
+        .expect("operation");
+
+    let run = runtime.run_closure(operation, &provider).expect("closure");
+    let requests = provider.captured_requests();
+    assert_eq!(requests.len(), 2);
+    assert!(!requests[0].rendered_input.contains("Compacted summary:"));
+    assert!(requests[1].rendered_input.contains("Compacted summary:"));
+    assert!(!run.compacted_history_records.is_empty());
 }

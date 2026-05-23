@@ -60,3 +60,21 @@ data class ProjectStatus(
     val wakeQueueState: String?,
     val pickupState: String?,
 )
+
+@Serializable
+data class ProviderProfile(
+    val profile_name: String,
+    val provider: String,
+    val protocol: String,
+    val base_url: String,
+    val model: String,
+    val credential_source: String,
+    val active: Boolean,
+)
+
+@Serializable
+data class ProviderConfigCache(
+    val default_profile: String,
+    val profiles: List<ProviderProfile>,
+    val active_thinking_effort: String,
+)

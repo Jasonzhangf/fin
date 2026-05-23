@@ -3,8 +3,7 @@ use crate::{
     attached_control_plane::run_attached_control_plane_cycle,
     channel_peer::ensure_builtin_qqbot_binding,
     chat_policy::{ChatDisposition, classify_request},
-    config::default_provider_facade,
-    session_run::{SessionRequest, build_session_identity, run_session_request},
+    config::{default_provider_facade, load_effective_system_config},
     execution_segments::{create_interrupted_segment, latest_open_segment},
     execution_state::{load_execution_state, pause_execution},
     routing_prompt_state::{load_pending_routing_action, prompt_user_choice_response},
@@ -14,6 +13,7 @@ use crate::{
     },
     session_binding::resolve_binding_for_session,
     session_commands::try_handle_local_command,
+    session_run::{SessionRequest, build_session_identity, run_session_request},
     status_probe::build_status_probe_response,
     supervisor_cycle::run_supervisor_cycle,
     time::local_timestamp_now,
@@ -59,11 +59,12 @@ impl CliDebugActionHandler {
         runtime_home: &Path,
         request: ChatSendRequest,
     ) -> Result<ChatSendResponse, CliError> {
-        self.send_message_internal_with_provider_on_binding(
+        let refreshed = self.refreshed_handler(runtime_home)?;
+        refreshed.send_message_internal_with_provider_on_binding(
             runtime_home,
             request,
             None,
-            &self.provider,
+            &refreshed.provider,
         )
     }
 
@@ -97,6 +98,7 @@ impl CliDebugActionHandler {
             return Err(CliError::Usage);
         }
 
+        let explicit_binding = initial_binding.is_some();
         let mut existing_binding =
             initial_binding.unwrap_or(self.read_binding_internal(runtime_home)?);
         let _ = ensure_builtin_qqbot_binding(runtime_home, existing_binding.session_id.as_deref())?;
@@ -129,7 +131,9 @@ impl CliDebugActionHandler {
                 )
             },
         )?;
-        existing_binding = self.read_binding_internal(runtime_home)?;
+        if !explicit_binding {
+            existing_binding = self.read_binding_internal(runtime_home)?;
+        }
         if request.is_status_probe() {
             return build_status_probe_response(runtime_home, existing_binding, &request);
         }
@@ -226,12 +230,31 @@ impl CliDebugActionHandler {
         binding: DebugBinding,
         request: ChatSendRequest,
     ) -> Result<ChatSendResponse, CliError> {
-        self.send_message_internal_with_provider_on_binding(
+        let refreshed = self.refreshed_handler(runtime_home)?;
+        refreshed.send_message_internal_with_provider_on_binding(
             runtime_home,
             request,
             Some(binding),
-            &self.provider,
+            &refreshed.provider,
         )
+    }
+
+    fn refreshed_handler(&self, runtime_home: &Path) -> Result<Self, CliError> {
+        let runtime_user_toml_path = runtime_home.join("config/user.toml");
+        let runtime_user_toml = match std::fs::read_to_string(&runtime_user_toml_path) {
+            Ok(content) => content,
+            Err(err) if err.kind() == std::io::ErrorKind::NotFound => {
+                return Ok(self.clone());
+            }
+            Err(source) => {
+                return Err(CliError::ReadFile {
+                    path: runtime_user_toml_path.display().to_string(),
+                    source,
+                });
+            }
+        };
+        let runtime_system = load_effective_system_config(&runtime_user_toml, Some(runtime_home))?;
+        Self::new(runtime_user_toml, runtime_system)
     }
 }
 
@@ -254,6 +277,25 @@ impl DebugActionHandler for CliDebugActionHandler {
             .map_err(|err| err.to_string())
     }
 
+    fn resolve_session_binding(
+        &self,
+        runtime_home: &Path,
+        session_id: &str,
+    ) -> Result<DebugBinding, String> {
+        self.resolve_session_binding(runtime_home, session_id)
+            .map_err(|err| err.to_string())
+    }
+
+    fn send_chat_message_on_binding(
+        &self,
+        runtime_home: &Path,
+        binding: DebugBinding,
+        request: ChatSendRequest,
+    ) -> Result<ChatSendResponse, String> {
+        self.send_chat_message_on_binding(runtime_home, binding, request)
+            .map_err(|err| err.to_string())
+    }
+
     fn send_chat_message(
         &self,
         runtime_home: &Path,
@@ -261,6 +303,35 @@ impl DebugActionHandler for CliDebugActionHandler {
     ) -> Result<ChatSendResponse, String> {
         self.send_message_internal(runtime_home, request)
             .map_err(|err| err.to_string())
+    }
+
+    fn append_mobile_log_event(&self, runtime_home: &Path, event: &str) -> Result<(), String> {
+        let log_dir = runtime_home.join("runtime/logs/mobile");
+        std::fs::create_dir_all(&log_dir).map_err(|e| e.to_string())?;
+        let log_file = log_dir.join("connection-events.logl");
+        let ts = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_millis().to_string())
+            .unwrap_or_else(|_| "0".to_string());
+        std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(&log_file)
+            .and_then(|mut f| {
+                use std::io::Write;
+                writeln!(f, "{{\"ts\":\"{}\",\"event\":{}}}", ts, event)
+            })
+            .map_err(|e| e.to_string())
+    }
+
+    fn read_mobile_log_events(&self, runtime_home: &Path) -> Result<Vec<String>, String> {
+        let log_file = runtime_home.join("runtime/logs/mobile/connection-events.logl");
+        if !log_file.exists() {
+            return Ok(Vec::new());
+        }
+        std::fs::read_to_string(&log_file)
+            .map(|content| content.lines().map(|l| l.to_string()).collect())
+            .map_err(|e| e.to_string())
     }
 }
 

@@ -49,10 +49,10 @@ fn provider_semantic_view(record: &ToolExecutionRecord) -> ToolSemanticView {
         _ => format!("调用模型 {}", short_text(&model_label)),
     };
     let detail = Some(match status.as_str() {
-        "failed" => "模型请求失败".into(),
-        "cancelled" => "模型请求已取消".into(),
-        "timed_out" => "模型请求超时".into(),
-        _ => "模型响应已返回".into(),
+        "failed" => join_provider_detail("模型请求失败", record.output_summary.as_deref()),
+        "cancelled" => join_provider_detail("模型请求已取消", record.output_summary.as_deref()),
+        "timed_out" => join_provider_detail("模型请求超时", record.output_summary.as_deref()),
+        _ => join_provider_detail("模型响应已返回", record.output_summary.as_deref()),
     });
     ToolSemanticView {
         tool_call_id: record.tool_call_id.clone(),
@@ -69,6 +69,14 @@ fn provider_semantic_view(record: &ToolExecutionRecord) -> ToolSemanticView {
         ended_at: record.ended_at.clone(),
         artifact_refs: record.artifact_refs.clone(),
     }
+}
+
+fn join_provider_detail(prefix: &str, usage_summary: Option<&str>) -> String {
+    usage_summary
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(|value| format!("{prefix} · {value}"))
+        .unwrap_or_else(|| prefix.to_string())
 }
 
 fn classify_tool(tool_name: &str) -> (String, String) {
@@ -252,6 +260,9 @@ mod tests {
         assert_eq!(semantic.object_label, "ali-coding-plan.qwen3.6-plus");
         assert!(!semantic.summary.contains("https://"));
         assert!(!semantic.summary.contains("用户原始提示词"));
-        assert_eq!(semantic.detail.as_deref(), Some("模型响应已返回"));
+        assert_eq!(
+            semantic.detail.as_deref(),
+            Some("模型响应已返回 · 模型输出")
+        );
     }
 }

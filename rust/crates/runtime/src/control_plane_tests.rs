@@ -54,6 +54,7 @@ impl InferenceProvider for StaticProvider {
             response_id: Some("resp-static".into()),
             stop_reason: Some("end_turn".into()),
             status: 200,
+            usage: None,
         })
     }
 }

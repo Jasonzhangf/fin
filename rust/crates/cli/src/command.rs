@@ -49,6 +49,19 @@ pub(crate) enum Command {
         target: String,
         run_id: Option<String>,
     },
+    ProjectAgentAdd {
+        path: String,
+        project_id: String,
+        project_root: String,
+        agent_name: Option<String>,
+    },
+    ProjectAgentRemove {
+        path: String,
+        project_id: String,
+    },
+    ProjectAgentList {
+        path: String,
+    },
     BuildDev {
         path: String,
         build_version: Option<String>,
@@ -76,7 +89,9 @@ pub(crate) fn parse_command(args: &[String]) -> Result<Command, CliError> {
         [cmd, path] if cmd == "control-boundary-scenario" => {
             Ok(Command::ControlBoundaryScenario { path: path.clone() })
         }
-        [cmd, path] if cmd == "mainline-scenario" => Ok(Command::MainlineScenario { path: path.clone() }),
+        [cmd, path] if cmd == "mainline-scenario" => {
+            Ok(Command::MainlineScenario { path: path.clone() })
+        }
         [cmd, path, input] if cmd == "runtime-session" => Ok(Command::RuntimeSession {
             path: path.clone(),
             input: input.clone(),
@@ -85,10 +100,12 @@ pub(crate) fn parse_command(args: &[String]) -> Result<Command, CliError> {
             path: path.clone(),
             input: input.clone(),
         }),
-        [cmd, path, transcript_path] if cmd == "transcript-session" => Ok(Command::TranscriptSession {
-            path: path.clone(),
-            transcript_path: transcript_path.clone(),
-        }),
+        [cmd, path, transcript_path] if cmd == "transcript-session" => {
+            Ok(Command::TranscriptSession {
+                path: path.clone(),
+                transcript_path: transcript_path.clone(),
+            })
+        }
         [cmd, path] if cmd == "provider-live-smoke" => Ok(Command::ProviderLiveSmoke {
             path: path.clone(),
             transcript_path: None,
@@ -111,16 +128,45 @@ pub(crate) fn parse_command(args: &[String]) -> Result<Command, CliError> {
                 run_id: Some(run_id.clone()),
             })
         }
+        [cmd, path, subcmd, project_id, project_root]
+            if cmd == "project-agent" && subcmd == "add" =>
+        {
+            Ok(Command::ProjectAgentAdd {
+                path: path.clone(),
+                project_id: project_id.clone(),
+                project_root: project_root.clone(),
+                agent_name: None,
+            })
+        }
+        [cmd, path, subcmd, project_id, project_root, agent_name]
+            if cmd == "project-agent" && subcmd == "add" =>
+        {
+            Ok(Command::ProjectAgentAdd {
+                path: path.clone(),
+                project_id: project_id.clone(),
+                project_root: project_root.clone(),
+                agent_name: Some(agent_name.clone()),
+            })
+        }
+        [cmd, path, subcmd, project_id] if cmd == "project-agent" && subcmd == "remove" => {
+            Ok(Command::ProjectAgentRemove {
+                path: path.clone(),
+                project_id: project_id.clone(),
+            })
+        }
+        [cmd, path, subcmd] if cmd == "project-agent" && subcmd == "list" => {
+            Ok(Command::ProjectAgentList { path: path.clone() })
+        }
         [cmd, path] if cmd == "web-debug" => Ok(Command::WebDebug {
             path: path.clone(),
-            host: "127.0.0.1".into(),
+            host: "0.0.0.0".into(),
             port: 4040,
         }),
         [cmd, path, host_or_port] if cmd == "web-debug" => {
             if let Ok(port) = host_or_port.parse::<u16>() {
                 Ok(Command::WebDebug {
                     path: path.clone(),
-                    host: "127.0.0.1".into(),
+                    host: "0.0.0.0".into(),
                     port,
                 })
             } else {

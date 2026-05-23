@@ -22,6 +22,14 @@ pub(crate) struct HttpResponse {
     pub(crate) body: Vec<u8>,
 }
 
+pub(crate) fn head_response(response: &HttpResponse) -> HttpResponse {
+    HttpResponse {
+        status_code: response.status_code,
+        content_type: response.content_type,
+        body: Vec::new(),
+    }
+}
+
 pub(crate) fn read_http_request(stream: &mut TcpStream) -> Result<HttpRequest, DebugDataError> {
     let _ = stream.set_read_timeout(Some(Duration::from_millis(500)));
     let mut buffer = Vec::with_capacity(32 * 1024);
@@ -51,7 +59,16 @@ pub(crate) fn read_http_request(stream: &mut TcpStream) -> Result<HttpRequest, D
             }
         };
         if bytes_read == 0 {
-            break;
+            if !buffer.is_empty() {
+                break;
+            }
+            return Err(DebugDataError::Io {
+                path: "tcp-stream-read".into(),
+                source: std::io::Error::new(
+                    std::io::ErrorKind::UnexpectedEof,
+                    "connection closed before request headers",
+                ),
+            });
         }
         buffer.extend_from_slice(&chunk[..bytes_read]);
         if header_end.is_none() {

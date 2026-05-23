@@ -79,6 +79,7 @@ impl InferenceProvider for SmokeContractProvider {
             response_id: Some("smoke-contract-response".into()),
             stop_reason: Some("end_turn".into()),
             status: 200,
+            usage: None,
         })
     }
 }

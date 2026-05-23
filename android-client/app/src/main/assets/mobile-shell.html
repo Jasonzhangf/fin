@@ -5,53 +5,32 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <title>fin mobile</title>
   <style>
-    :root{--bg:#f3f3f3;--card:#fff;--text:#111;--muted:#9a9a9a;--line:#e8e8e8}
-    *{box-sizing:border-box} body{margin:0;background:var(--bg);font-family:-apple-system,BlinkMacSystemFont,"PingFang SC",Arial,sans-serif;color:var(--text)}
-    .app{max-width:460px;margin:0 auto;min-height:100vh;display:flex;flex-direction:column}
-    .top{padding:18px 18px 6px;display:flex;justify-content:space-between;align-items:center}
-    .round{width:56px;height:56px;border-radius:28px;border:none;background:#ececec;font-size:24px;color:#111}
-    .content{flex:1;padding:10px 22px 80px;display:flex;align-items:center;justify-content:center;text-align:center;color:var(--muted);font-size:16px;line-height:1.55}
-    .turns{width:100%;display:flex;flex-direction:column;gap:10px;align-items:stretch;text-align:left}
-    .card{background:#fff;border-radius:14px;padding:12px;box-shadow:0 1px 0 rgba(0,0,0,.03)}
-    .pending{border:1px solid #ececf2}
-    .you{font-weight:700;margin-bottom:6px}
-    .assistant{white-space:pre-wrap}
-    .status{margin-top:6px;font-size:12px;color:#777;display:flex;align-items:center;gap:6px}
-    .dots{display:inline-flex;gap:3px}
-    .dot{width:4px;height:4px;border-radius:50%;background:#999;animation:blink 1s infinite}
-    .dot:nth-child(2){animation-delay:.15s}.dot:nth-child(3){animation-delay:.3s}
-    @keyframes blink{0%,80%,100%{opacity:.25}40%{opacity:1}}
-    .bar{position:sticky;bottom:0;padding:10px 14px 16px;background:linear-gradient(180deg,rgba(243,243,243,0),#f3f3f3 28%)}
-    .input{min-height:62px;background:#fff;border-radius:31px;display:flex;align-items:flex-end;padding:8px 10px;gap:8px}
-    .ico{width:42px;height:42px;border-radius:21px;border:none;background:transparent;font-size:28px;color:#111}
-    .msg{flex:1;border:none;outline:none;font-size:18px;line-height:1.35;background:transparent;color:#555;resize:none;max-height:120px;padding:10px 4px 8px}
-    .send{width:42px;height:42px;border:none;border-radius:21px;background:#5b3ed5;color:#fff;font-size:18px;display:flex;align-items:center;justify-content:center}
-    .panel{position:fixed;inset:0;background:#f3f3f3;z-index:20;transform:translateX(105%);transition:transform .22s ease;padding:18px;overflow:auto}
-    .panel.show{transform:translateX(0)}
-    .head{display:flex;align-items:center;gap:10px;margin-bottom:12px}
-    .back{width:40px;height:40px;border:none;border-radius:20px;background:#ececec}
-    .title{font-size:22px;font-weight:700}
-    .row{display:flex;gap:10px;align-items:center;margin:8px 0}
-    .inp{flex:1;padding:12px;border:1px solid #e2e2e2;border-radius:10px;background:#fff}
-    .btn{padding:10px 14px;border:none;border-radius:10px;background:#111;color:#fff}
-    .item{background:#fff;border-radius:12px;padding:12px;margin:8px 0}
-    .muted{font-size:12px;color:#8a8a8a}
-    .timeline{margin-top:8px;border-top:1px dashed #e8e8e8;padding-top:8px}
-    .tl-item{font-size:12px;color:#444;line-height:1.4;margin:4px 0}
-    .tl-ok{color:#1f7a3e}.tl-fail{color:#b00020}
-    .dbg-raw{margin-top:6px;background:#fafafa;border:1px solid #eee;border-radius:8px;padding:8px;white-space:pre-wrap;font-size:11px;color:#666}
-    .sheet-mask{position:fixed;inset:0;background:rgba(0,0,0,.05);opacity:0;pointer-events:none;transition:opacity .18s;z-index:28}
-    .sheet-mask.show{opacity:1;pointer-events:auto}
-    .sheet{position:fixed;left:0;right:0;bottom:0;background:#fff;border-radius:18px 18px 0 0;padding:14px 16px 22px;transform:translateY(110%);transition:transform .2s ease;z-index:30}
-    .sheet.show{transform:translateY(0)}
-    .grab{width:56px;height:6px;border-radius:3px;background:#ddd;margin:2px auto 10px}
-    .grid{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
-    .tile{border:none;background:#f2f2f2;border-radius:12px;padding:14px 8px;font-size:16px}
-    .chips{display:flex;flex-wrap:wrap;gap:6px;margin:0 0 6px 2px}
-    .chip{display:inline-flex;align-items:center;gap:6px;background:#f2f2f6;color:#333;padding:5px 8px;border-radius:12px;font-size:12px}
-    .chip button{border:none;background:transparent;color:#666}
-    .toast{position:fixed;left:50%;transform:translateX(-50%);bottom:96px;background:#111;color:#fff;padding:8px 12px;border-radius:20px;font-size:12px;opacity:0;transition:opacity .15s;z-index:50}
-    .toast.show{opacity:1}
+    :root{--bg:#0b1322;--bg2:#090f1c;--card:rgba(15,23,42,.88);--card2:rgba(30,41,59,.72);--text:#e7ecf7;--muted:#94a3b8;--line:rgba(148,163,184,.20);--accent:#2563eb;--accent2:#10b981;--accentText:#fff;--danger:#ff5d73;--ok:#39d98a;--shadow:0 14px 36px rgba(2,6,23,.26);--panel:rgba(11,18,32,.98);--input:rgba(15,23,42,.94);--chip:rgba(37,99,235,.16);--chipText:#dbeafe;--field:rgba(2,6,23,.42)}
+    body.theme-finger{--bg:#0b1322;--bg2:#090f1c;--card:rgba(15,23,42,.88);--card2:rgba(30,41,59,.72);--text:#e7ecf7;--muted:#94a3b8;--line:rgba(148,163,184,.20);--accent:#2563eb;--accent2:#10b981;--accentText:#fff;--danger:#ff5d73;--ok:#39d98a;--shadow:0 14px 36px rgba(2,6,23,.28);--panel:rgba(11,18,32,.98);--input:rgba(15,23,42,.94);--chip:rgba(37,99,235,.16);--chipText:#dbeafe;--field:rgba(2,6,23,.42)}
+    body.theme-aurora{--bg:#111827;--bg2:#2e1065;--card:rgba(17,24,39,.84);--card2:rgba(30,41,59,.68);--text:#f5f3ff;--muted:#c4b5fd;--line:rgba(216,180,254,.24);--accent:#a855f7;--accent2:#06b6d4;--accentText:#fff;--danger:#fb7185;--ok:#22d3ee;--shadow:0 18px 42px rgba(88,28,135,.28);--panel:rgba(24,24,43,.98);--input:rgba(30,27,75,.92);--chip:rgba(168,85,247,.18);--chipText:#f3e8ff;--field:rgba(30,27,75,.58)}
+    body.theme-sunrise{--bg:#fff7ed;--bg2:#ffedd5;--card:rgba(255,255,255,.92);--card2:rgba(255,247,237,.88);--text:#35190b;--muted:#9a3412;--line:rgba(251,146,60,.28);--accent:#f97316;--accent2:#db2777;--accentText:#fff;--danger:#be123c;--ok:#15803d;--shadow:0 14px 34px rgba(154,52,18,.14);--panel:#fff7ed;--input:#fff;--chip:rgba(249,115,22,.14);--chipText:#7c2d12;--field:#fff}
+    body.theme-paper{--bg:#f8fafc;--bg2:#e0f2fe;--card:#fff;--card2:#f8fafc;--text:#0f172a;--muted:#64748b;--line:#dbe4ef;--accent:#0f766e;--accent2:#2563eb;--accentText:#fff;--danger:#b91c1c;--ok:#15803d;--shadow:0 10px 26px rgba(15,23,42,.10);--panel:#f8fafc;--input:#fff;--chip:#e0f2fe;--chipText:#0f172a;--field:#fff}
+    *{box-sizing:border-box} html{min-height:100%;-webkit-text-size-adjust:100%;text-size-adjust:100%} body{margin:0;min-height:100%;font-size:14px;background:radial-gradient(circle at 10% 8%, rgba(37,99,235,.18), transparent 32%),radial-gradient(circle at 88% 92%, rgba(16,185,129,.14), transparent 30%),linear-gradient(180deg,var(--bg) 0%,var(--bg2) 100%);font-family:-apple-system,BlinkMacSystemFont,"PingFang SC",Arial,sans-serif;color:var(--text)}
+    .app{width:100%;max-width:520px;margin:0 auto;min-height:100vh;display:flex;flex-direction:column;position:relative}
+    .top{position:fixed;top:0;left:0;right:0;z-index:17;max-width:520px;min-height:66px;margin:0 auto;padding:10px 12px 8px;display:flex;justify-content:space-between;align-items:center;pointer-events:none;background:linear-gradient(180deg,rgba(8,16,35,.98),rgba(8,16,35,.78));border-bottom:1px solid var(--line);backdrop-filter:blur(10px)}.top .round{pointer-events:auto}
+    .round{width:44px;height:44px;border-radius:22px;border:1px solid var(--line);background:var(--card2);font-size:21px;color:var(--text);box-shadow:var(--shadow);backdrop-filter:blur(10px)}
+    .content{flex:1;padding:78px 0 var(--native-input-inset,96px);display:flex;align-items:flex-start;justify-content:flex-start;text-align:center;color:var(--muted);font-size:14px;line-height:1.45;overflow-y:auto;scroll-behavior:smooth}
+    .turns{width:100%;display:flex;flex-direction:column;gap:8px;padding:0;align-items:stretch;text-align:left}
+    .card{background:linear-gradient(180deg,var(--card),var(--card2));border:1px solid var(--line);border-radius:14px;padding:10px;box-shadow:var(--shadow);position:relative;overflow:hidden}.card.pending{border-color:rgba(148,163,184,.34);background:linear-gradient(180deg,var(--card),var(--card2))}
+    .you{font-weight:800;margin-bottom:6px;color:var(--text);font-size:15px;line-height:1.35}
+    .assistant{white-space:pre-wrap;color:var(--text);font-size:14px;line-height:1.42}
+    .status{margin-top:8px;font-size:12px;color:var(--muted);display:flex;align-items:center;gap:6px}
+    .dots{display:inline-flex;gap:3px}.dot{width:4px;height:4px;border-radius:50%;background:var(--accent2);animation:blink 1s infinite}.dot:nth-child(2){animation-delay:.15s}.dot:nth-child(3){animation-delay:.3s}@keyframes blink{0%,80%,100%{opacity:.25}40%{opacity:1}}
+    .bar{position:fixed;left:0;right:0;bottom:0;z-index:18;max-width:520px;margin:0 auto;padding:8px 8px 12px;background:linear-gradient(180deg,transparent 0%,var(--bg) 32%,var(--bg2) 100%)}
+    .input{min-height:54px;position:relative;z-index:19;background:var(--input);border:1px solid var(--line);border-radius:27px;display:flex;align-items:flex-end;padding:6px 8px;gap:6px;box-shadow:var(--shadow);backdrop-filter:blur(10px)}
+    .ico{width:38px;height:38px;border-radius:19px;border:none;background:transparent;font-size:24px;color:var(--text);flex:0 0 auto}
+    .msg{flex:1;min-width:0;border:none;outline:none;font-size:15px;line-height:1.35;background:transparent;color:var(--text);resize:none;max-height:120px;padding:8px 4px 6px}.msg::placeholder{color:var(--muted)}
+    .send{width:38px;height:38px;flex:0 0 auto;border:none;border-radius:19px;background:linear-gradient(135deg,var(--accent),var(--accent2));color:var(--accentText);font-size:18px;display:flex;align-items:center;justify-content:center;box-shadow:0 10px 22px rgba(37,99,235,.28)}
+    .panel{position:fixed;inset:0;background:var(--panel);z-index:20;transform:translateX(105%);transition:transform .22s ease;padding:18px;overflow:auto;color:var(--text)}.panel.show{transform:translateX(0)}
+    .head{display:flex;align-items:center;gap:10px;margin-bottom:12px}.back{width:40px;height:40px;border:none;border-radius:20px;background:var(--card2);color:var(--text)}.title{font-size:22px;font-weight:800}.row{display:flex;gap:10px;align-items:center;margin:8px 0}.inp{flex:1;padding:12px;border:1px solid var(--line);border-radius:12px;background:var(--field);color:var(--text)}.btn{padding:10px 14px;border:none;border-radius:12px;background:linear-gradient(135deg,var(--accent),var(--accent2));color:var(--accentText);font-weight:700}.item{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:12px;margin:8px 0;box-shadow:var(--shadow)}.muted{font-size:12px;color:var(--muted)}
+    .theme-row{display:grid;grid-template-columns:repeat(2,1fr);gap:8px;margin-top:8px}.theme-choice{border:1px solid var(--line);border-radius:14px;background:var(--field);color:var(--text);padding:10px;text-align:left}.theme-choice.active{border-color:var(--accent);box-shadow:0 0 0 2px rgba(37,99,235,.22)}.swatch{height:24px;border-radius:12px;margin-bottom:7px}.swatch-finger{background:linear-gradient(90deg,#090f1c,#2563eb,#10b981)}.swatch-aurora{background:linear-gradient(90deg,#111827,#a855f7,#06b6d4)}.swatch-sunrise{background:linear-gradient(90deg,#fff7ed,#f97316,#db2777)}.swatch-paper{background:linear-gradient(90deg,#f8fafc,#0f766e,#2563eb)}
+    .timeline{margin-top:8px;padding-top:4px}.tl-item{font-size:11px;color:var(--text);line-height:1.45;margin:5px 0;padding:6px 8px;border-radius:10px;background:var(--chip);border:none}.tl-ok{color:var(--ok)}.tl-run{color:var(--accent2)}.tl-fail{color:var(--danger)}.dbg-raw{margin-top:8px;background:var(--field);border:1px solid var(--line);border-radius:10px;padding:8px;white-space:pre-wrap;font-size:11px;color:var(--muted)}
+    .sheet-mask{position:fixed;inset:0;background:rgba(0,0,0,.18);opacity:0;pointer-events:none;transition:opacity .18s;z-index:28}.sheet-mask.show{opacity:1;pointer-events:auto}.sheet{position:fixed;left:0;right:0;bottom:0;background:var(--panel);border:1px solid var(--line);border-radius:18px 18px 0 0;padding:14px 16px 22px;transform:translateY(110%);transition:transform .2s ease;z-index:30}.sheet.show{transform:translateY(0)}.grab{width:56px;height:6px;border-radius:3px;background:rgba(148,163,184,.42);margin:2px auto 10px}.grid{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}.tile{border:1px solid var(--line);background:var(--card);color:var(--text);border-radius:12px;padding:14px 8px;font-size:16px}.kv-box{flex:1;text-align:center}.kv-box .muted{font-size:10px;color:var(--muted);margin-bottom:2px}.kv-box .val{font-size:13px;font-weight:700;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.btn-sm{padding:7px 10px;font-size:12px}.chips{display:flex;flex-wrap:wrap;gap:6px;margin:0 0 6px 2px}.chip{display:inline-flex;align-items:center;gap:6px;background:var(--chip);color:var(--chipText);padding:5px 8px;border-radius:12px;font-size:12px}.chip button{border:none;background:transparent;color:var(--muted)}.toast{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(var(--native-input-inset,120px) + 10px);background:#111;color:#fff;padding:8px 12px;border-radius:20px;font-size:12px;opacity:0;transition:opacity .15s;z-index:50}.toast.show{opacity:1} body.native-input .bar{display:none} body.native-input .content{padding-bottom:var(--native-input-inset,150px)}
   </style>
 </head>
 <body>
@@ -68,9 +47,9 @@
 
   <div class="bar">
     <div id="chips" class="chips"></div>
-    <div class="input">
+    <div class="input" id="inputBox">
       <button class="ico" onclick="pickPlus()">＋</button>
-      <textarea id="msg" class="msg" placeholder="发消息或按住说话…" rows="1"></textarea>
+      <textarea id="msg" class="msg" placeholder="发消息或按住说话…" rows="1" inputmode="text"></textarea>
       <button class="send" onclick="sendInput()">➤</button>
     </div>
   </div>
@@ -84,6 +63,39 @@
     <div class="row"><input id="daemonPort" class="inp" value="4040"/></div>
     <div class="row"><button class="btn" onclick="saveDaemon()">保存</button><button class="btn" onclick="connectWs()">连接</button></div>
     <div class="muted" id="connState">state=idle</div>
+    <div class="muted" id="runtimeState">runtime=schema_error:runtime.health provider=schema_error:provider.health ws=idle</div>
+  </div>
+  <div class="item">
+    <div class="muted">主题配色</div>
+    <div class="theme-row" id="themeChoices">
+      <button class="theme-choice" data-theme="finger" onclick="setTheme('finger')"><div class="swatch swatch-finger"></div><b>Finger</b><div class="muted">深色蓝绿，参考 Finger 工作台</div></button>
+      <button class="theme-choice" data-theme="aurora" onclick="setTheme('aurora')"><div class="swatch swatch-aurora"></div><b>Aurora</b><div class="muted">紫蓝极光，高对比</div></button>
+      <button class="theme-choice" data-theme="sunrise" onclick="setTheme('sunrise')"><div class="swatch swatch-sunrise"></div><b>Sunrise</b><div class="muted">橙粉暖色，更活跃</div></button>
+      <button class="theme-choice" data-theme="paper" onclick="setTheme('paper')"><div class="swatch swatch-paper"></div><b>Paper</b><div class="muted">浅色清晰，长读友好</div></button>
+    </div>
+  </div>
+  <div class="item" style="margin-bottom:8px">
+    <div class="muted" style="font-size:11px;color:#8a8a8a;margin-bottom:4px">当前配置（只读）</div>
+    <div class="row" style="margin:0">
+      <div class="kv-box"><div class="muted">Provider</div><div id="activeProviderBox" class="val">-</div></div>
+      <div class="kv-box"><div class="muted">Model</div><div id="activeModelBox" class="val">-</div></div>
+      <div class="kv-box"><div class="muted">Effort</div><div id="activeEffortBox" class="val">-</div></div>
+    </div>
+  </div>
+  <div class="item">
+    <div class="muted">升级检测</div>
+    <div class="row"><input id="updateManifestInput" class="inp" placeholder="manifest URL"/></div>
+    <div class="row">
+      <button id="btnCheckUpdate" class="btn btn-sm" onclick="checkUpdate()">检测</button>
+      <button id="btnDownloadUpdate" class="btn btn-sm" onclick="downloadUpdate()">下载</button>
+      <button id="btnInstallUpdate" class="btn btn-sm" onclick="installUpdate()">安装</button>
+    </div>
+    <div id="updateStateBox" class="muted" style="font-size:11px"></div>
+  </div>
+  <div class="item" id="diagBox">
+    <div class="muted">诊断</div>
+    <div class="muted" style="font-size:11px">点击检测连接状态</div>
+    <div id="diagState" class="muted" style="font-size:12px;color:#555"></div>
   </div>
   <div class="item">
     <div class="muted">调试显示开关（仅影响渲染，不影响真实推理）</div>
@@ -109,138 +121,168 @@
 <div id="toast" class="toast"></div>
 
 <script>
-const S={profiles:[],currentProfile:null,conn:'idle',ws:null,sessions:[],currentSessionId:null,turns:[],inputDedup:new Set(),pendingById:{},attachments:[],debugMode:false,retryCount:0,retryTimer:null,manualClose:false,historyLoaded:false}
+const S={profiles:[],currentProfile:null,conn:'idle',ws:null,connTarget:'',thinkingEffort:'medium',
+  sessions:[],currentSessionId:null,turns:[],pendingById:{},inputDedup:new Set(),attachments:[],
+  traceByClientId:{},itemByClientId:{},turnStateByClientId:{},runtimeHealth:'schema_error:runtime.health',providerHealth:'schema_error:provider.health',
+  debugMode:false,retryCount:0,retryTimer:null,manualClose:false,historyLoaded:false};
+
 function bridge(){return window.FinMobileBridge||null}
+function setNativeInputInset(px){const n=Math.max(120,Math.min(520,Number(px)||150));document.documentElement.style.setProperty('--native-input-inset',n+'px');scrollToBottom()}
 function esc(v){return (v??'').toString().replace(/[&<>]/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[m]))}
-function log(m){const b=bridge();if(b&&b.appendConnectionEvent){try{b.appendConnectionEvent(m)}catch(_){}}}
-function openSettings(){document.getElementById('settingsPanel').classList.add('show')}
-function openSessions(){renderSessions();document.getElementById('sessionsPanel').classList.add('show')}
-function closePanel(id){document.getElementById(id).classList.remove('show')}
-function renderChips(){const c=document.getElementById('chips');c.innerHTML=S.attachments.map((a,i)=>`<span class='chip'>${esc(a.label)}<button onclick='removeAttachment(${i})'>×</button></span>`).join('')}
-function removeAttachment(i){S.attachments.splice(i,1);renderChips()}
+function log(m){try{const b=bridge();if(b&&b.appendConnectionEvent)b.appendConnectionEvent(m)}catch(_){}}
+function logevt(ev){log(ev)}
 function toast(msg){const el=document.getElementById('toast');el.textContent=msg;el.classList.add('show');setTimeout(()=>el.classList.remove('show'),1200)}
+function inputFocused(){const el=document.getElementById('msg');return document.activeElement===el}
+function scrollToBottom(){if(inputFocused())return;const content=document.getElementById('content');if(!content)return;const apply=()=>{if(inputFocused())return;content.scrollTop=content.scrollHeight;window.scrollTo(0,document.body.scrollHeight)};requestAnimationFrame(()=>{apply();setTimeout(apply,80);setTimeout(apply,260)})}
+
+function setConn(s){S.conn=s;document.getElementById('connState').textContent='state='+s;renderHealth();log('state='+s)}
+function renderHealth(){const el=document.getElementById('runtimeState');if(el)el.textContent='runtime='+S.runtimeHealth+' provider='+S.providerHealth+' ws='+S.conn;}
+function setRuntimeState(s){S.runtimeHealth=s;renderHealth()}
+function setProviderState(s){S.providerHealth=s;renderHealth()}
 function backoffMs(n){return Math.min(15000,Math.floor(600*Math.pow(2,Math.max(0,n-1))))}
 function clearRetry(){if(S.retryTimer){clearTimeout(S.retryTimer);S.retryTimer=null}}
 function scheduleReconnect(reason){
   if(S.manualClose)return;
-  const p=S.profiles.find(x=>x.id===S.currentProfile);
-  if(!p)return;
+  const p=S.profiles.find(x=>x.id===S.currentProfile); if(!p)return;
   if(['auth_failed','protocol_mismatch','stale_token','no_profile'].includes(S.conn))return;
-  const wait=backoffMs(S.retryCount+1);
-  S.retryCount+=1;
-  setConn(`reconnecting(${S.retryCount})`);
-  log(`reconnect_reason=${reason} wait_ms=${wait}`);
-  clearRetry();
-  S.retryTimer=setTimeout(()=>{connectWs('retry')},wait);
+  const wait=backoffMs(S.retryCount+1); S.retryCount+=1;
+  setConn(`reconnecting(${S.retryCount})`); log(`reconnect_reason=${reason} wait_ms=${wait}`);
+  clearRetry(); S.retryTimer=setTimeout(()=>connectWs('retry'),wait);
 }
-function toggleDebugMode(){
-  S.debugMode=!S.debugMode;
-  const btn=document.getElementById('debugToggle');
-  btn.textContent=S.debugMode?'调试：开':'调试：关';
-  toast(S.debugMode?'调试显示已开启':'调试显示已关闭');
-  renderTurns();
-}
-function setConn(s){S.conn=s;document.getElementById('connState').textContent='state='+s;log('state='+s)}
-function loadProfiles(){const b=bridge();if(!b)return;try{S.profiles=JSON.parse(b.getWsProfiles());S.currentProfile=S.currentProfile||S.profiles[0]?.id||null}catch(_){}}
-function saveDaemon(){const host=document.getElementById('daemonHost').value.trim();const port=parseInt(document.getElementById('daemonPort').value||'4040',10);const b=bridge();if(b&&b.setDaemonAddress){b.setDaemonAddress(host,port);loadProfiles();S.currentProfile='daemon';log('daemon_saved='+host+':'+port)}}
-function connectWs(trigger='manual'){
-  const p=S.profiles.find(x=>x.id===S.currentProfile);if(!p){setConn('no_profile');return;}
-  if(p.expiresAtEpochSec>0&&Math.floor(Date.now()/1000)>p.expiresAtEpochSec){setConn('stale_token');return;}
-  S.manualClose=false;
-  clearRetry();
-  setConn(trigger==='retry'?'reconnecting':'connecting');
-  log('endpoint='+p.endpoint);
-  try{
-    if(S.ws){try{S.ws.close()}catch(_){}} // explicit old socket close before new dial
-    const ws=new WebSocket(p.endpoint);S.ws=ws;
-    ws.onopen=()=>{S.retryCount=0;setConn('handshaking');ws.send(JSON.stringify({type:'mobile.handshake',token:p.token,project:p.project,scopes:['session.read','session.write','runtime.read']}));};
-    ws.onmessage=(ev)=>{try{onWs(JSON.parse(ev.data))}catch(_){setConn('protocol_mismatch');toast('协议消息解析失败')}};
-    ws.onerror=()=>{if(S.conn==='handshaking'){setConn('auth_failed');toast('连接握手失败')}else{setConn('endpoint_unreachable');scheduleReconnect('onerror')}};
-    ws.onclose=()=>{if(S.manualClose){setConn('idle');return;}if(['auth_failed','protocol_mismatch','stale_token','no_profile'].includes(S.conn))return;setConn('closed');scheduleReconnect('onclose')};
-  }catch(e){setConn('endpoint_unreachable');scheduleReconnect('exception')}
-}
-function onWs(m){
-  if(m.type==='handshake.ok'){clearRetry();S.retryCount=0;log('handshake=ok');S.ws.send(JSON.stringify({type:'mobile.subscribe',topics:['session','runtime','project','daemon']}));setConn('subscribed');setConn('healthy');return;}
-  if(m.type==='handshake.auth_failed'){clearRetry();setConn('auth_failed');toast('鉴权失败');return;}
-  if(m.type==='handshake.protocol_mismatch'){clearRetry();setConn('protocol_mismatch');toast('协议不匹配');return;}
-  if(m.type==='session.list'){S.sessions=m.sessions||[];if(!S.currentSessionId&&S.sessions.length>0){bindSession(S.sessions[0].session_id)}renderSessions();return;}
-  if(m.type==='session.bound'){S.currentSessionId=m.session_id;renderSessions();return;}
-  if(m.type==='session.history'){
-    const rows=Array.isArray(m.turns)?m.turns:[];
-    S.turns=rows.map(t=>({u:t.user_input||'',a:t.assistant_response||'',control:t.control_feedback_summary||'',tool:t.tool_execution_summary||'',closure:t.closure_stop_source||'',toolRecords:t.tool_execution_records||[],errors:t.error_records||[]}));
-    S.historyLoaded=true;
-    renderTurns();
-    return;
-  }
-  if(m.type==='input.accepted'){
-    const id=m.client_message_id||'';
-    if(id&&S.pendingById[id]){
-      S.pendingById[id].state='accepted';
-      S.pendingById[id].serverPhase='queued';
-    }
-    renderTurns();return;
-  }
-  if(m.type==='turn.progress'){
-    const id=m.client_message_id||'';
-    if(id&&S.pendingById[id]){
-      S.pendingById[id].state='waiting';
-      S.pendingById[id].serverPhase=m.phase||'inference_waiting';
-    }
-    renderTurns();return;
-  }
-  if(m.type==='turn.rendered'){
-    const id=m.client_message_id||'';
-    if(id&&S.pendingById[id]) delete S.pendingById[id];
-    S.turns.push({u:m.user_input||'',a:m.assistant_response||'',control:m.control_feedback_summary||'',tool:m.tool_execution_summary||'',closure:m.closure_stop_source||'',toolRecords:m.tool_execution_records||[],errors:m.error_records||[]});
-    renderTurns();return;
-  }
-}
-function renderSessions(){const el=document.getElementById('sessionList');el.innerHTML=S.sessions.map(s=>`<div class='item'><div><b>${esc(s.topic||s.session_id)}</b></div><div class='muted'>sid=${esc(s.session_id)} task=${esc(s.task_id||'-')} ${esc(s.phase||'')}</div><div class='row'><button class='btn' onclick="bindSession('${s.session_id}')">${S.currentSessionId===s.session_id?'已绑定':'绑定'}</button></div></div>`).join('')||"<div class='item muted'>暂无会话</div>"}
-function bindSession(id){S.currentSessionId=id;if(S.ws)S.ws.send(JSON.stringify({type:'session.bind',session_id:id}));renderSessions()}
-function renderToolTimeline(t){
-  const rows=[];
-  const records=t.toolRecords||[];
-  const errors=t.errors||[];
-  if(records.length===0 && errors.length===0)return '';
-  for(const r of records){
-    const name=r.tool_name||'tool';
-    const st=r.status||'unknown';
-    const err=(r.error_summary||'').trim();
-    const cls=(st==='completed'&&!err)?'tl-ok':'tl-fail';
-    rows.push(`<div class='tl-item ${cls}'>${esc(name)} · ${esc(st)}${err?` · ${esc(err)}`:''}</div>`);
-  }
-  if(rows.length===0 && errors.length>0){
-    for(const e of errors){rows.push(`<div class='tl-item tl-fail'>${esc(e.tool_name||'tool')} · failed · ${esc(e.error_summary||'unknown')}</div>`)}
-  }
-  return `<div class='timeline'><div class='muted'>推理过程</div>${rows.join('')}</div>`;
-}
-function renderTurns(){
-  const empty=document.getElementById('empty');
-  const turns=document.getElementById('turns');
-  const hasPending=Object.keys(S.pendingById).length>0;
-  if(S.turns.length===0 && !hasPending){empty.style.display='block';turns.style.display='none';return;}
-  empty.style.display='none';turns.style.display='flex';
-  const renderedTurns=S.turns.slice().reverse().map(t=>{
-    const timeline=renderToolTimeline(t);
-    const debugRaw=S.debugMode?`<div class='dbg-raw'>${esc(JSON.stringify({control:t.control||'',tool:t.tool||'',closure:t.closure||'',toolRecords:t.toolRecords||[],errors:t.errors||[]},null,2))}</div>`:'';
-    return `<div class='card'><div class='you'>你：${esc(t.u)}</div><div class='assistant'>${esc(t.a)}</div>${timeline}${debugRaw}</div>`;
-  });
-  const phaseMap={sending:'发送中',accepted:'已送达服务器',waiting:'等待推理结果',inference_waiting:'推理中',provider_wait:'等待模型响应',tool_wait:'工具执行中',queued:'排队中',running:'处理中'};
-  const pending=Object.values(S.pendingById).sort((a,b)=>b.ts-a.ts).map(p=>{
-    const phase=phaseMap[p.serverPhase]||phaseMap[p.state]||'处理中';
-    return `<div class='card pending'><div class='you'>你：${esc(p.text)}</div><div class='status'>${esc(phase)} <span class='dots'><span class='dot'></span><span class='dot'></span><span class='dot'></span></span></div></div>`;
-  });
-  turns.innerHTML=[...pending,...renderedTurns].join('');
-}
-function sendInput(){const el=document.getElementById('msg');const txt=el.value.trim();if(!txt&&S.attachments.length===0){toast('请输入内容');return;}if(!(S.ws&&S.conn==='healthy')){toast('未连接');return;}if(!S.currentSessionId&&S.sessions.length>0)bindSession(S.sessions[0].session_id);if(!S.currentSessionId){toast('暂无可用会话');return;}const payload=(txt + (S.attachments.length?('\\n\\n附件:\\n'+S.attachments.map(a=>'- '+a.label).join('\\n')):'')).trim();const id='m-'+Date.now(),bucket=Math.floor(Date.now()/5000),key='mobile:'+id+':'+bucket;if(S.inputDedup.has(key)){toast('重复输入已忽略');return;}S.inputDedup.add(key);S.pendingById[id]={id,text:payload,state:'sending',serverPhase:'sending',ts:Date.now()};renderTurns();S.ws.send(JSON.stringify({type:'session.user_input',session_id:S.currentSessionId,payload,client_message_id:id,timestamp_bucket:bucket}));el.value='';S.attachments=[];renderChips();autosize()}
-function closePlusSheet(){document.getElementById('plusSheet').classList.remove('show');document.getElementById('plusMask').classList.remove('show')}
+
+function openSettings(){document.getElementById('settingsPanel').classList.add('show')}
+function openSessions(){renderSessions();document.getElementById('sessionsPanel').classList.add('show')}
+function closePanel(id){document.getElementById(id).classList.remove('show')}
+function setTheme(name){const allowed=['finger','aurora','sunrise','paper'];const theme=allowed.includes(String(name))?String(name):'finger';document.body.classList.remove('theme-finger','theme-aurora','theme-sunrise','theme-paper');document.body.classList.add('theme-'+theme);CONFIG.set('theme',theme);document.querySelectorAll('.theme-choice').forEach(b=>b.classList.toggle('active',b.dataset.theme===theme))}
 function pickPlus(){document.getElementById('plusSheet').classList.add('show');document.getElementById('plusMask').classList.add('show')}
+function closePlusSheet(){document.getElementById('plusSheet').classList.remove('show');document.getElementById('plusMask').classList.remove('show')}
 function plusAction(kind){closePlusSheet();const label=kind==='camera'?'图片(拍照)':kind==='album'?'图片(相册)':'技能卡片';S.attachments.push({kind,label});renderChips();toast(label+' 已添加');log('plus_'+kind)}
+function renderChips(){const c=document.getElementById('chips');c.innerHTML=S.attachments.map((a,i)=>`<span class='chip'>${esc(a.label)}<button onclick='removeAttachment(${i})'>×</button></span>`).join('')}
+function removeAttachment(i){S.attachments.splice(i,1);renderChips()}
+
 function autosize(){const el=document.getElementById('msg');el.style.height='auto';el.style.height=Math.min(el.scrollHeight,120)+'px'}
-document.getElementById('msg').addEventListener('input',autosize)
-document.getElementById('msg').addEventListener('keydown',(e)=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();sendInput()}})
-autosize()
-loadProfiles();renderTurns();if(S.profiles.length){if(!S.currentProfile)S.currentProfile=S.profiles[0].id; if(S.currentProfile==='daemon'||S.profiles.length===1)setTimeout(connectWs,250)}
+const msgEl=document.getElementById('msg')
+const inputBox=document.getElementById('inputBox')
+msgEl.addEventListener('input',autosize)
+function requestKeyboard(){log('input_request_keyboard');msgEl.focus();try{const b=bridge();if(b&&b.showKeyboard)b.showKeyboard()}catch(e){log('input_keyboard_error '+String(e&&e.message||e))}}
+msgEl.addEventListener('touchend',requestKeyboard)
+msgEl.addEventListener('click',requestKeyboard)
+inputBox.addEventListener('click',(e)=>{if(e.target&&e.target.classList&&e.target.classList.contains('ico'))return;requestKeyboard()})
+inputBox.addEventListener('touchend',(e)=>{if(e.target&&e.target.classList&&e.target.classList.contains('ico'))return;requestKeyboard()})
+msgEl.addEventListener('focus',()=>{log('input_focus')})
+msgEl.addEventListener('blur',()=>{log('input_blur')})
+msgEl.addEventListener('keydown',(e)=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();sendInput()}})
+
+const CONFIG=(function(){
+  const _s={daemon_host:'100.66.1.82',daemon_port:4040,update_manifest_url:'',last_session_id:'',workMode:'build',thinkingEffort:'medium',theme:'finger'};
+  try{const d=JSON.parse(localStorage.getItem('fin_state')||'{}');if(d)Object.assign(_s,d)}catch(_){ }
+  const save=()=>{try{localStorage.setItem('fin_state',JSON.stringify(_s))}catch(_){}};
+  const load=()=>{try{const d=JSON.parse(localStorage.getItem('fin_state')||'{}');if(d)Object.assign(_s,d)}catch(_){}};
+  return {get:(k,def)=>_s[k]!==undefined?_s[k]:def,set:(k,v)=>{_s[k]=v;save()},save,load}
+})();
+
+function loadProfiles(){const b=bridge();if(!b){setConn('bridge_missing');return;}try{S.profiles=JSON.parse(b.getWsProfiles());if(!Array.isArray(S.profiles)) throw new Error('profiles_not_array');S.currentProfile=S.currentProfile||S.profiles[0]?.id||null;log('profiles_loaded count='+S.profiles.length+' current='+(S.currentProfile||'none'));}catch(e){setConn('profile_parse_error');log('profiles_parse_error '+String(e&&e.message||e));S.profiles=[{id:'daemon',endpoint:'ws://100.66.1.82:4040/ws',token:'',project:'fin',expiresAtEpochSec:0}];S.currentProfile='daemon';}}
+function saveDaemon(){const host=document.getElementById('daemonHost').value.trim();const port=parseInt(document.getElementById('daemonPort').value||'4040',10);const b=bridge();if(b&&b.setDaemonAddress){b.setDaemonAddress(host,port);loadProfiles();S.currentProfile='daemon';CONFIG.set('daemon_host',host);CONFIG.set('daemon_port',port);log('daemon_saved='+host+':'+port)}}
+
+function connectWs(trigger='manual'){
+  const p=S.profiles.find(x=>x.id===S.currentProfile); if(!p){setConn('no_profile');return;}
+  if(p.expiresAtEpochSec>0&&Math.floor(Date.now()/1000)>p.expiresAtEpochSec){setConn('stale_token');return;}
+  S.manualClose=false; clearRetry(); setConn(trigger==='retry'?'reconnecting':'connecting');
+  S.connTarget=p.endpoint; log('endpoint='+p.endpoint);
+  try{ if(S.ws){try{S.ws.close()}catch(_){} }
+    const ws=new WebSocket(p.endpoint); S.ws=ws;
+    ws.onopen=()=>{S.retryCount=0;setConn('handshaking');ws.send(JSON.stringify({type:'mobile.handshake',token:p.token,project:p.project,scopes:['session.read','session.write','runtime.read']}));};
+    ws.onmessage=(ev)=>{let m; try{m=JSON.parse(ev.data)}catch(_){setConn('protocol_mismatch');toast('协议消息解析失败');return;} onWs(m)};
+    ws.onerror=()=>{if(S.conn==='handshaking'){setConn('auth_failed');toast('连接握手失败')}else{setConn('endpoint_unreachable');scheduleReconnect('onerror')}};
+    ws.onclose=()=>{if(S.manualClose){setConn('idle');return;} if(['auth_failed','protocol_mismatch','stale_token','no_profile'].includes(S.conn))return; setConn('closed');scheduleReconnect('onclose')};
+  }catch(_){setConn('endpoint_unreachable');scheduleReconnect('exception')}
+}
+
+function bindSession(id){S.currentSessionId=id; if(S.ws)S.ws.send(JSON.stringify({type:'session.bind',session_id:id})); renderSessions()}
+function renderSessions(){const el=document.getElementById('sessionList');el.innerHTML=S.sessions.map(s=>`<div class='item'><div><b>${esc(s.topic||s.session_id)}</b></div><div class='muted'>sid=${esc(s.session_id)} task=${esc(s.task_id||'-')} ${esc(s.phase||'')}</div><div class='row'><button class='btn' onclick="bindSession('${s.session_id}')">${S.currentSessionId===s.session_id?'已绑定':'绑定'}</button></div></div>`).join('')||"<div class='item muted'>暂无会话</div>"}
+
+function schema(v,field){const s=(v&&v[field]!=null)?String(v[field]).trim():'';return s?s:'schema_error:'+field}
+function itemFromRecord(rec){return {item_id:schema(rec,'tool_call_id'),label:schema(rec,'tool_name'),title:schema(rec,'title'),purpose:schema(rec,'purpose'),status:schema(rec,'status'),duration_ms:rec?.duration_ms??0,input_summary:rec?.input_summary||'',output_summary:rec?.output_summary||'',error_summary:rec?.error_summary||'',item_kind:rec?.tool_kind||'schema_error:item_kind',target_kind:rec?.target_kind||''}}
+function normalizeToolRecord(rec){return itemFromRecord(rec||{})}
+function normalizeErrorRecord(e){const item=itemFromRecord(e||{});item.status='failed';item.error_summary=schema(e||{},'error_summary');return item}
+function toTurn(t){return {u:t.user_input||'',a:t.assistant_response||'',control:t.control_feedback_summary||'',tool:t.tool_execution_summary||'',closure:t.closure_stop_source||'',items:(t.tool_execution_records||[]).map(normalizeToolRecord).concat((t.error_records||[]).map(normalizeErrorRecord))}}
+function upsertItem(id,m){if(!id)return;const by=S.itemByClientId[id]||(S.itemByClientId[id]={});const itemId=schema(m,'item_id');const prev=by[itemId]||{};by[itemId]=Object.assign({},prev,m,{item_id:itemId,label:schema(m,'label'),title:schema(m,'title'),purpose:schema(m,'purpose'),status:schema(m,'status'),input_summary:m.input_summary||prev.input_summary||'',output_summary:m.output_summary||prev.output_summary||'',error_summary:m.error_summary||prev.error_summary||'',target_kind:m.target_kind||prev.target_kind||''});}
+function consumeItems(id){const by=S.itemByClientId[id]||{};delete S.itemByClientId[id];return Object.values(by)}
+
+function onWs(m){
+  if(String(m&&m.type||'').startsWith('turn.item')||m.type==='turn.completed'||m.type==='provider.health'||m.type==='runtime.health'||m.type==='turn.rendered'){
+    log('ws_event='+String(m.type)+' item_id='+String(m.item_id||'')+' label='+String(m.label||'')+' status='+String(m.status||''));
+  }
+  switch(m.type){
+    case 'handshake.ok': clearRetry();S.retryCount=0;log('handshake=ok');S.ws.send(JSON.stringify({type:'mobile.subscribe',topics:['session','runtime','project','daemon']}));setConn('subscribed');setConn('healthy');return;
+    case 'handshake.auth_failed': clearRetry();setConn('auth_failed');toast('鉴权失败');return;
+    case 'handshake.protocol_mismatch': clearRetry();setConn('protocol_mismatch');toast('协议不匹配');return;
+    case 'session.list': S.sessions=m.sessions||[]; if(!S.currentSessionId&&S.sessions.length>0) bindSession(S.sessions[0].session_id); renderSessions(); return;
+    case 'session.bound': S.currentSessionId=m.session_id; CONFIG.set('last_session_id',m.session_id||''); renderSessions(); return;
+    case 'session.history': S.turns=(Array.isArray(m.turns)?m.turns:[]).map(toTurn); S.historyLoaded=true; renderTurns(); return;
+    case 'config.snapshot': persistProviderCache(m); renderActiveConfig(m); return;
+    case 'input.accepted': {const id=m.client_message_id||''; if(id&&S.pendingById[id]){S.pendingById[id].state='accepted';S.pendingById[id].serverPhase='queued';} renderTurns(); return;}
+    case 'runtime.health': {setRuntimeState(schema(m,'status')); return;}
+    case 'provider.health': {setProviderState(schema(m,'status')); return;}
+    case 'turn.started': {setRuntimeState('running'); const id=m.client_message_id||''; if(id){S.turnStateByClientId[id]=m;} renderTurns(); return;}
+    case 'turn.progress': {const id=m.client_message_id||''; if(id&&S.pendingById[id]){S.pendingById[id].state='waiting';S.pendingById[id].serverPhase=m.phase||'inference_waiting';} renderTurns(); return;}
+    case 'turn.item.started':
+    case 'turn.item.delta':
+    case 'turn.item.completed':
+    case 'turn.item.failed': {const id=m.client_message_id||''; upsertItem(id,m); renderTurns(); return;}
+    case 'turn.completed': {setRuntimeState(m.status==='failed'?'failed':'ok'); const id=m.client_message_id||''; if(id&&S.turnStateByClientId[id])S.turnStateByClientId[id]=Object.assign({},S.turnStateByClientId[id],m); return;}
+    case 'turn.tool_event': {const id=m.client_message_id||''; if(id&&m.item)upsertItem(id,m.item); renderTurns(); return;}
+    case 'turn.trace_event': {const id=m.client_message_id||''; if(id){S.traceByClientId[id]=S.traceByClientId[id]||[]; S.traceByClientId[id].push(m);} return;}
+    case 'turn.error_event': {const id=m.client_message_id||''; if(id&&m.item)upsertItem(id,m.item); setRuntimeState('failed'); renderTurns(); return;}
+    case 'turn.rendered': {const id=m.client_message_id||''; if(id&&S.pendingById[id])delete S.pendingById[id]; const t=toTurn(m); if(id){t.items=(t.items||[]).concat(consumeItems(id)); delete S.turnStateByClientId[id];} if(id&&S.traceByClientId[id]){t.control=(t.control||'')+'\ntrace_events='+String(S.traceByClientId[id].length); delete S.traceByClientId[id];} S.turns.push(t); renderTurns(); return;}
+    case 'provider.config.cache': persistProviderCache(m.payload||m); renderActiveConfig(m.payload||m); return;
+    case 'runtime.workers':
+    case 'runtime.projects':
+    case 'runtime.daemon':
+      return;
+    default: log('unknown_event_type='+String(m.type||'missing')); toast('收到未识别协议事件'); return;
+  }
+}
+
+function itemLabelOf(r){return String((r&&r.label)||(r&&r.tool_name)||'').trim()}
+function itemKindOf(r){return String((r&&r.item_kind)||(r&&r.tool_kind)||'').trim()}
+function isInternalItem(r){const label=itemLabelOf(r);const kind=itemKindOf(r);const out=String(r&&r.output_summary||'');if(label==='provider.call'&&out.includes('cache_hit_rate='))return false;if(label==='provider.call'||label==='reasoning.stop'||label==='session.list')return true;if(kind==='framework_tool')return true;if(String(r&&r.target_kind||'')==='provider'&&out.includes('cache_hit_rate='))return false;if(String(r&&r.target_kind||'')==='provider')return true;if(String(r&&r.target_kind||'')==='reasoning_closure')return true;return false}
+function visibleTimelineItems(items){const by={};for(const r of (items||[])){const key=String(r&&r.item_id||r&&r.tool_call_id||JSON.stringify(r));by[key]=Object.assign({},by[key]||{},r)}return Object.values(by).filter(r=>{const st=String(r&&r.status||'');const err=String(r&&r.error_summary||'').trim();if(err||st==='failed')return true;return !isInternalItem(r)})}
+function semanticItem(r){const out=String(r&&r.output_summary||'').trim();const purpose=schema(r,'purpose');return {title:schema(r,'title'),label:schema(r,'label'),detail:out||purpose,status:schema(r,'status')}}
+function renderToolTimelineFromItems(items,live){const rows=[];for(const r of visibleTimelineItems(items)){const st=schema(r,'status');const err=String(r.error_summary||'').trim();const cls=(st==='completed'&&!err)?'tl-ok':(st==='running'?'tl-run':'tl-fail');const sem=semanticItem(r);const dur=(r.duration_ms!=null&&st!=='running')?` · ${esc(r.duration_ms)}ms`:'';const liveMark=(live&&st==='running')?` <span class='dots'><span class='dot'></span><span class='dot'></span><span class='dot'></span></span>`:'';rows.push(`<div class='tl-item ${cls}'><b>${esc(sem.title)}</b> · ${esc(sem.label)} · ${esc(sem.status)}${dur}${liveMark}<br/><span class='muted'>${esc(sem.detail)}</span>${err?`<br/><span>${esc(err)}</span>`:''}</div>`)}if(rows.length===0)return '';return `<div class='timeline'><div class='muted'>${live?'工具执行（实时）':'工具执行'}</div>${rows.join('')}</div>`}
+function renderToolTimeline(t){return renderToolTimelineFromItems(t.items||[],false)}
+function liveItemsFor(id){const by=S.itemByClientId[id]||{};return Object.values(by).sort((a,b)=>String(a.item_id||'').localeCompare(String(b.item_id||'')))}
+function renderTurns(){const empty=document.getElementById('empty');const turns=document.getElementById('turns');const pending=Object.values(S.pendingById).sort((a,b)=>a.ts-b.ts);if(S.turns.length===0&&pending.length===0){empty.style.display='block';turns.style.display='none';return;}empty.style.display='none';turns.style.display='flex';const phaseMap={sending:'发送中',accepted:'已送达服务器',waiting:'等待推理结果',inference_waiting:'推理中',provider_wait:'等待模型响应',tool_wait:'工具执行中',queued:'排队中',running:'处理中'};const turnsHtml=S.turns.map(t=>{const timeline=renderToolTimeline(t);const debugRaw=S.debugMode?`<div class='dbg-raw'>${esc(JSON.stringify({control:t.control||'',tool:t.tool||'',closure:t.closure||'',items:t.items||[]},null,2))}</div>`:'';return `<div class='card'><div class='you'>你：${esc(t.u)}</div><div class='assistant'>${esc(t.a)}</div>${timeline}${debugRaw}</div>`});const pendingHtml=pending.map(p=>{const live=liveItemsFor(p.id);const timeline=renderToolTimelineFromItems(live,true);const debugRaw=S.debugMode?`<div class='dbg-raw'>${esc(JSON.stringify({pending:p,items:live},null,2))}</div>`:'';return `<div class='card pending'><div class='you'>你：${esc(p.text)}</div><div class='status'>${esc(phaseMap[p.serverPhase]||phaseMap[p.state]||'处理中')} <span class='dots'><span class='dot'></span><span class='dot'></span><span class='dot'></span></span></div>${timeline}${debugRaw}</div>`});turns.innerHTML=turnsHtml.concat(pendingHtml).join('');scrollToBottom()}
+
+function dispatchUserPayload(payload){if(!(S.ws&&S.conn==='healthy')){toast('未连接');return false;}if(!S.currentSessionId&&S.sessions.length>0)bindSession(S.sessions[0].session_id);if(!S.currentSessionId){toast('暂无可用会话');return false;}const id='m-'+Date.now(),bucket=Math.floor(Date.now()/5000),key='mobile:'+id+':'+bucket;if(S.inputDedup.has(key)){toast('重复输入已忽略');return false;}S.inputDedup.add(key);S.pendingById[id]={id,text:payload,state:'sending',serverPhase:'sending',ts:Date.now()};renderTurns();S.ws.send(JSON.stringify({type:'session.user_input',session_id:S.currentSessionId,payload,client_message_id:id,timestamp_bucket:bucket}));log('device_e2e_sent id='+id+' len='+payload.length);return true}
+function sendInput(){const el=document.getElementById('msg');const txt=el.value.trim();if(!txt&&S.attachments.length===0){toast('请输入内容');return;}const payload=(txt + (S.attachments.length?('\n\n附件:\n'+S.attachments.map(a=>'- '+a.label).join('\n')):'')).trim();if(dispatchUserPayload(payload)){el.value='';S.attachments=[];renderChips();autosize()}}
+function deviceE2eSend(payload,attempt){attempt=attempt||0;payload=String(payload||'').trim();if(!payload){log('device_e2e_empty_payload');return;}if(dispatchUserPayload(payload))return;if(attempt<40)setTimeout(()=>deviceE2eSend(payload,attempt+1),500)}
+
+function loadProviderCache(){try{const b=bridge();if(!b||!b.readProviderConfigCacheJson)return null;const raw=String(b.readProviderConfigCacheJson()||'').trim();if(!raw)return null;return JSON.parse(raw)}catch(_){return null}}
+function persistProviderCache(m){try{const b=bridge();if(b&&b.saveProviderConfigCache)b.saveProviderConfigCache(JSON.stringify(m||{}))}catch(_){}}
+function renderActiveConfig(m){const pBox=document.getElementById('activeProviderBox');const mBox=document.getElementById('activeModelBox');const eBox=document.getElementById('activeEffortBox');if(!pBox||!mBox||!eBox)return;const profiles=Array.isArray(m&&m.profiles)?m.profiles:[];const def=String((m&&m.default_profile)||'').trim();let active=profiles.find(p=>p&&p.active);if(!active&&def)active=profiles.find(p=>String((p&&p.profile_name)||p?.provider||'')===def);if(active){pBox.textContent=String(active.provider||active.profile_name||def||'-');mBox.textContent=String(active.model||'-');eBox.textContent=String(m&&m.active_thinking_effort?'effort:'+m.active_thinking_effort:'-')}else if(def){pBox.textContent=def;mBox.textContent='schema_error:model';eBox.textContent='-'}else{pBox.textContent='-';mBox.textContent='-';eBox.textContent='-'}}
+
+function syncUpdateManifestInputFromConfig(){const el=document.getElementById('updateManifestInput');let saved=String(CONFIG.get('update_manifest_url','')||'').trim();if(!saved){const host=String(CONFIG.get('daemon_host','100.66.1.82')||'100.66.1.82').trim();const port=String(CONFIG.get('daemon_port',4040)||'4040').trim();saved='http://'+host+':'+port+'/upgrade/manifest.json';CONFIG.set('update_manifest_url',saved)}if(el)el.value=saved}
+function checkUpdate(){logevt('diag.check_update.click');const el=document.getElementById('updateStateBox');if(el)el.textContent='检查中…';try{const b=bridge();if(!b||!b.checkUpdate)throw new Error('bridge_checkUpdate_missing');const manifest=(document.getElementById('updateManifestInput').value||'').trim();CONFIG.set('update_manifest_url',manifest);const r=b.checkUpdate(manifest);if(el)el.textContent=String(r||'ok');}catch(e){if(el)el.textContent='error:'+String(e.message||e)}}
+function downloadUpdate(){logevt('diag.download.click');const el=document.getElementById('updateStateBox');if(el)el.textContent='下载中…';try{const b=bridge();if(!b||!b.downloadUpdateApk)throw new Error('bridge_downloadUpdateApk_missing');const manifest=(document.getElementById('updateManifestInput').value||'').trim();let base='';if(manifest.startsWith('http://')||manifest.startsWith('https://')){const u=new URL(manifest);base=u.origin+u.pathname.replace(/[^/]+$/,'');}else if(manifest.startsWith('file://')){base='file://';}else{base='internal://files/'}const r=b.downloadUpdateApk(base);if(el)el.textContent=String(r||'ok');}catch(e){if(el)el.textContent='error:'+String(e.message||e)}}
+function installUpdate(){logevt('diag.install.click');const el=document.getElementById('updateStateBox');try{const b=bridge();if(!b||!b.installDownloadedApk)throw new Error('bridge_installDownloadedApk_missing');const r=b.installDownloadedApk();if(el)el.textContent=String(r||'ok');}catch(e){if(el)el.textContent='error:'+String(e.message||e)}}
+
+function toggleDebugMode(){S.debugMode=!S.debugMode;const btn=document.getElementById('debugToggle');btn.textContent=S.debugMode?'调试：开':'调试：关';toast(S.debugMode?'调试显示已开启':'调试显示已关闭');renderTurns()}
+
+{const diag=document.getElementById('diagBox');if(diag&&typeof diag.addEventListener==='function'){diag.addEventListener('click',function(){logevt('diag.click');const el=document.getElementById('diagState');if(!el)return;el.textContent='WS:'+S.connTarget+' | 状态:'+S.conn})}}
+
+(function init(){
+  document.body.classList.add('native-input');
+  autosize();
+  setTheme(CONFIG.get('theme','finger'));
+  const cached=loadProviderCache(); if(cached)renderActiveConfig(cached);
+  syncUpdateManifestInputFromConfig();
+  loadProfiles();renderTurns();renderChips();scrollToBottom();
+  if(!S.currentProfile&&S.profiles.length>0)S.currentProfile=S.profiles[0].id;
+  if(!S.currentProfile){S.currentProfile='daemon';}
+  log('init_autoconnect profile='+String(S.currentProfile||'none')+' profiles='+String(S.profiles.length));
+  setTimeout(()=>connectWs('auto'),250);
+})();
 </script>
 </body>
 </html>

@@ -71,6 +71,7 @@ impl InferenceProvider for WaitCheckpointProvider {
             response_id: Some("wait-response".into()),
             stop_reason: Some("end_turn".into()),
             status: 200,
+            usage: None,
         })
     }
 }

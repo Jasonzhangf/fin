@@ -133,7 +133,24 @@ RPC 更适合作为主入口，因为它天然适合：
 - 鉴权
 - 版本协商
 
-但当前阶段只冻结接口边界，不进入具体实现。
+当前阶段已落地 v1 Agent RPC ingress；后续再扩展更完整的 RPC runtime。
+
+### 1.4 Agent RPC v1 ingress
+
+fin 的跨机器 agent 协作入口是专用 Agent RPC，不复用 WebUI / QQBot / mobile debug WS。
+
+最小冻结：
+
+1. system agent 通过 `runtime.agent_network.enabled=true` 启动 Agent RPC listener。
+2. v1 鉴权只支持 Bearer Lease，token 必须来自 `token_env` 或 `token_file`。
+3. 远端 primary agent 用 `POST /agent/v1/handshake` 注册 `machine.agentname`。
+4. 在线状态通过 `POST /agent/v1/heartbeat` 续租，system agent 通过 `GET /agent/v1/agents` 枚举。
+5. 定向协作消息通过 `POST /agent/v1/mailbox/send` 写入 runtime durable mailbox。
+6. 所有成功入口必须落到 runtime agent identity / presence / peer registry / mailbox truth；UI 只消费这些事实。
+7. 测试 harness 必须覆盖完整生命周期与错误矩阵：连接不可达、连接中断、丢失心跳变 offline、恢复心跳变 online、执行失败回报、鉴权失败、握手身份错误、subagent 拒绝、project 缺 project_id、重复在线注册、未知/过期 lease、未知目标 mailbox、结构化 route/body 错误。
+8. system agent 的 project agent 列表来自静态 startup config 与动态 `runtime/agents/project_agents.json` 合并结果；subagent 不进入跨 agent 网络发现。
+9. 动态 project agent 增删查只允许写 `runtime/agents/project_agents.json` 这一份控制面配置；本地 project agent 初次 add 时自动分配 endpoint 端口并持久化，后续启动不得重新漂移端口。
+10. WebUI / QQBot / Android 等 channel adapter 默认只连 `system_agent`；project agent listener 允许显式连接或被 Agent RPC 协作使用，但不作为 channel 默认入口。
 
 ---
 

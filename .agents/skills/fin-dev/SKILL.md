@@ -1,5 +1,6 @@
 ---
 name: fin-dev
+description: Android 客户端开发强制测试回环 skill。合入前必须完成功能实现、单元/契约/端到端验证与证据落盘；无证据即未完成。
 summary: Android 客户端开发强制测试回环（先测后合入）
 ---
 

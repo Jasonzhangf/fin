@@ -273,10 +273,9 @@ fn session_has_work(session_dir: &Path) -> Result<bool, CliError> {
     let state = read_json_if_exists::<fin_contracts::ExecutionStateRecord>(
         &session_dir.join("control/execution_state.json"),
     )?;
-    if state
-        .as_ref()
-        .is_some_and(|value| value.status != "idle" || value.resume_checkpoint_ready.unwrap_or(false))
-    {
+    if state.as_ref().is_some_and(|value| {
+        value.status != "idle" || value.resume_checkpoint_ready.unwrap_or(false)
+    }) {
         return Ok(true);
     }
     let pending = read_json_or_empty::<fin_contracts::PendingInputRecord>(

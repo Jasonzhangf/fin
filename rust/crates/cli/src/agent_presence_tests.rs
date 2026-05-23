@@ -95,4 +95,10 @@ fn write_presence_updates_presence_registry() {
     assert_eq!(system_worker_count, 4);
     assert_eq!(project_worker_count, 2);
     assert!(agents.iter().all(|item| item.get("worker_id").is_some()));
+
+    let identities =
+        fs::read_to_string(runtime_home.join("runtime/agents/control/identities.json"))
+            .expect("agent control identities");
+    assert!(identities.contains("system_agent"));
+    assert!(identities.contains("system:mbp."));
 }

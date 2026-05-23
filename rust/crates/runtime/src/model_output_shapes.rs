@@ -84,6 +84,8 @@ pub(crate) fn partial_tool_signal_present(raw: &str) -> bool {
         || raw.contains("\"name\"")
         || raw.contains("\"arguments\"")
         || raw.contains("\"args\"")
+        || raw.contains("<tool_call>")
+        || raw.contains("<function=")
 }
 
 pub(crate) fn classify_invalid_tool_calls(raw: &str) -> String {

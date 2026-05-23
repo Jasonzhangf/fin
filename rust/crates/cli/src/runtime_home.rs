@@ -191,4 +191,3 @@ pub(crate) fn read_last_run_value(runtime_home: &Path) -> Result<serde_json::Val
     )?)
     .map_err(CliError::Serialize)
 }
-

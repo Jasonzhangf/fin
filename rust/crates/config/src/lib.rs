@@ -87,6 +87,8 @@ pub struct RuntimeConfig {
     pub retention: RuntimeRetentionConfig,
     #[serde(default)]
     pub startup: RuntimeStartupConfig,
+    #[serde(default)]
+    pub agent_network: AgentNetworkConfig,
 }
 
 impl Default for RuntimeConfig {
@@ -97,8 +99,115 @@ impl Default for RuntimeConfig {
             device_name: None,
             retention: RuntimeRetentionConfig::default(),
             startup: RuntimeStartupConfig::default(),
+            agent_network: AgentNetworkConfig::default(),
         }
     }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum AgentNetworkAuthMode {
+    BearerLease,
+}
+
+impl Default for AgentNetworkAuthMode {
+    fn default() -> Self {
+        Self::BearerLease
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
+pub struct AgentNetworkAuthConfig {
+    #[serde(default)]
+    pub mode: AgentNetworkAuthMode,
+    #[serde(default)]
+    pub token_env: Option<String>,
+    #[serde(default)]
+    pub token_file: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct AgentNetworkConfig {
+    #[serde(default)]
+    pub enabled: bool,
+    #[serde(default = "default_agent_network_bind_addr")]
+    pub bind_addr: String,
+    #[serde(default)]
+    pub public_endpoint: Option<String>,
+    #[serde(default = "default_agent_network_heartbeat_ttl_ms")]
+    pub heartbeat_ttl_ms: u64,
+    #[serde(default = "default_agent_network_lease_ttl_ms")]
+    pub lease_ttl_ms: u64,
+    #[serde(default)]
+    pub auth: AgentNetworkAuthConfig,
+}
+
+impl Default for AgentNetworkConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            bind_addr: default_agent_network_bind_addr(),
+            public_endpoint: None,
+            heartbeat_ttl_ms: default_agent_network_heartbeat_ttl_ms(),
+            lease_ttl_ms: default_agent_network_lease_ttl_ms(),
+            auth: AgentNetworkAuthConfig::default(),
+        }
+    }
+}
+
+impl AgentNetworkConfig {
+    pub fn validate(&self) -> Result<(), ConfigError> {
+        require_non_empty("runtime.agent_network.bind_addr", &self.bind_addr)?;
+        if self.heartbeat_ttl_ms == 0 {
+            return Err(ConfigError::Validation {
+                message: "runtime.agent_network.heartbeat_ttl_ms must be greater than 0".into(),
+            });
+        }
+        if self.lease_ttl_ms == 0 {
+            return Err(ConfigError::Validation {
+                message: "runtime.agent_network.lease_ttl_ms must be greater than 0".into(),
+            });
+        }
+        if let Some(endpoint) = &self.public_endpoint {
+            require_non_empty("runtime.agent_network.public_endpoint", endpoint)?;
+        }
+        if let Some(token_env) = &self.auth.token_env {
+            require_non_empty("runtime.agent_network.auth.token_env", token_env)?;
+        }
+        if let Some(token_file) = &self.auth.token_file {
+            require_non_empty("runtime.agent_network.auth.token_file", token_file)?;
+        }
+        if self.enabled {
+            match (&self.auth.token_env, &self.auth.token_file) {
+                (Some(_), None) | (None, Some(_)) => {}
+                (Some(_), Some(_)) => {
+                    return Err(ConfigError::Validation {
+                        message:
+                            "runtime.agent_network.auth cannot set both token_env and token_file"
+                                .into(),
+                    });
+                }
+                (None, None) => {
+                    return Err(ConfigError::Validation {
+                        message: "runtime.agent_network.enabled requires auth.token_env or auth.token_file".into(),
+                    });
+                }
+            }
+        }
+        Ok(())
+    }
+}
+
+fn default_agent_network_bind_addr() -> String {
+    "127.0.0.1:4041".into()
+}
+
+fn default_agent_network_heartbeat_ttl_ms() -> u64 {
+    30_000
+}
+
+fn default_agent_network_lease_ttl_ms() -> u64 {
+    300_000
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -299,6 +408,7 @@ impl SystemConfig {
             require_non_empty("runtime.device_name", device_name)?;
         }
         self.runtime.startup.validate()?;
+        self.runtime.agent_network.validate()?;
 
         Ok(())
     }
@@ -937,5 +1047,89 @@ model = "gpt-5"
             .validate()
             .expect_err("blank runtime.device_name must fail");
         assert!(err.to_string().contains("runtime.device_name"));
+    }
+
+    #[test]
+    fn agent_network_defaults_to_disabled() {
+        let system = ConfigMapper::map_user_to_system(&UserConfig {
+            default_provider: "openai".into(),
+            providers: BTreeMap::from([(
+                "openai".into(),
+                UserProviderConfig {
+                    protocol: ProviderProtocol::OpenAiCompatible,
+                    base_url: "https://api.example.com/v1".into(),
+                    model: "gpt-5".into(),
+                    api_key: None,
+                    api_key_env: Some("OPENAI_API_KEY".into()),
+                    user_agent: None,
+                    headers: BTreeMap::new(),
+                },
+            )]),
+            runtime: UserRuntimeConfig::default(),
+        })
+        .expect("mapping should succeed");
+        assert!(!system.runtime.agent_network.enabled);
+        assert_eq!(system.runtime.agent_network.bind_addr, "127.0.0.1:4041");
+    }
+
+    #[test]
+    fn parse_system_toml_requires_agent_network_token_when_enabled() {
+        let mut system = ConfigMapper::map_user_to_system(&UserConfig {
+            default_provider: "openai".into(),
+            providers: BTreeMap::from([(
+                "openai".into(),
+                UserProviderConfig {
+                    protocol: ProviderProtocol::OpenAiCompatible,
+                    base_url: "https://api.example.com/v1".into(),
+                    model: "gpt-5".into(),
+                    api_key: None,
+                    api_key_env: Some("OPENAI_API_KEY".into()),
+                    user_agent: None,
+                    headers: BTreeMap::new(),
+                },
+            )]),
+            runtime: UserRuntimeConfig::default(),
+        })
+        .expect("mapping should succeed");
+        system.runtime.agent_network.enabled = true;
+
+        let err = system
+            .validate()
+            .expect_err("enabled agent network requires token source");
+        assert!(
+            err.to_string().contains(
+                "runtime.agent_network.enabled requires auth.token_env or auth.token_file"
+            )
+        );
+    }
+
+    #[test]
+    fn parse_system_toml_accepts_agent_network_bearer_lease_token_env() {
+        let mut system = ConfigMapper::map_user_to_system(&UserConfig {
+            default_provider: "openai".into(),
+            providers: BTreeMap::from([(
+                "openai".into(),
+                UserProviderConfig {
+                    protocol: ProviderProtocol::OpenAiCompatible,
+                    base_url: "https://api.example.com/v1".into(),
+                    model: "gpt-5".into(),
+                    api_key: None,
+                    api_key_env: Some("OPENAI_API_KEY".into()),
+                    user_agent: None,
+                    headers: BTreeMap::new(),
+                },
+            )]),
+            runtime: UserRuntimeConfig::default(),
+        })
+        .expect("mapping should succeed");
+        system.runtime.agent_network.enabled = true;
+        system.runtime.agent_network.auth.token_env = Some("FIN_AGENT_RPC_TOKEN".into());
+        let toml = system_to_toml(&system).expect("toml");
+        let reparsed = parse_system_toml(&toml).expect("system toml should parse");
+        assert!(reparsed.runtime.agent_network.enabled);
+        assert_eq!(
+            reparsed.runtime.agent_network.auth.token_env.as_deref(),
+            Some("FIN_AGENT_RPC_TOKEN")
+        );
     }
 }

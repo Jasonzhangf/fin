@@ -197,11 +197,14 @@ dependencies = [
 name = "fin-debug-server"
 version = "0.1.0"
 dependencies = [
+ "fin-config",
  "fin-contracts",
+ "fin-provider",
  "fin-runtime",
  "serde",
  "serde_json",
  "thiserror 2.0.18",
+ "toml",
  "tungstenite",
 ]
 

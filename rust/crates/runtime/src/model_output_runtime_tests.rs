@@ -89,6 +89,7 @@ impl InferenceProvider for StructuredProvider {
             response_id: Some("structured-response".into()),
             stop_reason: Some("end_turn".into()),
             status: 200,
+            usage: None,
         })
     }
 }
@@ -113,6 +114,7 @@ impl InferenceProvider for WaitToolProvider {
             response_id: Some("wait-response".into()),
             stop_reason: Some("end_turn".into()),
             status: 200,
+            usage: None,
         })
     }
 }
@@ -137,6 +139,7 @@ impl InferenceProvider for ReasoningStopProvider {
             response_id: Some("stop-response".into()),
             stop_reason: Some("end_turn".into()),
             status: 200,
+            usage: None,
         })
     }
 }
@@ -192,6 +195,7 @@ impl InferenceProvider for TwoRoundProvider {
             response_id: Some("two-round-response".into()),
             stop_reason: Some("end_turn".into()),
             status: 200,
+            usage: None,
         })
     }
 }

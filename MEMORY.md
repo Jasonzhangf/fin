@@ -223,3 +223,47 @@
 - [2026-04-20] framework 新增 `project supervision snapshot`（`runtime/projects/supervision.json + runtime/current/current_project_supervision.json`），它不替代 presence，而是把每个 project agent 的下一步控制意图显式化为 `ready / resume_ready / busy / waiting / recover_needed` 与对应 `observe_ready / resume_project_task / monitor_running_task / await_remote_connect / recover_project_agent`。
 - [2026-04-20] `resume_project_task` 不再只是 supervision 文本：对 local `resume_ready` project，framework 现在会继续 materialize `runtime/projects/execution_handoffs*.json`，并调用 runtime-owned `handoff_project_task(...)` 把 resume target 推到 task-store truth（`claimed` / noop / missing_task）。当前仍是 execution handoff skeleton，不是 detached runtime 真执行。
 - [2026-04-20] execution handoff 之后，framework 现在还会 materialize `runtime/projects/runtime_pickups*.json`：它读取 handoff + session `execution_state` + pending queue，把 local project runtime 明确分类为 `running / waiting_external / paused / ready_to_resume / claimed_idle / missing_binding`，并同步把 project agent presence 从单纯 `resume_ready` 推进到更接近运行事实的 busy/waiting/idle。当前仍未跨到 detached/background provider 真执行。
+
+## 2026-05-23 Durable Primary Agent + Subagent Control Plane
+
+- Verified: fin multi-agent identity must be modeled in runtime as durable `system_agent` / `project_agent` primary identities plus parent-owned `subagent` runs; `project_agent` is not a `system_agent` child/subagent.
+- Implementation truth: `rust/crates/runtime/src/agent_control.rs` owns `AgentIdentity`, `AgentRunRecord`, durable agent mailbox seq, `register_primary_agent`, `spawn_subagent`, `send_agent_input`, `wait_agent`, `close_agent`, and `resume_agent` semantics.
+- Validation: `cargo test -p fin-runtime` passed on 2026-05-23 with 112 runtime unit tests, including primary registration, system/project subagent spawn paths, context policy guards, mailbox seq, and wait/close/resume lifecycle.
+
+## 2026-05-23 Global Install + Permission Bootstrap
+
+- Verified: global install must use `scripts/install-fin-global.sh`, which builds release `fin-cli` and then invokes canonical `fin-cli install-dev`; direct binary copy is not a valid install truth.
+- Verified: daemon restart in install scripts must use `fin stop` / `fin start`; broad process kill commands are forbidden and were removed from the global install script.
+- Verified: macOS first-install permissions cannot be silently granted; `scripts/bootstrap-macos-permissions.sh` opens the required privacy panes once and records `~/.fin/install/macos-permissions-bootstrap.json` as an offered-bootstrap marker.
+
+## 2026-05-23 Agent RPC Network Collaboration
+
+- Verified: cross-machine agent collaboration uses dedicated Agent RPC, not WebUI/QQBot/mobile debug channels.
+- Implementation truth: `runtime.agent_network.enabled` gates the listener; Bearer Lease token source must be `token_env` or `token_file`.
+- Agent RPC v1 endpoints: `/agent/v1/handshake`, `/agent/v1/heartbeat`, `/agent/v1/agents`, `/agent/v1/mailbox/send`; successful requests write runtime agent identity, network leases, presence/peer registries, and durable mailbox truth.
+
+## 2026-05-23 Agent RPC Lifecycle Harness
+
+- Verified: Agent RPC test harness now covers full v1 lifecycle: register primary agents, heartbeat refresh, online discovery, mailbox delivery, seq increment, and artifact writes.
+- Verified error coverage: auth failures, malformed route/body, identity mismatch, subagent rejection, project missing `project_id`, duplicate online register, unknown/expired lease, bad mailbox sender/target/lease.
+- Validation: `cargo test -p fin-debug-server` passed with 43 tests; `cargo test -p fin-config agent_network` and `cargo test -p fin-runtime agent_control_tests` also passed.
+
+## 2026-05-23 Agent RPC Failure/Recovery Coverage
+
+- Verified: Agent RPC harness covers network unavailable, mid-request dropped connection, lost heartbeat -> offline, recovery heartbeat -> online, and execution failure report -> failed run truth.
+- Implementation truth: `/agent/v1/run/status` records remote execution outcomes through `AgentControlStore::update_run_status`; heartbeat recovery refreshes presence/peer registry to `network_heartbeat`.
+- Validation: `cargo test -p fin-debug-server` passed with 46 tests, plus config agent_network and runtime agent_control targeted tests passed.
+
+## 2026-05-23 Simplified Agent Startup Model
+
+- Verified: startup model now defaults to local system primary agent registration at the standard `system:<id>` AgentControl path.
+- Verified: project agents can be dynamically configured via `runtime/agents/project_agents.json`; startup topology merges static config plus dynamic config and materializes project availability from the merged list.
+- Verified: subagents remain parent-local execution units and are not included in cross-agent network discovery.
+
+## 2026-05-23 simplified agent startup closeout
+- Dynamic project agent config is a formal CLI control plane: `fin project-agent add|remove|list <user.toml> ...` reads/writes `runtime/agents/project_agents.json`. Local project agent add allocates an endpoint port once and preserves it on subsequent updates, keeping startup topology deterministic.
+- QQBot restored-target inbound turns must keep explicit session binding authoritative for the whole turn; do not re-read `last_run` after attached control-plane refresh when `send_chat_message_on_binding` was called with an explicit binding, or restored target messages can execute in the wrong active session.
+
+## 2026-05-23 channel default listener boundary
+- WebUI / Android / QQBot channel adapters default to the `system_agent` listener. `project_agent` listeners may exist and can be explicitly connected or used by Agent RPC, but they are not default UI/channel targets.
+- Regression truth: channel ingress must keep `source=channel.qqbot`, `role_id=system`, and `worker_id=worker-system` even when a project agent endpoint is configured; project agent presence may be observable but must not become the channel execution target by default.

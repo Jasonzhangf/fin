@@ -29,6 +29,14 @@ impl DebugActionHandler for TestHandler {
         })
     }
 
+    fn append_mobile_log_event(&self, _runtime_home: &Path, _event: &str) -> Result<(), String> {
+        Ok(())
+    }
+
+    fn read_mobile_log_events(&self, _runtime_home: &Path) -> Result<Vec<String>, String> {
+        Ok(Vec::new())
+    }
+
     fn send_chat_message(
         &self,
         runtime_home: &Path,

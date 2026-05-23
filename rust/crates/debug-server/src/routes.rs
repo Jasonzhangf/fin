@@ -3,17 +3,52 @@ use crate::{
     API_CURRENT_EXECUTION_STATE_PATH, API_CURRENT_INTERRUPTED_SEGMENT_PATH,
     API_CURRENT_PAUSE_CHECKPOINT_PATH, API_CURRENT_PENDING_INPUTS_PATH,
     API_CURRENT_ROUTING_DECISION_PATH, API_CURRENT_SEGMENT_MERGE_PATH, API_EVENTS_PATH,
-    API_LAST_RUN_PATH, API_PROJECTION_PATH, API_QQBOT_CONVERSATIONS_PATH, API_QQBOT_EVENTS_PATH,
-    API_QQBOT_STATE_PATH, API_RECENT_CLOSURES_PATH, API_RECENT_CONTEXTS_PATH,
-    API_RECENT_DIGESTS_PATH, API_RECENT_REASONING_VIEWS_PATH, API_RECENT_TOOL_RECORDS_PATH,
-    API_RECENT_TURNS_PATH, API_SESSION_EVENT_ARCHIVE_INDEX_PATH, API_SESSION_EVENTS_PATH,
-    API_SESSION_EVENTS_SEGMENT_PATH, API_SESSION_MESSAGES_PATH, API_SNAPSHOT_PATH, API_WATCH_PATH,
-    ChatSendRequest, DebugActionHandler, DebugDataError, HttpRequest, HttpResponse,
+    API_LAST_RUN_PATH, API_LOG_INGEST_PATH, API_LOG_LATEST_PATH, API_PROJECTION_PATH,
+    API_QQBOT_CONVERSATIONS_PATH, API_QQBOT_EVENTS_PATH, API_QQBOT_STATE_PATH,
+    API_RECENT_CLOSURES_PATH, API_RECENT_CONTEXTS_PATH, API_RECENT_DIGESTS_PATH,
+    API_RECENT_REASONING_VIEWS_PATH, API_RECENT_TOOL_RECORDS_PATH, API_RECENT_TURNS_PATH,
+    API_SESSION_EVENT_ARCHIVE_INDEX_PATH, API_SESSION_EVENTS_PATH, API_SESSION_EVENTS_SEGMENT_PATH,
+    API_SESSION_MESSAGES_PATH, API_SNAPSHOT_PATH, API_UPDATE_DIR, API_UPDATE_LATEST_PATH,
+    API_WATCH_PATH, ChatSendRequest, DebugActionHandler, DebugDataError, HttpRequest, HttpResponse,
     INDEX_HTML_PATH, STYLES_CSS_PATH, bad_request_response, css_response, file_response,
-    html_response, internal_error_response, javascript_response, json_response, not_found_response,
-    session_view, web_app, web_assets, web_styles, write_http_response,
+    head_response, html_response, internal_error_response, javascript_response, json_response,
+    not_found_response, session_view, web_app, web_assets, web_styles, write_http_response,
 };
 use std::{net::TcpStream, path::Path};
+
+fn update_dist_dir(runtime_home: &Path) -> std::path::PathBuf {
+    let primary = runtime_home.join(API_UPDATE_DIR);
+    if primary.join("latest.json").exists() {
+        return primary;
+    }
+    let fallback = std::env::current_dir()
+        .ok()
+        .map(|cwd| cwd.join("android-client").join(API_UPDATE_DIR))
+        .unwrap_or_else(|| runtime_home.join(API_UPDATE_DIR));
+    fallback
+}
+
+fn update_file_response(runtime_home: &Path, route_path: &str) -> HttpResponse {
+    let updates_dir = update_dist_dir(runtime_home);
+    if route_path == API_UPDATE_LATEST_PATH {
+        return file_response(
+            &updates_dir.join("latest.json"),
+            "application/json; charset=utf-8",
+        );
+    }
+    if let Some(name) = route_path.strip_prefix("/updates/") {
+        if name.is_empty() || name.contains("..") || name.contains('/') || name.contains('\\') {
+            return not_found_response(route_path);
+        }
+        let content_type = if name.ends_with(".apk") {
+            "application/vnd.android.package-archive"
+        } else {
+            "application/octet-stream"
+        };
+        return file_response(&updates_dir.join(name), content_type);
+    }
+    not_found_response(route_path)
+}
 
 pub(crate) fn handle_connection(
     stream: &mut TcpStream,
@@ -34,12 +69,25 @@ pub(crate) fn response_for_request(
     handler: &(impl DebugActionHandler + Sync),
 ) -> HttpResponse {
     let route_path = session_view::request_path(&request.path);
+    if (request.method == "GET" || request.method == "HEAD") && route_path.starts_with("/updates/")
+    {
+        let response = update_file_response(runtime_home, route_path);
+        return if request.method == "HEAD" {
+            head_response(&response)
+        } else {
+            response
+        };
+    }
     match (request.method.as_str(), route_path) {
         ("GET", INDEX_HTML_PATH) => html_response(web_assets::INDEX_HTML),
         ("GET", path) if web_app::javascript_for_path(path).is_some() => {
             javascript_response(web_app::javascript_for_path(route_path).unwrap_or(""))
         }
         ("GET", STYLES_CSS_PATH) => css_response(web_styles::STYLES_CSS),
+        ("GET", API_UPDATE_LATEST_PATH) => update_file_response(runtime_home, route_path),
+        ("GET", path) if path.starts_with("/updates/") => {
+            update_file_response(runtime_home, route_path)
+        }
         ("GET", API_BINDING_PATH) => match handler.read_binding(runtime_home) {
             Ok(binding) => json_response(200, &binding),
             Err(message) => internal_error_response(&message),
@@ -154,6 +202,29 @@ pub(crate) fn response_for_request(
             "application/json; charset=utf-8",
         ),
         ("POST", API_CHAT_SEND_PATH) => chat_send_response(runtime_home, request, handler),
+        ("POST", API_LOG_INGEST_PATH) => {
+            let body_str = String::from_utf8_lossy(&request.body).trim().to_string();
+            if body_str.is_empty() {
+                json_response(
+                    400,
+                    &serde_json::json!({"ok": false, "error": "empty_body"}),
+                )
+            } else if let Err(e) = handler.append_mobile_log_event(runtime_home, &body_str) {
+                json_response(
+                    500,
+                    &serde_json::json!({"ok": false, "error": e.to_string()}),
+                )
+            } else {
+                json_response(200, &serde_json::json!({"ok": true}))
+            }
+        }
+        ("GET", API_LOG_LATEST_PATH) => match handler.read_mobile_log_events(runtime_home) {
+            Ok(events) => json_response(200, &serde_json::json!({"ok": true, "events": events})),
+            Err(e) => json_response(
+                500,
+                &serde_json::json!({"ok": false, "error": e.to_string()}),
+            ),
+        },
         _ => not_found_response(&request.path),
     }
 }

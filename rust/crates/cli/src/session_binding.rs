@@ -23,29 +23,13 @@ pub(crate) fn resolve_binding_for_session(
     base_binding: &DebugBinding,
     session_id: &str,
 ) -> Result<DebugBinding, CliError> {
-    let Some((year, month, _)) = find_session_dir(runtime_home, session_id) else {
+    let Some((_year, _month, _)) = find_session_dir(runtime_home, session_id) else {
         return Err(CliError::InvalidInstallState(format!(
             "session not found for qqbot binding: {session_id}"
         )));
     };
     let binding = build_binding_for_session(runtime_home, base_binding, session_id, None)?;
-    let rebound = rebind_last_run_binding(
-        runtime_home,
-        session_id,
-        binding.task_id.as_deref(),
-        infer_session_topic_thread_id(
-            &runtime_home.join(format!("sessions/{year:04}/{month:02}/{session_id}")),
-        )
-        .as_deref(),
-        year,
-        month,
-    )?;
-    Ok(DebugBinding {
-        session_messages_path: rebound.session_messages_path,
-        recent_contexts_path: rebound.recent_contexts_path,
-        recent_digests_path: rebound.recent_digests_path,
-        ..binding
-    })
+    Ok(binding)
 }
 
 pub(crate) fn build_binding_for_session(

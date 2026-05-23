@@ -22,6 +22,7 @@ pub(super) fn build_partial_run(
     routing_decision: &RoutingDecisionRecord,
     routing_action: &RoutingActionRecord,
     resume_checkpoint: Option<&ExecutionCheckpointRecord>,
+    compacted_history_records: &[CompactedHistoryRecord],
     events: &[EventEnvelope<Value>],
 ) -> ClosureRun {
     ClosureRun {
@@ -48,6 +49,7 @@ pub(super) fn build_partial_run(
         routing_decision: routing_decision.clone(),
         routing_action: routing_action.clone(),
         resume_checkpoint: resume_checkpoint.cloned(),
+        compacted_history_records: compacted_history_records.to_vec(),
         closure_trace: ClosureTraceRecord::default(),
         events: events.to_vec(),
     }
@@ -133,6 +135,7 @@ pub(super) fn build_final_run(
     routing_decision: RoutingDecisionRecord,
     routing_action: RoutingActionRecord,
     resume_checkpoint: Option<ExecutionCheckpointRecord>,
+    compacted_history_records: Vec<CompactedHistoryRecord>,
     closure_trace: ClosureTraceRecord,
     events: Vec<EventEnvelope<Value>>,
 ) -> ClosureRun {
@@ -160,6 +163,7 @@ pub(super) fn build_final_run(
         routing_decision,
         routing_action,
         resume_checkpoint,
+        compacted_history_records,
         closure_trace,
         events,
     }

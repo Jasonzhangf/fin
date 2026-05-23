@@ -157,8 +157,9 @@ pub fn resumed_state(
         active_turn_id: checkpoint.and_then(|value| value.turn_id.clone()),
         active_step_id: checkpoint.and_then(|value| value.active_step_id.clone()),
         resume_from_step_id: checkpoint.and_then(|value| value.resume_from_step_id.clone()),
-        resume_checkpoint_ready: Some(checkpoint
-            .is_some_and(|value| value.resume_checkpoint_id.is_some())),
+        resume_checkpoint_ready: Some(
+            checkpoint.is_some_and(|value| value.resume_checkpoint_id.is_some()),
+        ),
         resume_checkpoint_id: checkpoint.and_then(|value| value.resume_checkpoint_id.clone()),
         pending_input_count,
         accepts_user_input: true,

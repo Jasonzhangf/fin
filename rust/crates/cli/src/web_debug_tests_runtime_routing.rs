@@ -37,7 +37,7 @@ fn first_turn_creates_tentative_session_without_task_and_prompts_formalize() {
         .expect("first turn should run");
 
     assert_eq!(response.response_kind, "assistant_message");
-    assert!(response.answer.contains("/formalize"));
+    assert!(!response.answer.contains("/formalize"));
     assert!(response.binding.session_id.is_some());
     assert_eq!(response.binding.task_id, None);
     let action = response
@@ -45,6 +45,12 @@ fn first_turn_creates_tentative_session_without_task_and_prompts_formalize() {
         .expect("routing action should exist");
     assert_eq!(action.action_kind, "ask_formalize_task");
     assert!(action.prompt_user);
+    assert!(
+        action
+            .prompt_text
+            .as_deref()
+            .is_some_and(|text| text.contains("/formalize"))
+    );
 
     let last_run = read_last_run_value(&home).expect("last run should exist");
     assert!(last_run.get("session_id").is_some());
