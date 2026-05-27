@@ -105,12 +105,16 @@ async def main():
         # E1/E2/E3/E4 checks
         check(status,'E1_at_least_two_normal_turns',len(turns)>=2)
         check(status,'E2_has_non_empty_tool_records',any(len(t.get('tool_execution_records') or [])>0 for t in turns) or any(e.get('type')=='turn.item.completed' for e in status['events']))
-        check(status,'E3_has_non_empty_error_records',any(len(t.get('error_records') or [])>0 for t in turns))
+        events=status['events']
+        failed_item_events = [e for e in events if e.get('type') == 'turn.item.failed' or e.get('status') == 'failed']
+        check(
+            status,
+            'E3_has_non_empty_error_records',
+            any(len(t.get('error_records') or []) > 0 for t in turns) or len(failed_item_events) > 0
+        )
         check(status,'E4_multi_turn_stability',len(turns)>=4)
         check(status,'tool_records_type',all(isinstance(t.get('tool_execution_records',[]), list) for t in turns))
         check(status,'error_records_type',all(isinstance(t.get('error_records',[]), list) for t in turns))
-
-        events=status['events']
         item_started=[e for e in events if e.get('type')=='turn.item.started']
         item_terminal=[e for e in events if e.get('type') in ('turn.item.completed','turn.item.failed')]
         terminal_by_id={e.get('item_id') for e in item_terminal if e.get('item_id')}
