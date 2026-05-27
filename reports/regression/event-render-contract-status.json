@@ -1,0 +1,15 @@
+{
+  "ts": "2026-05-27T15:39:01.665866Z",
+  "ok": true,
+  "checks": {
+    "tool_timeline_render": true,
+    "error_timeline_render": true,
+    "legacy_event_consumer_removed": true,
+    "raw_fallback_storage": true,
+    "conn_state_healthy": true,
+    "conn_state_disconnected": true,
+    "readonly_config_boxes": true,
+    "update_manifest_single_source": true
+  },
+  "file": "/Volumes/extension/code/fin/android-client/app/src/main/assets/mobile-shell.html"
+}

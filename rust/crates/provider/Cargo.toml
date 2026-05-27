@@ -10,3 +10,4 @@ serde_json.workspace = true
 thiserror.workspace = true
 reqwest.workspace = true
 fin-config = { path = "../config" }
+fin-shared = { path = "../shared" }

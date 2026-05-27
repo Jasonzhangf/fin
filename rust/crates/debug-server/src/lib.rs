@@ -19,6 +19,8 @@ pub mod agent_rpc;
 mod chat_api;
 mod event_stream;
 mod http;
+mod mobile_blocks;
+mod mobile_protocol;
 mod mobile_ws;
 mod routes;
 mod session_view;

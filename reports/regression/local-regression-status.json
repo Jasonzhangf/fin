@@ -1,0 +1,111 @@
+{
+  "run_id": "test-local-reg-20260527-214347",
+  "gates": [
+    {
+      "name": "g0_config_check",
+      "cmd": "cargo run -p fin-cli --manifest-path rust/Cargo.toml -- config-check '/Users/fanzhang/.fin/harness/runs/test-local-reg-20260527-214347/user.test.toml'",
+      "ok": true,
+      "code": 0,
+      "log": "reports/regression/g0_config_check.log",
+      "blocking": true
+    },
+    {
+      "name": "g1_transcript_fixture_json",
+      "cmd": "python3 -c \"import json; d=json.load(open('docs/samples/transcript-fixture.json')); assert 'turns' in d and len(d['turns'])>=1\"",
+      "ok": true,
+      "code": 0,
+      "log": "reports/regression/g1_transcript_fixture_json.log",
+      "blocking": true
+    },
+    {
+      "name": "g1_offline_static_provider_tests",
+      "cmd": "cargo test -p fin-cli transcript_session_persists_recent_context_history --manifest-path rust/Cargo.toml -- --nocapture",
+      "ok": true,
+      "code": 0,
+      "log": "reports/regression/g1_offline_static_provider_tests.log",
+      "blocking": true
+    },
+    {
+      "name": "g1_context_cache_assembly_tests",
+      "cmd": "cargo test -p fin-runtime --manifest-path rust/Cargo.toml assembler_tests -- --nocapture",
+      "ok": true,
+      "code": 0,
+      "log": "reports/regression/g1_context_cache_assembly_tests.log",
+      "blocking": true
+    },
+    {
+      "name": "g1_context_cache_round_loop_tests",
+      "cmd": "cargo test -p fin-runtime --manifest-path rust/Cargo.toml round_loop_runtime_tests -- --nocapture",
+      "ok": true,
+      "code": 0,
+      "log": "reports/regression/g1_context_cache_round_loop_tests.log",
+      "blocking": true
+    },
+    {
+      "name": "g1_provider_cache_usage_tests",
+      "cmd": "cargo test -p fin-provider --manifest-path rust/Cargo.toml -- --nocapture",
+      "ok": true,
+      "code": 0,
+      "log": "reports/regression/g1_provider_cache_usage_tests.log",
+      "blocking": true
+    },
+    {
+      "name": "g1_ws_turn_channel_contract",
+      "cmd": "python3 scripts/android-mvp/run_turn_channel_contract.py",
+      "ok": true,
+      "code": 0,
+      "log": "reports/regression/g1_ws_turn_channel_contract.log",
+      "blocking": true
+    },
+    {
+      "name": "g1_ws_event_replay_dynamic",
+      "cmd": "python3 scripts/regression/run_ws_event_replay_gate.py",
+      "ok": true,
+      "code": 0,
+      "log": "reports/regression/g1_ws_event_replay_dynamic.log",
+      "blocking": true
+    },
+    {
+      "name": "g2_event_render_contract",
+      "cmd": "python3 scripts/regression/check_local_event_render_contract.py",
+      "ok": true,
+      "code": 0,
+      "log": "reports/regression/g2_event_render_contract.log",
+      "blocking": true
+    },
+    {
+      "name": "g2_android_log_ingest",
+      "cmd": "python3 scripts/regression/check_android_log_ingest_gate.py",
+      "ok": true,
+      "code": 0,
+      "log": "reports/regression/g2_android_log_ingest.log",
+      "blocking": true
+    },
+    {
+      "name": "g3_live_provider_smoke",
+      "cmd": "scripts/run-real-provider-smoke.sh 'test-local-reg-20260527-214347-live'",
+      "ok": true,
+      "code": 0,
+      "log": "reports/regression/g3_live_provider_smoke.log",
+      "blocking": true
+    },
+    {
+      "name": "g3_local_multi_agent_live_e2e",
+      "cmd": "scripts/run-local-multi-agent-e2e.sh live 'test-local-reg-20260527-214347-live-multi-agent'",
+      "ok": false,
+      "code": 1,
+      "log": "reports/regression/g3_local_multi_agent_live_e2e.log",
+      "blocking": true
+    },
+    {
+      "name": "g3_local_multi_agent_live_webui_render",
+      "cmd": "node scripts/webui/live-runtime-chat-smoke.mjs 'test-local-reg-20260527-214347-live-multi-agent'",
+      "ok": false,
+      "code": 1,
+      "log": "reports/regression/g3_local_multi_agent_live_webui_render.log",
+      "blocking": true
+    }
+  ],
+  "ts": "2026-05-27T13:47:08.306051Z",
+  "overall_ok": false
+}

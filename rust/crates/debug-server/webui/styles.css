@@ -458,6 +458,40 @@ button, textarea, input { font: inherit; }
   transition: border-color 0.16s ease, transform 0.16s ease, box-shadow 0.16s ease;
 }
 .message:hover { border-color: rgba(103, 160, 255, 0.32); transform: translateY(-1px); }
+.chat-thread {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  width: min(100%, 860px);
+  align-self: center;
+  padding: 6px 0;
+}
+.chat-thread.selected {
+  border-left: 2px solid rgba(103, 160, 255, 0.42);
+  padding-left: 10px;
+}
+.chat-thread-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 0 10px;
+  color: var(--muted);
+  font-size: 11px;
+}
+.chat-thread .message {
+  max-width: min(92%, 820px);
+}
+.chat-thread .message.user {
+  align-self: flex-end;
+}
+.chat-thread .message.agent {
+  align-self: flex-start;
+}
+.chat-thread.standalone .message,
+.chat-thread.pending .message {
+  cursor: default;
+}
 .message.user {
   margin-left: auto; flex-direction: row-reverse; background: linear-gradient(180deg, rgba(20, 55, 97, 0.96), rgba(15, 41, 73, 0.96));
   border-color: rgba(96, 168, 255, 0.36);
@@ -674,6 +708,126 @@ button, textarea, input { font: inherit; }
   color: var(--muted);
   font-size: 12px;
   line-height: 1.5;
+}
+.activity-pinned-lane {
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px solid rgba(86, 114, 157, 0.16);
+}
+.activity-pinned-lane-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+.activity-pinned-lane-count {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 600;
+}
+.activity-pinned-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+  gap: 10px;
+}
+.activity-pinned-card {
+  padding: 10px;
+  border: 1px solid rgba(86, 114, 157, 0.18);
+  border-radius: 12px;
+  background: rgba(7, 16, 30, 0.58);
+}
+.activity-pinned-card.running {
+  border-color: rgba(61, 220, 151, 0.28);
+}
+.activity-pinned-card.waiting,
+.activity-pinned-card.idle {
+  border-color: rgba(79, 140, 255, 0.22);
+}
+.activity-pinned-card.failed {
+  border-color: rgba(255, 123, 114, 0.28);
+}
+.activity-pinned-card-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+.activity-pinned-card-title {
+  color: #eef5ff;
+  font-size: 13px;
+  font-weight: 700;
+}
+.activity-pinned-card-subtitle {
+  margin-top: 3px;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.4;
+}
+.activity-pinned-card-state {
+  display: inline-flex;
+  align-items: center;
+  min-height: 20px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: rgba(8, 17, 31, 0.72);
+  color: #dce8fc;
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+.activity-pinned-card-state.running {
+  color: #86f2bf;
+}
+.activity-pinned-card-state.waiting,
+.activity-pinned-card-state.idle {
+  color: #a9d0ff;
+}
+.activity-pinned-card-state.failed {
+  color: #ffb1b1;
+}
+.activity-pinned-card-body {
+  color: #edf3ff;
+  font-size: 12px;
+  line-height: 1.5;
+}
+.activity-pinned-card-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
+}
+.activity-pinned-card-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  margin-top: 10px;
+}
+.activity-pinned-action {
+  padding: 8px;
+  border: 1px solid rgba(86, 114, 157, 0.14);
+  border-radius: 10px;
+  background: rgba(8, 17, 31, 0.56);
+}
+.activity-pinned-action-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+.activity-pinned-action-verb,
+.activity-pinned-action-status {
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+.activity-pinned-action-summary {
+  color: #e7f0ff;
+  font-size: 11px;
+  line-height: 1.45;
 }
 .message-rich-grid {
   display: grid;

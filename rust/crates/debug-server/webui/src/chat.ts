@@ -87,40 +87,37 @@ export class ChatPane {
       this.tree,
     );
 
-    const frontstagePanel = this.renderFrontstagePanel(activityCards, richness);
-
-    if (!messages.length) {
+    const hasConversationContent = messages.length || focusTurns.length || Boolean(activityCards);
+    if (!hasConversationContent) {
       this.messagesEl.innerHTML = [
-        frontstagePanel,
         `
           <div class="empty-state">
             <div class="empty-icon">💬</div>
             <div class="empty-text">No session messages yet. Send the first message into this bound session.</div>
           </div>
         `,
-      ].filter(Boolean).join('');
-      this.lastRenderedSignature = frontstagePanel;
+      ].join('');
+      this.lastRenderedSignature = '';
       return;
     }
 
     const previousScrollTop = this.messagesEl.scrollTop;
     const wasNearBottom = isNearBottom(this.messagesEl);
     const signature = `${messages.map((message) => `${message.message_id}:${message.created_at}`).join('|')}::${activityCards?.generated_at ?? ''}`;
-    const focusByOperation = new Map(focusTurns.map((turn) => [turn.operationId, turn]));
     const semanticsByOperation = groupSemanticsByOperation(activityToolSemantics(activityCards));
     const focusSource = activityFocusSource(activityCards);
 
     this.messagesEl.innerHTML = [
-      frontstagePanel,
-      ...messages.map((message) => this.renderMessage(
-        message,
-        focusByOperation,
+      ...this.renderConversationThreads(
+        messages,
+        focusTurns,
         semanticsByOperation,
         focusSource,
         selectedOperationId,
         richness,
         openedChatDetailKey,
-      )),
+        activityCards,
+      ),
       this.renderPendingAssistant(pendingAssistant),
     ].filter(Boolean).join('');
 
@@ -133,83 +130,177 @@ export class ChatPane {
   }
 
 
-  private renderFrontstagePanel(
-    activityCards: ActivityCardsSnapshot | null,
-    richness: ConversationRichness,
-  ): string {
-    const userCard = activityUserCard(activityCards);
-    const focusSource = activityFocusSource(activityCards);
-    const sources = activitySourceCards(activityCards);
-    const recentItems = activityRecentItems(activityCards, 3);
-    const toolItems = activityToolSemantics(activityCards).slice(0, richness === 'minimal' ? 0 : 4);
-    if (!userCard && !focusSource && !toolItems.length) return '';
-
-    const stateLabel = activityState(activityCards);
-    const tone = activityStateTone(stateLabel);
-    const stage = activityStage(activityCards);
-    const updatedAt = userCard?.updated_at ?? focusSource?.updated_at ?? activityCards?.generated_at;
-
-    return `
-      <section class="activity-frontstage activity-tone-${this.tree.escapeHtml(tone)}">
-        <div class="activity-frontstage-header">
-          <div>
-            <div class="section-kicker">Frontstage Activity</div>
-            <div class="activity-frontstage-title">${this.tree.escapeHtml(activityHeader(activityCards))}</div>
-          </div>
-          <span class="activity-state-pill ${this.tree.escapeHtml(tone)}">${this.tree.escapeHtml(stateLabel)}</span>
-        </div>
-        <div class="activity-frontstage-summary">
-          ${this.tree.escapeHtml(stage !== '-' ? stage : (focusSource?.summary ?? userCard?.focus_summary ?? 'idle'))}
-        </div>
-        <div class="activity-frontstage-chip-row">
-          <span class="activity-chip">focus · ${this.tree.escapeHtml(focusSource?.title ?? userCard?.focus_source_id ?? 'system-agent')}</span>
-          <span class="activity-chip">sources · ${this.tree.escapeHtml(String(sources.length || 1))}</span>
-          ${updatedAt ? `<span class="activity-chip">updated · ${this.tree.escapeHtml(formatLocalTimestamp(updatedAt))}</span>` : ''}
-        </div>
-        ${recentItems.length ? `
-          <div class="activity-frontstage-list">
-            ${recentItems.map((item) => `
-              <article class="activity-list-item">
-                <span class="activity-list-bullet">•</span>
-                <span>${this.tree.escapeHtml(item)}</span>
-              </article>
-            `).join('')}
-          </div>
-        ` : ''}
-        ${richness === 'minimal' ? '' : `
-          <div class="activity-source-grid">
-            ${sources.slice(0, 3).map((card) => `
-              <article class="activity-source-card ${this.tree.escapeHtml(activityStateTone(card.state))}">
-                <div class="activity-source-header">
-                  <span class="activity-source-title">${this.tree.escapeHtml(card.title ?? card.source_id ?? 'source')}</span>
-                  <span class="activity-source-state">${this.tree.escapeHtml(card.state ?? '-')}</span>
-                </div>
-                <div class="activity-source-summary">${this.tree.escapeHtml(card.current_activity ?? card.summary ?? '-')}</div>
-              </article>
-            `).join('')}
-          </div>
-        `}
-        ${toolItems.length ? `
-          <div class="activity-tool-row">
-            ${toolItems.map((item) => `
-              <span class="activity-tool-pill">${this.tree.escapeHtml(item.summary ?? item.tool_name ?? 'tool')}</span>
-            `).join('')}
-          </div>
-        ` : ''}
-      </section>
-    `;
-  }
-
-  private renderMessage(
-    message: SessionMessage,
-    focusByOperation: Map<string, FocusTurn>,
+  private renderConversationThreads(
+    messages: SessionMessage[],
+    focusTurns: FocusTurn[],
     semanticsByOperation: Map<string, ToolSemanticView[]>,
     focusSource: SourceActivityCardView | null,
     selectedOperationId: string | null,
     richness: ConversationRichness,
     openedChatDetailKey: string | null,
+    activityCards: ActivityCardsSnapshot | null,
+  ): string[] {
+    const renderedMessageIds = new Set<string>();
+    const renderedOperationIds = new Set<string>();
+    const timeline: Array<{ createdAt: string; order: number; html: string }> = [];
+
+    const activityThread = this.renderActivityThread(activityCards, richness);
+    if (activityThread) {
+      timeline.push(activityThread);
+    }
+
+    for (const focusTurn of focusTurns) {
+      renderedOperationIds.add(focusTurn.operationId);
+      if (focusTurn.userMessage?.message_id) renderedMessageIds.add(focusTurn.userMessage.message_id);
+      if (focusTurn.assistantMessage?.message_id) renderedMessageIds.add(focusTurn.assistantMessage.message_id);
+      timeline.push({
+        createdAt: turnTimestamp(focusTurn),
+        order: 1,
+        html: this.renderTurnThread(
+          focusTurn,
+          semanticsByOperation.get(focusTurn.operationId) ?? [],
+          focusSource,
+          selectedOperationId,
+          richness,
+          openedChatDetailKey,
+        ),
+      });
+    }
+
+    for (const message of messages) {
+      const operationId = message.operation_id ?? inferOperationId(message.message_id);
+      if ((message.message_id && renderedMessageIds.has(message.message_id))
+        || (operationId && renderedOperationIds.has(operationId))) {
+        continue;
+      }
+      timeline.push({
+        createdAt: message.created_at ?? '',
+        order: 2,
+        html: this.renderStandaloneMessage(message),
+      });
+    }
+
+    return timeline
+      .sort((left, right) => compareTimeline(left.createdAt, right.createdAt) || (left.order - right.order))
+      .map((entry) => entry.html);
+  }
+
+  private renderActivityThread(
+    activityCards: ActivityCardsSnapshot | null,
+    richness: ConversationRichness,
+  ): { createdAt: string; order: number; html: string } | null {
+    const userCard = activityUserCard(activityCards);
+    const focusSource = activityFocusSource(activityCards);
+    const sources = activitySourceCards(activityCards);
+    const recentItems = activityRecentItems(activityCards, 3);
+    const toolItems = activityToolSemantics(activityCards).slice(0, richness === 'minimal' ? 0 : 4);
+    if (!userCard && !focusSource && !toolItems.length) return null;
+
+    const stateLabel = activityState(activityCards);
+    const tone = activityStateTone(stateLabel);
+    const stage = activityStage(activityCards);
+    const updatedAt = userCard?.updated_at ?? focusSource?.updated_at ?? activityCards?.generated_at ?? '';
+    const pinnedSources = sources.filter((card) =>
+      card.source_kind === 'project_agent'
+      || (card.auto_promoted && card.source_id !== (focusSource?.source_id ?? 'system-agent')),
+    );
+
+    return {
+      createdAt: updatedAt,
+      order: 0,
+      html: `
+        <article class="chat-thread system-progress" data-operation-id="" data-render-style="chat-thread">
+          <section class="message agent system-progress-message">
+            <div class="message-avatar">🧭</div>
+            <div class="message-content-wrapper">
+              <div class="message-header">
+                <span class="role-badge assistant">System Progress</span>
+                <span class="turn-badge ${this.tree.escapeHtml(tone)}">${this.tree.escapeHtml(stateLabel)}</span>
+                ${updatedAt ? `<span class="message-time">${this.tree.escapeHtml(formatLocalTimestamp(updatedAt))}</span>` : ''}
+              </div>
+              <div class="message-body">${this.tree.escapeHtml(stage !== '-' ? stage : (focusSource?.summary ?? userCard?.focus_summary ?? 'idle'))}</div>
+              <div class="turn-card-chip-row">
+                <span class="turn-card-chip">focus · ${this.tree.escapeHtml(focusSource?.title ?? userCard?.focus_source_id ?? 'system-agent')}</span>
+                <span class="turn-card-chip">sources · ${this.tree.escapeHtml(String(sources.length || 1))}</span>
+              </div>
+              ${recentItems.length ? `
+                <div class="activity-frontstage-list">
+                  ${recentItems.map((item) => `
+                    <article class="activity-list-item">
+                      <span class="activity-list-bullet">•</span>
+                      <span>${this.tree.escapeHtml(item)}</span>
+                    </article>
+                  `).join('')}
+                </div>
+              ` : ''}
+              ${toolItems.length ? `
+                <div class="activity-tool-row">
+                  ${toolItems.map((item) => `
+                    <span class="activity-tool-pill">${this.tree.escapeHtml(item.summary ?? item.tool_name ?? 'tool')}</span>
+                  `).join('')}
+                </div>
+              ` : ''}
+              ${richness === 'minimal' || !pinnedSources.length ? '' : `
+                <div class="activity-pinned-lane">
+                  <div class="activity-pinned-lane-header">
+                    <span class="section-kicker">Delegated Progress</span>
+                    <span class="activity-pinned-lane-count">${this.tree.escapeHtml(String(pinnedSources.length))} active</span>
+                  </div>
+                  <div class="activity-pinned-grid">
+                    ${pinnedSources.map((card) => this.renderPinnedSourceCard(card)).join('')}
+                  </div>
+                </div>
+              `}
+            </div>
+          </section>
+        </article>
+      `,
+    };
+  }
+
+  private renderTurnThread(
+    focusTurn: FocusTurn,
+    semanticTools: ToolSemanticView[],
+    focusSource: SourceActivityCardView | null,
+    selectedOperationId: string | null,
+    richness: ConversationRichness,
+    openedChatDetailKey: string | null,
   ): string {
+    const operationId = focusTurn.operationId;
+    const selectedClass = operationId === selectedOperationId ? 'selected' : '';
+    const isSelected = operationId === selectedOperationId;
+    const turnLabel = shortTurnLabel(operationId);
+    const createdAt = focusTurn.assistantMessage?.created_at ?? focusTurn.userMessage?.created_at ?? '';
+    return `
+      <article class="chat-thread ${selectedClass}" data-operation-id="${this.tree.escapeHtml(operationId)}" data-render-style="chat-thread">
+        <div class="chat-thread-meta">
+          <span class="turn-badge">${this.tree.escapeHtml(turnLabel)}</span>
+          <span class="message-time">${this.tree.escapeHtml(formatLocalTimestamp(createdAt))}</span>
+        </div>
+        ${focusTurn.userMessage ? this.renderBubble(focusTurn.userMessage, 'user') : ''}
+        ${focusTurn.assistantMessage ? this.renderBubble(focusTurn.assistantMessage, 'agent') : ''}
+        ${focusTurn.assistantMessage ? this.renderRichPanel(
+          focusTurn,
+          semanticTools,
+          isSelected ? focusSource : null,
+          richness,
+          openedChatDetailKey,
+          isSelected,
+        ) : ''}
+      </article>
+    `;
+  }
+
+  private renderStandaloneMessage(message: SessionMessage): string {
     const role = message.role === 'user' ? 'user' : 'agent';
+    return `
+      <article class="chat-thread standalone" data-operation-id="${this.tree.escapeHtml(message.operation_id ?? '')}" data-render-style="chat-thread">
+        ${this.renderBubble(message, role)}
+      </article>
+    `;
+  }
+
+  private renderBubble(message: SessionMessage, role: 'user' | 'agent'): string {
     const presentation = role === 'user'
       ? { avatar: '🧑', label: 'User', badge: 'user' }
       : {
@@ -217,35 +308,51 @@ export class ChatPane {
           label: message.role === 'assistant' || !message.role ? 'Assistant' : String(message.role),
           badge: message.role === 'assistant' || !message.role ? 'assistant' : 'agent',
         };
-    const operationId = message.operation_id ?? inferOperationId(message.message_id);
-    const focusTurn = operationId ? focusByOperation.get(operationId) : undefined;
-    const selectedClass = operationId && operationId === selectedOperationId ? 'selected' : '';
-    const isSelected = Boolean(operationId && operationId === selectedOperationId);
-    const turnLabel = operationId ? shortTurnLabel(operationId) : null;
-    const semanticTools = operationId ? (semanticsByOperation.get(operationId) ?? []) : [];
-    const richPanel = role === 'user'
-      ? ''
-      : this.renderRichPanel(
-          focusTurn,
-          semanticTools,
-          isSelected ? focusSource : null,
-          richness,
-          openedChatDetailKey,
-          isSelected,
-        );
-
     return `
-      <article class="message ${role} ${selectedClass}" data-operation-id="${this.tree.escapeHtml(operationId ?? '')}">
+      <section class="message ${role}" data-message-id="${this.tree.escapeHtml(message.message_id ?? '')}">
         <div class="message-avatar">${presentation.avatar}</div>
         <div class="message-content-wrapper">
           <div class="message-header">
             <span class="role-badge ${presentation.badge}">${this.tree.escapeHtml(presentation.label)}</span>
-            ${turnLabel ? `<span class="turn-badge">${this.tree.escapeHtml(turnLabel)}</span>` : ''}
             <span class="message-time">${this.tree.escapeHtml(formatLocalTimestamp(message.created_at))}</span>
           </div>
           <div class="message-body">${this.tree.escapeHtml(message.content ?? '')}</div>
-          ${richPanel}
         </div>
+      </section>
+    `;
+  }
+
+  private renderPinnedSourceCard(card: SourceActivityCardView): string {
+    const recentActions = Array.isArray(card.recent_actions) ? card.recent_actions.slice(0, 4) : [];
+    const detail = card.current_activity ?? card.waiting_detail ?? card.failure_detail ?? card.summary ?? '-';
+    return `
+      <article class="activity-pinned-card ${this.tree.escapeHtml(activityStateTone(card.state))}" data-source-id="${this.tree.escapeHtml(card.source_id ?? '')}">
+        <div class="activity-pinned-card-header">
+          <div>
+            <div class="activity-pinned-card-title">${this.tree.escapeHtml(card.title ?? card.source_id ?? 'project agent')}</div>
+            <div class="activity-pinned-card-subtitle">${this.tree.escapeHtml(card.summary ?? '-')}</div>
+          </div>
+          <span class="activity-pinned-card-state ${this.tree.escapeHtml(activityStateTone(card.state))}">${this.tree.escapeHtml(card.state ?? '-')}</span>
+        </div>
+        <div class="activity-pinned-card-body">${this.tree.escapeHtml(detail)}</div>
+        <div class="activity-pinned-card-meta">
+          <span class="activity-chip">source · ${this.tree.escapeHtml(card.source_kind ?? '-')}</span>
+          ${card.task_id ? `<span class="activity-chip">task · ${this.tree.escapeHtml(card.task_id)}</span>` : ''}
+          ${card.updated_at ? `<span class="activity-chip">updated · ${this.tree.escapeHtml(formatLocalTimestamp(card.updated_at))}</span>` : ''}
+        </div>
+        ${recentActions.length ? `
+          <div class="activity-pinned-card-actions">
+            ${recentActions.map((action) => `
+              <article class="activity-pinned-action">
+                <div class="activity-pinned-action-head">
+                  <span class="activity-pinned-action-verb">${this.tree.escapeHtml(action.verb ?? 'Ran')}</span>
+                  <span class="activity-pinned-action-status">${this.tree.escapeHtml(action.status ?? '-')}</span>
+                </div>
+                <div class="activity-pinned-action-summary">${this.tree.escapeHtml(action.summary ?? action.tool_name ?? 'tool')}</div>
+              </article>
+            `).join('')}
+          </div>
+        ` : ''}
       </article>
     `;
   }
@@ -309,19 +416,30 @@ export class ChatPane {
     if (!pendingAssistant) return '';
     const elapsed = formatElapsed(Date.now() - pendingAssistant.startedAtMs);
     return `
-      <article class="message agent pending" data-operation-id="">
-        <div class="message-avatar">🤖</div>
-        <div class="message-content-wrapper">
-          <div class="message-header">
-            <span class="role-badge assistant">Assistant</span>
-            <span class="turn-badge waiting">waiting</span>
-            <span class="message-time">elapsed ${this.tree.escapeHtml(elapsed)}</span>
+      <article class="chat-thread pending" data-operation-id="" data-render-style="chat-thread">
+        <section class="message user pending-origin">
+          <div class="message-avatar">🧑</div>
+          <div class="message-content-wrapper">
+            <div class="message-header">
+              <span class="role-badge user">User</span>
+            </div>
+            <div class="message-body">${this.tree.escapeHtml(pendingAssistant.prompt)}</div>
           </div>
-          <div class="message-body pending-body">
-            <span class="pending-copy">Thinking on: ${this.tree.escapeHtml(pendingAssistant.prompt)}</span>
-            <span class="typing-dots" aria-label="assistant busy"><span></span><span></span><span></span></span>
+        </section>
+        <section class="message agent pending-reply">
+          <div class="message-avatar">🤖</div>
+          <div class="message-content-wrapper">
+            <div class="message-header">
+              <span class="role-badge assistant">Assistant</span>
+              <span class="turn-badge waiting">waiting</span>
+              <span class="message-time">elapsed ${this.tree.escapeHtml(elapsed)}</span>
+            </div>
+            <div class="message-body pending-body">
+              <span class="pending-copy">Thinking…</span>
+              <span class="typing-dots" aria-label="assistant busy"><span></span><span></span><span></span></span>
+            </div>
           </div>
-        </div>
+        </section>
       </article>
     `;
   }
@@ -383,6 +501,20 @@ function inferOperationId(messageId?: string): string | null {
   if (messageId.startsWith('user-')) return messageId.slice('user-'.length);
   if (messageId.startsWith('assistant-closure-')) return messageId.slice('assistant-closure-'.length);
   return null;
+}
+
+function turnTimestamp(turn: FocusTurn): string {
+  return turn.assistantMessage?.created_at
+    ?? turn.userMessage?.created_at
+    ?? turn.contextSnapshot?.captured_at
+    ?? '';
+}
+
+function compareTimeline(left: string, right: string): number {
+  if (left === right) return 0;
+  if (!left) return 1;
+  if (!right) return -1;
+  return left.localeCompare(right);
 }
 
 function isNearBottom(element: HTMLElement): boolean {
