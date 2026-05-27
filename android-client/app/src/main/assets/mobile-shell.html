@@ -5,44 +5,57 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <title>fin mobile</title>
   <style>
-    :root{--bg:#0b1322;--bg2:#090f1c;--card:rgba(15,23,42,.88);--card2:rgba(30,41,59,.72);--text:#e7ecf7;--muted:#94a3b8;--line:rgba(148,163,184,.20);--accent:#2563eb;--accent2:#10b981;--accentText:#fff;--danger:#ff5d73;--ok:#39d98a;--shadow:0 14px 36px rgba(2,6,23,.26);--panel:rgba(11,18,32,.98);--input:rgba(15,23,42,.94);--chip:rgba(37,99,235,.16);--chipText:#dbeafe;--field:rgba(2,6,23,.42)}
-    body.theme-finger{--bg:#0b1322;--bg2:#090f1c;--card:rgba(15,23,42,.88);--card2:rgba(30,41,59,.72);--text:#e7ecf7;--muted:#94a3b8;--line:rgba(148,163,184,.20);--accent:#2563eb;--accent2:#10b981;--accentText:#fff;--danger:#ff5d73;--ok:#39d98a;--shadow:0 14px 36px rgba(2,6,23,.28);--panel:rgba(11,18,32,.98);--input:rgba(15,23,42,.94);--chip:rgba(37,99,235,.16);--chipText:#dbeafe;--field:rgba(2,6,23,.42)}
-    body.theme-aurora{--bg:#111827;--bg2:#2e1065;--card:rgba(17,24,39,.84);--card2:rgba(30,41,59,.68);--text:#f5f3ff;--muted:#c4b5fd;--line:rgba(216,180,254,.24);--accent:#a855f7;--accent2:#06b6d4;--accentText:#fff;--danger:#fb7185;--ok:#22d3ee;--shadow:0 18px 42px rgba(88,28,135,.28);--panel:rgba(24,24,43,.98);--input:rgba(30,27,75,.92);--chip:rgba(168,85,247,.18);--chipText:#f3e8ff;--field:rgba(30,27,75,.58)}
-    body.theme-sunrise{--bg:#fff7ed;--bg2:#ffedd5;--card:rgba(255,255,255,.92);--card2:rgba(255,247,237,.88);--text:#35190b;--muted:#9a3412;--line:rgba(251,146,60,.28);--accent:#f97316;--accent2:#db2777;--accentText:#fff;--danger:#be123c;--ok:#15803d;--shadow:0 14px 34px rgba(154,52,18,.14);--panel:#fff7ed;--input:#fff;--chip:rgba(249,115,22,.14);--chipText:#7c2d12;--field:#fff}
-    body.theme-paper{--bg:#f8fafc;--bg2:#e0f2fe;--card:#fff;--card2:#f8fafc;--text:#0f172a;--muted:#64748b;--line:#dbe4ef;--accent:#0f766e;--accent2:#2563eb;--accentText:#fff;--danger:#b91c1c;--ok:#15803d;--shadow:0 10px 26px rgba(15,23,42,.10);--panel:#f8fafc;--input:#fff;--chip:#e0f2fe;--chipText:#0f172a;--field:#fff}
-    *{box-sizing:border-box} html{min-height:100%;-webkit-text-size-adjust:100%;text-size-adjust:100%} body{margin:0;min-height:100%;font-size:14px;background:radial-gradient(circle at 10% 8%, rgba(37,99,235,.18), transparent 32%),radial-gradient(circle at 88% 92%, rgba(16,185,129,.14), transparent 30%),linear-gradient(180deg,var(--bg) 0%,var(--bg2) 100%);font-family:-apple-system,BlinkMacSystemFont,"PingFang SC",Arial,sans-serif;color:var(--text)}
+    :root{--bg:#0b0f17;--bg2:#0f1720;--card:#111827;--card2:#151f2c;--text:#eef2f7;--muted:#98a2b3;--line:#273244;--accent:#7aa2f7;--accent2:#7aa2f7;--accentText:#08111f;--danger:#f97066;--ok:#32d583;--shadow:0 12px 28px rgba(0,0,0,.20);--panel:#0f1720;--input:#111827;--chip:#182235;--chipText:#c7d7fe;--field:#0b111c}
+    body.theme-finger{--bg:#0b0f17;--bg2:#0f1720;--card:#111827;--card2:#151f2c;--text:#eef2f7;--muted:#98a2b3;--line:#273244;--accent:#7aa2f7;--accent2:#7aa2f7;--accentText:#08111f;--danger:#f97066;--ok:#32d583;--shadow:0 12px 28px rgba(0,0,0,.20);--panel:#0f1720;--input:#111827;--chip:#182235;--chipText:#c7d7fe;--field:#0b111c}
+    body.theme-aurora{--bg:#11121a;--bg2:#171923;--card:#181a25;--card2:#1d2030;--text:#f2f2f5;--muted:#a5a7b4;--line:#303343;--accent:#a78bfa;--accent2:#a78bfa;--accentText:#120f1f;--danger:#fb7185;--ok:#5eead4;--shadow:0 12px 28px rgba(0,0,0,.18);--panel:#151722;--input:#181a25;--chip:#242033;--chipText:#ddd6fe;--field:#11131d}
+    body.theme-sunrise{--bg:#f7f2ea;--bg2:#f2ece3;--card:#fffaf3;--card2:#faf3ea;--text:#201a16;--muted:#756a5f;--line:#ded4c8;--accent:#b45309;--accent2:#b45309;--accentText:#fffaf3;--danger:#b42318;--ok:#027a48;--shadow:0 10px 24px rgba(72,52,35,.10);--panel:#f7f2ea;--input:#fffaf3;--chip:#eee2d2;--chipText:#513a22;--field:#fffaf3}
+    body.theme-paper{--bg:#f7f8fa;--bg2:#eef1f5;--card:#ffffff;--card2:#f6f7f9;--text:#17202e;--muted:#667085;--line:#d8dee8;--accent:#2563eb;--accent2:#2563eb;--accentText:#ffffff;--danger:#b42318;--ok:#027a48;--shadow:0 10px 24px rgba(16,24,40,.08);--panel:#f7f8fa;--input:#ffffff;--chip:#e9eef7;--chipText:#1d2939;--field:#ffffff}
+    *{box-sizing:border-box} html{min-height:100%;-webkit-text-size-adjust:100%;text-size-adjust:100%} body{margin:0;min-height:100%;font-size:14px;background:linear-gradient(180deg,var(--bg) 0%,var(--bg2) 100%);font-family:-apple-system,BlinkMacSystemFont,"PingFang SC",Arial,sans-serif;color:var(--text)}
     .app{width:100%;max-width:520px;margin:0 auto;min-height:100vh;display:flex;flex-direction:column;position:relative}
-    .top{position:fixed;top:0;left:0;right:0;z-index:17;max-width:520px;min-height:66px;margin:0 auto;padding:10px 12px 8px;display:flex;justify-content:space-between;align-items:center;pointer-events:none;background:linear-gradient(180deg,rgba(8,16,35,.98),rgba(8,16,35,.78));border-bottom:1px solid var(--line);backdrop-filter:blur(10px)}.top .round{pointer-events:auto}
+    .top{position:fixed;top:0;left:0;right:0;z-index:17;max-width:520px;min-height:66px;margin:0 auto;padding:10px 12px 8px;display:flex;gap:8px;align-items:center;pointer-events:none;background:var(--bg);border-bottom:1px solid var(--line)}.top .round,.top .agent-status-btn{pointer-events:auto}
     .round{width:44px;height:44px;border-radius:22px;border:1px solid var(--line);background:var(--card2);font-size:21px;color:var(--text);box-shadow:var(--shadow);backdrop-filter:blur(10px)}
-    .content{flex:1;padding:78px 0 var(--native-input-inset,96px);display:flex;align-items:flex-start;justify-content:flex-start;text-align:center;color:var(--muted);font-size:14px;line-height:1.45;overflow-y:auto;scroll-behavior:smooth}
+    .content{flex:1;padding:78px 0 var(--native-input-inset,96px);display:flex;align-items:flex-start;justify-content:flex-start;flex-direction:column;text-align:left;color:var(--muted);font-size:14px;line-height:1.45;overflow-y:auto;overflow-x:hidden;overscroll-behavior:contain;-webkit-overflow-scrolling:touch}
     .turns{width:100%;display:flex;flex-direction:column;gap:8px;padding:0;align-items:stretch;text-align:left}
-    .card{background:linear-gradient(180deg,var(--card),var(--card2));border:1px solid var(--line);border-radius:14px;padding:10px;box-shadow:var(--shadow);position:relative;overflow:hidden}.card.pending{border-color:rgba(148,163,184,.34);background:linear-gradient(180deg,var(--card),var(--card2))}
-    .you{font-weight:800;margin-bottom:6px;color:var(--text);font-size:15px;line-height:1.35}
-    .assistant{white-space:pre-wrap;color:var(--text);font-size:14px;line-height:1.42}
+    .turn-list{display:flex;flex-direction:column;gap:10px;width:100%;max-width:100%;padding:0 8px;flex-shrink:0}
+    .thread-history,.thread-live{display:flex;flex-direction:column;gap:10px;width:100%;max-width:100%;flex-shrink:0}
+    .chat-group{display:flex;flex-direction:column;gap:8px;width:100%;flex-shrink:0}
+    .msg-row{display:flex;width:100%;padding:0}
+    .msg-row.user{justify-content:flex-end}
+    .msg-row.assistant,.msg-row.status,.msg-row.debug{justify-content:flex-start}
+    .bubble{max-width:90%;word-break:break-word;overflow-wrap:anywhere;border-radius:18px;padding:10px 12px;box-shadow:var(--shadow);position:relative;overflow:hidden;border:1px solid var(--line);background:var(--card);color:var(--text)}
+    .bubble-user{background:var(--accent);border-color:var(--accent);color:var(--accentText);border-bottom-right-radius:8px}
+    .bubble-assistant{background:var(--card);border-color:var(--line);color:var(--text);border-bottom-left-radius:8px}
+    .bubble-status{background:var(--card2);border-color:var(--line);color:var(--muted);font-size:12px}
+    .bubble-debug{background:var(--field);border-color:var(--line);color:var(--muted);font-size:11px}
+    .message-text{white-space:pre-wrap;font-size:14px;line-height:1.45}
+    .message-text.user{font-weight:700}
     .status{margin-top:8px;font-size:12px;color:var(--muted);display:flex;align-items:center;gap:6px}
     .dots{display:inline-flex;gap:3px}.dot{width:4px;height:4px;border-radius:50%;background:var(--accent2);animation:blink 1s infinite}.dot:nth-child(2){animation-delay:.15s}.dot:nth-child(3){animation-delay:.3s}@keyframes blink{0%,80%,100%{opacity:.25}40%{opacity:1}}
-    .bar{position:fixed;left:0;right:0;bottom:0;z-index:18;max-width:520px;margin:0 auto;padding:8px 8px 12px;background:linear-gradient(180deg,transparent 0%,var(--bg) 32%,var(--bg2) 100%)}
+    .bar{position:fixed;left:0;right:0;bottom:0;z-index:18;max-width:520px;margin:0 auto;padding:8px 8px 12px;background:var(--bg2)}
     .input{min-height:54px;position:relative;z-index:19;background:var(--input);border:1px solid var(--line);border-radius:27px;display:flex;align-items:flex-end;padding:6px 8px;gap:6px;box-shadow:var(--shadow);backdrop-filter:blur(10px)}
     .ico{width:38px;height:38px;border-radius:19px;border:none;background:transparent;font-size:24px;color:var(--text);flex:0 0 auto}
     .msg{flex:1;min-width:0;border:none;outline:none;font-size:15px;line-height:1.35;background:transparent;color:var(--text);resize:none;max-height:120px;padding:8px 4px 6px}.msg::placeholder{color:var(--muted)}
-    .send{width:38px;height:38px;flex:0 0 auto;border:none;border-radius:19px;background:linear-gradient(135deg,var(--accent),var(--accent2));color:var(--accentText);font-size:18px;display:flex;align-items:center;justify-content:center;box-shadow:0 10px 22px rgba(37,99,235,.28)}
+    .send{width:38px;height:38px;flex:0 0 auto;border:none;border-radius:19px;background:var(--accent);color:var(--accentText);font-size:18px;display:flex;align-items:center;justify-content:center;box-shadow:none}
     .panel{position:fixed;inset:0;background:var(--panel);z-index:20;transform:translateX(105%);transition:transform .22s ease;padding:18px;overflow:auto;color:var(--text)}.panel.show{transform:translateX(0)}
-    .head{display:flex;align-items:center;gap:10px;margin-bottom:12px}.back{width:40px;height:40px;border:none;border-radius:20px;background:var(--card2);color:var(--text)}.title{font-size:22px;font-weight:800}.row{display:flex;gap:10px;align-items:center;margin:8px 0}.inp{flex:1;padding:12px;border:1px solid var(--line);border-radius:12px;background:var(--field);color:var(--text)}.btn{padding:10px 14px;border:none;border-radius:12px;background:linear-gradient(135deg,var(--accent),var(--accent2));color:var(--accentText);font-weight:700}.item{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:12px;margin:8px 0;box-shadow:var(--shadow)}.muted{font-size:12px;color:var(--muted)}
-    .theme-row{display:grid;grid-template-columns:repeat(2,1fr);gap:8px;margin-top:8px}.theme-choice{border:1px solid var(--line);border-radius:14px;background:var(--field);color:var(--text);padding:10px;text-align:left}.theme-choice.active{border-color:var(--accent);box-shadow:0 0 0 2px rgba(37,99,235,.22)}.swatch{height:24px;border-radius:12px;margin-bottom:7px}.swatch-finger{background:linear-gradient(90deg,#090f1c,#2563eb,#10b981)}.swatch-aurora{background:linear-gradient(90deg,#111827,#a855f7,#06b6d4)}.swatch-sunrise{background:linear-gradient(90deg,#fff7ed,#f97316,#db2777)}.swatch-paper{background:linear-gradient(90deg,#f8fafc,#0f766e,#2563eb)}
-    .timeline{margin-top:8px;padding-top:4px}.tl-item{font-size:11px;color:var(--text);line-height:1.45;margin:5px 0;padding:6px 8px;border-radius:10px;background:var(--chip);border:none}.tl-ok{color:var(--ok)}.tl-run{color:var(--accent2)}.tl-fail{color:var(--danger)}.dbg-raw{margin-top:8px;background:var(--field);border:1px solid var(--line);border-radius:10px;padding:8px;white-space:pre-wrap;font-size:11px;color:var(--muted)}
-    .sheet-mask{position:fixed;inset:0;background:rgba(0,0,0,.18);opacity:0;pointer-events:none;transition:opacity .18s;z-index:28}.sheet-mask.show{opacity:1;pointer-events:auto}.sheet{position:fixed;left:0;right:0;bottom:0;background:var(--panel);border:1px solid var(--line);border-radius:18px 18px 0 0;padding:14px 16px 22px;transform:translateY(110%);transition:transform .2s ease;z-index:30}.sheet.show{transform:translateY(0)}.grab{width:56px;height:6px;border-radius:3px;background:rgba(148,163,184,.42);margin:2px auto 10px}.grid{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}.tile{border:1px solid var(--line);background:var(--card);color:var(--text);border-radius:12px;padding:14px 8px;font-size:16px}.kv-box{flex:1;text-align:center}.kv-box .muted{font-size:10px;color:var(--muted);margin-bottom:2px}.kv-box .val{font-size:13px;font-weight:700;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.btn-sm{padding:7px 10px;font-size:12px}.chips{display:flex;flex-wrap:wrap;gap:6px;margin:0 0 6px 2px}.chip{display:inline-flex;align-items:center;gap:6px;background:var(--chip);color:var(--chipText);padding:5px 8px;border-radius:12px;font-size:12px}.chip button{border:none;background:transparent;color:var(--muted)}.toast{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(var(--native-input-inset,120px) + 10px);background:#111;color:#fff;padding:8px 12px;border-radius:20px;font-size:12px;opacity:0;transition:opacity .15s;z-index:50}.toast.show{opacity:1} body.native-input .bar{display:none} body.native-input .content{padding-bottom:var(--native-input-inset,150px)}
+    .head{display:flex;align-items:center;gap:10px;margin-bottom:12px}.back{width:40px;height:40px;border:none;border-radius:20px;background:var(--card2);color:var(--text)}.title{font-size:22px;font-weight:800}.row{display:flex;gap:10px;align-items:center;margin:8px 0}.inp{flex:1;padding:12px;border:1px solid var(--line);border-radius:12px;background:var(--field);color:var(--text)}.btn{padding:10px 14px;border:none;border-radius:12px;background:var(--accent);color:var(--accentText);font-weight:700}.item{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:12px;margin:8px 0;box-shadow:var(--shadow)}.muted{font-size:12px;color:var(--muted)}
+    .theme-row{display:grid;grid-template-columns:repeat(2,1fr);gap:8px;margin-top:8px}.theme-choice{border:1px solid var(--line);border-radius:14px;background:var(--field);color:var(--text);padding:10px;text-align:left}.theme-choice.active{border-color:var(--accent);box-shadow:0 0 0 2px rgba(122,162,247,.24)}.swatch{height:24px;border-radius:12px;margin-bottom:7px;border:1px solid var(--line)}.swatch-finger{background:#111827}.swatch-aurora{background:#181a25}.swatch-sunrise{background:#fffaf3}.swatch-paper{background:#ffffff}
+    .agent-status-bar{flex:1;min-width:0;display:flex;flex-direction:row;gap:6px;align-items:center;overflow-x:auto;margin:0;padding:0 2px}.agent-status-btn{border:1px solid var(--line);border-radius:12px;padding:6px 9px;color:var(--text);font-weight:800;font-size:11px;line-height:1;white-space:nowrap;box-shadow:none;background:var(--card2)}.agent-status-problem{border-color:#d92d20;background:rgba(217,45,32,.18)}.agent-status-busy{border-color:#039855;background:rgba(3,152,85,.18)}.agent-status-idle{border-color:#2563eb;background:rgba(37,99,235,.20)}.agent-status-offline{border-color:#667085;background:rgba(102,112,133,.18)}.agent-pins{display:flex;flex-direction:column;gap:8px;margin:0 0 10px}.agent-pin{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:10px;box-shadow:var(--shadow);text-align:left}.agent-pin-hd{display:flex;align-items:flex-start;justify-content:space-between;gap:10px}.agent-pin-name{font-size:14px;font-weight:800;color:var(--text)}.agent-pin-meta{margin-top:3px;font-size:12px;color:var(--muted)}.agent-pin-toggle{border:none;background:transparent;color:var(--accent);font-size:12px;font-weight:700;padding:0}.agent-pin-body{margin-top:8px}.agent-pin-summary{font-size:12px;color:var(--text);line-height:1.4}.agent-pin-wait{margin-top:6px;font-size:12px;color:var(--muted)}.agent-pin-fail{margin-top:6px;font-size:12px;color:var(--danger)}.session-toolbar{display:flex;gap:8px;margin:0 0 12px;align-items:center}.session-toolbar .btn{flex:1}.session-item{display:flex;align-items:center;gap:12px;padding:14px 0;border-bottom:1px solid var(--line);background:transparent;box-shadow:none;border-radius:0}.session-icon{width:48px;height:48px;border-radius:24px;background:var(--field);border:1px solid var(--line);display:flex;align-items:center;justify-content:center;font-size:22px;flex:0 0 auto}.session-main{flex:1;min-width:0}.session-title{font-size:16px;font-weight:800;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.session-meta{font-size:12px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:3px}.session-check{width:26px;height:26px;border-radius:13px;border:1px solid var(--line);display:flex;align-items:center;justify-content:center;color:transparent}.session-item.selected .session-check{background:var(--accent);color:var(--accentText);border-color:var(--accent)}.session-item.archived{opacity:.58}.timeline{margin-top:8px;padding-top:4px}.tl-head{font-size:10px;color:var(--muted);letter-spacing:.02em;margin:0 0 4px}.tl-item{font-size:11px;color:var(--text);line-height:1.45;margin:5px 0;padding:6px 8px;border-radius:10px;background:var(--chip);border:none}.tl-item b{font-size:12px}.tl-item .muted{display:block;margin-top:3px;font-size:10px}.tl-ok,.tl-run,.tl-fail{color:var(--text)}.tl-status-ok{color:var(--ok)}.tl-status-run{color:var(--accent2)}.tl-status-fail{color:var(--danger)}.dbg-raw{white-space:pre-wrap}
+    .sheet-mask{position:fixed;inset:0;background:rgba(0,0,0,.18);opacity:0;pointer-events:none;transition:opacity .18s;z-index:28}.sheet-mask.show{opacity:1;pointer-events:auto}.sheet{position:fixed;left:0;right:0;bottom:0;background:var(--panel);border:1px solid var(--line);border-radius:18px 18px 0 0;padding:14px 16px 22px;transform:translateY(110%);transition:transform .2s ease;z-index:30}.sheet.show{transform:translateY(0)}.grab{width:56px;height:6px;border-radius:3px;background:rgba(148,163,184,.42);margin:2px auto 10px}.grid{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}.tile{border:1px solid var(--line);background:var(--card);color:var(--text);border-radius:12px;padding:14px 8px;font-size:16px}.kv-box{flex:1;text-align:center}.kv-box .muted{font-size:10px;color:var(--muted);margin-bottom:2px}.kv-box .val{font-size:13px;font-weight:700;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.btn-sm{padding:7px 10px;font-size:12px}.chips{display:flex;flex-wrap:wrap;gap:6px;margin:0 0 6px 2px}.chip{display:inline-flex;align-items:center;gap:6px;background:var(--chip);color:var(--chipText);padding:5px 8px;border-radius:12px;font-size:12px}.chip button{border:none;background:transparent;color:var(--muted)}.confirm-mask{position:fixed;inset:0;background:rgba(0,0,0,.36);z-index:60;display:none;align-items:center;justify-content:center;padding:24px}.confirm-mask.show{display:flex}.confirm-box{width:100%;max-width:360px;background:var(--card);border:1px solid var(--line);border-radius:18px;padding:18px;box-shadow:var(--shadow)}.confirm-title{font-weight:800;font-size:18px;color:var(--text);margin-bottom:8px}.confirm-body{color:var(--muted);font-size:14px;line-height:1.5;margin-bottom:16px}.confirm-actions{display:flex;justify-content:flex-end;gap:10px}.toast{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(var(--native-input-inset,120px) + 10px);background:#111;color:#fff;padding:8px 12px;border-radius:20px;font-size:12px;opacity:0;transition:opacity .15s;z-index:50}.toast.show{opacity:1} body.native-input .content{padding-bottom:var(--native-input-inset,150px)} body.sessions-open .bar{display:none} body.sessions-open .content{padding-bottom:0}
   </style>
 </head>
 <body>
 <div class="app">
   <div class="top">
     <button class="round" onclick="openSettings()">☰</button>
-    <button class="round" onclick="openSessions()">◌✓</button>
+    <div id="agentCards" class="agent-status-bar" style="display:none"></div>
+    <button class="round" onclick="openSessions()" aria-label="会话"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M6.5 7.5h11M6.5 12h7M6.5 16.5h4.5" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><path d="M4.5 4.5h15v11.8c0 1.77-1.43 3.2-3.2 3.2H7.7c-1.77 0-3.2-1.43-3.2-3.2V4.5Z" stroke="currentColor" stroke-width="2"/></svg></button>
   </div>
 
   <div id="content" class="content">
-    <div id="empty">此聊天不会出现在聊天历史记录中，也不会用于训练我们的模型。为了安全起见，我们最多会将此聊天的副本保留 30 天。</div>
+    <div id="empty"></div>
     <div id="turns" class="turns" style="display:none"></div>
+    <div id="agentPins" class="agent-pins" style="display:none"></div>
+    <div id="conversationThread" class="turn-list"></div>
   </div>
 
   <div class="bar">
@@ -68,10 +81,10 @@
   <div class="item">
     <div class="muted">主题配色</div>
     <div class="theme-row" id="themeChoices">
-      <button class="theme-choice" data-theme="finger" onclick="setTheme('finger')"><div class="swatch swatch-finger"></div><b>Finger</b><div class="muted">深色蓝绿，参考 Finger 工作台</div></button>
-      <button class="theme-choice" data-theme="aurora" onclick="setTheme('aurora')"><div class="swatch swatch-aurora"></div><b>Aurora</b><div class="muted">紫蓝极光，高对比</div></button>
-      <button class="theme-choice" data-theme="sunrise" onclick="setTheme('sunrise')"><div class="swatch swatch-sunrise"></div><b>Sunrise</b><div class="muted">橙粉暖色，更活跃</div></button>
-      <button class="theme-choice" data-theme="paper" onclick="setTheme('paper')"><div class="swatch swatch-paper"></div><b>Paper</b><div class="muted">浅色清晰，长读友好</div></button>
+      <button class="theme-choice" data-theme="finger" onclick="setTheme('finger')"><div class="swatch swatch-finger"></div><b>Finger</b><div class="muted">深色中性，低饱和蓝</div></button>
+      <button class="theme-choice" data-theme="aurora" onclick="setTheme('aurora')"><div class="swatch swatch-aurora"></div><b>Aurora</b><div class="muted">深色灰紫，克制对比</div></button>
+      <button class="theme-choice" data-theme="sunrise" onclick="setTheme('sunrise')"><div class="swatch swatch-sunrise"></div><b>Sunrise</b><div class="muted">暖纸色，柔和阅读</div></button>
+      <button class="theme-choice" data-theme="paper" onclick="setTheme('paper')"><div class="swatch swatch-paper"></div><b>Paper</b><div class="muted">浅色中性，清晰简洁</div></button>
     </div>
   </div>
   <div class="item" style="margin-bottom:8px">
@@ -105,7 +118,14 @@
 </div>
 
 <div id="sessionsPanel" class="panel">
-  <div class="head"><button class="back" onclick="closePanel('sessionsPanel')">‹</button><div class="title">会话</div></div>
+  <div class="head"><button class="back" onclick="closePanel('sessionsPanel')">‹</button><div class="title">会话列表</div></div>
+  <div class="session-toolbar">
+    <button class="btn btn-sm" onclick="createNewSession()">新会话</button>
+    <button class="btn btn-sm" onclick="toggleSessionSelectAll()">全选</button>
+    <button class="btn btn-sm" onclick="renameSelectedSession()">重命名</button>
+    <button class="btn btn-sm" onclick="archiveSelectedSessions()">归档</button>
+    <button class="btn btn-sm" onclick="deleteSelectedSessions()">删除</button>
+  </div>
   <div id="sessionList"></div>
 </div>
 
@@ -118,28 +138,35 @@
   </div>
 </div>
 <div id="plusMask" class="sheet-mask" onclick="closePlusSheet()"></div>
+<div id="confirmMask" class="confirm-mask">
+  <div class="confirm-box">
+    <div id="confirmTitle" class="confirm-title">确认操作</div>
+    <div id="confirmBody" class="confirm-body"></div>
+    <div class="confirm-actions"><button class="btn btn-sm" onclick="resolveConfirm(false)">取消</button><button class="btn btn-sm" onclick="resolveConfirm(true)">确定</button></div>
+  </div>
+</div>
 <div id="toast" class="toast"></div>
 
 <script>
 const S={profiles:[],currentProfile:null,conn:'idle',ws:null,connTarget:'',thinkingEffort:'medium',
   sessions:[],currentSessionId:null,turns:[],pendingById:{},inputDedup:new Set(),attachments:[],
   traceByClientId:{},itemByClientId:{},turnStateByClientId:{},runtimeHealth:'schema_error:runtime.health',providerHealth:'schema_error:provider.health',
-  debugMode:false,retryCount:0,retryTimer:null,manualClose:false,historyLoaded:false};
+  debugMode:false,retryCount:0,retryTimer:null,manualClose:false,historyLoaded:false,activityCards:null,expandedAgentCards:{},selectedSessions:new Set(),pendingNewSession:false,renderedTurnCount:0,userScrolledUp:false,userTouchScrolling:false};
 
 function bridge(){return window.FinMobileBridge||null}
-function setNativeInputInset(px){const n=Math.max(120,Math.min(520,Number(px)||150));document.documentElement.style.setProperty('--native-input-inset',n+'px');scrollToBottom()}
+function setNativeInputInset(px){const n=Math.max(120,Math.min(520,Number(px)||150));document.documentElement.style.setProperty('--native-input-inset',n+'px')}
 function esc(v){return (v??'').toString().replace(/[&<>]/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[m]))}
 function log(m){try{const b=bridge();if(b&&b.appendConnectionEvent)b.appendConnectionEvent(m)}catch(_){}}
 function logevt(ev){log(ev)}
 function toast(msg){const el=document.getElementById('toast');el.textContent=msg;el.classList.add('show');setTimeout(()=>el.classList.remove('show'),1200)}
 function inputFocused(){const el=document.getElementById('msg');return document.activeElement===el}
-function scrollToBottom(){if(inputFocused())return;const content=document.getElementById('content');if(!content)return;const apply=()=>{if(inputFocused())return;content.scrollTop=content.scrollHeight;window.scrollTo(0,document.body.scrollHeight)};requestAnimationFrame(()=>{apply();setTimeout(apply,80);setTimeout(apply,260)})}
+function scrollToBottom(force){const content=document.getElementById('content');if(!content)return;const doPin=!!force||(!inputFocused()&&!S.userScrolledUp&&!S.userTouchScrolling);if(!doPin)return;const apply=()=>{if(!doPin)return;content.scrollTop=content.scrollHeight};requestAnimationFrame(()=>{apply();if(doPin){setTimeout(apply,80);setTimeout(apply,260)}});S.userScrolledUp=false}
 
 function setConn(s){S.conn=s;document.getElementById('connState').textContent='state='+s;renderHealth();log('state='+s)}
 function renderHealth(){const el=document.getElementById('runtimeState');if(el)el.textContent='runtime='+S.runtimeHealth+' provider='+S.providerHealth+' ws='+S.conn;}
 function setRuntimeState(s){S.runtimeHealth=s;renderHealth()}
 function setProviderState(s){S.providerHealth=s;renderHealth()}
-function backoffMs(n){return Math.min(15000,Math.floor(600*Math.pow(2,Math.max(0,n-1))))}
+function backoffMs(n){return Math.min(16000,Math.floor(1000*Math.pow(2,Math.max(0,Math.min(4,n-1)))))}
 function clearRetry(){if(S.retryTimer){clearTimeout(S.retryTimer);S.retryTimer=null}}
 function scheduleReconnect(reason){
   if(S.manualClose)return;
@@ -150,10 +177,11 @@ function scheduleReconnect(reason){
   clearRetry(); S.retryTimer=setTimeout(()=>connectWs('retry'),wait);
 }
 
+function applyNativeChromeMode(mode){try{const b=bridge();if(b&&b.applyNativeChromeMode)b.applyNativeChromeMode(mode)}catch(_){} }
 function openSettings(){document.getElementById('settingsPanel').classList.add('show')}
-function openSessions(){renderSessions();document.getElementById('sessionsPanel').classList.add('show')}
-function closePanel(id){document.getElementById(id).classList.remove('show')}
-function setTheme(name){const allowed=['finger','aurora','sunrise','paper'];const theme=allowed.includes(String(name))?String(name):'finger';document.body.classList.remove('theme-finger','theme-aurora','theme-sunrise','theme-paper');document.body.classList.add('theme-'+theme);CONFIG.set('theme',theme);document.querySelectorAll('.theme-choice').forEach(b=>b.classList.toggle('active',b.dataset.theme===theme))}
+function openSessions(){document.body.classList.add('sessions-open');applyNativeChromeMode('sessions');renderSessions();document.getElementById('sessionsPanel').classList.add('show')}
+function closePanel(id){document.getElementById(id).classList.remove('show');if(id==='sessionsPanel'){document.body.classList.remove('sessions-open');applyNativeChromeMode('chat')}}
+function setTheme(name){const allowed=['finger','aurora','sunrise','paper'];const theme=allowed.includes(String(name))?String(name):'finger';document.body.classList.remove('theme-finger','theme-aurora','theme-sunrise','theme-paper');document.body.classList.add('theme-'+theme);CONFIG.set('theme',theme);document.querySelectorAll('.theme-choice').forEach(b=>b.classList.toggle('active',b.dataset.theme===theme));try{const b=bridge();if(b&&b.applyNativeTheme)b.applyNativeTheme(theme)}catch(_){}}
 function pickPlus(){document.getElementById('plusSheet').classList.add('show');document.getElementById('plusMask').classList.add('show')}
 function closePlusSheet(){document.getElementById('plusSheet').classList.remove('show');document.getElementById('plusMask').classList.remove('show')}
 function plusAction(kind){closePlusSheet();const label=kind==='camera'?'图片(拍照)':kind==='album'?'图片(相册)':'技能卡片';S.attachments.push({kind,label});renderChips();toast(label+' 已添加');log('plus_'+kind)}
@@ -184,11 +212,23 @@ const CONFIG=(function(){
 function loadProfiles(){const b=bridge();if(!b){setConn('bridge_missing');return;}try{S.profiles=JSON.parse(b.getWsProfiles());if(!Array.isArray(S.profiles)) throw new Error('profiles_not_array');S.currentProfile=S.currentProfile||S.profiles[0]?.id||null;log('profiles_loaded count='+S.profiles.length+' current='+(S.currentProfile||'none'));}catch(e){setConn('profile_parse_error');log('profiles_parse_error '+String(e&&e.message||e));S.profiles=[{id:'daemon',endpoint:'ws://100.66.1.82:4040/ws',token:'',project:'fin',expiresAtEpochSec:0}];S.currentProfile='daemon';}}
 function saveDaemon(){const host=document.getElementById('daemonHost').value.trim();const port=parseInt(document.getElementById('daemonPort').value||'4040',10);const b=bridge();if(b&&b.setDaemonAddress){b.setDaemonAddress(host,port);loadProfiles();S.currentProfile='daemon';CONFIG.set('daemon_host',host);CONFIG.set('daemon_port',port);log('daemon_saved='+host+':'+port)}}
 
+function sendWs(payload){const text=typeof payload==='string'?payload:JSON.stringify(payload);const b=bridge();if(b&&b.nativeWsSend){const r=String(b.nativeWsSend(text)||'');if(r==='ok')return true;log('native_ws_send_failed '+r);return false;}if(S.ws){S.ws.send(text);return true;}return false}
+function decodeUtf8Base64(raw){const bin=atob(raw);const bytes=new Uint8Array(bin.length);for(let i=0;i<bin.length;i++)bytes[i]=bin.charCodeAt(i);if(window.TextDecoder)return new TextDecoder('utf-8').decode(bytes);let s='';bytes.forEach(b=>s+=String.fromCharCode(b));return decodeURIComponent(escape(s))}
+window.onNativeWsMessage=function(raw){let m;try{m=JSON.parse(raw)}catch(e){setConn('protocol_mismatch');log('protocol_parse_error '+String(e&&e.message||e));toast('协议消息解析失败');return;}onWs(m)}
+window.onNativeWsMessageB64=function(raw){try{window.onNativeWsMessage(decodeUtf8Base64(raw))}catch(e){setConn('protocol_mismatch');log('native_b64_decode_error '+String(e&&e.message||e));toast('协议消息解析失败')}}
+window.onNativeWsState=function(state){state=String(state||'');if(state==='handshaking'){setConn('handshaking');return;}if(state==='closed'){if(S.manualClose){setConn('idle');return;}setConn('closed');scheduleReconnect('native-close');return;}if(state.startsWith('endpoint_unreachable')){setConn(state);toast('连接失败：'+state.replace('endpoint_unreachable:',''));scheduleReconnect('native-failure');return;}setConn(state||'native_ws_unknown')}
+
 function connectWs(trigger='manual'){
   const p=S.profiles.find(x=>x.id===S.currentProfile); if(!p){setConn('no_profile');return;}
   if(p.expiresAtEpochSec>0&&Math.floor(Date.now()/1000)>p.expiresAtEpochSec){setConn('stale_token');return;}
   S.manualClose=false; clearRetry(); setConn(trigger==='retry'?'reconnecting':'connecting');
   S.connTarget=p.endpoint; log('endpoint='+p.endpoint);
+  const b=bridge();
+  if(b&&b.nativeWsConnect){
+    const r=String(b.nativeWsConnect(p.endpoint,p.token||'',p.project||'fin')||'');
+    if(r!=='ok'){setConn('endpoint_unreachable:'+r);scheduleReconnect('native-connect-error')}
+    return;
+  }
   try{ if(S.ws){try{S.ws.close()}catch(_){} }
     const ws=new WebSocket(p.endpoint); S.ws=ws;
     ws.onopen=()=>{S.retryCount=0;setConn('handshaking');ws.send(JSON.stringify({type:'mobile.handshake',token:p.token,project:p.project,scopes:['session.read','session.write','runtime.read']}));};
@@ -198,14 +238,28 @@ function connectWs(trigger='manual'){
   }catch(_){setConn('endpoint_unreachable');scheduleReconnect('exception')}
 }
 
-function bindSession(id){S.currentSessionId=id; if(S.ws)S.ws.send(JSON.stringify({type:'session.bind',session_id:id})); renderSessions()}
-function renderSessions(){const el=document.getElementById('sessionList');el.innerHTML=S.sessions.map(s=>`<div class='item'><div><b>${esc(s.topic||s.session_id)}</b></div><div class='muted'>sid=${esc(s.session_id)} task=${esc(s.task_id||'-')} ${esc(s.phase||'')}</div><div class='row'><button class='btn' onclick="bindSession('${s.session_id}')">${S.currentSessionId===s.session_id?'已绑定':'绑定'}</button></div></div>`).join('')||"<div class='item muted'>暂无会话</div>"}
+function bindSession(id){S.currentSessionId=id; sendWs({type:'session.bind',session_id:id}); renderSessions()}
+function createNewSession(){S.pendingNewSession=true;if(!sendWs({type:'session.command',command:'/new'})){S.pendingNewSession=false;toast('新会话失败：未连接');return;}toast('正在创建新会话')}
+function clearCurrentSessionView(){S.currentSessionId=null;S.turns=[];S.pendingById={};S.itemByClientId={};S.traceByClientId={};S.turnStateByClientId={};S.historyLoaded=false;S.renderedTurnCount=0;CONFIG.set('last_session_id','');renderTurns(true)}
+function newestSessionId(){return S.sessions.length?String(S.sessions[0].session_id||''):''}
+function reconcileCurrentSession(){const ids=S.sessions.map(s=>String(s.session_id||''));if(S.pendingNewSession){const latest=newestSessionId();if(latest){S.pendingNewSession=false;bindSession(latest);return;}}if(S.currentSessionId&&ids.includes(String(S.currentSessionId)))return;if(S.currentSessionId)clearCurrentSessionView();if(!S.currentSessionId&&S.sessions.length>0)bindSession(S.sessions[0].session_id)}
+function sessionIcon(s){return s.archived?'▣':'▱'}
+function toggleSessionSelection(id){if(S.selectedSessions.has(id))S.selectedSessions.delete(id);else S.selectedSessions.add(id);renderSessions()}
+function chooseSession(id){if(!id)return;S.selectedSessions.clear();S.selectedSessions.add(id);bindSession(id);toast('已切换会话')}
+function selectedSessionIds(){return Array.from(S.selectedSessions).filter(id=>S.sessions.some(s=>s.session_id===id))}
+function toggleSessionSelectAll(){const visible=S.sessions.map(s=>s.session_id);if(visible.length&&visible.every(id=>S.selectedSessions.has(id)))S.selectedSessions.clear();else visible.forEach(id=>S.selectedSessions.add(id));renderSessions()}
+function renameSelectedSession(){const ids=selectedSessionIds();if(ids.length!==1){toast('请选择一个任务重命名');return;}const s=S.sessions.find(x=>x.session_id===ids[0]);const title=prompt('任务名称',s?.title||s?.session_id||'');if(title&&title.trim())sendWs({type:'session.rename',session_id:ids[0],title:title.trim()})}
+function archiveSelectedSessions(){const ids=selectedSessionIds();if(!ids.length){toast('请选择任务');return;}sendWs({type:'session.archive',session_ids:ids});S.selectedSessions.clear()}
+function askConfirm(title,body,yes){document.getElementById('confirmTitle').textContent=title;document.getElementById('confirmBody').textContent=body;S.pendingConfirm=yes;document.getElementById('confirmMask').classList.add('show')}
+function resolveConfirm(ok){document.getElementById('confirmMask').classList.remove('show');const fn=S.pendingConfirm;S.pendingConfirm=null;if(ok&&fn)fn()}
+function deleteSelectedSessions(){const ids=selectedSessionIds();if(!ids.length){toast('请选择任务');return;}askConfirm('删除任务','删除选中的 '+ids.length+' 个任务？',()=>{sendWs({type:'session.delete',session_ids:ids});if(S.currentSessionId&&ids.includes(String(S.currentSessionId)))clearCurrentSessionView();S.selectedSessions.clear();renderSessions()})}
+function renderSessions(){const el=document.getElementById('sessionList');if(!el)return;S.selectedSessions=new Set(selectedSessionIds());el.innerHTML=S.sessions.map(s=>{const id=String(s.session_id||'');const selected=S.selectedSessions.has(id)||String(S.currentSessionId||'')===id;const title=s.title||s.topic||id;const meta=[String(S.currentSessionId||'')===id?'当前输入':'',s.archived?'已归档':'未归档',s.project||'fin',s.task_id||'task',s.updated_at?new Date(Number(s.updated_at)).toLocaleString():'' ].filter(Boolean).join(' · ');return `<div class='session-item ${selected?'selected':''} ${s.archived?'archived':''}' data-session-id='${esc(id)}'><div class='session-icon'>${esc(sessionIcon(s))}</div><div class='session-main' onclick="chooseSession('${esc(id)}')"><div class='session-title'>${esc(title)}</div><div class='session-meta'>${esc(meta)}</div><div class='session-meta'>${esc(s.preview_100||'')}</div></div><button class='session-check' onclick="toggleSessionSelection('${esc(id)}')">✓</button></div>`}).join('')||"<div class='item muted'>暂无任务</div>"}
 
 function schema(v,field){const s=(v&&v[field]!=null)?String(v[field]).trim():'';return s?s:'schema_error:'+field}
 function itemFromRecord(rec){return {item_id:schema(rec,'tool_call_id'),label:schema(rec,'tool_name'),title:schema(rec,'title'),purpose:schema(rec,'purpose'),status:schema(rec,'status'),duration_ms:rec?.duration_ms??0,input_summary:rec?.input_summary||'',output_summary:rec?.output_summary||'',error_summary:rec?.error_summary||'',item_kind:rec?.tool_kind||'schema_error:item_kind',target_kind:rec?.target_kind||''}}
 function normalizeToolRecord(rec){return itemFromRecord(rec||{})}
 function normalizeErrorRecord(e){const item=itemFromRecord(e||{});item.status='failed';item.error_summary=schema(e||{},'error_summary');return item}
-function toTurn(t){return {u:t.user_input||'',a:t.assistant_response||'',control:t.control_feedback_summary||'',tool:t.tool_execution_summary||'',closure:t.closure_stop_source||'',items:(t.tool_execution_records||[]).map(normalizeToolRecord).concat((t.error_records||[]).map(normalizeErrorRecord))}}
+function toTurn(t){return {turn_id:t.turn_id||'',client_message_id:t.client_message_id||'',u:t.user_input||'',a:t.assistant_response||'',control:t.control_feedback_summary||'',tool:t.tool_execution_summary||'',closure:t.closure_stop_source||'',items:(t.tool_execution_records||[]).map(normalizeToolRecord).concat((t.error_records||[]).map(normalizeErrorRecord))}}
 function upsertItem(id,m){if(!id)return;const by=S.itemByClientId[id]||(S.itemByClientId[id]={});const itemId=schema(m,'item_id');const prev=by[itemId]||{};by[itemId]=Object.assign({},prev,m,{item_id:itemId,label:schema(m,'label'),title:schema(m,'title'),purpose:schema(m,'purpose'),status:schema(m,'status'),input_summary:m.input_summary||prev.input_summary||'',output_summary:m.output_summary||prev.output_summary||'',error_summary:m.error_summary||prev.error_summary||'',target_kind:m.target_kind||prev.target_kind||''});}
 function consumeItems(id){const by=S.itemByClientId[id]||{};delete S.itemByClientId[id];return Object.values(by)}
 
@@ -214,52 +268,72 @@ function onWs(m){
     log('ws_event='+String(m.type)+' item_id='+String(m.item_id||'')+' label='+String(m.label||'')+' status='+String(m.status||''));
   }
   switch(m.type){
-    case 'handshake.ok': clearRetry();S.retryCount=0;log('handshake=ok');S.ws.send(JSON.stringify({type:'mobile.subscribe',topics:['session','runtime','project','daemon']}));setConn('subscribed');setConn('healthy');return;
+    case 'handshake.ok': clearRetry();S.retryCount=0;log('handshake=ok');sendWs({type:'mobile.subscribe',topics:['session','runtime','project','daemon']});setConn('subscribed');setConn('healthy');return;
     case 'handshake.auth_failed': clearRetry();setConn('auth_failed');toast('鉴权失败');return;
     case 'handshake.protocol_mismatch': clearRetry();setConn('protocol_mismatch');toast('协议不匹配');return;
-    case 'session.list': S.sessions=m.sessions||[]; if(!S.currentSessionId&&S.sessions.length>0) bindSession(S.sessions[0].session_id); renderSessions(); return;
+    case 'protocol.error': log('protocol_error reason='+String(m.reason||'')+' message_type='+String(m.message_type||''));toast('操作协议错误：'+String(m.message_type||m.reason||'unknown'));return;
+    case 'session.list': S.sessions=m.sessions||[]; reconcileCurrentSession(); renderSessions(); return;
     case 'session.bound': S.currentSessionId=m.session_id; CONFIG.set('last_session_id',m.session_id||''); renderSessions(); return;
-    case 'session.history': S.turns=(Array.isArray(m.turns)?m.turns:[]).map(toTurn); S.historyLoaded=true; renderTurns(); return;
-    case 'config.snapshot': persistProviderCache(m); renderActiveConfig(m); return;
-    case 'input.accepted': {const id=m.client_message_id||''; if(id&&S.pendingById[id]){S.pendingById[id].state='accepted';S.pendingById[id].serverPhase='queued';} renderTurns(); return;}
+    case 'session.operation.ok': if(m.operation==='delete'&&Array.isArray(m.session_ids)&&S.currentSessionId&&m.session_ids.map(String).includes(String(S.currentSessionId)))clearCurrentSessionView();toast('任务已更新'); return;
+    case 'session.operation.failed': log('session_operation_failed operation='+String(m.operation||'')+' error='+String(m.error||''));toast('任务操作失败'); return;
+    case 'session.command.result': if(String(m.command||'')==='/new')toast('新会话已创建'); return;
+    case 'session.history': if(m.session_id&&S.currentSessionId&&String(m.session_id)!==String(S.currentSessionId))return;if(!S.currentSessionId&&S.sessions.length===0&&Array.isArray(m.turns)&&m.turns.length>0)return;S.turns=(Array.isArray(m.turns)?m.turns:[]).map(toTurn);S.historyLoaded=true;S.renderedTurnCount=0;renderTurns(true);return;
+    case 'config.snapshot': persistProviderSnapshot(m); renderActiveConfig(m); return;
+    case 'input.accepted': {const id=m.client_message_id||''; if(id&&S.pendingById[id]){S.pendingById[id].state='accepted';S.pendingById[id].serverPhase='queued';} renderTurns(false); return;}
     case 'runtime.health': {setRuntimeState(schema(m,'status')); return;}
     case 'provider.health': {setProviderState(schema(m,'status')); return;}
-    case 'turn.started': {setRuntimeState('running'); const id=m.client_message_id||''; if(id){S.turnStateByClientId[id]=m;} renderTurns(); return;}
-    case 'turn.progress': {const id=m.client_message_id||''; if(id&&S.pendingById[id]){S.pendingById[id].state='waiting';S.pendingById[id].serverPhase=m.phase||'inference_waiting';} renderTurns(); return;}
+    case 'turn.started': {setRuntimeState('running'); const id=m.client_message_id||''; if(id){S.turnStateByClientId[id]=m;} renderTurns(false); return;}
+    case 'turn.progress': {const id=m.client_message_id||''; if(id&&S.pendingById[id]){S.pendingById[id].state='waiting';S.pendingById[id].serverPhase=m.phase||'inference_waiting';} renderTurns(false); return;}
     case 'turn.item.started':
     case 'turn.item.delta':
     case 'turn.item.completed':
-    case 'turn.item.failed': {const id=m.client_message_id||''; upsertItem(id,m); renderTurns(); return;}
+    case 'turn.item.failed': {const id=m.client_message_id||''; upsertItem(id,m); renderTurns(false); return;}
     case 'turn.completed': {setRuntimeState(m.status==='failed'?'failed':'ok'); const id=m.client_message_id||''; if(id&&S.turnStateByClientId[id])S.turnStateByClientId[id]=Object.assign({},S.turnStateByClientId[id],m); return;}
-    case 'turn.tool_event': {const id=m.client_message_id||''; if(id&&m.item)upsertItem(id,m.item); renderTurns(); return;}
     case 'turn.trace_event': {const id=m.client_message_id||''; if(id){S.traceByClientId[id]=S.traceByClientId[id]||[]; S.traceByClientId[id].push(m);} return;}
-    case 'turn.error_event': {const id=m.client_message_id||''; if(id&&m.item)upsertItem(id,m.item); setRuntimeState('failed'); renderTurns(); return;}
-    case 'turn.rendered': {const id=m.client_message_id||''; if(id&&S.pendingById[id])delete S.pendingById[id]; const t=toTurn(m); if(id){t.items=(t.items||[]).concat(consumeItems(id)); delete S.turnStateByClientId[id];} if(id&&S.traceByClientId[id]){t.control=(t.control||'')+'\ntrace_events='+String(S.traceByClientId[id].length); delete S.traceByClientId[id];} S.turns.push(t); renderTurns(); return;}
-    case 'provider.config.cache': persistProviderCache(m.payload||m); renderActiveConfig(m.payload||m); return;
+    case 'turn.rendered': {const id=m.client_message_id||''; if(id&&S.pendingById[id])delete S.pendingById[id]; const t=toTurn(m); if(id){t.items=(t.items||[]).concat(consumeItems(id)); delete S.turnStateByClientId[id];} if(id&&S.traceByClientId[id]){t.control=(t.control||'')+'\ntrace_events='+String(S.traceByClientId[id].length); delete S.traceByClientId[id];} S.turns.push(t); renderTurns(true); return;}
+    case 'provider.config.cache': persistProviderSnapshot(m.payload||m); renderActiveConfig(m.payload||m); return;
+    case 'activity.cards.snapshot': {S.activityCards=m.snapshot||m.cards||m; renderAgentCards(); renderPinnedAgentCards(); return;}
     case 'runtime.workers':
     case 'runtime.projects':
     case 'runtime.daemon':
       return;
-    default: log('unknown_event_type='+String(m.type||'missing')); toast('收到未识别协议事件'); return;
+    default: log('unknown_event_type='+String(m.type||'missing')); return;
   }
 }
 
 function itemLabelOf(r){return String((r&&r.label)||(r&&r.tool_name)||'').trim()}
 function itemKindOf(r){return String((r&&r.item_kind)||(r&&r.tool_kind)||'').trim()}
-function isInternalItem(r){const label=itemLabelOf(r);const kind=itemKindOf(r);const out=String(r&&r.output_summary||'');if(label==='provider.call'&&out.includes('cache_hit_rate='))return false;if(label==='provider.call'||label==='reasoning.stop'||label==='session.list')return true;if(kind==='framework_tool')return true;if(String(r&&r.target_kind||'')==='provider'&&out.includes('cache_hit_rate='))return false;if(String(r&&r.target_kind||'')==='provider')return true;if(String(r&&r.target_kind||'')==='reasoning_closure')return true;return false}
+function isInternalItem(r){const label=itemLabelOf(r);const kind=itemKindOf(r);if(label==='provider.call'||label==='reasoning.stop'||label==='session.list')return true;if(kind==='framework_tool')return true;if(String(r&&r.target_kind||'')==='provider')return true;if(String(r&&r.target_kind||'')==='reasoning_closure')return true;return false}
 function visibleTimelineItems(items){const by={};for(const r of (items||[])){const key=String(r&&r.item_id||r&&r.tool_call_id||JSON.stringify(r));by[key]=Object.assign({},by[key]||{},r)}return Object.values(by).filter(r=>{const st=String(r&&r.status||'');const err=String(r&&r.error_summary||'').trim();if(err||st==='failed')return true;return !isInternalItem(r)})}
 function semanticItem(r){const out=String(r&&r.output_summary||'').trim();const purpose=schema(r,'purpose');return {title:schema(r,'title'),label:schema(r,'label'),detail:out||purpose,status:schema(r,'status')}}
-function renderToolTimelineFromItems(items,live){const rows=[];for(const r of visibleTimelineItems(items)){const st=schema(r,'status');const err=String(r.error_summary||'').trim();const cls=(st==='completed'&&!err)?'tl-ok':(st==='running'?'tl-run':'tl-fail');const sem=semanticItem(r);const dur=(r.duration_ms!=null&&st!=='running')?` · ${esc(r.duration_ms)}ms`:'';const liveMark=(live&&st==='running')?` <span class='dots'><span class='dot'></span><span class='dot'></span><span class='dot'></span></span>`:'';rows.push(`<div class='tl-item ${cls}'><b>${esc(sem.title)}</b> · ${esc(sem.label)} · ${esc(sem.status)}${dur}${liveMark}<br/><span class='muted'>${esc(sem.detail)}</span>${err?`<br/><span>${esc(err)}</span>`:''}</div>`)}if(rows.length===0)return '';return `<div class='timeline'><div class='muted'>${live?'工具执行（实时）':'工具执行'}</div>${rows.join('')}</div>`}
+function renderToolTimelineFromItems(items,live){const rows=[];for(const r of visibleTimelineItems(items)){const st=schema(r,'status');const err=String(r.error_summary||'').trim();const cls=(st==='completed'&&!err)?'tl-ok':(st==='running'?'tl-run':'tl-fail');const statusCls=(st==='completed'&&!err)?'tl-status-ok':(st==='running'?'tl-status-run':'tl-status-fail');const sem=semanticItem(r);const dur=(r.duration_ms!=null&&st!=='running')?` · ${esc(r.duration_ms)}ms`:'';const liveMark=(live&&st==='running')?` <span class='dots'><span class='dot'></span><span class='dot'></span><span class='dot'></span></span>`:'';rows.push(`<div class='tl-item ${cls}'><b>${esc(sem.title)}</b> <span class='muted'>${esc(sem.label)} · <span class='${statusCls}'>${esc(sem.status)}</span>${dur}${liveMark}</span><span class='muted'>${esc(sem.detail)}</span>${err?`<span class='muted'><span class='tl-status-fail'>${esc(err)}</span></span>`:''}</div>`)}if(rows.length===0)return '';return `<div class='timeline'><div class='tl-head'>${live?'工具执行（实时）':'工具执行'}</div>${rows.join('')}</div>`}
 function renderToolTimeline(t){return renderToolTimelineFromItems(t.items||[],false)}
+function normalizeSemanticAction(a){return {item_id:a.tool_call_id||a.item_id||a.summary||'agent-action',label:a.tool_name||a.verb||'agent.action',title:a.object_label||a.object_kind||a.summary||'agent action',purpose:a.summary||'',status:a.status||'completed',output_summary:a.detail||a.summary||'',error_summary:a.failure_detail||'',item_kind:a.category||'agent_activity',target_kind:a.object_kind||''}}
+function projectAgentCards(){const snap=S.activityCards||{};return (snap.source_cards||[]).filter(c=>String(c.source_kind||'').includes('project')||String(c.source_id||'').includes('project'))}
+function shortAgentName(c){let raw=String(c.display_name||c.title||c.agent_name||c.source_id||'').replace(/^Peer\s+/,'').replace(/^peer[-_]/,'').trim();if(!raw||raw.match(/^project[-_]?agent$/i)||raw==='agent'){const id=String(c.source_id||'');raw=id.includes('.')?id.split('.').pop():id.replace(/^peer-project-agent-/,'').replace(/^project[-_]/,'')}if(!raw)raw='agent';return raw.length>18?raw.slice(0,16)+'…':raw}
+function agentStatusKind(c){const text=[c.state,c.summary,c.current_activity,c.presence_state,c.connectivity_state,c.binding_state,c.current_phase].map(x=>String(x||'').toLowerCase()).join(' ');if(text.match(/error|failed|unreachable|problem|stale/))return 'problem';if(text.match(/running|busy|working|executing|assigned|reasoning|inference|provider_wait|推理/))return 'busy';if(text.match(/offline|disconnected|missing|unknown/))return 'offline';return 'idle'}
+function agentStatusLabel(kind){return kind==='problem'?'有问题':kind==='busy'?'忙':kind==='offline'?'离线':'闲'}
+function renderAgentCards(){const box=document.getElementById('agentCards');if(!box)return;const cards=projectAgentCards();if(cards.length===0){box.innerHTML='';box.style.display='none';return;}box.style.display='flex';box.className='agent-status-bar';box.innerHTML=cards.map(c=>{const kind=agentStatusKind(c);const name=shortAgentName(c);return `<button class='agent-status-btn agent-status-${kind}' type='button' onclick="toggleAgentCard('${esc(c.source_id||name)}')" title='${esc(c.summary||c.current_activity||kind)}'>${esc(name)} · ${esc(agentStatusLabel(kind))}</button>`}).join('')}
+function agentCardActions(c){const recent=Array.isArray(c.recent_actions)?c.recent_actions.map(normalizeSemanticAction):[];if(recent.length>0)return recent;const summary=String(c.current_activity||c.summary||'').trim();return summary?[{item_id:String(c.source_id||summary),label:'agent.activity',title:summary,purpose:summary,status:agentStatusKind(c)==='busy'?'running':'completed',output_summary:summary,error_summary:'',item_kind:'agent_activity',target_kind:'project_agent'}]:[]}
+function toggleAgentCard(agentId){if(!agentId)return;S.expandedAgentCards[agentId]=!S.expandedAgentCards[agentId];renderPinnedAgentCards()}
+function renderPinnedAgentCards(){const box=document.getElementById('agentPins');if(!box)return;const cards=projectAgentCards();if(cards.length===0){box.innerHTML='';box.style.display='none';return;}box.style.display='flex';box.innerHTML=cards.map(c=>{const id=String(c.source_id||shortAgentName(c));const kind=agentStatusKind(c);const expanded=!!S.expandedAgentCards[id];const summary=String(c.current_activity||c.summary||'').trim();const waiting=String(c.waiting_detail||'').trim();const failure=String(c.failure_detail||'').trim();const actions=agentCardActions(c);const body=expanded?`${summary?`<div class='agent-pin-summary'>${esc(summary)}</div>`:''}${waiting?`<div class='agent-pin-wait'>等待：${esc(waiting)}</div>`:''}${failure?`<div class='agent-pin-fail'>失败：${esc(failure)}</div>`:''}${renderToolTimelineFromItems(actions,kind==='busy')}`:`${summary?`<div class='agent-pin-summary'>${esc(summary)}</div>`:''}`;return `<div class='agent-pin'><div class='agent-pin-hd'><div><div class='agent-pin-name'>${esc(shortAgentName(c))} · ${esc(agentStatusLabel(kind))}</div><div class='agent-pin-meta'>${esc(c.state||'ready')}${summary?` · ${esc(summary)}`:''}</div></div><button class='agent-pin-toggle' type='button' onclick="toggleAgentCard('${esc(id)}')">${expanded?'收起':'展开'}</button></div><div class='agent-pin-body'>${body}</div></div>`}).join('')}
 function liveItemsFor(id){const by=S.itemByClientId[id]||{};return Object.values(by).sort((a,b)=>String(a.item_id||'').localeCompare(String(b.item_id||'')))}
-function renderTurns(){const empty=document.getElementById('empty');const turns=document.getElementById('turns');const pending=Object.values(S.pendingById).sort((a,b)=>a.ts-b.ts);if(S.turns.length===0&&pending.length===0){empty.style.display='block';turns.style.display='none';return;}empty.style.display='none';turns.style.display='flex';const phaseMap={sending:'发送中',accepted:'已送达服务器',waiting:'等待推理结果',inference_waiting:'推理中',provider_wait:'等待模型响应',tool_wait:'工具执行中',queued:'排队中',running:'处理中'};const turnsHtml=S.turns.map(t=>{const timeline=renderToolTimeline(t);const debugRaw=S.debugMode?`<div class='dbg-raw'>${esc(JSON.stringify({control:t.control||'',tool:t.tool||'',closure:t.closure||'',items:t.items||[]},null,2))}</div>`:'';return `<div class='card'><div class='you'>你：${esc(t.u)}</div><div class='assistant'>${esc(t.a)}</div>${timeline}${debugRaw}</div>`});const pendingHtml=pending.map(p=>{const live=liveItemsFor(p.id);const timeline=renderToolTimelineFromItems(live,true);const debugRaw=S.debugMode?`<div class='dbg-raw'>${esc(JSON.stringify({pending:p,items:live},null,2))}</div>`:'';return `<div class='card pending'><div class='you'>你：${esc(p.text)}</div><div class='status'>${esc(phaseMap[p.serverPhase]||phaseMap[p.state]||'处理中')} <span class='dots'><span class='dot'></span><span class='dot'></span><span class='dot'></span></span></div>${timeline}${debugRaw}</div>`});turns.innerHTML=turnsHtml.concat(pendingHtml).join('');scrollToBottom()}
+function bubbleRow(kind,body,extraClass){return `<div class='msg-row ${esc(kind)}'><div class='bubble ${esc(extraClass||'')}'>${body}</div></div>`}
+function renderUserBubble(text){return bubbleRow('user',`<div class='message-text user'>${esc(text||'')}</div>`,'bubble-user')}
+function renderAssistantBubble(text){return bubbleRow('assistant',`<div class='message-text'>${esc(text||'')}</div>`,'bubble-assistant')}
+function renderStatusBubble(text){return bubbleRow('status',`<div class='status'>${text}</div>`,'bubble-status')}
+function renderDebugBubble(data){return bubbleRow('debug',`<div class='dbg-raw'>${esc(JSON.stringify(data,null,2))}</div>`,'bubble-debug')}
+function renderTurnThread(t){const timeline=renderToolTimeline(t);const debugRaw=S.debugMode?renderDebugBubble({control:t.control||'',tool:t.tool||'',closure:t.closure||'',items:t.items||[]}):'';return `<div class='chat-group' data-turn-id='${esc(t.turn_id||t.client_message_id||'')}' data-render-style='chat-thread'>${renderUserBubble(t.u)}${renderAssistantBubble(t.a)}${timeline}${debugRaw}</div>`}
+function renderLiveThread(p){const live=liveItemsFor(p.id);const timeline=renderToolTimelineFromItems(live,true);const debugRaw=S.debugMode?renderDebugBubble({pending:p,items:live}):'';const phaseMap={sending:'发送中',accepted:'已送达服务器',waiting:'等待推理结果',inference_waiting:'推理中',provider_wait:'等待模型响应',tool_wait:'工具执行中',queued:'排队中',running:'处理中'};const statusText=`${esc(phaseMap[p.serverPhase]||p.state||'处理中')} <span class='dots'><span class='dot'></span><span class='dot'></span><span class='dot'></span></span>`;return `<div class='chat-group pending' data-client-message-id='${esc(p.id)}' data-render-style='chat-thread'>${renderUserBubble(p.text)}${renderStatusBubble(statusText)}${timeline}${debugRaw}</div>`}
+function renderConversationThread(force){const thread=document.getElementById('conversationThread');if(!thread)return;const pending=Object.values(S.pendingById).sort((a,b)=>a.ts-b.ts);const liveHtml=pending.map(renderLiveThread).join('');if(force){thread.innerHTML=`<div class='thread-history'>${S.turns.map(renderTurnThread).join('')}</div><div class='thread-live'>${liveHtml}</div>`;S.renderedTurnCount=S.turns.length;return;}let history=thread.querySelector('.thread-history');let liveBox=thread.querySelector('.thread-live');if(!history||!liveBox){thread.innerHTML=`<div class='thread-history'>${S.turns.map(renderTurnThread).join('')}</div><div class='thread-live'>${liveHtml}</div>`;S.renderedTurnCount=S.turns.length;return;}if(S.turns.length>S.renderedTurnCount){history.insertAdjacentHTML('beforeend',S.turns.slice(S.renderedTurnCount).map(renderTurnThread).join(''));S.renderedTurnCount=S.turns.length;}liveBox.innerHTML=liveHtml}
+function renderTurns(forceHistory){renderAgentCards();renderPinnedAgentCards();const empty=document.getElementById('empty');const turns=document.getElementById('turns');const hasFinal=S.turns.length>0;const hasLive=Object.keys(S.pendingById).length>0;if(!hasFinal&&!hasLive){empty.style.display='block';turns.style.display='none';const thread=document.getElementById('conversationThread');if(thread)thread.innerHTML='';return;}empty.style.display='none';turns.style.display='none';renderConversationThread(!!forceHistory);if(forceHistory){scrollToBottom(true);return;}scrollToBottom(false)}
 
-function dispatchUserPayload(payload){if(!(S.ws&&S.conn==='healthy')){toast('未连接');return false;}if(!S.currentSessionId&&S.sessions.length>0)bindSession(S.sessions[0].session_id);if(!S.currentSessionId){toast('暂无可用会话');return false;}const id='m-'+Date.now(),bucket=Math.floor(Date.now()/5000),key='mobile:'+id+':'+bucket;if(S.inputDedup.has(key)){toast('重复输入已忽略');return false;}S.inputDedup.add(key);S.pendingById[id]={id,text:payload,state:'sending',serverPhase:'sending',ts:Date.now()};renderTurns();S.ws.send(JSON.stringify({type:'session.user_input',session_id:S.currentSessionId,payload,client_message_id:id,timestamp_bucket:bucket}));log('device_e2e_sent id='+id+' len='+payload.length);return true}
+function dispatchUserPayload(payload){if(S.conn!=='healthy'){toast('未连接');return false;}if(!S.currentSessionId&&S.sessions.length>0)bindSession(S.sessions[0].session_id);if(!S.currentSessionId){toast('暂无可用会话');return false;}const id='m-'+Date.now(),bucket=Math.floor(Date.now()/5000),key='mobile:'+id+':'+bucket;if(S.inputDedup.has(key)){toast('重复输入已忽略');return false;}S.inputDedup.add(key);S.pendingById[id]={id,text:payload,state:'sending',serverPhase:'sending',ts:Date.now()};renderTurns();if(!sendWs({type:'session.user_input',session_id:S.currentSessionId,payload,client_message_id:id,timestamp_bucket:bucket})){toast('发送失败：连接不可用');return false;}log('device_e2e_sent id='+id+' len='+payload.length);return true}
 function sendInput(){const el=document.getElementById('msg');const txt=el.value.trim();if(!txt&&S.attachments.length===0){toast('请输入内容');return;}const payload=(txt + (S.attachments.length?('\n\n附件:\n'+S.attachments.map(a=>'- '+a.label).join('\n')):'')).trim();if(dispatchUserPayload(payload)){el.value='';S.attachments=[];renderChips();autosize()}}
 function deviceE2eSend(payload,attempt){attempt=attempt||0;payload=String(payload||'').trim();if(!payload){log('device_e2e_empty_payload');return;}if(dispatchUserPayload(payload))return;if(attempt<40)setTimeout(()=>deviceE2eSend(payload,attempt+1),500)}
 
 function loadProviderCache(){try{const b=bridge();if(!b||!b.readProviderConfigCacheJson)return null;const raw=String(b.readProviderConfigCacheJson()||'').trim();if(!raw)return null;return JSON.parse(raw)}catch(_){return null}}
-function persistProviderCache(m){try{const b=bridge();if(b&&b.saveProviderConfigCache)b.saveProviderConfigCache(JSON.stringify(m||{}))}catch(_){}}
+function persistProviderSnapshot(m){try{const b=bridge();if(b&&b.saveProviderConfigCache)b.saveProviderConfigCache(JSON.stringify(Object.assign({cache_kind:'runtime_config_snapshot'},m||{})))}catch(_){}}
 function renderActiveConfig(m){const pBox=document.getElementById('activeProviderBox');const mBox=document.getElementById('activeModelBox');const eBox=document.getElementById('activeEffortBox');if(!pBox||!mBox||!eBox)return;const profiles=Array.isArray(m&&m.profiles)?m.profiles:[];const def=String((m&&m.default_profile)||'').trim();let active=profiles.find(p=>p&&p.active);if(!active&&def)active=profiles.find(p=>String((p&&p.profile_name)||p?.provider||'')===def);if(active){pBox.textContent=String(active.provider||active.profile_name||def||'-');mBox.textContent=String(active.model||'-');eBox.textContent=String(m&&m.active_thinking_effort?'effort:'+m.active_thinking_effort:'-')}else if(def){pBox.textContent=def;mBox.textContent='schema_error:model';eBox.textContent='-'}else{pBox.textContent='-';mBox.textContent='-';eBox.textContent='-'}}
 
 function syncUpdateManifestInputFromConfig(){const el=document.getElementById('updateManifestInput');let saved=String(CONFIG.get('update_manifest_url','')||'').trim();if(!saved){const host=String(CONFIG.get('daemon_host','100.66.1.82')||'100.66.1.82').trim();const port=String(CONFIG.get('daemon_port',4040)||'4040').trim();saved='http://'+host+':'+port+'/upgrade/manifest.json';CONFIG.set('update_manifest_url',saved)}if(el)el.value=saved}
@@ -271,13 +345,15 @@ function toggleDebugMode(){S.debugMode=!S.debugMode;const btn=document.getElemen
 
 {const diag=document.getElementById('diagBox');if(diag&&typeof diag.addEventListener==='function'){diag.addEventListener('click',function(){logevt('diag.click');const el=document.getElementById('diagState');if(!el)return;el.textContent='WS:'+S.connTarget+' | 状态:'+S.conn})}}
 
+function setupScrollTracking(){const content=document.getElementById('content');if(!content)return;let ticking=false;let lastTouchY=0;const syncBottomState=()=>{const atBottom=content.scrollHeight-content.scrollTop-content.clientHeight<80;S.userScrolledUp=!atBottom};content.addEventListener('scroll',function(){if(ticking)return;ticking=true;requestAnimationFrame(function(){syncBottomState();ticking=false})},{passive:true});content.addEventListener('touchstart',function(ev){S.userTouchScrolling=true;lastTouchY=(ev.touches&&ev.touches.length)?ev.touches[0].clientY:0},{passive:true});content.addEventListener('touchmove',function(ev){if(!(ev.touches&&ev.touches.length))return;const y=ev.touches[0].clientY;if(y>lastTouchY+2)S.userScrolledUp=true;lastTouchY=y},{passive:true});const releaseTouchScroll=()=>{S.userTouchScrolling=false;syncBottomState()};content.addEventListener('touchend',releaseTouchScroll,{passive:true});content.addEventListener('touchcancel',releaseTouchScroll,{passive:true})}
 (function init(){
   document.body.classList.add('native-input');
+  setupScrollTracking();
   autosize();
   setTheme(CONFIG.get('theme','finger'));
   const cached=loadProviderCache(); if(cached)renderActiveConfig(cached);
   syncUpdateManifestInputFromConfig();
-  loadProfiles();renderTurns();renderChips();scrollToBottom();
+  loadProfiles();renderTurns();renderChips();scrollToBottom(true);
   if(!S.currentProfile&&S.profiles.length>0)S.currentProfile=S.profiles[0].id;
   if(!S.currentProfile){S.currentProfile='daemon';}
   log('init_autoconnect profile='+String(S.currentProfile||'none')+' profiles='+String(S.profiles.length));

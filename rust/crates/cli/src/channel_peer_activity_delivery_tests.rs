@@ -230,7 +230,7 @@ fn periodic_delivery_emits_once_for_changed_snapshot() {
         .expect("prepare")
         .expect("first delivery");
     assert_eq!(first.reason, "diff");
-    assert!(first.text.contains("🌐 System Agent"));
+    assert!(first.text.contains("🌐 Kobe"));
 
     mark_delivered(&runtime_home, &first.signature, &first.text, &first.reason)
         .expect("mark delivered");

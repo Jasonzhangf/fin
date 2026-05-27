@@ -93,11 +93,6 @@ fn resolve_session_dir(
     runtime_home: &Path,
     binding: &DebugBinding,
 ) -> Result<Option<PathBuf>, CliError> {
-    if let Some(relative) = &binding.session_messages_path {
-        if let Some(prefix) = relative.strip_suffix("conversation/messages.json") {
-            return Ok(Some(runtime_home.join(prefix.trim_end_matches('/'))));
-        }
-    }
     let Some(session_id) = binding.session_id.as_deref() else {
         return Ok(None);
     };

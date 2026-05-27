@@ -241,11 +241,14 @@ fn parse_command_accepts_project_agent_add() {
     ];
     assert_eq!(
         parse_command(&args).expect("command should parse"),
-        Command::ProjectAgentAdd {
+        Command::ProjectAgent {
             path: "/tmp/user.toml".into(),
-            project_id: "fin".into(),
-            project_root: "/tmp/fin".into(),
-            agent_name: Some("builder".into()),
+            args: vec![
+                "add".into(),
+                "fin".into(),
+                "/tmp/fin".into(),
+                "builder".into()
+            ],
         }
     );
 }
@@ -260,9 +263,9 @@ fn parse_command_accepts_project_agent_remove() {
     ];
     assert_eq!(
         parse_command(&args).expect("command should parse"),
-        Command::ProjectAgentRemove {
+        Command::ProjectAgent {
             path: "/tmp/user.toml".into(),
-            project_id: "fin".into(),
+            args: vec!["remove".into(), "fin".into()],
         }
     );
 }
@@ -276,8 +279,26 @@ fn parse_command_accepts_project_agent_list() {
     ];
     assert_eq!(
         parse_command(&args).expect("command should parse"),
-        Command::ProjectAgentList {
+        Command::ProjectAgent {
             path: "/tmp/user.toml".into(),
+            args: vec!["list".into()],
+        }
+    );
+}
+
+#[test]
+fn parse_command_accepts_project_agent_headless_controls() {
+    let args = vec![
+        "project-agent".into(),
+        "/tmp/user.toml".into(),
+        "control".into(),
+        "status".into(),
+    ];
+    assert_eq!(
+        parse_command(&args).expect("command should parse"),
+        Command::ProjectAgent {
+            path: "/tmp/user.toml".into(),
+            args: vec!["control".into(), "status".into()],
         }
     );
 }
@@ -344,6 +365,23 @@ fn parse_command_accepts_build_dev() {
         Command::BuildDev {
             path: "/tmp/user.toml".into(),
             build_version: Some("0.1.0008".into()),
+        }
+    );
+}
+
+#[test]
+fn parse_command_accepts_config_import_rcc() {
+    let args = vec![
+        "config-import-rcc".to_string(),
+        "user.toml".to_string(),
+        "provider.json".to_string(),
+    ];
+
+    assert_eq!(
+        parse_command(&args).expect("command should parse"),
+        Command::ConfigImportRcc {
+            path: "user.toml".into(),
+            provider_json: "provider.json".into(),
         }
     );
 }

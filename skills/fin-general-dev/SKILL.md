@@ -132,3 +132,77 @@ description: Project-local default development workflow for fin. Use for feature
    - 前端只提供语义化交互入口（模式、模型、effort、选项等）。
    - 后端负责生成/写入唯一语义解析 block（JSON 真源）。
    - 禁止前端实现第二套业务 JSON 解析与拼装真相。
+## 3.3) Agent-first dispatch 原则（新增）
+
+### 核心原则
+**dispatch 必须是 agent 驱动的，不是 framework 预编的**：
+1. **framework 只被动触发**：框架的触发点只能是 control block 满足、或显式条件达成；不允许框架自行合成业务语义。
+2. **framework 提供工具 + 限制**：框架只暴露 dispatch tool、限制边界，不预设何时派发、派什么任务。
+3. **agent 决定何时派发**：system agent 推理后决定是否调用 dispatch tool；project agent 推理后决定是否向 system 回报。
+4. **唯一真源**：业务 payload（任务内容、任务摘要、结论）由模型生成，框架只执行传输和状态推进。
+
+### 正确流程
+```
+user request
+  → system agent 推理
+    → system agent 调用 dispatch tool（如 agent.assign）
+      → framework 执行 send mailbox 到 project agent
+        → project agent 接收并执行
+          → project agent 回报进度（progress 事件）
+          → project agent 回报结果（result 事件）
+        → system agent 接收结果
+          → system agent 决定下一步（继续派发 / 总结 / 等待）
+```
+
+### 错误模式（反模式）
+- harness 硬编码 `task.summary` 作为 dispatch payload 真源
+- system self-mailbox loopback 冒充 dispatch
+- framework 在 agent 推理前预先合成派发行为
+- project agent 结果由 harness 注入 summary，不经模型
+- 缺少 progress 事件的持续回报机制
+- project agent 静默结束，无状态上报
+
+### 验证要求
+dispatch 相关功能必须验证：
+1. system agent 确实调用了 dispatch tool（tool call artifact 存在）
+2. dispatch payload 是模型生成的内容，不是 harness 硬编码
+3. project agent 收到真实任务文本，不只是 task_id
+4. project agent 执行过程中有 progress 事件链
+5. project agent 完成后有结构化 result 回报
+6. system agent 收到结果后有后续推理（不是 harness 直接收口）
+
+### 最小 harness 职责
+```
+- ingress: 把 user request 写入 system session ledger
+- transport: 执行 agent 之间的 mailbox send（由 tool call 触发）
+- observe: 等待并记录 progress / result 事件
+- report: 把执行结果写入 evidence directory
+```
+harness **不得**：
+- 预设 dispatch 时机
+- 合成 dispatch payload 内容
+- 跳过 project agent 直接给 system 注入 summary
+- 伪造 agent reasoning trace
+
+## 7) Agent dispatch / harness 边界（新增）
+
+当任务涉及 `system agent -> project agent` 协作时，默认规则：
+
+1. framework 只提供工具、transport、权限边界、事件记录；不替 agent 做任务决策。
+2. 是否 dispatch，必须由 agent 自己在推理中决定；不得由 harness 预先替它派发。
+3. dispatch payload 的业务语义（任务描述、目标、交付物）必须由模型生成；harness 只负责传输。
+4. framework 只能在 control block 或明确条件达成后被动触发；禁止“为跑通而主动帮模型做决定”。
+5. 若当前 agent 不能跨 cwd / 权限边界执行，正确做法是暴露 dispatch tool 给它，而不是让 framework 偷偷越权执行。
+6. project agent 的 subagent / 内部执行细节默认对其他 agent 不可见；跨 agent 只交换 mailbox progress/result truth。
+
+### 这一类任务的最小验证新增要求
+- 证明 user request 先进入 system agent，而不是 harness 直送 project
+- 证明 dispatch task_description 来源于模型/tool call，而不是 harness 硬编码
+- 证明 project progress/result 通过 mailbox/ledger 回到 system
+- 证明 system 基于 project result 继续推进或收口，而不是 harness 代替收尾
+
+### 反模式
+- harness 预生成 dispatch task_summary
+- harness 决定是否 dispatch
+- system self-loopback 冒充真实 agent 通信
+- framework 直接 synthesize system summary / final answer

@@ -49,9 +49,18 @@
 - Before routing, dispatch, reprioritization, or recovery, inspect framework-owned task-board state, agent presence, project supervision, and peer state instead of inferring control state from chat text alone.
 - Compare new work against current active, waiting, blocked, and ready tasks before deciding priority.
 - If a request is simple and likely to close within one closure, you may handle it directly.
+- If a request requires reading, changing, testing, or auditing a different project root / cwd than the current primary project, treat it as project management work: configure or wake the matching project agent, dispatch the bounded task through the project harness, and wait for explicit result refs before reporting.
+- Do not silently execute substantial cross-cwd work inside the system session; only do lightweight existence checks needed to choose the target project agent.
 - If work does not show clear closure after 2-3 closures, escalate into plan + delegation.
 - When a task has a clearer project/worker owner, dispatch it instead of absorbing long execution yourself.
 - Treat task completion as a scheduling signal: review whether it unblocks other tasks, changes priority, or enables new dispatch.
+- Preserve conversational continuity across turns; do not collapse the interaction into isolated single-question/single-answer behavior unless framework truth shows a real topic shift.
+- After dispatching to a project agent, keep supervising progress, health, review, and recovery until explicit completion/failed/timeout truth exists; dispatch is not the end of the conversation.
+- Progress updates must append new forward timeline items; never rewrite old history cards to fake live progress.
+- Treat framework tool calls as one managed execution loop: first explain the routing/execution intent, then call the right framework tool, then inspect the result and explicitly decide whether to continue, wait, recover, review, or close.
+- When routing to a project agent, narrate the loop in-order: why this project was chosen, what bounded task was dispatched, what status signal is being awaited, and how the returned result will be reviewed.
+- Treat the user-visible session as one continuous conversation thread: progress, delegated work, waits, failures, recovery, and final result must append forward updates instead of restarting as isolated Q&A cards.
+- Do not stop at raw tool output. After every framework tool result, explicitly decide the next step in the same conversation thread: continue, wait, recover, review, or close.
 ```
 
 ### Evidence Discipline
@@ -94,6 +103,10 @@
 - As the task owner, review submitted work before marking progress complete.
 - Use project rules, selected paths, and current scope to keep work bounded.
 - Inside the same project role, adapt between execution, review, diagnosis, and handoff instead of switching to separate worker/reviewer roles.
+- Preserve continuous project conversation state across turns; progress and tool activity should read like an ongoing worklog, not unrelated question-answer pairs.
+- When local workers/subagents execute, keep supervising and reporting their forward progress until explicit review and delivery closure exists.
+- Use tool calls as steps inside one managed project loop: inspect project truth, choose one bounded next action, execute it, verify artifacts/tests/events, then either continue the same thread or close with evidence.
+- Delegated/project progress must remain inside the same forward thread: append new updates, keep supervision visible, and never rewrite finalized history rows to fake current state.
 ```
 
 ### Evidence Discipline

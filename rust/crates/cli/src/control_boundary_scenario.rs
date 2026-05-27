@@ -217,11 +217,6 @@ fn session_dir_from_binding(
     runtime_home: &Path,
     binding: &fin_debug_server::DebugBinding,
 ) -> Option<PathBuf> {
-    if let Some(relative) = &binding.session_messages_path {
-        if let Some(prefix) = relative.strip_suffix("conversation/messages.json") {
-            return Some(runtime_home.join(prefix.trim_end_matches('/')));
-        }
-    }
     binding.session_id.as_deref().and_then(|session_id| {
         let root = runtime_home.join("sessions");
         let years = fs::read_dir(root).ok()?;

@@ -3,10 +3,6 @@ use fin_config::SystemConfig;
 use serde::{Deserialize, Serialize};
 use std::{env, fs, path::Path, process::Command};
 
-const DEFAULT_AGENT_NAMES: &[&str] = &[
-    "atlas", "nova", "ember", "aurora", "kepler", "luna", "onyx", "iris",
-];
-
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AllocatedAgentIdentity {
     pub device_name: String,
@@ -95,11 +91,10 @@ pub fn allocate_local_agent_identity(
         source,
     })?;
 
-    let pool_path = agents_dir.join("name_pool.json");
-    let pool = load_or_create_name_pool(&pool_path)?;
-
     let registry_path = agents_dir.join("registry.json");
     let mut registry = load_registry(&registry_path)?;
+    let pool_path = agents_dir.join("name_pool.json");
+    let pool = load_or_create_name_pool(&pool_path, system)?;
     if let Some(existing) = find_existing_identity(
         &registry,
         device_name.as_str(),
@@ -112,12 +107,17 @@ pub fn allocate_local_agent_identity(
     }
 
     let base_agent_name = requested_agent_name
-        .or_else(|| default_agent_name(&resolved_role_id, &pool, &registry, &device_name))
+        .or_else(|| default_agent_name(system, &resolved_role_id, &pool, &registry, &device_name))
         .unwrap_or_else(|| "agent".into());
     let agent_name = uniquify_agent_name(&device_name, &base_agent_name, &registry);
+    let worker_id = if resolved_role_id == "system" {
+        "worker-system".into()
+    } else {
+        format!("worker-{agent_name}")
+    };
     let identity = AllocatedAgentIdentity {
         agent_id: format!("{device_name}.{agent_name}"),
-        worker_id: format!("worker-{agent_name}"),
+        worker_id,
         device_name,
         agent_name,
     };
@@ -236,15 +236,15 @@ fn sanitize_name_part(raw: &str) -> Option<String> {
     }
 }
 
-fn load_or_create_name_pool(path: &Path) -> Result<AgentNamePool, RuntimeError> {
+fn load_or_create_name_pool(
+    path: &Path,
+    system: &SystemConfig,
+) -> Result<AgentNamePool, RuntimeError> {
     match fs::read_to_string(path) {
         Ok(content) => serde_json::from_str(&content).map_err(RuntimeError::Serialize),
         Err(err) if err.kind() == std::io::ErrorKind::NotFound => {
             let pool = AgentNamePool {
-                names: DEFAULT_AGENT_NAMES
-                    .iter()
-                    .filter_map(|value| sanitize_name_part(value))
-                    .collect(),
+                names: configured_project_name_pool(system),
             };
             write_json(path, &pool)?;
             Ok(pool)
@@ -254,6 +254,16 @@ fn load_or_create_name_pool(path: &Path) -> Result<AgentNamePool, RuntimeError> 
             source,
         }),
     }
+}
+
+fn configured_project_name_pool(system: &SystemConfig) -> Vec<String> {
+    system
+        .runtime
+        .startup
+        .project_agent_name_pool
+        .iter()
+        .filter_map(|value| sanitize_name_part(value))
+        .collect()
 }
 
 fn load_registry(path: &Path) -> Result<AgentRegistry, RuntimeError> {
@@ -300,13 +310,21 @@ fn find_existing_identity(
 }
 
 fn default_agent_name(
+    system: &SystemConfig,
     role_id: &str,
     pool: &AgentNamePool,
     registry: &AgentRegistry,
     device_name: &str,
 ) -> Option<String> {
     if role_id == "system" {
-        return Some("system".into());
+        return system
+            .runtime
+            .startup
+            .system_agent
+            .agent_name
+            .as_deref()
+            .and_then(sanitize_name_part)
+            .or_else(|| Some("kobe".into()));
     }
     pool.names
         .iter()

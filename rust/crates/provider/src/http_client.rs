@@ -1,4 +1,5 @@
 use crate::ProviderError;
+use fin_shared::summarize_error_chain;
 use reqwest::Error as ReqwestError;
 use reqwest::blocking::Client;
 use std::time::Duration;
@@ -42,23 +43,27 @@ pub fn classify_reqwest_error(
     RequestFailure { message, retryable }
 }
 
-fn summarize_error_chain(err: &dyn std::error::Error) -> String {
-    let mut parts = vec![err.to_string()];
-    let mut current = err.source();
-    while let Some(source) = current {
-        parts.push(source.to_string());
-        current = source.source();
-    }
-    parts.join(" | caused_by=")
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
+    use fin_shared::{
+        DEFAULT_RETRY_ATTEMPTS, DEFAULT_RETRY_BASE_BACKOFF_SECS, exponential_backoff,
+    };
     use reqwest::blocking::Client;
 
     #[test]
     fn build_client_uses_blocking_client_builder() {
         let _client: Client = build_client().expect("client should build");
+    }
+
+    #[test]
+    fn exponential_backoff_starts_at_one_second() {
+        assert_eq!(DEFAULT_RETRY_ATTEMPTS, 5);
+        assert_eq!(DEFAULT_RETRY_BASE_BACKOFF_SECS, 1);
+        assert_eq!(exponential_backoff(1), Duration::from_secs(1));
+        assert_eq!(exponential_backoff(2), Duration::from_secs(2));
+        assert_eq!(exponential_backoff(3), Duration::from_secs(4));
+        assert_eq!(exponential_backoff(4), Duration::from_secs(8));
+        assert_eq!(exponential_backoff(5), Duration::from_secs(16));
     }
 }

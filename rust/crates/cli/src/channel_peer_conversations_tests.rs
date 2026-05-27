@@ -1,5 +1,8 @@
-use super::*;
+use super::channel_peer_conversations::*;
+use crate::runtime_home::SessionMessageRecord;
 use std::{
+    fs,
+    path::{Path, PathBuf},
     sync::atomic::{AtomicU64, Ordering},
     time::{SystemTime, UNIX_EPOCH},
 };
@@ -29,6 +32,49 @@ fn seed_session(home: &Path, session_id: &str, messages: &[SessionMessageRecord]
         serde_json::to_vec_pretty(messages).expect("json"),
     )
     .expect("messages");
+}
+
+fn seed_ledger_snapshot(home: &Path, session_id: &str, message_id: &str, created_at: &str) {
+    let ledger = fin_runtime::LedgerStore::for_session(home, session_id).expect("ledger");
+    let refs = fin_contracts::EntityRefs {
+        session_id: Some(session_id.into()),
+        task_id: Some("task-ledger".into()),
+        worker_id: Some("worker-ledger".into()),
+        ..fin_contracts::EntityRefs::default()
+    };
+    ledger
+        .init(Some("task-ledger"), Some(session_id), created_at)
+        .expect("init");
+    let snapshot = fin_contracts::SessionSnapshotRecord {
+        snapshot_id: message_id.into(),
+        operation_id: format!("op-{message_id}"),
+        trace_id: format!("trace-{message_id}"),
+        turn_id: format!("turn-{message_id}"),
+        refs: refs.clone(),
+        user_input: Some("hi".into()),
+        assistant_summary: "ledger assistant reply".into(),
+        important_tool_refs: Vec::new(),
+        artifact_refs: Vec::new(),
+        summary: Some("ledger summary".into()),
+        created_at: created_at.into(),
+    };
+    ledger
+        .append(fin_runtime::AppendLedgerRecordInput {
+            ts: created_at.into(),
+            track: fin_contracts::LedgerTrackKind::SessionSnapshot,
+            record_id: message_id.into(),
+            record_kind: "session_snapshot".into(),
+            refs: fin_contracts::LedgerRefs {
+                agent_id: Some("worker-ledger".into()),
+                entity: refs,
+                ledger_id: Some(session_id.into()),
+                record_refs: Vec::new(),
+            },
+            payload: serde_json::to_value(snapshot).expect("snapshot"),
+            caused_by: Some(format!("detail-{message_id}")),
+            supersedes: None,
+        })
+        .expect("append snapshot");
 }
 
 #[test]
@@ -75,11 +121,6 @@ fn pending_outbound_messages_skip_user_and_cursor() {
                 operation_id: None,
                 trace_id: None,
                 closure_id: None,
-                sender_kind: Some("user_message".into()),
-                role_id: None,
-                agent_name: None,
-                display_name: Some("User".into()),
-                source_kind: Some("conversation_message".into()),
             },
             SessionMessageRecord {
                 message_id: "assistant-1".into(),
@@ -91,11 +132,6 @@ fn pending_outbound_messages_skip_user_and_cursor() {
                 operation_id: None,
                 trace_id: None,
                 closure_id: None,
-                sender_kind: Some("agent_reply".into()),
-                role_id: Some("system".into()),
-                agent_name: Some("system".into()),
-                display_name: Some("System Agent".into()),
-                source_kind: Some("session_message".into()),
             },
             SessionMessageRecord {
                 message_id: "system-1".into(),
@@ -107,11 +143,6 @@ fn pending_outbound_messages_skip_user_and_cursor() {
                 operation_id: None,
                 trace_id: None,
                 closure_id: None,
-                sender_kind: Some("system_notice".into()),
-                role_id: None,
-                agent_name: None,
-                display_name: Some("系统通知".into()),
-                source_kind: Some("system_notice".into()),
             },
         ],
     );
@@ -173,11 +204,6 @@ fn first_bind_to_existing_session_initializes_delivery_cursor() {
                 operation_id: None,
                 trace_id: None,
                 closure_id: None,
-                sender_kind: Some("agent_reply".into()),
-                role_id: Some("system".into()),
-                agent_name: Some("system".into()),
-                display_name: Some("System Agent".into()),
-                source_kind: Some("session_message".into()),
             },
             SessionMessageRecord {
                 message_id: "assistant-new".into(),
@@ -189,11 +215,6 @@ fn first_bind_to_existing_session_initializes_delivery_cursor() {
                 operation_id: None,
                 trace_id: None,
                 closure_id: None,
-                sender_kind: Some("agent_reply".into()),
-                role_id: Some("system".into()),
-                agent_name: Some("system".into()),
-                display_name: Some("System Agent".into()),
-                source_kind: Some("session_message".into()),
             },
         ],
     );
@@ -214,4 +235,33 @@ fn first_bind_to_existing_session_initializes_delivery_cursor() {
         .expect("pending")
         .expect("present");
     assert!(pending.is_empty());
+}
+
+#[test]
+fn latest_deliverable_message_uses_ledger_when_messages_projection_missing() {
+    let home = temp_runtime_home();
+    fs::create_dir_all(&home).expect("home");
+    seed_ledger_snapshot(
+        &home,
+        "session-ledger",
+        "snapshot-1",
+        "2026-04-19T12:00:02+08:00",
+    );
+    let record = upsert_inbound_conversation(
+        &home,
+        "qqbot:c2c:user-ledger",
+        "msg-1",
+        Some("2026-04-19T12:00:03+08:00"),
+        Some("session-ledger"),
+    )
+    .expect("conversation")
+    .record;
+    assert_eq!(
+        record.last_delivered_message_id.as_deref(),
+        Some("assistant-ledger-snapshot-1")
+    );
+    assert_eq!(
+        record.last_delivered_message_at.as_deref(),
+        Some("2026-04-19T12:00:02+08:00")
+    );
 }

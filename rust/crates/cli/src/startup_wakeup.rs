@@ -1,6 +1,8 @@
 use crate::{
     CliError,
-    agent_presence::{mark_project_agent_waiting_remote, mark_project_agent_woken_local},
+    agent_presence::{
+        mark_project_agent_waiting_remote, mark_project_agent_woken_local, project_agent_name,
+    },
     project_execution_handoff::materialize_project_execution_handoffs,
     project_runtime_pickup::materialize_project_runtime_pickups,
     project_supervision::materialize_project_supervision,
@@ -9,6 +11,7 @@ use crate::{
     startup_topology::{ProjectWakeRequest, StartupTopologySnapshot, materialize_startup_topology},
 };
 use fin_config::{ProjectAgentMode, ProjectAgentStartupConfig, SystemConfig};
+use fin_runtime::resolve_device_name;
 use serde::{Deserialize, Serialize};
 use std::{fs, path::Path};
 
@@ -52,6 +55,14 @@ struct PeerRegistry {
 struct PeerRegistryEntry {
     peer_id: String,
     peer_kind: String,
+    #[serde(default)]
+    agent_name: Option<String>,
+    #[serde(default)]
+    display_name: Option<String>,
+    #[serde(default)]
+    device_name: Option<String>,
+    #[serde(default)]
+    endpoint: Option<String>,
     presence_state: String,
     #[serde(default)]
     runtime_state: Option<String>,
@@ -151,7 +162,7 @@ fn execute_local_wake(
         executed_at,
         summary,
     )?;
-    ensure_managed_peer(runtime_home, project, "online", executed_at)?;
+    ensure_managed_peer(runtime_home, system, project, "online", executed_at)?;
     Ok(StartupWakeAction {
         action_id: format!(
             "startup-wake-{}-{}",
@@ -185,7 +196,13 @@ fn execute_remote_wake(
         executed_at,
         summary,
     )?;
-    ensure_managed_peer(runtime_home, project, "waiting_remote_connect", executed_at)?;
+    ensure_managed_peer(
+        runtime_home,
+        system,
+        project,
+        "waiting_remote_connect",
+        executed_at,
+    )?;
     Ok(StartupWakeAction {
         action_id: format!(
             "startup-wake-{}-{}",
@@ -205,11 +222,21 @@ fn execute_remote_wake(
 
 fn ensure_managed_peer(
     runtime_home: &Path,
+    system: &SystemConfig,
     project: &ProjectAgentStartupConfig,
     lifecycle_state: &str,
     executed_at: &str,
 ) -> Result<(), CliError> {
     let peer_id = format!("peer-project-agent-{}", project.project_id);
+    let agent_name = project_agent_name(system, project);
+    let device_name = resolve_device_name(system);
+    let display_name = agent_display_name(
+        device_name.as_str(),
+        agent_name.as_str(),
+        &peer_id,
+        project.endpoint.as_deref(),
+        matches!(project.mode, ProjectAgentMode::Remote),
+    );
     let state = ManagedPeerStateRecord {
         peer_id: peer_id.clone(),
         peer_kind: "project_agent".into(),
@@ -230,6 +257,10 @@ fn ensure_managed_peer(
         .find(|entry| entry.peer_id == peer_id)
     {
         existing.peer_kind = "project_agent".into();
+        existing.agent_name = Some(agent_name.clone());
+        existing.display_name = Some(display_name.clone());
+        existing.device_name = Some(device_name.clone());
+        existing.endpoint = project.endpoint.clone();
         existing.presence_state = if lifecycle_state == "online" {
             "online".into()
         } else {
@@ -249,6 +280,10 @@ fn ensure_managed_peer(
         registry.peers.push(PeerRegistryEntry {
             peer_id,
             peer_kind: "project_agent".into(),
+            agent_name: Some(agent_name.clone()),
+            display_name: Some(display_name),
+            device_name: Some(device_name),
+            endpoint: project.endpoint.clone(),
             presence_state: if lifecycle_state == "online" {
                 "online".into()
             } else {
@@ -267,6 +302,49 @@ fn ensure_managed_peer(
         });
     }
     write_json(&registry_path, &registry)
+}
+
+fn agent_display_name(
+    local_device_name: &str,
+    agent_name: &str,
+    peer_id: &str,
+    endpoint: Option<&str>,
+    remote: bool,
+) -> String {
+    if remote {
+        let remote_prefix = endpoint
+            .and_then(endpoint_host)
+            .or_else(|| peer_id.split_once('.').map(|(device, _)| device))
+            .unwrap_or(local_device_name);
+        return format!("{remote_prefix}.{agent_name}");
+    }
+    let peer_device = peer_id
+        .split_once('.')
+        .map(|(device, _)| device)
+        .unwrap_or(local_device_name);
+    if peer_device == local_device_name {
+        agent_name.into()
+    } else {
+        format!("{peer_device}.{agent_name}")
+    }
+}
+
+fn endpoint_host(endpoint: &str) -> Option<&str> {
+    let without_scheme = endpoint
+        .split_once("://")
+        .map(|(_, rest)| rest)
+        .unwrap_or(endpoint);
+    let host_port = without_scheme.split('/').next().unwrap_or(without_scheme);
+    let host = host_port
+        .rsplit_once(':')
+        .map(|(host, _)| host)
+        .unwrap_or(host_port);
+    let trimmed = host.trim_matches(|ch| ch == '[' || ch == ']');
+    if trimmed.is_empty() {
+        None
+    } else {
+        Some(trimmed)
+    }
 }
 
 fn persist_report(runtime_home: &Path, report: &StartupWakeReport) -> Result<(), CliError> {

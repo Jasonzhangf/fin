@@ -254,6 +254,28 @@
 - Implementation truth: `/agent/v1/run/status` records remote execution outcomes through `AgentControlStore::update_run_status`; heartbeat recovery refreshes presence/peer registry to `network_heartbeat`.
 - Validation: `cargo test -p fin-debug-server` passed with 46 tests, plus config agent_network and runtime agent_control targeted tests passed.
 
+## 2026-05-24 External quota / provider transient failure policy
+
+- Jason 明确冻结：外部 provider 配额类问题（如 `weekly quota`）不得因单次或偶发失败就判定为系统阻断；必须按**同类错误连续出现 3 次**才算真实阻断。
+- 适用范围：`provider smoke`、live LLM E2E 中的外部 quota / provider-side policy / transient upstream refusal。
+- 判定要求：
+  - 需要是**同类错误**，不能把不同错误混算；
+  - 需要是**连续 3 次**，中间若成功或错误类型变化则重新计数；
+  - 在未达到 3 次前，只能记录为 observation/warning，不得拿来否定已通过的本地主链或多 agent live 闭环。
+- 这条规则只影响“外部依赖故障是否升级为阻断”的判定，不影响本地 runtime / mailbox / lifecycle / render 真源问题的严格阻断标准。
+
+## 2026-05-24 Code retry policy
+
+- Jason 明确冻结：代码侧遇到可重试错误时，必须采用**指数回退并最多重试 5 次**，不能只做 1-3 次线性重试。
+- 适用范围：本地多 agent RPC、provider HTTP 发送/读 body、其他已判定为 retryable 的网络/瞬时链路故障。
+- 判定要求：
+  - 只对 retryable/transient 错误生效，逻辑错误、鉴权错误、schema 错误、明确 4xx 业务错误不得盲重试；
+  - 每次 retry 必须保留 attempt 事实，不能静默吞掉；
+  - backoff 必须为指数型，而不是固定或线性等待；
+  - Jason 进一步收紧：**从 1s 起步**，标准序列为 `1s/2s/4s/8s/16s`，毫秒级快速重试视为错误实现。
+- owning layer 已冻结：跨 crate 的重试/backoff/错误链摘要统一收敛到 `fin-shared`，调用方（如 `fin-cli`、`fin-provider`）只消费共享策略，不再各自维护一套 retry helper。
+- 脚本/前端侧的真实重连与 E2E retry 也必须对齐同一节奏：允许语言实现不同，但语义必须等价为 `1s/2s/4s/8s/16s`；不得再保留毫秒级或线性等待的第二套重试语义。
+
 ## 2026-05-23 Simplified Agent Startup Model
 
 - Verified: startup model now defaults to local system primary agent registration at the standard `system:<id>` AgentControl path.
@@ -267,3 +289,24 @@
 ## 2026-05-23 channel default listener boundary
 - WebUI / Android / QQBot channel adapters default to the `system_agent` listener. `project_agent` listeners may exist and can be explicitly connected or used by Agent RPC, but they are not default UI/channel targets.
 - Regression truth: channel ingress must keep `source=channel.qqbot`, `role_id=system`, and `worker_id=worker-system` even when a project agent endpoint is configured; project agent presence may be observable but must not become the channel execution target by default.
+
+## 2026-05-23 Canonical fin Repository Path
+- Canonical fin development path is `~/code/fin`, not `~/Documents/github/fin`; Android client and build-all live under `~/code/fin/android-client` and `~/code/fin/scripts/build-all.sh`. Future fin implementation and verification must start from `~/code/fin`.
+
+## 2026-05-23 Unified config entry for headed/headless/provider
+- Verified: `user.toml` is the provider/profile/model truth; `system.toml` only keeps runtime/startup overlays and must merge user provider+policy from `ConfigMapper::merge_user_layer`.
+- RCC provider import is now a CLI/config-layer operation (`config-import-rcc`) and build install imports `~/.rcc/provider/ali-coding-plan/config.v2.json` before install; Android stores only a `runtime_config_snapshot`, not an editable provider truth.
+- Install/build smoke must not depend on expiring external provider tokens; use offline `mainline-scenario` for install artifact truth and keep real provider validation in explicit live smoke.
+
+## 2026-05-23 — Local multi-agent E2E completion bar
+
+- 无头 local multi-agent harness 只有在 project agent 子进程真实调用当前 provider/LLM、返回非空模型输出并把 provider/model/status/output_chars/result refs 写入 receipt 与 ledger 后，才算 E2E 闭环；仅目录观察、静态文件通信或 synthetic receipt 不算完成。
+- MiniMax-M2.7 在 OpenAI-compatible `/v1/chat/completions` 下可能把 2048 completion budget 全部消耗在 reasoning tokens，导致 HTTP 200 但 content 为空；provider 请求预算需保留足够 completion 空间，当前 OpenAI-compatible 默认 `max_tokens=8192`。
+
+## 2026-05-23 — Agent-to-agent communication baseline
+
+- Local multi-agent harness 的 agent 间通信必须走 Agent RPC + AgentControl durable mailbox：system 通过 `/agent/v1/handshake`、`/agent/v1/agents`、`/agent/v1/mailbox/send` 发现和派发，project agent 从 `AgentControlStore::consume_next_mailbox_message` 消费；禁止再把 `runtime/mailbox/<agent>/inbox.json` 作为通信协议。
+- 文件仍可作为 runtime 持久化事实（control mailbox、result/progress artifacts、ledger），但不能作为 system/project agent 之间的临时协议通道；E2E receipt 必须证明 `agent_rpc_transport="agent_rpc"`、project 通过 RPC 枚举在线、control mailbox 已 consumed。
+
+## 2026-05-23 Android live config contamination guard
+- 已验证教训：Android 真机验收禁止改写真实 `ws_profiles.json` / daemon endpoint 做 adb reverse 或 mock 测试；上轮把 endpoint 写成 `ws://127.0.0.1:4040/ws` 导致手机连自己，表现为 daemon 连接不稳。以后测试替身必须用独立测试 profile/临时 runtime，并在验收前确认真实 profile 仍指向 `ws://100.66.1.82:4040/ws` 或用户指定真实地址。

@@ -183,6 +183,68 @@ fn mailbox_seq_is_monotonic_and_trigger_turn_is_persisted() {
 }
 
 #[test]
+fn mailbox_consume_marks_first_unconsumed_message_without_resequencing() {
+    let runtime_home = temp_runtime_home("mailbox-consume");
+    let store = AgentControlStore::new(&runtime_home);
+    register_system(&store);
+    register_project(&store);
+
+    store
+        .send_agent_input(SendAgentInput {
+            message_id: "msg-1".into(),
+            from_agent_id: "system-main".into(),
+            to_agent_id: "project-fin".into(),
+            thread_id: Some("thread-1".into()),
+            task_id: Some("task-fin".into()),
+            trigger_turn: true,
+            payload: json!({ "text": "first" }),
+        })
+        .expect("send first");
+    store
+        .send_agent_input(SendAgentInput {
+            message_id: "msg-2".into(),
+            from_agent_id: "system-main".into(),
+            to_agent_id: "project-fin".into(),
+            thread_id: Some("thread-1".into()),
+            task_id: Some("task-fin".into()),
+            trigger_turn: true,
+            payload: json!({ "text": "second" }),
+        })
+        .expect("send second");
+
+    let first = store
+        .consume_next_mailbox_message("project-fin", "2026-05-23T10:02:00+08:00")
+        .expect("consume first")
+        .expect("first message");
+    let second = store
+        .consume_next_mailbox_message("project-fin", "2026-05-23T10:03:00+08:00")
+        .expect("consume second")
+        .expect("second message");
+    let none = store
+        .consume_next_mailbox_message("project-fin", "2026-05-23T10:04:00+08:00")
+        .expect("consume empty");
+
+    assert_eq!(first.message_id, "msg-1");
+    assert_eq!(first.seq, 1);
+    assert_eq!(second.message_id, "msg-2");
+    assert_eq!(second.seq, 2);
+    assert!(none.is_none());
+
+    let inbox = store.read_mailbox("project-fin").expect("read mailbox");
+    assert_eq!(inbox.len(), 2);
+    assert_eq!(inbox[0].seq, 1);
+    assert_eq!(inbox[1].seq, 2);
+    assert_eq!(
+        inbox[0].consumed_at.as_deref(),
+        Some("2026-05-23T10:02:00+08:00")
+    );
+    assert_eq!(
+        inbox[1].consumed_at.as_deref(),
+        Some("2026-05-23T10:03:00+08:00")
+    );
+}
+
+#[test]
 fn wait_close_and_resume_follow_primary_vs_subagent_lifecycle() {
     let runtime_home = temp_runtime_home("lifecycle");
     let store = AgentControlStore::new(&runtime_home);
@@ -256,4 +318,62 @@ fn wait_close_and_resume_follow_primary_vs_subagent_lifecycle() {
         resumed_child.path,
         "project:fin:project-fin/subagent:proj-child-1"
     );
+}
+
+#[test]
+fn primary_agent_mailbox_result_and_run_completion_form_one_lifecycle() {
+    let runtime_home = temp_runtime_home("primary-mailbox-run");
+    let store = AgentControlStore::new(&runtime_home);
+    register_system(&store);
+    register_project(&store);
+
+    let resumed = store
+        .resume_agent(
+            "project-fin",
+            Some("project-run-lifecycle-1"),
+            "2026-05-23T10:00:30+08:00",
+        )
+        .expect("resume primary project run");
+    assert_eq!(resumed.agent_run_id, "project-run-lifecycle-1");
+
+    store
+        .send_agent_input(SendAgentInput {
+            message_id: "msg-result-1".into(),
+            from_agent_id: "project-fin".into(),
+            to_agent_id: "system-main".into(),
+            thread_id: Some("thread-1".into()),
+            task_id: Some("task-fin".into()),
+            trigger_turn: true,
+            payload: json!({
+                "kind":"project_result",
+                "agent_run_id":"project-run-lifecycle-1",
+                "result_ref":"runtime/results/project-fin.json"
+            }),
+        })
+        .expect("send result");
+
+    let mailbox_message = store
+        .consume_next_mailbox_message("system-main", "2026-05-23T10:00:40+08:00")
+        .expect("consume result")
+        .expect("mailbox result");
+    assert_eq!(mailbox_message.payload["kind"], "project_result");
+    assert_eq!(
+        mailbox_message.payload["agent_run_id"],
+        "project-run-lifecycle-1"
+    );
+
+    store
+        .update_run_status(
+            "project-run-lifecycle-1",
+            "completed",
+            vec!["runtime/results/project-fin.json".into()],
+            "2026-05-23T10:00:50+08:00",
+        )
+        .expect("complete project run");
+
+    let waited = store
+        .wait_agent("project-run-lifecycle-1")
+        .expect("wait completed");
+    assert_eq!(waited.status, "completed");
+    assert_eq!(waited.result_refs, vec!["runtime/results/project-fin.json"]);
 }

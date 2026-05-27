@@ -1,19 +1,23 @@
 use crate::{
     CliError,
     command::{Command, parse_command},
-    config::{default_provider_facade, load_effective_system_config, load_system_config},
+    config::{
+        default_provider_facade, import_rcc_provider_profile, load_effective_system_config,
+        load_system_config,
+    },
     control_boundary_scenario::run_control_boundary_scenario,
     fs_utils::read_file,
     headless_daemon::{run_headless_daemon, start_headless_daemon, stop_headless_daemon},
     install_flow::{build_dev, promote_existing_build, rollback_install},
+    local_multi_agent_lifecycle_harness::{
+        run_local_multi_agent_lifecycle_harness_with_config, run_local_multi_agent_node,
+    },
     mainline_scenario::run_mainline_scenario,
+    project_agent_harness_commands::run_project_agent_command,
     provider_live_smoke::run_provider_live_smoke,
     qqbot_live_receipt::run_qqbot_live_receipt,
     runtime_home::{init_runtime_home, persist_runtime_session, resolved_runtime_home},
     session_run::{run_session, runtime_home_override_from_env},
-    startup_topology::{
-        configure_local_project_agent, effective_project_agents, remove_dynamic_project_agent,
-    },
     transcript::{load_transcript_scenario, run_transcript_session},
     web_debug_entry::serve_web_debug,
 };
@@ -90,6 +94,17 @@ pub fn run_with_runtime_home(
                 system.default_provider,
                 system.providers.len(),
                 resolved_runtime_home(&system, runtime_home_override.as_deref()).display()
+            );
+        }
+        Command::ConfigImportRcc {
+            path,
+            provider_json,
+        } => {
+            let system = import_rcc_provider_profile(Path::new(&path), Path::new(&provider_json))?;
+            let provider = system.default_provider_config()?;
+            println!(
+                "config imported: provider={} model={} protocol={:?}",
+                system.default_provider, provider.model, provider.protocol
             );
         }
         Command::HomeInit { path } => {
@@ -250,56 +265,13 @@ pub fn run_with_runtime_home(
                 report.target, report.session_id, report.status, report.receipt_path
             );
         }
-        Command::ProjectAgentAdd {
-            path,
-            project_id,
-            project_root,
-            agent_name,
-        } => {
+        Command::ProjectAgent { path, args } => {
             let user_toml = read_file(Path::new(&path))?;
             let system =
                 load_effective_system_config(&user_toml, runtime_home_override.as_deref())?;
             let runtime_home =
                 init_runtime_home(&user_toml, &system, runtime_home_override.as_deref())?;
-            let project = configure_local_project_agent(
-                &runtime_home,
-                &project_id,
-                &project_root,
-                agent_name,
-            )?;
-            println!(
-                "project agent configured: project_id={} endpoint={} config={}",
-                project.project_id,
-                project.endpoint.unwrap_or_else(|| "-".into()),
-                runtime_home
-                    .join("runtime/agents/project_agents.json")
-                    .display()
-            );
-        }
-        Command::ProjectAgentRemove { path, project_id } => {
-            let user_toml = read_file(Path::new(&path))?;
-            let system =
-                load_effective_system_config(&user_toml, runtime_home_override.as_deref())?;
-            let runtime_home =
-                init_runtime_home(&user_toml, &system, runtime_home_override.as_deref())?;
-            let projects = remove_dynamic_project_agent(&runtime_home, &project_id)?;
-            println!(
-                "project agent removed: project_id={} remaining={} config={}",
-                project_id,
-                projects.len(),
-                runtime_home
-                    .join("runtime/agents/project_agents.json")
-                    .display()
-            );
-        }
-        Command::ProjectAgentList { path } => {
-            let user_toml = read_file(Path::new(&path))?;
-            let system =
-                load_effective_system_config(&user_toml, runtime_home_override.as_deref())?;
-            let runtime_home =
-                init_runtime_home(&user_toml, &system, runtime_home_override.as_deref())?;
-            let projects = effective_project_agents(&runtime_home, &system)?;
-            println!("{}", serde_json::to_string_pretty(&projects)?);
+            run_project_agent_command(&runtime_home, &system, &args)?;
         }
         Command::WebDebug { path, host, port } => {
             let user_toml = read_file(Path::new(&path))?;
@@ -392,6 +364,32 @@ pub fn run_with_runtime_home(
                 load_effective_system_config(&user_toml, runtime_home_override.as_deref())?;
             let runtime_home = rollback_install(&system, runtime_home_override.as_deref(), None)?;
             println!("rollback ok: {}", runtime_home.display());
+        }
+        Command::LocalMultiAgentHarness { path, project_cwd } => {
+            let user_toml = read_file(Path::new(&path))?;
+            let system =
+                load_effective_system_config(&user_toml, runtime_home_override.as_deref())?;
+            let runtime_home = resolved_runtime_home(&system, runtime_home_override.as_deref());
+            let receipt = run_local_multi_agent_lifecycle_harness_with_config(
+                &runtime_home,
+                Some(Path::new(&path)),
+                Path::new(&project_cwd),
+                None,
+            )?;
+            println!("{}", serde_json::to_string_pretty(&receipt)?);
+        }
+        Command::LocalMultiAgentNode {
+            runtime_home,
+            role,
+            agent_id,
+            config_path,
+        } => {
+            run_local_multi_agent_node(
+                Path::new(&runtime_home),
+                &role,
+                &agent_id,
+                config_path.as_deref().map(Path::new),
+            )?;
         }
     }
     Ok(())

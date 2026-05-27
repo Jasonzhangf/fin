@@ -4,10 +4,10 @@ use crate::tool_dispatch::{
 };
 use crate::{AssignmentRecord, append_assignment_record, target_agent_name_from_worker_id};
 use fin_contracts::ToolExecutionRecord;
+use fin_shared::append_jsonl;
 use serde_json::{Value, json};
 use std::{
     fs,
-    io::Write,
     path::{Path, PathBuf},
 };
 
@@ -207,7 +207,7 @@ pub(super) fn handle_capability_invoke(
         "occurred_at": input.occurred_at,
     });
     let log_path = runtime_home.join("runtime/capabilities/invocations.jsonl");
-    if let Err(err) = append_jsonl(&log_path, &invocation) {
+    if let Err(err) = append_jsonl(&log_path, &invocation).map_err(|err| err.to_string()) {
         outcome.tool_records.push(failed_record(
             input,
             tool_call_id.into(),
@@ -260,25 +260,6 @@ pub(super) fn handle_capability_invoke(
         .note_hints
         .push(format!("capability.invoke accepted for {capability_id}"));
     true
-}
-
-fn append_jsonl(path: &Path, value: &Value) -> Result<(), String> {
-    if let Some(parent) = path.parent() {
-        fs::create_dir_all(parent).map_err(|err| err.to_string())?;
-    }
-    let mut file = fs::OpenOptions::new()
-        .create(true)
-        .append(true)
-        .open(path)
-        .map_err(|err| err.to_string())?;
-    file.write_all(
-        format!(
-            "{}\n",
-            serde_json::to_string(value).map_err(|err| err.to_string())?
-        )
-        .as_bytes(),
-    )
-    .map_err(|err| err.to_string())
 }
 
 fn relative_artifact(context: &fin_contracts::MinimalContextView, absolute: &Path) -> String {

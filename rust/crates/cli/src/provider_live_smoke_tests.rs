@@ -131,3 +131,51 @@ fn provider_live_smoke_writes_receipt_and_runtime_truth() {
         Some("session-provider-live-smoke")
     );
 }
+
+#[test]
+fn provider_live_smoke_report_uses_session_dir_truth_without_last_run_projection_paths() {
+    let user_toml = sample_user_toml();
+    let system = map_system_config(&user_toml).expect("system");
+    let runtime_home = temp_runtime_home().join("runtime-home");
+    let provider = SmokeContractProvider::new();
+    let report = run_provider_live_smoke_with_provider(
+        &user_toml,
+        &system,
+        &provider,
+        Some(runtime_home.as_path()),
+        &TranscriptScenario {
+            session_id: Some("session-provider-live-smoke-ledger".into()),
+            task_id: Some("task-provider-live-smoke-ledger".into()),
+            turns: vec![TranscriptTurn {
+                input: "ledger-first report".into(),
+            }],
+        },
+    )
+    .expect("smoke should succeed");
+    let last_run_path = runtime_home.join("runtime/current/last_run.json");
+    let mut last_run: serde_json::Value =
+        serde_json::from_str(&fs::read_to_string(&last_run_path).expect("last_run"))
+            .expect("last_run json");
+    let object = last_run.as_object_mut().expect("object");
+    object.remove("session_messages_path");
+    object.remove("session_recent_contexts_path");
+    object.remove("session_recent_rounds_path");
+    object.remove("session_recent_step_records_path");
+    fs::write(
+        &last_run_path,
+        serde_json::to_vec_pretty(&last_run).expect("serialize"),
+    )
+    .expect("rewrite last_run");
+
+    let receipt: serde_json::Value =
+        serde_json::from_str(&fs::read_to_string(&report.receipt_path).expect("receipt json"))
+            .expect("receipt parse");
+    assert_eq!(
+        receipt["session_id"].as_str(),
+        Some("session-provider-live-smoke-ledger")
+    );
+    assert!(Path::new(&report.session_messages_path).exists());
+    assert!(Path::new(&report.session_recent_contexts_path).exists());
+    assert!(Path::new(&report.session_recent_rounds_path).exists());
+    assert!(Path::new(&report.session_recent_steps_path).exists());
+}

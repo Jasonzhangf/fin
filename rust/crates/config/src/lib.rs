@@ -4,7 +4,9 @@ use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use thiserror::Error;
 
+mod provider_profile;
 mod startup;
+pub use provider_profile::{ProviderProfileImport, ProviderProfileImportOptions};
 pub use startup::{
     ProjectAgentMode, ProjectAgentStartupConfig, RuntimeStartupConfig, SystemAgentStartupConfig,
 };
@@ -670,12 +672,31 @@ impl ConfigMapper {
         system.validate()?;
         Ok(system)
     }
+
+    pub fn merge_user_layer(
+        mapped: SystemConfig,
+        mut existing: SystemConfig,
+    ) -> Result<SystemConfig, ConfigError> {
+        existing.default_provider = mapped.default_provider;
+        existing.providers = mapped.providers;
+        existing.policy = mapped.policy;
+        existing.runtime.runtime_home = mapped.runtime.runtime_home;
+        existing.runtime.device_name = mapped.runtime.device_name;
+        existing.validate()?;
+        Ok(existing)
+    }
 }
 
 pub fn parse_user_toml(input: &str) -> Result<UserConfig, ConfigError> {
     toml::from_str(input).map_err(|source| ConfigError::ParseToml {
         context: "user",
         source,
+    })
+}
+
+pub fn user_to_toml(user: &UserConfig) -> Result<String, ConfigError> {
+    toml::to_string_pretty(user).map_err(|source| ConfigError::Validation {
+        message: format!("failed to serialize user toml: {source}"),
     })
 }
 

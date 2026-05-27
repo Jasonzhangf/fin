@@ -12,8 +12,11 @@ use serde_json::Value;
 use thiserror::Error;
 mod activity_cards;
 #[cfg(test)]
+mod activity_cards_project_actions_tests;
+#[cfg(test)]
 mod activity_cards_tests;
 mod agent_control;
+mod agent_control_io;
 #[cfg(test)]
 mod agent_control_tests;
 mod agent_naming;
@@ -39,6 +42,7 @@ mod control_feedback;
 mod control_plane;
 #[cfg(test)]
 mod execution_checkpoint_tests;
+mod ledger_store;
 mod managed_task_board;
 mod model_input_assembler;
 mod model_output;
@@ -95,11 +99,7 @@ mod tool_semantics;
 mod trace_records;
 mod turn_records;
 pub use activity_cards::build_activity_cards;
-pub use agent_control::{
-    AgentControlStore, AgentIdentity, AgentKind, AgentMailboxMessage, AgentRunRecord,
-    CapabilityDescriptor, CloseAgentResult, ContextMode, ContextPolicy, RegisterPrimaryAgentInput,
-    ResumeAgentResult, SendAgentInput, SpawnSubagentInput, WaitAgentResult,
-};
+pub use agent_control::{AgentControlStore, AgentMailboxMessage, SendAgentInput};
 pub use agent_naming::{
     AgentAssignmentSummary, AllocatedAgentIdentity, allocate_local_agent_identity,
     create_named_local_worker, persist_assignment_summary, read_assignment_summary,
@@ -125,6 +125,12 @@ pub use control_plane::{
     failed_state, interrupted_segment, new_pending_input, paused_state, resumed_state,
     running_state, segment_merge, state_after_run, state_with_pending_count,
 };
+pub use fin_shared::{
+    AgentIdentity, AgentKind, AgentRunRecord, CapabilityDescriptor, CloseAgentResult, ContextMode,
+    ContextPolicy, RegisterPrimaryAgentInput, ResumeAgentResult, SpawnSubagentInput,
+    WaitAgentResult,
+};
+pub use ledger_store::{AppendLedgerRecordInput, LedgerQuery, LedgerStore};
 pub use model_input_assembler::ModelInputAssembler;
 pub use model_output::{ModelOutputParser, ParsedModelOutput};
 pub use owner_loop::derive_owner_loop_action_for_runtime;
@@ -145,6 +151,8 @@ pub enum RuntimeError {
     Config(#[from] fin_config::ConfigError),
     #[error(transparent)]
     InvalidOperation(#[from] fin_shared::SharedError),
+    #[error(transparent)]
+    SharedIo(#[from] fin_shared::SharedIoError),
     #[error(transparent)]
     Provider(#[from] fin_provider::ProviderError),
     #[error("failed to serialize runtime payload: {0}")]

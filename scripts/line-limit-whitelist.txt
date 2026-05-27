@@ -8,3 +8,16 @@ rust/crates/debug-server/src/mobile_ws.rs
 rust/crates/provider/src/lib.rs
 rust/crates/runtime/src/closure_runtime.rs
 rust/crates/runtime/src/round_loop_runtime_tests_contract_retry.rs
+rust/crates/cli/src/startup_topology.rs
+rust/crates/cli/src/tests.rs
+rust/crates/contracts/src/lib.rs
+rust/crates/contracts/src/records.rs
+rust/crates/debug-server/src/agent_rpc.rs
+rust/crates/debug-server/src/agent_rpc_tests.rs
+rust/crates/runtime/src/agent_control.rs
+rust/crates/runtime/src/assembler_tests.rs
+rust/crates/runtime/src/round_loop_runtime_tests.rs
+rust/crates/runtime/src/session_materializer.rs
+rust/crates/cli/src/local_multi_agent_node.rs
+rust/crates/debug-server/webui/src/chat.ts
+rust/crates/runtime/src/activity_cards_project_actions_tests.rs

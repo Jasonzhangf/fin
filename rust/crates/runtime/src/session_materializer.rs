@@ -1,13 +1,15 @@
 use crate::{
-    ClosureRun, ContextBaselineManager, RuntimeError, session_record_journal,
-    source_visibility::is_hidden_session_source,
+    AppendLedgerRecordInput, ClosureRun, ContextBaselineManager, LedgerStore, RuntimeError,
+    session_record_journal, source_visibility::is_hidden_session_source,
 };
 use fin_config::RuntimeRetentionConfig;
 use fin_contracts::EventEnvelope;
 use fin_contracts::{
-    ClosureTraceRecord, ContextSnapshotRecord, DigestRecord, ExecutionCheckpointRecord,
-    ReasoningViewRecord, ToolExecutionRecord,
+    ClosureTraceRecord, ContextSnapshotRecord, DigestRecord, ExecutionCheckpointRecord, LedgerRefs,
+    LedgerTrackKind, ReasoningViewRecord, SessionDetailRecord, SessionSnapshotRecord,
+    ToolExecutionRecord,
 };
+use fin_shared::append_jsonl;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use serde_json::json;
@@ -169,6 +171,7 @@ impl SessionMaterializer {
             &runtime_home.join("runtime/current/current_control_feedback.json"),
             &run.control_feedback,
         )?;
+        persist_session_ledger(runtime_home, run)?;
         persist_session_messages(&session_dir, run, retention)?;
 
         let session_recent_contexts_path =
@@ -257,6 +260,125 @@ impl SessionMaterializer {
     }
 }
 
+fn persist_session_ledger(runtime_home: &Path, run: &ClosureRun) -> Result<(), RuntimeError> {
+    let session_id = run
+        .context_snapshot
+        .refs
+        .session_id
+        .clone()
+        .unwrap_or_else(|| "session-m1".into());
+    let created_at = run.note.created_at.clone();
+    let ledger = LedgerStore::for_session(runtime_home, &session_id)?;
+    ledger.init(
+        run.context_snapshot.refs.task_id.as_deref(),
+        Some(&session_id),
+        &created_at,
+    )?;
+
+    let refs = run.context_snapshot.refs.clone();
+    let user_input = run.conversation_user_input.clone();
+    let detail_record = SessionDetailRecord {
+        detail_id: format!("detail-{}", run.digest.closure_id),
+        operation_id: run.context_snapshot.operation_id.clone(),
+        trace_id: run.context_snapshot.trace_id.clone(),
+        turn_id: run.turn_record.turn_id.clone(),
+        refs: refs.clone(),
+        user_input: user_input.clone(),
+        assistant_visible_output: Some(run.assistant_response_text.clone()),
+        context_snapshot_ref: Some(format!(
+            "context/recent_contexts.json#operation_id={}",
+            run.context_snapshot.operation_id
+        )),
+        provider_refs: run
+            .provider_response_records
+            .iter()
+            .map(|record| {
+                format!(
+                    "provider/recent_provider_responses.json#response_record_id={}",
+                    record.response_record_id
+                )
+            })
+            .collect(),
+        tool_refs: run
+            .tool_records
+            .iter()
+            .map(|record| {
+                format!(
+                    "tools/recent_tool_records.json#tool_call_id={}",
+                    record.tool_call_id
+                )
+            })
+            .collect(),
+        step_refs: run
+            .step_records
+            .iter()
+            .map(|record| format!("steps/recent_steps.json#step_id={}", record.step_id))
+            .collect(),
+        control_refs: vec!["control/latest.json".into()],
+        event_refs: run
+            .events
+            .iter()
+            .map(|event| event.event_id.clone())
+            .collect(),
+        created_at: created_at.clone(),
+    };
+    let detail_ref = format!("session.detail:{}", detail_record.detail_id);
+    ledger.append(AppendLedgerRecordInput {
+        ts: created_at.clone(),
+        track: LedgerTrackKind::SessionDetail,
+        record_id: detail_record.detail_id.clone(),
+        record_kind: "session_detail".into(),
+        refs: LedgerRefs {
+            agent_id: refs.worker_id.clone(),
+            entity: refs.clone(),
+            ledger_id: Some(ledger.ledger_id().into()),
+            record_refs: Vec::new(),
+        },
+        payload: serde_json::to_value(detail_record)?,
+        caused_by: None,
+        supersedes: None,
+    })?;
+
+    let snapshot_record = SessionSnapshotRecord {
+        snapshot_id: format!("snapshot-{}", run.digest.closure_id),
+        operation_id: run.context_snapshot.operation_id.clone(),
+        trace_id: run.context_snapshot.trace_id.clone(),
+        turn_id: run.turn_record.turn_id.clone(),
+        refs: refs.clone(),
+        user_input,
+        assistant_summary: run.assistant_response_text.clone(),
+        important_tool_refs: run
+            .tool_records
+            .iter()
+            .map(|record| {
+                format!(
+                    "tools/recent_tool_records.json#tool_call_id={}",
+                    record.tool_call_id
+                )
+            })
+            .collect(),
+        artifact_refs: run.digest.artifact_candidates.clone(),
+        summary: Some(run.digest.summary.clone()),
+        created_at: created_at.clone(),
+    };
+    ledger.append(AppendLedgerRecordInput {
+        ts: created_at,
+        track: LedgerTrackKind::SessionSnapshot,
+        record_id: snapshot_record.snapshot_id.clone(),
+        record_kind: "session_snapshot".into(),
+        refs: LedgerRefs {
+            agent_id: refs.worker_id.clone(),
+            entity: refs,
+            ledger_id: Some(ledger.ledger_id().into()),
+            record_refs: vec![detail_ref],
+        },
+        payload: serde_json::to_value(snapshot_record)?,
+        caused_by: Some(format!("detail-{}", run.digest.closure_id)),
+        supersedes: None,
+    })?;
+    Ok(())
+}
+
 pub fn append_framework_events(
     runtime_home: &Path,
     session_dir: &Path,
@@ -337,29 +459,6 @@ fn persist_auto_compactions(
         append_jsonl(&events_path, record)?;
     }
     Ok(())
-}
-
-fn append_jsonl<T: Serialize>(path: &Path, value: &T) -> Result<(), RuntimeError> {
-    if let Some(parent) = path.parent() {
-        create_dir_all(parent)?;
-    }
-    let mut line = serde_json::to_string(value)?;
-    line.push('\n');
-    let mut existing = fs::OpenOptions::new()
-        .create(true)
-        .append(true)
-        .open(path)
-        .map_err(|source| RuntimeError::Io {
-            path: path.display().to_string(),
-            source,
-        })?;
-    use std::io::Write;
-    existing
-        .write_all(line.as_bytes())
-        .map_err(|source| RuntimeError::Io {
-            path: path.display().to_string(),
-            source,
-        })
 }
 
 fn persist_context_snapshots(

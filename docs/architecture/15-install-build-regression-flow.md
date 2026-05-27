@@ -215,9 +215,29 @@ checksums.txt
 #### R4 Observable smoke
 - Web / debug server / event stream 最小可观察链路成立
 - 或至少完成等价的 debug/projection smoke
+- 多 agent 回归至少要有一条“真实 runtime_home -> WebUI 渲染”证据链；当前标准入口为：
+  - `node scripts/webui/live-runtime-chat-smoke.mjs <run-id>`
+  - 它必须直接读取本地双实例 E2E 产出的 `runtime-home`，通过 `web-debug` 服务真实 `/api/*`，再由前端 `chat.js` 渲染连续线程与 delegated card
+  - 不允许只用合成 JSON 冒充“客户端已验证”
 
 #### R5 Manual targeted validation
 - 对本次改动影响最大的链路做人工观察验证
+
+## 3.1 多 agent live gate 分层
+
+对多 agent 闭环，live 回归必须区分两类：
+
+1. **blocking live gates**
+   - `scripts/run-local-multi-agent-e2e.sh live <run-id>`
+   - `node scripts/webui/live-runtime-chat-smoke.mjs <run-id>`
+   - 这两条共同证明：真实 LLM + 本地双实例 + runtime truth + 客户端渲染。
+
+2. **non-blocking live provider slice**
+   - `scripts/run-real-provider-smoke.sh <run-id>`
+   - 它用于单独观测 provider slice 健康度与额度/配额问题。
+   - 若失败原因是外部 quota / weekly limit / provider-side policy，而多 agent live E2E 已通过，则只记录为非阻断告警，不能反过来否定多 agent 主闭环。
+   - Jason 额外规则：这类外部错误只有在“**同类错误连续 3 次**”时才可升级为真实阻断；中间一旦成功或错误类型变化，计数清零。
+   - 对代码/harness 内部被标记为 retryable 的瞬时错误，统一使用**指数回退最多 5 次，且从 1s 起步**；标准节奏为 `1s/2s/4s/8s/16s`。attempt 必须有日志/receipt 事实，禁止静默线性重试。
 
 规则：
 

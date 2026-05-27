@@ -89,7 +89,7 @@ where
             |binding, message, source, attachments, merge_segment| {
                 let agent_name =
                     find_project_agent_config(system, Some(pickup.project_id.as_str()), None)
-                        .map(project_agent_name);
+                        .map(|project| project_agent_name(system, project));
                 run_next(
                     binding,
                     agent_name,

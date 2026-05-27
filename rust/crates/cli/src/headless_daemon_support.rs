@@ -218,6 +218,19 @@ pub(super) fn process_alive(pid: u32) -> bool {
         .unwrap_or(false)
 }
 
+pub(super) fn lease_is_stale(lease: &HeadlessDaemonLeaseRecord) -> bool {
+    let Ok(updated_at) = chrono::DateTime::parse_from_rfc3339(&lease.updated_at) else {
+        return true;
+    };
+    let Ok(elapsed) = chrono::Utc::now()
+        .signed_duration_since(updated_at.with_timezone(&chrono::Utc))
+        .to_std()
+    else {
+        return true;
+    };
+    elapsed.as_millis() > u128::from(lease.lease_ttl_ms)
+}
+
 pub(super) fn read_json_if_exists<T: for<'de> Deserialize<'de>>(
     path: &Path,
 ) -> Result<Option<T>, CliError> {
@@ -306,26 +319,42 @@ fn session_dirs(runtime_home: &Path) -> Result<Vec<PathBuf>, CliError> {
             path: root.display().to_string(),
             source,
         })?;
-        for month in fs::read_dir(year.path()).map_err(|source| CliError::ReadFile {
-            path: year.path().display().to_string(),
+        let year_path = year.path();
+        if !year_path.is_dir() {
+            continue;
+        }
+        let year_name = year.file_name().to_string_lossy().to_string();
+        if year_name.len() != 4 || !year_name.chars().all(|ch| ch.is_ascii_digit()) {
+            continue;
+        }
+        for month in fs::read_dir(&year_path).map_err(|source| CliError::ReadFile {
+            path: year_path.display().to_string(),
             source,
         })? {
             let month = month.map_err(|source| CliError::ReadFile {
-                path: year.path().display().to_string(),
+                path: year_path.display().to_string(),
                 source,
             })?;
-            for session in fs::read_dir(month.path()).map_err(|source| CliError::ReadFile {
-                path: month.path().display().to_string(),
+            let month_path = month.path();
+            if !month_path.is_dir() {
+                continue;
+            }
+            let month_name = month.file_name().to_string_lossy().to_string();
+            if month_name.len() != 2 || !month_name.chars().all(|ch| ch.is_ascii_digit()) {
+                continue;
+            }
+            for session in fs::read_dir(&month_path).map_err(|source| CliError::ReadFile {
+                path: month_path.display().to_string(),
                 source,
             })? {
-                dirs.push(
-                    session
-                        .map_err(|source| CliError::ReadFile {
-                            path: month.path().display().to_string(),
-                            source,
-                        })?
-                        .path(),
-                );
+                let session = session.map_err(|source| CliError::ReadFile {
+                    path: month_path.display().to_string(),
+                    source,
+                })?;
+                let session_path = session.path();
+                if session_path.is_dir() {
+                    dirs.push(session_path);
+                }
             }
         }
     }

@@ -2,8 +2,6 @@
 set -euo pipefail
 ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "$ROOT"
-WITH_LIVE=0
-[[ "${1:-}" == "--with-live" ]] && WITH_LIVE=1
 RUN_ID="test-local-reg-$(date +%Y%m%d-%H%M%S)"
 RUN_ROOT="$HOME/.fin/harness/runs/$RUN_ID"
 RUNTIME_HOME="$RUN_ROOT/runtime-home"
@@ -15,7 +13,6 @@ export FIN_SESSION_NAMESPACE="$RUN_ID"
 STATUS_JSON="reports/regression/local-regression-status.json"
 SUMMARY_MD="reports/regression/local-regression-summary.md"
 
-# gates json scaffold
 cat > "$STATUS_JSON" <<JSON
 {"run_id":"$RUN_ID","gates":[]}
 JSON
@@ -24,15 +21,23 @@ run_gate() {
   local name="$1"; shift
   local cmd="$*"
   local log="reports/regression/${name}.log"
+  local blocking="true"
   set +e
   bash -lc "$cmd" >"$log" 2>&1
   local code=$?
   set -e
-  python3 - "$STATUS_JSON" "$name" "$cmd" "$code" "$log" <<'PY'
+  python3 - "$STATUS_JSON" "$name" "$cmd" "$code" "$log" "$blocking" <<'PY'
 import json, sys
-p,name,cmd,code,log = sys.argv[1:6]
+p,name,cmd,code,log,blocking = sys.argv[1:7]
 obj=json.load(open(p))
-obj['gates'].append({'name':name,'cmd':cmd,'ok':int(code)==0,'code':int(code),'log':log})
+obj['gates'].append({
+  'name':name,
+  'cmd':cmd,
+  'ok':int(code)==0,
+  'code':int(code),
+  'log':log,
+  'blocking': blocking == 'true'
+})
 json.dump(obj, open(p,'w'), ensure_ascii=False, indent=2)
 PY
   return $code
@@ -48,10 +53,11 @@ run_gate g1_provider_cache_usage_tests "cargo test -p fin-provider --manifest-pa
 run_gate g1_ws_turn_channel_contract "python3 scripts/android-mvp/run_turn_channel_contract.py" || ALL_OK=0
 run_gate g1_ws_event_replay_dynamic "python3 scripts/regression/run_ws_event_replay_gate.py" || ALL_OK=0
 run_gate g2_event_render_contract "python3 scripts/regression/check_local_event_render_contract.py" || ALL_OK=0
+run_gate g2_android_layout_focus_contract "node android-client/scripts/smoke/layout-focus-contract-smoke.mjs" || ALL_OK=0
 run_gate g2_android_log_ingest "python3 scripts/regression/check_android_log_ingest_gate.py" || ALL_OK=0
-if [[ "$WITH_LIVE" == "1" ]]; then
-  run_gate g3_live_optional "scripts/run-real-provider-smoke.sh '$RUN_ID-live'" || ALL_OK=0
-fi
+run_gate g3_live_provider_smoke "scripts/run-real-provider-smoke.sh '$RUN_ID-live'" || ALL_OK=0
+run_gate g3_local_multi_agent_live_e2e "scripts/run-local-multi-agent-e2e.sh live '$RUN_ID-live-multi-agent'" || ALL_OK=0
+run_gate g3_local_multi_agent_live_webui_render "node scripts/webui/live-runtime-chat-smoke.mjs '$RUN_ID-live-multi-agent'" || ALL_OK=0
 
 python3 - "$STATUS_JSON" "$SUMMARY_MD" "$ALL_OK" <<'PY'
 import json, datetime, sys
@@ -60,9 +66,10 @@ obj=json.load(open(status))
 obj['ts']=datetime.datetime.now(datetime.UTC).isoformat().replace('+00:00','Z')
 obj['overall_ok']=bool(all_ok)
 json.dump(obj, open(status,'w'), ensure_ascii=False, indent=2)
-lines=['# Local Regression Summary','',f"- run_id: {obj['run_id']}",f"- overall: {'PASS' if obj['overall_ok'] else 'FAIL'}",'', '| gate | status | log |','|---|---|---|']
+lines=['# Local Regression Summary','',f"- run_id: {obj['run_id']}",f"- overall: {'PASS' if obj['overall_ok'] else 'FAIL'}",'', '| gate | status | blocking | log |','|---|---|---|---|']
 for g in obj['gates']:
-    lines.append(f"| {g['name']} | {'✅' if g['ok'] else '❌'} | `{g['log']}` |")
+    status = '✅' if g['ok'] else ('⚠️' if not g.get('blocking', True) else '❌')
+    lines.append(f"| {g['name']} | {status} | {'yes' if g.get('blocking', True) else 'no'} | `{g['log']}` |")
 open(summary,'w').write('\n'.join(lines)+'\n')
 PY
 

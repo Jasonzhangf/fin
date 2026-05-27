@@ -31,7 +31,9 @@
 10. 不得把 prompt 压缩当作通过真实业务测试的手段；context 工程只能在“正常会塞满上下文”的前提下优化装配与重建。
 11. **Channel 统一绑定事实**：WebUI / Android 客户端 / QQ BOT 只是不同 channel，默认启动会话统一绑定到 `system agent`；channel adapter 只负责接入与渲染，不拥有会话业务语义，不得绕过 system agent 维护第二套会话真相。
 12. **前端语义交互唯一解析块**：用户侧不得输入/编辑 JSON；前端与用户交互只允许语义化输入（选项/自然语言/表单），由后端统一解析并写入唯一语义解析 block（JSON 真源）。前端不得实现第二套 JSON 语义解析或本地拼装业务 JSON 真相。
-
+13. **禁止污染真实客户端配置做测试**：不得把 Android/WebUI/QQBot 的真实 profile、daemon endpoint、provider profile、session binding 改成临时测试值（如 `127.0.0.1`、adb reverse、mock endpoint）再冒充真实验收。需要测试替身时必须使用独立测试 profile / 临时 runtime_home / 明确命名的测试配置，并在测试结束前验证真实配置未被改写。
+14. **本地多 agent E2E 必须真实 LLM**：本地多 agent headless E2E 必须使用真实 LLM provider 闭环，禁止用 static/mock/fake LLM 冒充真实闭环。所有本地 E2E 必须能证明：system agent 通过 dispatch tool 派发给 project agent、project agent 执行并回报 progress/result、system agent 基于 result 继续推理收口；静态 mock 只允许用于 harness 自身逻辑验证，不算多 agent 协作闭环验证。
+15. **瞬发 provider 配额/限流错误必须自动指数回退重试**：对于 `usage limit exceeded`、`weekly usage limit reached`、`quota`、`429`、`rate limit` 这类瞬发 provider 错误，不得首次失败即判最终失败；必须按 1s 起步的指数回退自动重试 5 次，只有重试耗尽后才可判失败。
 ## route-map
 1. 通用开发流程：`skills/fin-general-dev/SKILL.md`
 2. 架构归属与 crate 边界：`skills/fin-architecture/SKILL.md`
@@ -39,6 +41,7 @@
 4. 构建、版本、安装、提升与回滚：`skills/fin-build-versioning/SKILL.md`
 5. runtime 调试与事件定位：`skills/fin-runtime-debug/SKILL.md`
 6. prompt system 分层、role family、Agent-first prompt 边界、tool prompt spec：`skills/fin-prompt-system/SKILL.md`
+7. agent-driven dispatch / passive harness / mailbox truth：`skills/fin-general-dev/SKILL.md`、`skills/fin-prompt-system/SKILL.md`
 7. 系统总览：`docs/architecture/01-system-overview.md`
 8. 分层边界：`docs/architecture/02-layer-boundaries.md`
 9. runtime 模型：`docs/architecture/03-rust-runtime-model.md`
@@ -93,6 +96,7 @@
 51. project registry、wake queue、always_on / unfinished work 唤醒规则：`docs/architecture/38-project-registry-and-wakeup.md`
 52. agent presence、busy/idle/offline、resume observation model：`docs/architecture/39-agent-presence-and-resume-model.md`
 53. attached 前台 control-plane wrapper 与 continuation 顺序：`docs/architecture/40-attached-control-plane-cycle.md`
+54. agent-driven dispatch / passive harness / tool-owned routing：`docs/architecture/43-agent-driven-dispatch-and-passive-harness.md`
 
 ## mandatory-flow
 1. 先读本文件。

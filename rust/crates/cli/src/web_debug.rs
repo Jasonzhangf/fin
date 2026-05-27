@@ -54,6 +54,22 @@ impl CliDebugActionHandler {
         Ok(build_debug_binding(runtime_home, &last_run))
     }
 
+    #[cfg(test)]
+    pub(crate) fn send_message_internal(
+        &self,
+        runtime_home: &Path,
+        request: ChatSendRequest,
+    ) -> Result<ChatSendResponse, CliError> {
+        let refreshed = self.refreshed_handler(runtime_home)?;
+        refreshed.send_message_internal_with_provider_on_binding(
+            runtime_home,
+            request,
+            None,
+            &refreshed.provider,
+        )
+    }
+
+    #[cfg(not(test))]
     fn send_message_internal(
         &self,
         runtime_home: &Path,

@@ -107,3 +107,34 @@ prompt 相关改动至少做：
 - 先写 prompt 文本细节，后补 role/source/layer 边界
 - 把 `<fin_tool_calls>` 的临时形态误当作长期标准 function call 协议
 - 用 prompt 压缩规避真实 full-context 问题，而不是修正 contract / tool loop / timeout / observability
+
+## 5.1) dispatch tool 归属与 prompt 设计
+
+### dispatch tool 的角色
+`dispatch`（`agent.assign`）是 system agent 的主动工具，不是 framework 自动行为。
+
+prompt 必须让模型知道：
+- 何时应该 dispatch（任务超出当前 agent cwd/权限边界时）
+- dispatch 时必须自己生成任务描述（不允许 harness 填充 task_summary）
+- dispatch 后必须等待 project agent 的 progress/result 事件
+- 不允许 harness 绕过 model 直接给 project agent 注入业务语义
+
+### 错误设计（当前审计发现的反模式）
+- harness 在 system agent 推理前就预先 dispatch，硬编码 task_summary
+- system agent 收到 project result 后不继续推理，由 harness 直接收口
+- project agent 没有 progress 上报，静默结束
+- system self-mailbox loopback 冒充 agent 间通信
+
+### 正确设计
+- system agent 首轮推理后，自主判断是否调用 dispatch tool
+- dispatch tool call 携带模型生成的任务描述（`task_description` / `instruction`）
+- project agent 执行中产生 progress 事件，system agent 可查询或被动接收
+- project agent 完成后返回结构化 result，system agent 基于 result 继续推理
+- harness 只负责 transport（执行 mailbox send）和 observe（记录事件），不生成业务语义
+
+### dispatch 工具描述必须包含的字段
+- `target_agent_kind`: project_agent / 指定 project
+- `task_description`: **模型必须填写的任务描述字段**，禁止留空
+- `cwd`: project agent 的工作目录
+- `report_on_progress`: 是否需要持续回报
+- 禁止在 tool description 里预设默认 task_summary

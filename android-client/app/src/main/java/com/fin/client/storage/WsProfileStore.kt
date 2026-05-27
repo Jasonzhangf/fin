@@ -12,7 +12,7 @@ class WsProfileStore(context: Context) {
     private val cfgDir = File(context.filesDir, "config")
     private val cfgFile = File(cfgDir, "ws_profiles.json")
 
-    private val providerCfgFile = File(cfgDir, "provider_config_cache.json")
+    private val providerCfgFile = File(cfgDir, "runtime_config_snapshot.json")
 
     fun readAll(): List<WsProfile> {
         ensureSeed()
@@ -78,7 +78,16 @@ class WsProfileStore(context: Context) {
         if (!unique.containsKey("daemon")) {
             unique["daemon"] = defaults().first()
         }
-        val daemon = unique.remove("daemon")!!
+        val daemon = normalizeDaemonProfile(unique.remove("daemon")!!)
         return listOf(daemon) + unique.values.toList()
+    }
+
+    private fun normalizeDaemonProfile(profile: WsProfile): WsProfile {
+        val legacyEndpoint = "ws://100.66.1.82:5057/ws"
+        return if (profile.endpoint == legacyEndpoint) {
+            profile.copy(endpoint = defaults().first().endpoint)
+        } else {
+            profile
+        }
     }
 }

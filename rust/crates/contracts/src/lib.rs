@@ -24,9 +24,11 @@ pub use feedback::ControlFeedback;
 pub use owner_loop::OwnerLoopActionRecord;
 pub use records::{
     ClosureTraceRecord, ExecutionCheckpointRecord, ExecutionStateRecord, InterruptedSegmentRecord,
-    PauseCheckpointRecord, PendingInputRecord, ProviderRequestRecord, ProviderResponseRecord,
-    ReasoningViewRecord, RoundRecord, RoutingActionRecord, RoutingDecisionRecord,
-    SchedulerDecisionRecord, SchedulerTickRecord, SegmentMergeRecord, StepRecord,
+    KnowledgeLedgerRecord, LedgerIdentityRecord, LedgerRecordEnvelope, LedgerRefs,
+    LedgerTimelineIndexRecord, LedgerTrackKind, PauseCheckpointRecord, PendingInputRecord,
+    ProviderRequestRecord, ProviderResponseRecord, ReasoningViewRecord, RoundRecord,
+    RoutingActionRecord, RoutingDecisionRecord, SchedulerDecisionRecord, SchedulerTickRecord,
+    SegmentMergeRecord, SessionDetailRecord, SessionSnapshotRecord, StepRecord,
     SupervisorCycleRecord, SupervisorHeartbeatRecord, TokenUsageRecord, ToolExecutionRecord,
     TurnRecord,
 };

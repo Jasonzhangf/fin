@@ -53,6 +53,10 @@ description: Testing and harness workflow for fin. Use for replay design, fault 
 - 若复杂 live E2E 已能真实闭环但产物内容明显过泛，下一步先检查 `recent_provider_requests.json` 是否真的带入了足够的 executed-tool evidence（stdout/artifact refs/snippets），不要把“证据注入太粗”误判成 provider 或 tool dispatcher 失效
 - 当目标是验证 current history/full tool evidence，测试断言必须直接检查 follow-up rendered input 是否出现 authoritative receipt/full stdout/full patch arguments；不要只断言“调过工具了”
 - live provider/harness 禁止使用 180s/240s 这类短 wall-clock subprocess timeout 截断整条 run；最小要求是 provider waiting budget >= 15 分钟，并且 timeout 只绑定等待阶段，不绑定整条推理链墙钟
+- 本地多 agent E2E 默认必须使用真实 LLM provider；`static/mock` 只允许用于纯 harness/状态机单测，不得作为“多 agent 闭环已验证”的证据。
+- 对于 `system -> project agent` 协作，只有同时存在 `dispatch tool truth + progress mailbox + result mailbox + system resumed inference` 四段证据，才算真实闭环；缺任一项都只能算 partial truth。
+- 若脚本提供 `static/live` 两种模式，`live` 必须是默认验收模式；`static` 仅能标注为开发期快速检查，不得进入完成口径。
+- 对真实 provider smoke / local multi-agent live E2E，若日志含 `usage limit exceeded` / `weekly usage limit reached` / `quota` / `429` / `rate limit`，必须视为瞬发错误并自动按 1s、2s、4s、8s、16s 指数回退重试；第一次失败不算最终失败。
 - 若 live run 失败后只剩 `start log + agent registry`，必须判定为“partial truth / diagnosability 缺口”，不能直接把问题归咎于 provider 或模型服从性
 - `build-mainline-receipts.py` 允许按 receipt family 指定不同 source session；当 history/context、tool-loop、control-boundary 真源不在同一 session 时，必须显式传 `--history-session-id/--tool-loop-session-id/--control-session-id`
 

@@ -45,13 +45,6 @@ pub(crate) fn resolve_paths(
     runtime_home: &Path,
     binding: &DebugBinding,
 ) -> Result<Option<DaemonPaths>, CliError> {
-    if let Some(relative) = &binding.session_messages_path
-        && let Some(prefix) = relative.strip_suffix("conversation/messages.json")
-    {
-        return Ok(Some(DaemonPaths {
-            session_dir: runtime_home.join(prefix.trim_end_matches('/')),
-        }));
-    }
     let Some(session_id) = binding.session_id.as_deref() else {
         return Ok(None);
     };

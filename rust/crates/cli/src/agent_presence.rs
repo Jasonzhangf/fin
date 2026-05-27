@@ -214,7 +214,7 @@ pub(crate) fn ensure_project_agent_presence(
     project: &ProjectAgentStartupConfig,
     updated_at: &str,
 ) -> Result<AgentPresenceRecord, CliError> {
-    let agent_name = project_agent_name(project);
+    let agent_name = project_agent_name(system, project);
     let device_name = resolve_device_name(system);
     let agent_id = format!("{device_name}.{agent_name}");
     let path = presence_path(runtime_home, &agent_id);
@@ -225,7 +225,7 @@ pub(crate) fn ensure_project_agent_presence(
         agent_id,
         agent_name,
         device_name,
-        worker_id: Some(format!("worker-{}", project_agent_name(project))),
+        worker_id: Some(format!("worker-{}", project_agent_name(system, project))),
         role_id: "project".into(),
         agent_kind: "project_agent".into(),
         project_id: Some(project.project_id.clone()),
@@ -260,7 +260,7 @@ pub(crate) fn project_agent_id(
     format!(
         "{}.{}",
         resolve_device_name(system),
-        project_agent_name(project)
+        project_agent_name(system, project)
     )
 }
 
@@ -345,7 +345,7 @@ pub(crate) fn ensure_project_worker_pool(
     updated_at: &str,
 ) -> Result<Vec<AgentPresenceRecord>, CliError> {
     let mut records = Vec::new();
-    let base = project_agent_name(project);
+    let base = project_agent_name(system, project);
     for slot in 1..=project.worker_budget {
         let requested_agent_name = format!("{base}-worker-{slot:02}");
         let identity = allocate_local_agent_identity(

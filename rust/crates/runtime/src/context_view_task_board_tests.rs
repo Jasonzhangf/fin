@@ -156,7 +156,8 @@ fn context_view_combines_task_board_and_collab_backlog_for_same_active_task() {
     fs::create_dir_all(session_dir.join("tasks/registry")).expect("registry");
     fs::create_dir_all(runtime_home.join("runtime/projects")).expect("projects");
     fs::create_dir_all(runtime_home.join("runtime/assignments")).expect("assignments");
-    fs::create_dir_all(runtime_home.join("runtime/mailbox/local-worker-2")).expect("mailbox");
+    fs::create_dir_all(runtime_home.join("runtime/agents/control/mailbox/local-worker-2"))
+        .expect("mailbox");
     fs::write(
         session_dir.join("tasks/routing/latest_action.json"),
         br#"{"task_id":"task-collab","action_kind":"continue_current_task"}"#,
@@ -248,7 +249,7 @@ fn context_view_combines_task_board_and_collab_backlog_for_same_active_task() {
     )
     .expect("pending assignments");
     fs::write(
-        runtime_home.join("runtime/mailbox/local-worker-2/inbox.json"),
+        runtime_home.join("runtime/agents/control/mailbox/local-worker-2/inbox.json"),
         br#"[
   {"target_peer_id":"local-worker-2","summary":"inspect src"},
   {"target_peer_id":"local-worker-2","summary":"report back"}

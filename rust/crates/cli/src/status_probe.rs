@@ -11,6 +11,7 @@ use crate::{
     project_supervision::read_project_supervision_snapshot,
     runtime_home::read_last_run_value,
     scheduler_driver::{load_latest_owner_loop_action, load_latest_scheduler_decision},
+    session_binding::find_session_dir,
     startup_control_summary::read_startup_control_summary,
     startup_topology::render_project_registry_summary,
 };
@@ -34,20 +35,14 @@ pub(crate) fn build_status_probe_response(
     request: &ChatSendRequest,
 ) -> Result<ChatSendResponse, CliError> {
     let last_run = read_last_run_value(runtime_home).ok();
-    let progress = sibling_json::<ProgressBlock>(
-        runtime_home,
-        &last_run,
-        "session_messages_path",
-        "conversation/messages.json",
-        "progress/latest.json",
-    )?;
-    let note = sibling_json::<ExecutionNote>(
-        runtime_home,
-        &last_run,
-        "session_messages_path",
-        "conversation/messages.json",
-        "notes/latest.json",
-    )?;
+    let session_id = binding
+        .session_id
+        .clone()
+        .or_else(|| last_run_session_id(&last_run));
+    let progress =
+        session_json::<ProgressBlock>(runtime_home, session_id.as_deref(), "progress/latest.json")?;
+    let note =
+        session_json::<ExecutionNote>(runtime_home, session_id.as_deref(), "notes/latest.json")?;
     let control_feedback =
         runtime_json::<ControlFeedback>(runtime_home, &last_run, "session_control_feedback_path")?
             .or(runtime_json::<ControlFeedback>(
@@ -55,11 +50,9 @@ pub(crate) fn build_status_probe_response(
                 &last_run,
                 "current_control_feedback_path",
             )?);
-    let execution_state = sibling_json::<ExecutionStateRecord>(
+    let execution_state = session_json::<ExecutionStateRecord>(
         runtime_home,
-        &last_run,
-        "session_messages_path",
-        "conversation/messages.json",
+        session_id.as_deref(),
         "control/execution_state.json",
     )?
     .or(runtime_json::<ExecutionStateRecord>(
@@ -67,20 +60,16 @@ pub(crate) fn build_status_probe_response(
         &last_run,
         "current_execution_state_path",
     )?);
-    let pending_inputs = sibling_json::<Vec<PendingInputRecord>>(
+    let pending_inputs = session_json::<Vec<PendingInputRecord>>(
         runtime_home,
-        &last_run,
-        "session_messages_path",
-        "conversation/messages.json",
+        session_id.as_deref(),
         "queue/pending_inputs.json",
     )?;
     let owner_loop_action = load_latest_owner_loop_action(runtime_home, &binding)?;
     let scheduler_decision = load_latest_scheduler_decision(runtime_home, &binding)?;
-    let scheduler_tick = sibling_json::<SchedulerTickRecord>(
+    let scheduler_tick = session_json::<SchedulerTickRecord>(
         runtime_home,
-        &last_run,
-        "session_messages_path",
-        "conversation/messages.json",
+        session_id.as_deref(),
         "control/scheduler/latest_tick.json",
     )?
     .or(runtime_json::<SchedulerTickRecord>(
@@ -88,11 +77,9 @@ pub(crate) fn build_status_probe_response(
         &last_run,
         "current_scheduler_tick_path",
     )?);
-    let supervisor_cycle = sibling_json::<SupervisorCycleRecord>(
+    let supervisor_cycle = session_json::<SupervisorCycleRecord>(
         runtime_home,
-        &last_run,
-        "session_messages_path",
-        "conversation/messages.json",
+        session_id.as_deref(),
         "control/supervisor/latest.json",
     )?
     .or(runtime_json::<SupervisorCycleRecord>(
@@ -100,11 +87,9 @@ pub(crate) fn build_status_probe_response(
         &last_run,
         "current_supervisor_cycle_path",
     )?);
-    let supervisor_heartbeat = sibling_json::<SupervisorHeartbeatRecord>(
+    let supervisor_heartbeat = session_json::<SupervisorHeartbeatRecord>(
         runtime_home,
-        &last_run,
-        "session_messages_path",
-        "conversation/messages.json",
+        session_id.as_deref(),
         "control/supervisor/latest_heartbeat.json",
     )?
     .or(runtime_json::<SupervisorHeartbeatRecord>(
@@ -112,11 +97,9 @@ pub(crate) fn build_status_probe_response(
         &last_run,
         "current_supervisor_heartbeat_path",
     )?);
-    let daemon_state = sibling_json::<DaemonStateRecord>(
+    let daemon_state = session_json::<DaemonStateRecord>(
         runtime_home,
-        &last_run,
-        "session_messages_path",
-        "conversation/messages.json",
+        session_id.as_deref(),
         "control/daemon/latest_state.json",
     )?
     .or(runtime_json::<DaemonStateRecord>(
@@ -124,11 +107,9 @@ pub(crate) fn build_status_probe_response(
         &last_run,
         "current_daemon_state_path",
     )?);
-    let daemon_recovery = sibling_json::<DaemonRecoveryActionRecord>(
+    let daemon_recovery = session_json::<DaemonRecoveryActionRecord>(
         runtime_home,
-        &last_run,
-        "session_messages_path",
-        "conversation/messages.json",
+        session_id.as_deref(),
         "control/daemon/latest_recovery_action.json",
     )?
     .or(runtime_json::<DaemonRecoveryActionRecord>(
@@ -136,11 +117,9 @@ pub(crate) fn build_status_probe_response(
         &last_run,
         "current_daemon_recovery_action_path",
     )?);
-    let routing_action = sibling_json::<RoutingActionRecord>(
+    let routing_action = session_json::<RoutingActionRecord>(
         runtime_home,
-        &last_run,
-        "session_messages_path",
-        "conversation/messages.json",
+        session_id.as_deref(),
         "tasks/routing/latest_action.json",
     )?
     .or(runtime_json::<RoutingActionRecord>(
@@ -434,15 +413,12 @@ fn probe_freshness(
     "unavailable".into()
 }
 
-fn sibling_json<T: DeserializeOwned>(
+fn session_json<T: DeserializeOwned>(
     runtime_home: &Path,
-    last_run: &Option<Value>,
-    field: &str,
-    source_suffix: &str,
+    session_id: Option<&str>,
     target_suffix: &str,
 ) -> Result<Option<T>, CliError> {
-    let Some(path) = sibling_path(runtime_home, last_run, field, source_suffix, target_suffix)
-    else {
+    let Some(path) = session_path(runtime_home, session_id, target_suffix) else {
         return Ok(None);
     };
     read_json_optional(&path)
@@ -467,20 +443,22 @@ fn runtime_path(runtime_home: &Path, last_run: &Option<Value>, field: &str) -> O
         .map(|relative| runtime_home.join(relative))
 }
 
-fn sibling_path(
+fn session_path(
     runtime_home: &Path,
-    last_run: &Option<Value>,
-    field: &str,
-    source_suffix: &str,
+    session_id: Option<&str>,
     target_suffix: &str,
 ) -> Option<PathBuf> {
-    let relative = last_run
+    let session_id = session_id?;
+    let (_, _, dir) = find_session_dir(runtime_home, session_id)?;
+    Some(dir.join(target_suffix))
+}
+
+fn last_run_session_id(last_run: &Option<Value>) -> Option<String> {
+    last_run
         .as_ref()
-        .and_then(|value| value.get(field))
-        .and_then(Value::as_str)?;
-    relative
-        .strip_suffix(source_suffix)
-        .map(|prefix| runtime_home.join(format!("{prefix}{target_suffix}")))
+        .and_then(|value| value.get("session_id"))
+        .and_then(Value::as_str)
+        .map(str::to_string)
 }
 
 fn read_json_optional<T: DeserializeOwned>(path: &Path) -> Result<Option<T>, CliError> {

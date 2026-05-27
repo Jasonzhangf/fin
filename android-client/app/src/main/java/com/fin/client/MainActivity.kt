@@ -4,6 +4,7 @@ import android.annotation.SuppressLint
 import android.os.Bundle
 import android.graphics.Color
 import android.view.Gravity
+import android.view.View
 import android.view.inputmethod.InputMethodManager
 import android.content.Context
 import android.widget.EditText
@@ -19,7 +20,6 @@ import android.webkit.WebChromeClient
 import android.webkit.WebSettings
 import android.webkit.WebView
 import android.webkit.WebViewClient
-import android.view.MotionEvent
 import android.view.ViewTreeObserver
 import androidx.activity.ComponentActivity
 import java.io.File
@@ -32,6 +32,9 @@ class MainActivity : ComponentActivity() {
     private lateinit var webView: WebView
     private lateinit var nativeInput: EditText
     private var nativeInputBar: LinearLayout? = null
+    private var nativeComposer: LinearLayout? = null
+    private var nativeActionRow: LinearLayout? = null
+    private var nativeSendButton: TextView? = null
     private val tag = "fin-main"
 
     @SuppressLint("SetJavaScriptEnabled")
@@ -42,7 +45,13 @@ class MainActivity : ComponentActivity() {
         webView.isFocusableInTouchMode = true
         webView.requestFocus()
         val profileStore = WsProfileStore(this)
-        val bridge = MobileBridge(this, profileStore)
+        val bridge = MobileBridge(
+            this,
+            profileStore,
+            { theme -> applyNativeInputTheme(theme) },
+            { mode -> applyNativeChromeMode(mode) },
+        )
+        bridge.attachWebView(webView)
 
         webView.settings.apply {
             javaScriptEnabled = true
@@ -58,19 +67,6 @@ class MainActivity : ComponentActivity() {
             }
         }
 
-
-        webView.setOnTouchListener { v, event ->
-            if (event.action == MotionEvent.ACTION_UP) {
-                v.requestFocus()
-                (getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager).showSoftInput(v, InputMethodManager.SHOW_IMPLICIT)
-            }
-            false
-        }
-        webView.setOnFocusChangeListener { v, hasFocus ->
-            if (hasFocus) {
-                (getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager).showSoftInput(v, InputMethodManager.SHOW_IMPLICIT)
-            }
-        }
         webView.addJavascriptInterface(bridge, "FinMobileBridge")
         bridge.appendConnectionEvent("app.onCreate webview_init")
 
@@ -158,6 +154,7 @@ class MainActivity : ComponentActivity() {
             background = rounded(Color.rgb(21, 24, 31), 24, 1, Color.rgb(52, 58, 70))
             elevation = dp(10).toFloat()
         }
+        nativeComposer = composer
         outer.addView(composer, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT))
 
         nativeInput = EditText(this).apply {
@@ -192,6 +189,7 @@ class MainActivity : ComponentActivity() {
             gravity = Gravity.CENTER_VERTICAL
             setPadding(0, dp(8), 0, 0)
         }
+        nativeActionRow = actionRow
         val plus = TextView(this).apply {
             text = "+"
             textSize = 23f
@@ -233,9 +231,54 @@ class MainActivity : ComponentActivity() {
                 }
             }
         }
+        nativeSendButton = send
         actionRow.addView(send, LinearLayout.LayoutParams(dp(36), dp(36)))
         composer.addView(actionRow, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT))
+        applyNativeInputTheme("finger")
         return outer
+    }
+
+    private fun applyNativeInputTheme(theme: String) {
+        val light = theme == "sunrise" || theme == "paper"
+        val composerBg = if (light) Color.rgb(255, 250, 243) else Color.rgb(17, 24, 39)
+        val composerStroke = if (light) Color.rgb(222, 212, 200) else Color.rgb(39, 50, 68)
+        val textColor = if (light) Color.rgb(32, 26, 22) else Color.rgb(238, 242, 247)
+        val mutedColor = if (light) Color.rgb(117, 106, 95) else Color.rgb(152, 162, 179)
+        val chipBg = if (light) Color.rgb(238, 226, 210) else Color.rgb(24, 34, 53)
+        val sendBg = if (light) Color.rgb(180, 83, 9) else Color.rgb(122, 162, 247)
+        val sendText = if (light) Color.WHITE else Color.rgb(8, 17, 31)
+        fun dp(v: Int): Int = (v * resources.displayMetrics.density).toInt()
+        fun rounded(color: Int, radiusDp: Int, strokeDp: Int = 0, strokeColor: Int = Color.TRANSPARENT) =
+            android.graphics.drawable.GradientDrawable().apply {
+                shape = android.graphics.drawable.GradientDrawable.RECTANGLE
+                cornerRadius = dp(radiusDp).toFloat()
+                setColor(color)
+                if (strokeDp > 0) setStroke(dp(strokeDp), strokeColor)
+            }
+        nativeComposer?.background = rounded(composerBg, 24, 1, composerStroke)
+        nativeInput.setTextColor(textColor)
+        nativeInput.setHintTextColor(mutedColor)
+        nativeActionRow?.let { row ->
+            for (i in 0 until row.childCount) {
+                val child = row.getChildAt(i)
+                if (child is TextView && child !== nativeSendButton) {
+                    child.setTextColor(textColor)
+                    child.background = rounded(chipBg, 18)
+                }
+            }
+        }
+        nativeSendButton?.setTextColor(sendText)
+        nativeSendButton?.background = rounded(sendBg, 18)
+    }
+
+    private fun applyNativeChromeMode(mode: String) {
+        val sessionsOpen = mode == "sessions"
+        nativeInputBar?.visibility = if (sessionsOpen) View.GONE else View.VISIBLE
+        if (sessionsOpen) {
+            nativeInput.clearFocus()
+            val imm = getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager
+            imm.hideSoftInputFromWindow(nativeInput.windowToken, 0)
+        }
     }
 
     private fun runUpdateSelfTestIfRequested(bridge: MobileBridge) {

@@ -86,6 +86,12 @@ struct AgentRunStatusRequest {
     result_refs: Vec<String>,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+struct AgentMailboxReceiveRequest {
+    agent_id: String,
+    lease_id: String,
+}
+
 pub fn serve_agent_rpc(
     runtime_home: PathBuf,
     config: AgentRpcConfig,
@@ -160,6 +166,9 @@ fn response_for_agent_rpc_request(
         ("POST", "/agent/v1/heartbeat") => heartbeat_response(request, runtime_home, config),
         ("GET", "/agent/v1/agents") => agents_response(runtime_home, config),
         ("POST", "/agent/v1/mailbox/send") => mailbox_send_response(request, runtime_home, config),
+        ("POST", "/agent/v1/mailbox/receive") => {
+            mailbox_receive_response(request, runtime_home, config)
+        }
         ("POST", "/agent/v1/run/status") => run_status_response(request, runtime_home, config),
         _ => json_response(404, json!({"ok": false, "error": "not_found"})),
     }
@@ -366,6 +375,38 @@ fn mailbox_send_response(
     }
 }
 
+fn mailbox_receive_response(
+    request: &AgentRpcRequest,
+    runtime_home: &Path,
+    config: &AgentRpcConfig,
+) -> AgentRpcResponse {
+    let payload = match serde_json::from_slice::<AgentMailboxReceiveRequest>(&request.body) {
+        Ok(value) => value,
+        Err(err) => {
+            return json_response(
+                400,
+                json!({"ok": false, "error": format!("invalid_body: {err}")}),
+            );
+        }
+    };
+    let now = now_ms();
+    if let Err(err) = refresh_lease(
+        runtime_home,
+        payload.agent_id.as_str(),
+        payload.lease_id.as_str(),
+        now,
+        config,
+    ) {
+        return json_response(403, json!({"ok": false, "error": err}));
+    }
+    let store = AgentControlStore::new(runtime_home);
+    match store.consume_next_mailbox_message(payload.agent_id.as_str(), "rpc_consumed") {
+        Ok(Some(message)) => json_response(200, json!({"ok": true, "message": message})),
+        Ok(None) => json_response(200, json!({"ok": true, "message": Value::Null})),
+        Err(err) => json_response(400, json!({"ok": false, "error": err})),
+    }
+}
+
 fn run_status_response(
     request: &AgentRpcRequest,
     runtime_home: &Path,
@@ -397,7 +438,7 @@ fn run_status_response(
         return json_response(403, json!({"ok": false, "error": err}));
     }
     let store = AgentControlStore::new(runtime_home);
-    if store.wait_agent(payload.agent_run_id.as_str()).is_err() {
+    if store.read_run(payload.agent_run_id.as_str()).is_none() {
         if let Err(err) = store.resume_agent(
             payload.agent_id.as_str(),
             Some(payload.agent_run_id.as_str()),
@@ -554,7 +595,7 @@ fn upsert_agent_presence(
         "agent_id": payload.agent_id,
         "agent_name": payload.agent_name,
         "device_name": payload.machine,
-        "role": if matches!(payload.kind, AgentKind::SystemAgent) { "system" } else { "project" },
+        "role_id": if matches!(payload.kind, AgentKind::SystemAgent) { "system" } else { "project" },
         "agent_kind": if matches!(payload.kind, AgentKind::SystemAgent) { "system_agent" } else { "project_agent" },
         "status": status,
         "current_phase": phase,
@@ -585,6 +626,9 @@ fn upsert_peer_registry(
     peers.push(json!({
         "peer_id": payload.agent_id,
         "peer_kind": if matches!(payload.kind, AgentKind::SystemAgent) { "system_agent" } else { "project_agent" },
+        "agent_name": payload.agent_name,
+        "display_name": remote_agent_display_name(payload, None),
+        "device_name": payload.machine,
         "presence_state": presence_state,
         "runtime_state": runtime_state,
         "connectivity_state": "network_connected",
@@ -593,8 +637,23 @@ fn upsert_peer_registry(
         "updated_at": now.to_string(),
         "last_heartbeat_at": now.to_string(),
         "project_id": payload.project_id,
+        "endpoint": payload.endpoint,
     }));
     write_json(&path, &value)
+}
+
+fn remote_agent_display_name(payload: &AgentHandshakeRequest, remote_addr: Option<&str>) -> String {
+    let prefix = payload
+        .machine
+        .trim()
+        .is_empty()
+        .then(|| {
+            remote_addr
+                .and_then(|value| value.rsplit_once(':').map(|(host, _)| host).or(Some(value)))
+        })
+        .flatten()
+        .unwrap_or_else(|| payload.machine.trim());
+    format!("{}.{}", prefix, payload.agent_name.trim())
 }
 
 fn read_request(stream: &mut TcpStream) -> Result<AgentRpcRequest, DebugDataError> {

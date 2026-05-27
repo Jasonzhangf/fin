@@ -130,9 +130,10 @@ fn system_context_view_loads_active_and_registered_projects_from_runtime_registr
 ]"#,
     )
     .expect("pending assignments");
-    fs::create_dir_all(runtime_home.join("runtime/mailbox/local-worker-b")).expect("mailbox");
+    fs::create_dir_all(runtime_home.join("runtime/agents/control/mailbox/local-worker-b"))
+        .expect("mailbox");
     fs::write(
-        runtime_home.join("runtime/mailbox/local-worker-b/inbox.json"),
+        runtime_home.join("runtime/agents/control/mailbox/local-worker-b/inbox.json"),
         br#"[
   {"target_peer_id":"local-worker-b"},
   {"target_peer_id":"local-worker-b"}

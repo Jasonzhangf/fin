@@ -14,6 +14,10 @@ pub(crate) enum Command {
     ConfigCheck {
         path: String,
     },
+    ConfigImportRcc {
+        path: String,
+        provider_json: String,
+    },
     HomeInit {
         path: String,
     },
@@ -49,18 +53,19 @@ pub(crate) enum Command {
         target: String,
         run_id: Option<String>,
     },
-    ProjectAgentAdd {
+    ProjectAgent {
         path: String,
-        project_id: String,
-        project_root: String,
-        agent_name: Option<String>,
+        args: Vec<String>,
     },
-    ProjectAgentRemove {
+    LocalMultiAgentHarness {
         path: String,
-        project_id: String,
+        project_cwd: String,
     },
-    ProjectAgentList {
-        path: String,
+    LocalMultiAgentNode {
+        runtime_home: String,
+        role: String,
+        agent_id: String,
+        config_path: Option<String>,
     },
     BuildDev {
         path: String,
@@ -85,6 +90,10 @@ pub(crate) fn parse_command(args: &[String]) -> Result<Command, CliError> {
         [cmd, path] if cmd == "stop" => Ok(Command::Stop { path: path.clone() }),
         [cmd, path] if cmd == "daemon-run" => Ok(Command::DaemonRun { path: path.clone() }),
         [cmd, path] if cmd == "config-check" => Ok(Command::ConfigCheck { path: path.clone() }),
+        [cmd, path, provider_json] if cmd == "config-import-rcc" => Ok(Command::ConfigImportRcc {
+            path: path.clone(),
+            provider_json: provider_json.clone(),
+        }),
         [cmd, path] if cmd == "home-init" => Ok(Command::HomeInit { path: path.clone() }),
         [cmd, path] if cmd == "control-boundary-scenario" => {
             Ok(Command::ControlBoundaryScenario { path: path.clone() })
@@ -128,34 +137,31 @@ pub(crate) fn parse_command(args: &[String]) -> Result<Command, CliError> {
                 run_id: Some(run_id.clone()),
             })
         }
-        [cmd, path, subcmd, project_id, project_root]
-            if cmd == "project-agent" && subcmd == "add" =>
-        {
-            Ok(Command::ProjectAgentAdd {
+        [cmd, path, rest @ ..] if cmd == "project-agent" => Ok(Command::ProjectAgent {
+            path: path.clone(),
+            args: rest.to_vec(),
+        }),
+        [cmd, path, project_cwd] if cmd == "local-multi-agent-harness" => {
+            Ok(Command::LocalMultiAgentHarness {
                 path: path.clone(),
-                project_id: project_id.clone(),
-                project_root: project_root.clone(),
-                agent_name: None,
+                project_cwd: project_cwd.clone(),
             })
         }
-        [cmd, path, subcmd, project_id, project_root, agent_name]
-            if cmd == "project-agent" && subcmd == "add" =>
-        {
-            Ok(Command::ProjectAgentAdd {
-                path: path.clone(),
-                project_id: project_id.clone(),
-                project_root: project_root.clone(),
-                agent_name: Some(agent_name.clone()),
+        [cmd, runtime_home, role, agent_id] if cmd == "local-multi-agent-node" => {
+            Ok(Command::LocalMultiAgentNode {
+                runtime_home: runtime_home.clone(),
+                role: role.clone(),
+                agent_id: agent_id.clone(),
+                config_path: None,
             })
         }
-        [cmd, path, subcmd, project_id] if cmd == "project-agent" && subcmd == "remove" => {
-            Ok(Command::ProjectAgentRemove {
-                path: path.clone(),
-                project_id: project_id.clone(),
+        [cmd, runtime_home, role, agent_id, config_path] if cmd == "local-multi-agent-node" => {
+            Ok(Command::LocalMultiAgentNode {
+                runtime_home: runtime_home.clone(),
+                role: role.clone(),
+                agent_id: agent_id.clone(),
+                config_path: Some(config_path.clone()),
             })
-        }
-        [cmd, path, subcmd] if cmd == "project-agent" && subcmd == "list" => {
-            Ok(Command::ProjectAgentList { path: path.clone() })
         }
         [cmd, path] if cmd == "web-debug" => Ok(Command::WebDebug {
             path: path.clone(),

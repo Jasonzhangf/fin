@@ -1,5 +1,7 @@
 use super::{ProviderLiveSmokeLayout, ProviderLiveSmokeReport};
-use crate::{CliError, fs_utils::write_file, time::local_timestamp_now};
+use crate::{
+    CliError, fs_utils::write_file, session_binding::find_session_dir, time::local_timestamp_now,
+};
 use fin_runtime::ClosureRun;
 use serde_json::json;
 use std::{fs, path::Path};
@@ -10,7 +12,7 @@ pub(super) fn build_report(
     transcript: &LiveTranscriptRun,
     projection_json: &Path,
     snapshot_json: &Path,
-    last_run: &serde_json::Value,
+    _last_run: &serde_json::Value,
 ) -> Result<ProviderLiveSmokeReport, CliError> {
     let current_context_path = runtime_home.join("runtime/current/current_context.json");
     let current_provider_requests_path =
@@ -22,20 +24,11 @@ pub(super) fn build_report(
     let current_control_feedback_path =
         runtime_home.join("runtime/current/current_control_feedback.json");
     let current_tool_records_path = runtime_home.join("runtime/current/current_tool_records.json");
-    let session_recent_contexts_path = runtime_home.join(required_last_run_path(
-        last_run,
-        "session_recent_contexts_path",
-    )?);
-    let session_messages_path =
-        runtime_home.join(required_last_run_path(last_run, "session_messages_path")?);
-    let session_recent_rounds_path = runtime_home.join(required_last_run_path(
-        last_run,
-        "session_recent_rounds_path",
-    )?);
-    let session_recent_steps_path = runtime_home.join(required_last_run_path(
-        last_run,
-        "session_recent_step_records_path",
-    )?);
+    let session_dir = resolve_session_dir(runtime_home, transcript.session_id.as_str())?;
+    let session_recent_contexts_path = session_dir.join("context/recent_contexts.json");
+    let session_messages_path = session_dir.join("conversation/messages.json");
+    let session_recent_rounds_path = session_dir.join("rounds/recent_rounds.json");
+    let session_recent_steps_path = session_dir.join("closures/recent_closures.json");
 
     for path in [
         projection_json,
@@ -84,6 +77,7 @@ pub(super) fn build_report(
             "provider live smoke fell back to runtime_heuristic control feedback".into(),
         ));
     }
+
     let reasoning_stop_present = tool_records.iter().any(|record| {
         record.get("tool_name").and_then(serde_json::Value::as_str) == Some("reasoning.stop")
             && record.get("status").and_then(serde_json::Value::as_str) == Some("completed")
@@ -137,14 +131,16 @@ pub(super) fn build_report(
     })
 }
 
-fn required_last_run_path<'a>(
-    last_run: &'a serde_json::Value,
-    key: &str,
-) -> Result<&'a str, CliError> {
-    last_run
-        .get(key)
-        .and_then(serde_json::Value::as_str)
-        .ok_or_else(|| CliError::InvalidInstallState(format!("missing last_run key '{key}'")))
+fn resolve_session_dir(
+    runtime_home: &Path,
+    session_id: &str,
+) -> Result<std::path::PathBuf, CliError> {
+    let (_, _, dir) = find_session_dir(runtime_home, session_id).ok_or_else(|| {
+        CliError::InvalidInstallState(format!(
+            "missing session dir for provider live smoke session '{session_id}'"
+        ))
+    })?;
+    Ok(dir)
 }
 
 fn read_json_array(path: &Path) -> Result<Vec<serde_json::Value>, CliError> {

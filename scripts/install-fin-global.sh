@@ -12,10 +12,7 @@ BUILD_VERSION="${FIN_BUILD_VERSION:-}"
 mkdir -p "$FIN_HOME/config" "$GLOBAL_BIN_DIR"
 
 if [[ ! -f "$USER_TOML" ]]; then
-  if [[ -x "$ROOT_DIR/scripts/generate-test-user-toml.py" && -f "$HOME/.rcc/provider/ali-coding-plan/config.v2.json" ]]; then
-    python3 "$ROOT_DIR/scripts/generate-test-user-toml.py" --output "$USER_TOML"
-  else
-    cat > "$USER_TOML" <<'TOML'
+  cat > "$USER_TOML" <<'TOML'
 default_provider = "openai"
 
 [runtime]
@@ -27,7 +24,6 @@ base_url = "https://api.openai.com/v1"
 model = "gpt-5"
 api_key_env = "OPENAI_API_KEY"
 TOML
-  fi
 fi
 
 if [[ "$(uname -s)" == "Darwin" ]]; then

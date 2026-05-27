@@ -7,6 +7,10 @@ fn default_system_local_worker_budget() -> usize {
     startup_defaults().system_agent.local_worker_budget
 }
 
+fn default_system_agent_name() -> Option<String> {
+    Some(startup_defaults().system_agent.agent_name.clone())
+}
+
 fn default_project_worker_budget() -> usize {
     startup_defaults().project_agent_defaults.worker_budget
 }
@@ -21,6 +25,10 @@ fn default_auto_connect() -> bool {
 
 fn default_project_auto_resume() -> bool {
     startup_defaults().project_agent_defaults.auto_resume
+}
+
+fn default_project_name_pool() -> Vec<String> {
+    startup_defaults().project_agent_defaults.name_pool.clone()
 }
 
 fn startup_defaults() -> &'static RuntimeStartupDefaultsFile {
@@ -46,6 +54,7 @@ struct RuntimeStartupDefaultsFile {
 
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
 struct SystemAgentStartupDefaults {
+    agent_name: String,
     local_worker_budget: usize,
     auto_resume: bool,
 }
@@ -55,10 +64,13 @@ struct ProjectAgentStartupDefaults {
     worker_budget: usize,
     auto_resume: bool,
     auto_connect: bool,
+    name_pool: Vec<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SystemAgentStartupConfig {
+    #[serde(default = "default_system_agent_name")]
+    pub agent_name: Option<String>,
     #[serde(default = "default_system_local_worker_budget")]
     pub local_worker_budget: usize,
     #[serde(default = "default_auto_resume")]
@@ -68,6 +80,7 @@ pub struct SystemAgentStartupConfig {
 impl Default for SystemAgentStartupConfig {
     fn default() -> Self {
         Self {
+            agent_name: default_system_agent_name(),
             local_worker_budget: default_system_local_worker_budget(),
             auto_resume: default_auto_resume(),
         }
@@ -76,6 +89,9 @@ impl Default for SystemAgentStartupConfig {
 
 impl SystemAgentStartupConfig {
     pub fn validate(&self) -> Result<(), ConfigError> {
+        if let Some(agent_name) = &self.agent_name {
+            require_non_empty("runtime.startup.system_agent.agent_name", agent_name)?;
+        }
         if self.local_worker_budget == 0 {
             return Err(ConfigError::Validation {
                 message: "runtime.startup.system_agent.local_worker_budget must be greater than 0"
@@ -155,17 +171,32 @@ impl ProjectAgentStartupConfig {
     }
 }
 
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct RuntimeStartupConfig {
     #[serde(default)]
     pub system_agent: SystemAgentStartupConfig,
     #[serde(default)]
     pub project_agents: Vec<ProjectAgentStartupConfig>,
+    #[serde(default = "default_project_name_pool")]
+    pub project_agent_name_pool: Vec<String>,
+}
+
+impl Default for RuntimeStartupConfig {
+    fn default() -> Self {
+        Self {
+            system_agent: SystemAgentStartupConfig::default(),
+            project_agents: Vec::new(),
+            project_agent_name_pool: default_project_name_pool(),
+        }
+    }
 }
 
 impl RuntimeStartupConfig {
     pub fn validate(&self) -> Result<(), ConfigError> {
         self.system_agent.validate()?;
+        for name in &self.project_agent_name_pool {
+            require_non_empty("runtime.startup.project_agent_name_pool", name)?;
+        }
         for project in &self.project_agents {
             project.validate()?;
         }
@@ -181,10 +212,25 @@ mod tests {
     fn startup_defaults_are_loaded_from_embedded_config() {
         let defaults = startup_defaults();
         assert_eq!(defaults.system_agent.local_worker_budget, 4);
+        assert_eq!(defaults.system_agent.agent_name, "Kobe");
         assert!(defaults.system_agent.auto_resume);
         assert_eq!(defaults.project_agent_defaults.worker_budget, 4);
         assert!(defaults.project_agent_defaults.auto_resume);
         assert!(defaults.project_agent_defaults.auto_connect);
+        assert_eq!(defaults.project_agent_defaults.name_pool.len(), 20);
+        assert!(
+            RuntimeStartupConfig::default()
+                .system_agent
+                .agent_name
+                .as_deref()
+                .is_some_and(|name| name == "Kobe")
+        );
+        assert_eq!(
+            RuntimeStartupConfig::default()
+                .project_agent_name_pool
+                .len(),
+            20
+        );
     }
 
     #[test]
@@ -215,6 +261,7 @@ mod tests {
                     auto_connect: true,
                 },
             ],
+            project_agent_name_pool: default_project_name_pool(),
         }
         .validate()
         .expect("startup config should validate");
@@ -235,6 +282,7 @@ mod tests {
                 auto_resume: true,
                 auto_connect: true,
             }],
+            project_agent_name_pool: default_project_name_pool(),
         }
         .validate()
         .expect_err("local project without root must fail");

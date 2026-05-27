@@ -236,6 +236,12 @@ fn response_for_chat_js_serves_compiled_module() {
     let body = String::from_utf8(response.body).expect("js should be utf8");
     assert_eq!(response.status_code, 200);
     assert!(body.contains("export class ChatPane"));
+    assert!(body.contains("data-render-style=\"chat-thread\""));
+    assert!(body.contains("renderConversationThreads"));
+    assert!(body.contains("activity-pinned-lane"));
+    assert!(body.contains("renderPinnedSourceCard"));
+    assert!(body.contains("compareTimeline"));
+    assert!(body.contains("turnTimestamp"));
 }
 
 #[test]
@@ -393,6 +399,36 @@ fn response_for_session_messages_reads_runtime_artifact_via_last_run() {
         br#"[{"role":"user","content":"hello"}]"#,
         "hello",
     );
+}
+
+#[test]
+fn response_for_session_messages_uses_session_id_when_last_run_path_missing() {
+    let runtime_home = std::env::temp_dir().join(format!(
+        "fin-debug-session-pathless-{}",
+        SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("time should work")
+            .as_nanos()
+    ));
+    let current_dir = runtime_home.join("runtime/current");
+    let session_dir = runtime_home.join("sessions/2026/04/session-1");
+    std::fs::create_dir_all(&current_dir).expect("current dir");
+    std::fs::create_dir_all(session_dir.join("conversation")).expect("conversation dir");
+    std::fs::write(
+        current_dir.join("last_run.json"),
+        br#"{"session_id":"session-1","task_id":"task-1"}"#,
+    )
+    .expect("last_run");
+    std::fs::write(
+        session_dir.join("conversation/messages.json"),
+        br#"[{"role":"user","content":"hello-ledger"}]"#,
+    )
+    .expect("messages");
+
+    let response = response_for_path(API_SESSION_MESSAGES_PATH, &runtime_home);
+    assert_eq!(response.status_code, 200);
+    let body = String::from_utf8(response.body).expect("utf8");
+    assert!(body.contains("hello-ledger"));
 }
 
 #[test]

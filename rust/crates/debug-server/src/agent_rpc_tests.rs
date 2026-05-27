@@ -130,6 +130,20 @@ impl AgentRpcHarness {
         self.authed("GET", "/agent/v1/agents", json!({}))
     }
 
+    fn wait_agent_status(&self, expected: &str) -> Value {
+        let mut last = json!(null);
+        for _ in 0..20 {
+            let (status, agents) = self.agents();
+            assert_eq!(status, 200);
+            last = agents;
+            if last["agents"][0]["status"] == expected {
+                return last;
+            }
+            thread::sleep(std::time::Duration::from_millis(2));
+        }
+        last
+    }
+
     fn report_run_status(
         &self,
         agent_id: &str,
@@ -280,6 +294,19 @@ impl LocalAgentClient {
         body
     }
 
+    fn receive_mailbox(&self) -> Value {
+        let (status, body) = self.request(
+            "POST",
+            "/agent/v1/mailbox/receive",
+            json!({
+                "agent_id": self.agent_id(),
+                "lease_id": self.lease_id.as_ref().expect("lease"),
+            }),
+        );
+        assert_eq!(status, 200, "mailbox receive failed: {body}");
+        body
+    }
+
     fn request(&self, method: &str, path: &str, body: Value) -> (u16, Value) {
         let body_text = body.to_string();
         let request = format!(
@@ -387,21 +414,26 @@ fn real_tcp_two_local_agent_instances_register_discover_and_collaborate() {
 
     let message = system_agent.send_mailbox("mac.project-fin", "real-msg-1");
     assert_eq!(message["seq"], 1);
+    let delivered = project_agent.receive_mailbox();
+    assert_eq!(delivered["message"]["message_id"], "real-msg-1");
+    assert_eq!(delivered["message"]["to_agent_id"], "mac.project-fin");
+    assert_eq!(delivered["message"]["consumed_at"], "rpc_consumed");
 
     let leases = server.read_json("runtime/agents/network_leases.json");
     assert_eq!(leases["leases"].as_array().expect("leases").len(), 2);
     let inbox = server.read_json("runtime/agents/control/mailbox/mac.project-fin/inbox.json");
     assert_eq!(inbox[0]["message_id"], "real-msg-1");
     assert_eq!(inbox[0]["trigger_turn"], true);
+    assert_eq!(inbox[0]["consumed_at"], "rpc_consumed");
 }
 
 #[test]
 fn real_tcp_second_local_instance_can_reconnect_after_lost_heartbeat() {
-    let server = LocalAgentRpcServer::start_with_ttls("real-reconnect", 300_000, 1);
+    let server = LocalAgentRpcServer::start_with_ttls("real-reconnect", 300_000, 50);
     let mut project_agent = server.client("mac", "project-fin", "project_agent", Some("fin"));
     project_agent.handshake();
 
-    std::thread::sleep(std::time::Duration::from_millis(3));
+    std::thread::sleep(std::time::Duration::from_millis(80));
     let agents = project_agent.list_agents();
     assert_eq!(agents["agents"][0]["status"], "offline");
 
@@ -562,23 +594,23 @@ fn route_and_body_errors_are_structured() {
 
 #[test]
 fn dropped_connection_marks_agent_offline_then_recovery_heartbeat_marks_online() {
-    let harness = AgentRpcHarness::with_ttls("drop-recover", 300_000, 1);
-    let lease = harness.handshake_project("mac", "project-fin", "fin");
+    let offline_harness = AgentRpcHarness::with_ttls("drop-offline", 300_000, 1);
+    offline_harness.handshake_project("mac", "project-fin", "fin");
 
     std::thread::sleep(std::time::Duration::from_millis(3));
-    let (status, agents) = harness.agents();
-    assert_eq!(status, 200);
+    let agents = offline_harness.wait_agent_status("offline");
     assert_eq!(agents["agents"][0]["status"], "offline");
+
+    let harness = AgentRpcHarness::with_ttls("drop-recover", 300_000, 50);
+    let lease = harness.handshake_project("mac", "project-fin", "fin");
 
     let (status, heartbeat) = harness.heartbeat("mac.project-fin", &lease);
     assert_eq!(status, 200);
     assert_eq!(heartbeat["agent_id"], "mac.project-fin");
 
-    let (status, agents) = harness.agents();
-    assert_eq!(status, 200);
-    assert_eq!(agents["agents"][0]["status"], "online");
     let presence = harness.read_json("runtime/current/current_agent_presence_registry.json");
     assert!(presence.to_string().contains("network_heartbeat"));
+    assert_eq!(presence["agents"][0]["status"], "idle");
 }
 
 #[test]

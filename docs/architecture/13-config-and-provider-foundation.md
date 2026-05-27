@@ -118,7 +118,7 @@ M1 阶段，`user.toml` 只暴露最小必要项，例如：
 
 - `default_provider = "ali-coding-plan"`
 - `protocol = "anthropic-wire"`
-- `base_url = "https://coding.dashscope.aliyuncs.com/apps/anthropic"`
+- `base_url = "https://coding.dashscope.aliyuncs.com/apps/anthropic/v1"`
 - `model = "qwen3.6-plus"`
 - 优先写 `api_key_env = "ALI_CODINGPLAN_KEY"`，避免把真实 key 落进 `user.toml`
 

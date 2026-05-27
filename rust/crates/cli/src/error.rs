@@ -3,7 +3,7 @@ use thiserror::Error;
 #[derive(Debug, Error)]
 pub enum CliError {
     #[error(
-        "usage: fin <start|stop|daemon-run|config-check|home-init|control-boundary-scenario|mainline-scenario|runtime-session|debug-projection|transcript-session|provider-live-smoke|qqbot-live-receipt|web-debug|build-dev|install-dev|promote|rollback> <user.toml> [input|port|build-version|transcript.json|qqbot-target|run-id]"
+        "usage: fin <start|stop|daemon-run|config-check|config-import-rcc|home-init|control-boundary-scenario|mainline-scenario|runtime-session|debug-projection|transcript-session|provider-live-smoke|qqbot-live-receipt|project-agent|local-multi-agent-harness|local-multi-agent-node|web-debug|build-dev|install-dev|promote|rollback> <user.toml> [args...]"
     )]
     Usage,
     #[error("invalid port: {0}")]

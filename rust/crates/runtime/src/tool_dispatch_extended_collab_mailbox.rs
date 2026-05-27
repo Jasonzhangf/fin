@@ -2,19 +2,10 @@ use crate::tool_dispatch::{
     ToolDispatchInput, ToolDispatchOutcome, failed_record, read_bool, read_string, read_u64,
     runtime_home_from_context, short_text,
 };
+use crate::{AgentControlStore, SendAgentInput};
 use fin_contracts::ToolExecutionRecord;
-use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
-use std::{fs, path::Path};
-
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
-struct MailboxMessage {
-    message_id: String,
-    from_peer_id: String,
-    target_peer_id: String,
-    message: Value,
-    created_at: String,
-}
+use std::path::Path;
 
 pub(super) fn handle_mailbox_send(
     outcome: &mut ToolDispatchOutcome,
@@ -51,43 +42,38 @@ pub(super) fn handle_mailbox_send(
         return true;
     };
 
-    let inbox_path = runtime_home.join(format!("runtime/mailbox/{target_peer_id}/inbox.json"));
-    let mut inbox = match read_json::<Vec<MailboxMessage>>(&inbox_path) {
-        Ok(Some(items)) => items,
-        Ok(None) => Vec::new(),
-        Err(err) => {
-            outcome.tool_records.push(failed_record(
-                input,
-                tool_call_id.into(),
-                "mailbox.send",
-                format!("failed to load inbox: {err}").as_str(),
-            ));
-            return true;
-        }
-    };
-
     let message_id = format!("mbx-{}-{tool_call_id}", input.operation_id);
     let from_peer_id = input
         .refs
         .worker_id
         .clone()
         .unwrap_or_else(|| "peer-local".into());
-    inbox.push(MailboxMessage {
-        message_id: message_id.clone(),
-        from_peer_id: from_peer_id.clone(),
-        target_peer_id: target_peer_id.clone(),
-        message: message.clone(),
-        created_at: input.occurred_at.into(),
-    });
-    if let Err(err) = write_json(&inbox_path, &inbox) {
+    let store = AgentControlStore::new(&runtime_home);
+    if let Err(err) = ensure_mailbox_identity(&store, &from_peer_id, "subagent")
+        .and_then(|_| ensure_mailbox_identity(&store, &target_peer_id, "subagent"))
+        .and_then(|_| {
+            store.send_agent_input(SendAgentInput {
+                message_id: message_id.clone(),
+                from_agent_id: from_peer_id.clone(),
+                to_agent_id: target_peer_id.clone(),
+                thread_id: None,
+                task_id: input.refs.task_id.clone(),
+                trigger_turn: false,
+                payload: message.clone(),
+            })
+        })
+    {
         outcome.tool_records.push(failed_record(
             input,
             tool_call_id.into(),
             "mailbox.send",
-            format!("failed to persist inbox: {err}").as_str(),
+            format!("failed to enqueue agent mailbox message: {err}").as_str(),
         ));
         return true;
     }
+    let inbox_path = runtime_home.join(format!(
+        "runtime/agents/control/mailbox/{target_peer_id}/inbox.json"
+    ));
 
     outcome.tool_records.push(ToolExecutionRecord {
         tool_call_id: tool_call_id.into(),
@@ -161,35 +147,57 @@ pub(super) fn handle_mailbox_poll(
         ));
         return true;
     };
-    let inbox_path = runtime_home.join(format!("runtime/mailbox/{peer_id}/inbox.json"));
-    let mut inbox = match read_json::<Vec<MailboxMessage>>(&inbox_path) {
-        Ok(Some(items)) => items,
-        Ok(None) => Vec::new(),
+    let store = AgentControlStore::new(&runtime_home);
+    if let Err(err) = ensure_mailbox_identity(&store, &peer_id, "subagent") {
+        outcome.tool_records.push(failed_record(
+            input,
+            tool_call_id.into(),
+            "mailbox.poll",
+            format!("failed to ensure mailbox identity: {err}").as_str(),
+        ));
+        return true;
+    }
+    let inbox_path = runtime_home.join(format!(
+        "runtime/agents/control/mailbox/{peer_id}/inbox.json"
+    ));
+    let inbox = match store.read_mailbox(&peer_id) {
+        Ok(items) => items,
         Err(err) => {
             outcome.tool_records.push(failed_record(
                 input,
                 tool_call_id.into(),
                 "mailbox.poll",
-                format!("failed to read inbox: {err}").as_str(),
+                format!("failed to read agent mailbox: {err}").as_str(),
             ));
             return true;
         }
     };
 
-    let take_count = usize::min(limit, inbox.len());
-    let selected = inbox.iter().take(take_count).cloned().collect::<Vec<_>>();
-    if consume && take_count > 0 {
-        inbox.drain(0..take_count);
-        if let Err(err) = write_json(&inbox_path, &inbox) {
-            outcome.tool_records.push(failed_record(
-                input,
-                tool_call_id.into(),
-                "mailbox.poll",
-                format!("failed to persist consumed inbox: {err}").as_str(),
-            ));
-            return true;
+    let selected = inbox.iter().take(limit).cloned().collect::<Vec<_>>();
+    if consume {
+        let consume_count = selected
+            .iter()
+            .filter(|item| item.consumed_at.is_none())
+            .count();
+        for _ in 0..consume_count {
+            if let Err(err) = store.consume_next_mailbox_message(&peer_id, input.occurred_at) {
+                outcome.tool_records.push(failed_record(
+                    input,
+                    tool_call_id.into(),
+                    "mailbox.poll",
+                    format!("failed to consume agent mailbox: {err}").as_str(),
+                ));
+                return true;
+            }
         }
     }
+    let remaining = match store.read_mailbox(&peer_id) {
+        Ok(items) => items
+            .into_iter()
+            .filter(|item| item.consumed_at.is_none())
+            .count(),
+        Err(_) => 0,
+    };
 
     let summary_ids = selected
         .iter()
@@ -222,7 +230,7 @@ pub(super) fn handle_mailbox_poll(
         output_summary: Some(format!(
             "messages={}, remaining={}, ids={}{}",
             selected.len(),
-            inbox.len(),
+            remaining,
             summary_ids.join(", "),
             if selected.len() > summary_ids.len() {
                 ", ..."
@@ -249,7 +257,7 @@ pub(super) fn handle_mailbox_poll(
             "peer_id": peer_id,
             "worker_id": worker_id,
             "returned_count": selected.len(),
-            "remaining_count": inbox.len(),
+            "remaining_count": remaining,
             "consume": consume,
         }),
     ));
@@ -264,27 +272,6 @@ fn extract_message(arguments: &Value) -> Option<Value> {
         .or_else(|| object.get("content").cloned())
 }
 
-fn read_json<T: for<'de> Deserialize<'de>>(path: &Path) -> Result<Option<T>, String> {
-    match fs::read_to_string(path) {
-        Ok(content) => serde_json::from_str::<T>(&content)
-            .map(Some)
-            .map_err(|err| err.to_string()),
-        Err(err) if err.kind() == std::io::ErrorKind::NotFound => Ok(None),
-        Err(err) => Err(err.to_string()),
-    }
-}
-
-fn write_json<T: Serialize>(path: &Path, value: &T) -> Result<(), String> {
-    if let Some(parent) = path.parent() {
-        fs::create_dir_all(parent).map_err(|err| err.to_string())?;
-    }
-    fs::write(
-        path,
-        serde_json::to_vec_pretty(value).map_err(|err| err.to_string())?,
-    )
-    .map_err(|err| err.to_string())
-}
-
 fn relative_artifact(context: &fin_contracts::MinimalContextView, absolute: &Path) -> String {
     runtime_home_from_context(context)
         .and_then(|home| {
@@ -294,4 +281,46 @@ fn relative_artifact(context: &fin_contracts::MinimalContextView, absolute: &Pat
                 .map(|value| value.to_string_lossy().to_string())
         })
         .unwrap_or_else(|| absolute.display().to_string())
+}
+
+fn ensure_mailbox_identity(
+    store: &AgentControlStore,
+    agent_id: &str,
+    auth_subject_suffix: &str,
+) -> Result<(), String> {
+    store
+        .register_primary_agent(crate::RegisterPrimaryAgentInput {
+            agent_id: agent_id.to_string(),
+            kind: crate::AgentKind::ProjectAgent,
+            project_id: Some("mailbox".into()),
+            device_binding: "runtime-tool".into(),
+            auth_subject: format!("runtime-tool:{auth_subject_suffix}:{agent_id}"),
+            auth_lease_id: format!("mailbox-lease-{agent_id}"),
+            capability_descriptor: crate::CapabilityDescriptor {
+                capability_ids: vec!["mailbox".into()],
+                tool_allowlist: vec!["mailbox.send".into(), "mailbox.poll".into()],
+            },
+            now: "1970-01-01T00:00:00Z".into(),
+        })
+        .or_else(|err| {
+            if err.contains("unknown") || err.contains("requires") {
+                Err(err)
+            } else {
+                Ok(crate::AgentIdentity {
+                    agent_id: agent_id.to_string(),
+                    kind: crate::AgentKind::ProjectAgent,
+                    parent_agent_id: None,
+                    project_id: Some("mailbox".into()),
+                    device_binding: "runtime-tool".into(),
+                    auth_subject: format!("runtime-tool:{auth_subject_suffix}:{agent_id}"),
+                    capability_descriptor: crate::CapabilityDescriptor {
+                        capability_ids: vec!["mailbox".into()],
+                        tool_allowlist: vec!["mailbox.send".into(), "mailbox.poll".into()],
+                    },
+                    auth_lease_id: format!("mailbox-lease-{agent_id}"),
+                    path: format!("project:mailbox:{agent_id}"),
+                })
+            }
+        })?;
+    Ok(())
 }

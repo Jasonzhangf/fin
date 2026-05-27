@@ -232,12 +232,12 @@ pub(super) fn build_tool_catalog_block() -> ToolCatalogBlock {
             model_tool(
                 "mailbox.send",
                 "enqueue one collaboration message",
-                "send one structured note/request to another peer mailbox or project worker runtime mailbox",
+                "send one structured note/request through the framework-owned agent mailbox",
                 vec!["you need asynchronous peer collaboration handoff".into()],
                 vec!["the task can be finished locally in this turn".into()],
                 "target_peer_id or target_worker_id + message".into(),
                 "mailbox message id receipt".into(),
-                vec!["writes mailbox queue artifact".into()],
+                vec!["appends one durable agent mailbox message".into()],
                 vec![
                     "send blocker details to project leader mailbox".into(),
                     "send build slice result to worker-b mailbox via target_worker_id".into(),
@@ -246,12 +246,12 @@ pub(super) fn build_tool_catalog_block() -> ToolCatalogBlock {
             model_tool(
                 "mailbox.poll",
                 "read pending collaboration messages",
-                "pull pending messages from current peer mailbox or local worker runtime mailbox",
+                "read pending messages from the framework-owned agent mailbox",
                 vec!["you need latest async collaboration updates".into()],
                 vec!["no mailbox sync is needed for this turn".into()],
                 "optional peer_id or worker_id + optional limit".into(),
                 "pending message list".into(),
-                vec!["reads mailbox queue artifact".into()],
+                vec!["reads durable agent mailbox messages".into()],
                 vec![
                     "poll mailbox before deciding next delegation step".into(),
                     "poll worker-b mailbox after one delegated slice completes".into(),

@@ -287,12 +287,10 @@ fn handoff_idle_after_resume(
 
 fn artifact_refs(binding: &DebugBinding) -> Vec<String> {
     let mut refs = Vec::new();
-    if let Some(path) = &binding.session_messages_path {
-        refs.push(path.clone());
-        if let Some(prefix) = path.strip_suffix("conversation/messages.json") {
-            refs.push(format!("{prefix}control/execution_state.json"));
-            refs.push(format!("{prefix}queue/pending_inputs.json"));
-        }
+    if let Some(session_id) = &binding.session_id {
+        refs.push(format!("session:{session_id}/conversation/messages.json"));
+        refs.push(format!("session:{session_id}/control/execution_state.json"));
+        refs.push(format!("session:{session_id}/queue/pending_inputs.json"));
     }
     refs.sort();
     refs.dedup();

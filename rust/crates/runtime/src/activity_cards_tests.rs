@@ -183,6 +183,7 @@ fn build_activity_cards_collects_system_and_peer_views() {
             "peers": [{
                 "peer_id": "peer-channel-gateway-qqbot-local",
                 "peer_kind": "channel_gateway.qqbot",
+                "display_name": "qqbot-main",
                 "presence_state": "online",
                 "runtime_state": "bridge_ready",
                 "connectivity_state": "connected",
@@ -203,6 +204,8 @@ fn build_activity_cards_collects_system_and_peer_views() {
     assert_eq!(cards.tool_semantics[0].category, "command");
     assert_eq!(cards.source_cards[0].source_id, "system-agent");
     assert_eq!(cards.source_cards[0].state, "running");
+    assert_eq!(cards.source_cards[1].title, "qqbot-main");
+    assert!(!cards.source_cards[1].title.contains("Peer "));
     assert!(
         cards
             .user_card

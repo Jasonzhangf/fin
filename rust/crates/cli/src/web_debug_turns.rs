@@ -13,7 +13,9 @@ use crate::{
     },
     runtime_current_snapshot::with_runtime_current_snapshot,
     runtime_home::persist_runtime_session,
+    session_binding::find_session_dir,
     session_binding::{ensure_tentative_session_binding, rebind_last_run_binding},
+    session_ledger_read::read_session_snapshots,
 };
 
 impl CliDebugActionHandler {
@@ -196,25 +198,41 @@ impl CliDebugActionHandler {
             .clone()
             .or_else(|| last_run_field(&last_run, "task_id"));
         let topic_thread_id = last_run_field(&last_run, "topic_thread_id");
-        let digests = binding
-            .recent_digests_path
-            .as_deref()
-            .map(|relative| read_recent_digests(&runtime_home.join(relative)))
+        let session_dir = binding.session_id.as_deref().and_then(|session_id| {
+            find_session_dir(runtime_home, session_id).map(|(_, _, dir)| dir)
+        });
+        let digests = session_dir
+            .as_ref()
+            .map(|dir| read_recent_digests(&dir.join("digests/recent_digests.json")))
             .transpose()?
             .unwrap_or_default();
-        let recent_messages = binding
-            .session_messages_path
-            .as_deref()
-            .map(|relative| read_session_messages(&runtime_home.join(relative)))
-            .transpose()?
-            .unwrap_or_default()
+        let recent_messages = if let Some(dir) = session_dir.as_ref() {
+            read_session_messages(&dir.join("conversation/messages.json"))?
+        } else if let Some(session_id) = binding.session_id.as_deref() {
+            read_session_snapshots(runtime_home, session_id)?
+                .into_iter()
+                .map(|snapshot| fin_runtime::SessionMessageRecord {
+                    message_id: format!("assistant-ledger-{}", snapshot.snapshot_id),
+                    role: "assistant".into(),
+                    content: snapshot.assistant_summary,
+                    created_at: snapshot.created_at,
+                    session_id: session_id.to_string(),
+                    task_id: snapshot.refs.task_id,
+                    operation_id: Some(snapshot.operation_id),
+                    trace_id: Some(snapshot.trace_id),
+                    closure_id: None,
+                })
+                .collect::<Vec<_>>()
+        } else {
+            Vec::new()
+        };
+        let recent_messages = recent_messages
             .into_iter()
             .map(|message| format!("{}: {}", message.role, message.content))
             .collect::<Vec<_>>();
-        let mut observed_ops = binding
-            .session_messages_path
-            .as_deref()
-            .map(|relative| read_session_messages(&runtime_home.join(relative)))
+        let mut observed_ops = session_dir
+            .as_ref()
+            .map(|dir| read_session_messages(&dir.join("conversation/messages.json")))
             .transpose()?
             .unwrap_or_default()
             .into_iter()
@@ -227,14 +245,16 @@ impl CliDebugActionHandler {
                 .unwrap_or(digest.digest_id.as_str())
                 .to_string()
         }));
-        let recent_reasoning_views = last_run_field(&last_run, "session_recent_reasoning_path")
-            .as_deref()
-            .map(|relative| read_recent_reasoning_views(&runtime_home.join(relative)))
+        let recent_reasoning_views = session_dir
+            .as_ref()
+            .map(|dir| {
+                read_recent_reasoning_views(&dir.join("reasoning/recent_reasoning_views.json"))
+            })
             .transpose()?
             .unwrap_or_default();
-        let recent_tool_records = last_run_field(&last_run, "session_recent_tool_records_path")
-            .as_deref()
-            .map(|relative| read_recent_tool_records(&runtime_home.join(relative)))
+        let recent_tool_records = session_dir
+            .as_ref()
+            .map(|dir| read_recent_tool_records(&dir.join("tools/recent_tool_records.json")))
             .transpose()?
             .unwrap_or_default();
         let scope = scope_from_session_id(&session_id);

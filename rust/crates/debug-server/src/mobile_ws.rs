@@ -1,12 +1,20 @@
 use crate::chat_api::ChatSendRequest;
+use crate::mobile_blocks::{
+    find_session_dir, list_sessions, runtime_view_messages, session_ids_from_value,
+    session_is_visible,
+};
+use crate::mobile_protocol::unknown_mobile_message;
 use crate::session_view::{last_run_artifact_path, read_json_value, read_last_run_json};
 use crate::{DebugActionHandler, DebugDataError};
-use fin_config::{ConfigMapper, parse_system_toml, parse_user_toml, system_to_toml};
-use fin_contracts::ProviderTarget;
+use fin_config::{ConfigMapper, SystemConfig, parse_system_toml, parse_user_toml, system_to_toml};
+use fin_contracts::{
+    ActivityCardsSnapshot, LedgerTrackKind, ProviderTarget, SessionSnapshotRecord,
+};
 use fin_provider::{InferenceProvider, ProviderError, ProviderFacade, ProviderRequest};
+use fin_runtime::{LedgerStore, build_activity_cards};
 use serde_json::{Value, json};
 use std::{
-    collections::HashSet,
+    collections::{HashMap, HashSet},
     fs,
     net::TcpStream,
     path::{Path, PathBuf},
@@ -89,6 +97,82 @@ fn run_mobile_loop(
                 send_json(ws, &json!({"type":"session.bound","session_id":session_id}))?;
                 send_session_history(ws, runtime_home, Some(session_id.as_str()))?;
             }
+            "session.rename" => {
+                if !handshake_ok {
+                    send_json(ws, &json!({"type":"handshake.auth_failed"}))?;
+                    continue;
+                }
+                let session_id = v
+                    .get("session_id")
+                    .and_then(Value::as_str)
+                    .unwrap_or_default();
+                let title = v.get("title").and_then(Value::as_str).unwrap_or_default();
+                if let Err(err) =
+                    update_session_meta(runtime_home, session_id, Some(title), None, false)
+                {
+                    send_session_operation_failed(ws, "rename", &[session_id.to_string()], err)?;
+                    continue;
+                }
+                send_json(
+                    ws,
+                    &json!({"type":"session.operation.ok","operation":"rename","session_id":session_id}),
+                )?;
+                send_session_list(ws, runtime_home)?;
+            }
+            "session.archive" => {
+                if !handshake_ok {
+                    send_json(ws, &json!({"type":"handshake.auth_failed"}))?;
+                    continue;
+                }
+                let session_ids = session_ids_from_value(&v);
+                if let Err(err) =
+                    update_session_metas(runtime_home, &session_ids, None, Some(true), false)
+                {
+                    send_session_operation_failed(ws, "archive", &session_ids, err)?;
+                    continue;
+                }
+                send_json(
+                    ws,
+                    &json!({"type":"session.operation.ok","operation":"archive","session_ids":session_ids}),
+                )?;
+                send_session_list(ws, runtime_home)?;
+            }
+            "session.unarchive" => {
+                if !handshake_ok {
+                    send_json(ws, &json!({"type":"handshake.auth_failed"}))?;
+                    continue;
+                }
+                let session_ids = session_ids_from_value(&v);
+                if let Err(err) =
+                    update_session_metas(runtime_home, &session_ids, None, Some(false), false)
+                {
+                    send_session_operation_failed(ws, "unarchive", &session_ids, err)?;
+                    continue;
+                }
+                send_json(
+                    ws,
+                    &json!({"type":"session.operation.ok","operation":"unarchive","session_ids":session_ids}),
+                )?;
+                send_session_list(ws, runtime_home)?;
+            }
+            "session.delete" => {
+                if !handshake_ok {
+                    send_json(ws, &json!({"type":"handshake.auth_failed"}))?;
+                    continue;
+                }
+                let session_ids = session_ids_from_value(&v);
+                if let Err(err) =
+                    update_session_metas(runtime_home, &session_ids, None, Some(true), true)
+                {
+                    send_session_operation_failed(ws, "delete", &session_ids, err)?;
+                    continue;
+                }
+                send_json(
+                    ws,
+                    &json!({"type":"session.operation.ok","operation":"delete","session_ids":session_ids}),
+                )?;
+                send_session_list(ws, runtime_home)?;
+            }
             "session.user_input" => {
                 if !handshake_ok {
                     send_json(ws, &json!({"type":"handshake.auth_failed"}))?;
@@ -164,7 +248,10 @@ fn run_mobile_loop(
                     });
                     let mut seen_tool_ids: HashSet<String> = HashSet::new();
                     let mut seen_error_keys: HashSet<String> = HashSet::new();
+                    let mut item_started: HashSet<String> = HashSet::new();
+                    let mut item_delta_signatures: HashMap<String, String> = HashMap::new();
                     let mut last_phase = String::new();
+                    let mut last_activity_cards_signature: Option<String> = None;
                     loop {
                         match rx.recv_timeout(Duration::from_millis(180)) {
                             Ok(done) => {
@@ -199,17 +286,7 @@ fn run_mobile_loop(
                                             &client_message_id,
                                             &json!({"tool_name":"provider.call","tool_kind":"framework_tool","target_kind":"provider","error_summary":error_summary}),
                                         )?;
-                                        send_json(
-                                            ws,
-                                            &json!({
-                                                "type":"turn.error_event",
-                                                "session_id": session_id,
-                                                "client_message_id": client_message_id,
-                                                "turn_id": provisional_turn_id,
-                                                "item": item_events.last().cloned().unwrap_or_else(|| json!({})),
-                                                "error_record": runtime_record,
-                                            }),
-                                        )?;
+                                        // legacy turn.error_event removed — turn.item.* events emitted above
                                         send_json(
                                             ws,
                                             &json!({
@@ -247,6 +324,11 @@ fn run_mobile_loop(
                                                 "closure_stop_source":"error",
                                             }),
                                         )?;
+                                        send_activity_cards_snapshot_if_changed(
+                                            ws,
+                                            runtime_home,
+                                            &mut last_activity_cards_signature,
+                                        )?;
                                         break;
                                     }
                                 };
@@ -258,16 +340,26 @@ fn run_mobile_loop(
                                 for record in &tool_execution_records {
                                     let id = mobile_record_item_id(record);
                                     if !id.is_empty() {
-                                        seen_tool_ids.insert(id);
+                                        seen_tool_ids.insert(id.clone());
                                     }
-                                    for event in mobile_item_events_from_record(
+                                    let events = mobile_item_events_from_record(
                                         record,
                                         &session_id,
                                         &client_message_id,
                                         None,
                                         &final_turn_id,
-                                    ) {
+                                    );
+                                    for event in events {
+                                        if event["type"] == "turn.item.started" {
+                                            if let Some(item_id) = event["item_id"].as_str() {
+                                                item_started.insert(item_id.to_string());
+                                            }
+                                        }
                                         send_json(ws, &event)?;
+                                    }
+                                    if !id.is_empty() {
+                                        let signature = mobile_record_delta_signature(record, None);
+                                        item_delta_signatures.insert(id, signature);
                                     }
                                 }
                                 for err in &error_records {
@@ -277,6 +369,12 @@ fn run_mobile_loop(
                                         &client_message_id,
                                         err,
                                     )?;
+                                    let err_id = mobile_record_item_id(err);
+                                    if !err_id.is_empty() {
+                                        let signature =
+                                            mobile_record_delta_signature(err, Some("failed"));
+                                        item_delta_signatures.insert(err_id, signature);
+                                    }
                                 }
                                 send_json(
                                     ws,
@@ -321,6 +419,11 @@ fn run_mobile_loop(
                                         "closure_stop_source": result.response_kind,
                                     }),
                                 )?;
+                                send_activity_cards_snapshot_if_changed(
+                                    ws,
+                                    runtime_home,
+                                    &mut last_activity_cards_signature,
+                                )?;
                                 break;
                             }
                             Err(mpsc::RecvTimeoutError::Timeout) => {
@@ -331,7 +434,10 @@ fn run_mobile_loop(
                                     &client_message_id,
                                     &mut seen_tool_ids,
                                     &mut seen_error_keys,
+                                    &mut item_started,
+                                    &mut item_delta_signatures,
                                     &mut last_phase,
+                                    &mut last_activity_cards_signature,
                                 )?;
                             }
                             Err(mpsc::RecvTimeoutError::Disconnected) => {
@@ -532,13 +638,35 @@ fn run_mobile_loop(
                 }
             }
             _ => {
-                send_json(
-                    ws,
-                    &json!({"type":"handshake.protocol_mismatch","reason":"unknown_message_type"}),
-                )?;
+                send_unknown_mobile_message(ws, t, handshake_ok)?;
             }
         }
     }
+}
+
+fn send_unknown_mobile_message(
+    ws: &mut WebSocket<TcpStream>,
+    kind: &str,
+    handshake_ok: bool,
+) -> Result<(), DebugDataError> {
+    send_json(ws, &unknown_mobile_message(kind, handshake_ok))
+}
+
+fn send_session_operation_failed(
+    ws: &mut WebSocket<TcpStream>,
+    operation: &str,
+    session_ids: &[String],
+    err: DebugDataError,
+) -> Result<(), DebugDataError> {
+    send_json(
+        ws,
+        &json!({
+            "type":"session.operation.failed",
+            "operation":operation,
+            "session_ids":session_ids,
+            "error":err.to_string()
+        }),
+    )
 }
 
 fn test_model_config(
@@ -695,15 +823,7 @@ fn send_config_snapshot(
     ws: &mut WebSocket<TcpStream>,
     runtime_home: &Path,
 ) -> Result<(), DebugDataError> {
-    let system_path = runtime_home.join("config/system.toml");
-    let content = fs::read_to_string(&system_path).map_err(|source| DebugDataError::Io {
-        path: system_path.display().to_string(),
-        source,
-    })?;
-    let sys = parse_system_toml(&content).map_err(|err| DebugDataError::Io {
-        path: system_path.display().to_string(),
-        source: std::io::Error::other(err.to_string()),
-    })?;
+    let sys = read_effective_system_config(runtime_home)?;
     let profiles = sys
         .providers
         .values()
@@ -741,18 +861,10 @@ fn resolve_selected_provider(
     provider: &str,
     model: &str,
 ) -> Result<(fin_config::ResolvedProviderConfig, String), (String, Option<String>, String)> {
-    let system_path = runtime_home.join("config/system.toml");
-    let content = fs::read_to_string(&system_path).map_err(|err| {
-        (
-            "io_error".into(),
-            Some("SYSTEM_TOML_READ_FAILED".into()),
-            err.to_string(),
-        )
-    })?;
-    let sys = parse_system_toml(&content).map_err(|err| {
+    let sys = read_effective_system_config(runtime_home).map_err(|err| {
         (
             "invalid".into(),
-            Some("SYSTEM_TOML_INVALID".into()),
+            Some("EFFECTIVE_CONFIG_INVALID".into()),
             err.to_string(),
         )
     })?;
@@ -780,6 +892,40 @@ fn resolve_selected_provider(
     let mut resolved = base;
     resolved.model = selected_model.clone();
     Ok((resolved, selected_model))
+}
+
+fn read_effective_system_config(runtime_home: &Path) -> Result<SystemConfig, DebugDataError> {
+    let user_path = runtime_home.join("config/user.toml");
+    let user_content = fs::read_to_string(&user_path).map_err(|source| DebugDataError::Io {
+        path: user_path.display().to_string(),
+        source,
+    })?;
+    let user = parse_user_toml(&user_content).map_err(|err| DebugDataError::Io {
+        path: user_path.display().to_string(),
+        source: std::io::Error::other(err.to_string()),
+    })?;
+    let mapped = ConfigMapper::map_user_to_system(&user).map_err(|err| DebugDataError::Io {
+        path: user_path.display().to_string(),
+        source: std::io::Error::other(err.to_string()),
+    })?;
+    let system_path = runtime_home.join("config/system.toml");
+    match fs::read_to_string(&system_path) {
+        Ok(content) => {
+            let existing = parse_system_toml(&content).map_err(|err| DebugDataError::Io {
+                path: system_path.display().to_string(),
+                source: std::io::Error::other(err.to_string()),
+            })?;
+            ConfigMapper::merge_user_layer(mapped, existing).map_err(|err| DebugDataError::Io {
+                path: system_path.display().to_string(),
+                source: std::io::Error::other(err.to_string()),
+            })
+        }
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => Ok(mapped),
+        Err(source) => Err(DebugDataError::Io {
+            path: system_path.display().to_string(),
+            source,
+        }),
+    }
 }
 
 fn classify_provider_error(err: ProviderError) -> (String, String, String) {
@@ -1282,6 +1428,100 @@ fn mobile_item_events_from_record(
     events
 }
 
+fn mobile_record_is_terminal(record: &Value, force_terminal_status: Option<&str>) -> bool {
+    let status = force_terminal_status
+        .or_else(|| record.get("status").and_then(Value::as_str))
+        .unwrap_or("running");
+    let error_summary = record
+        .get("error_summary")
+        .and_then(Value::as_str)
+        .unwrap_or("");
+    let failed_status = matches!(status, "failed" | "error" | "cancelled" | "canceled");
+    (status == "completed" && error_summary.trim().is_empty())
+        || failed_status
+        || !error_summary.trim().is_empty()
+}
+
+fn mobile_record_delta_signature(record: &Value, force_terminal_status: Option<&str>) -> String {
+    let status = force_terminal_status
+        .or_else(|| record.get("status").and_then(Value::as_str))
+        .unwrap_or("running");
+    let output_summary = record
+        .get("output_summary")
+        .and_then(Value::as_str)
+        .unwrap_or("");
+    let error_summary = record
+        .get("error_summary")
+        .and_then(Value::as_str)
+        .unwrap_or("");
+    let duration_ms = record
+        .get("duration_ms")
+        .and_then(Value::as_u64)
+        .unwrap_or(0);
+    let input_summary = record
+        .get("input_summary")
+        .and_then(Value::as_str)
+        .unwrap_or("");
+    format!(
+        "status={status}|duration_ms={duration_ms}|input={input_summary}|output={output_summary}|error={error_summary}"
+    )
+}
+
+fn mobile_item_delta_event_from_record(
+    record: &Value,
+    session_id: &str,
+    client_message_id: &str,
+    force_terminal_status: Option<&str>,
+    turn_id: &str,
+) -> Value {
+    let item_id = mobile_record_item_id(record);
+    let item_id = if item_id.is_empty() {
+        format!("mobile-item-{}", stable_id_fragment(client_message_id))
+    } else {
+        item_id
+    };
+    let raw_label = required_record_str(record, "tool_name");
+    let raw_title = required_record_str(record, "title");
+    let raw_purpose = required_record_str(record, "purpose");
+    let (label, title, purpose) =
+        mobile_display_fields(record, &raw_label, &raw_title, &raw_purpose);
+    let item_kind = mobile_item_kind(record);
+    let started_at = required_record_str(record, "started_at");
+    let status = force_terminal_status
+        .or_else(|| record.get("status").and_then(Value::as_str))
+        .unwrap_or("running");
+    let duration_ms = record
+        .get("duration_ms")
+        .and_then(Value::as_u64)
+        .unwrap_or(0);
+    let output_summary = record
+        .get("output_summary")
+        .and_then(Value::as_str)
+        .unwrap_or("");
+    let error_summary = record
+        .get("error_summary")
+        .and_then(Value::as_str)
+        .unwrap_or("");
+    json!({
+        "type":"turn.item.delta",
+        "session_id":session_id,
+        "client_message_id":client_message_id,
+        "turn_id":turn_id,
+        "item_id":item_id,
+        "item_kind":item_kind,
+        "label":label,
+        "title":title,
+        "purpose":purpose,
+        "status":status,
+        "started_at":started_at,
+        "duration_ms":duration_ms,
+        "input_summary": record.get("input_summary").and_then(Value::as_str).unwrap_or(""),
+        "output_summary":output_summary,
+        "target_kind": record.get("target_kind").and_then(Value::as_str).unwrap_or(""),
+        "error_summary": if error_summary.trim().is_empty() { Value::Null } else { json!(error_summary) },
+    })
+}
+
 fn provider_health_status_from_error(error_summary: &str) -> Option<&'static str> {
     let lower = error_summary.to_lowercase();
     if lower.contains("503")
@@ -1349,7 +1589,10 @@ fn emit_incremental_mobile_events(
     client_message_id: &str,
     seen_tool_ids: &mut HashSet<String>,
     seen_error_keys: &mut HashSet<String>,
+    item_started: &mut HashSet<String>,
+    item_delta_signatures: &mut HashMap<String, String>,
     last_phase: &mut String,
+    last_activity_cards_signature: &mut Option<String>,
 ) -> Result<(), DebugDataError> {
     if let Ok(Some(path)) = last_run_artifact_path(runtime_home, "current_execution_state_path")
         && let Ok(exec) = read_json_value(&path)
@@ -1386,20 +1629,45 @@ fn emit_incremental_mobile_events(
                 &turn_id,
             );
             for event in &item_events {
+                if event["type"] == "turn.item.started" {
+                    if let Some(item_id) = event["item_id"].as_str() {
+                        item_started.insert(item_id.to_string());
+                    }
+                }
                 send_json(ws, event)?;
             }
-            send_json(
-                ws,
-                &json!({
-                    "type":"turn.tool_event",
-                    "session_id":session_id,
-                    "client_message_id":client_message_id,
-                    "turn_id":turn_id,
-                    "item":item_events.last().cloned().unwrap_or_else(|| json!({})),
-                    "tool_record":record,
-                }),
-            )?;
+            // legacy turn.tool_event removed — turn.item.* events emitted above
+            let stable_id = mobile_record_item_id(&record);
+            if !stable_id.is_empty() {
+                let signature = mobile_record_delta_signature(&record, None);
+                item_delta_signatures.insert(stable_id, signature);
+            }
+            continue;
         }
+        let stable_id = mobile_record_item_id(&record);
+        if stable_id.is_empty() {
+            continue;
+        }
+        if !item_started.contains(&stable_id) {
+            continue;
+        }
+        let signature = mobile_record_delta_signature(&record, None);
+        let unchanged = item_delta_signatures
+            .get(&stable_id)
+            .map(|prev| prev == &signature)
+            .unwrap_or(false);
+        if unchanged || mobile_record_is_terminal(&record, None) {
+            continue;
+        }
+        let delta = mobile_item_delta_event_from_record(
+            &record,
+            session_id,
+            client_message_id,
+            None,
+            &turn_id,
+        );
+        send_json(ws, &delta)?;
+        item_delta_signatures.insert(stable_id, signature);
     }
     for err in errors {
         let key = format!(
@@ -1424,21 +1692,91 @@ fn emit_incremental_mobile_events(
             &turn_id,
         );
         for event in &item_events {
+            if event["type"] == "turn.item.started" {
+                if let Some(item_id) = event["item_id"].as_str() {
+                    item_started.insert(item_id.to_string());
+                }
+            }
             send_json(ws, event)?;
         }
-        send_json(
-            ws,
-            &json!({
-                "type":"turn.error_event",
-                "session_id":session_id,
-                "client_message_id":client_message_id,
-                "turn_id":turn_id,
-                "item":item_events.last().cloned().unwrap_or_else(|| json!({})),
-                "error_record":err,
-            }),
-        )?;
+        // legacy turn.error_event removed — turn.item.* events emitted above
+        let stable_id = mobile_record_item_id(&err);
+        if !stable_id.is_empty() {
+            let signature = mobile_record_delta_signature(&err, Some("failed"));
+            item_delta_signatures.insert(stable_id, signature);
+        }
+    }
+    send_activity_cards_snapshot_if_changed(ws, runtime_home, last_activity_cards_signature)?;
+    Ok(())
+}
+
+fn send_activity_cards_snapshot_if_changed(
+    ws: &mut WebSocket<TcpStream>,
+    runtime_home: &Path,
+    last_signature: &mut Option<String>,
+) -> Result<(), DebugDataError> {
+    if let Some(message) =
+        build_activity_cards_snapshot_message_if_changed(runtime_home, last_signature)?
+    {
+        send_json(ws, &message)?;
     }
     Ok(())
+}
+
+fn build_activity_cards_snapshot_message_if_changed(
+    runtime_home: &Path,
+    last_signature: &mut Option<String>,
+) -> Result<Option<Value>, DebugDataError> {
+    let Ok(snapshot) = build_activity_cards(runtime_home) else {
+        return Ok(None);
+    };
+    let signature = activity_cards_snapshot_signature(&snapshot)?;
+    if last_signature.as_deref() == Some(signature.as_str()) {
+        return Ok(None);
+    }
+    *last_signature = Some(signature);
+    Ok(Some(json!({
+        "type": "activity.cards.snapshot",
+        "snapshot": snapshot,
+    })))
+}
+
+fn activity_cards_snapshot_signature(
+    snapshot: &ActivityCardsSnapshot,
+) -> Result<String, DebugDataError> {
+    serde_json::to_string(&json!({
+        "session_id": snapshot.session_id,
+        "task_id": snapshot.task_id,
+        "user_card": snapshot.user_card.as_ref().map(|card| json!({
+            "owner_source_id": card.owner_source_id,
+            "header": card.header,
+            "state": card.state,
+            "focus_source_id": card.focus_source_id,
+            "focus_summary": card.focus_summary,
+            "stage": card.stage,
+            "recent_items": card.recent_items,
+            "active_sources": card.active_sources,
+            "waiting_detail": card.waiting_detail,
+            "failure_detail": card.failure_detail,
+        })),
+        "source_cards": snapshot.source_cards.iter().map(|card| json!({
+            "source_id": card.source_id,
+            "source_kind": card.source_kind,
+            "title": card.title,
+            "visibility": card.visibility,
+            "state": card.state,
+            "summary": card.summary,
+            "focus_label": card.focus_label,
+            "auto_promoted": card.auto_promoted,
+            "current_activity": card.current_activity,
+            "recent_actions": card.recent_actions,
+            "waiting_detail": card.waiting_detail,
+            "failure_detail": card.failure_detail,
+            "session_id": card.session_id,
+            "task_id": card.task_id,
+        })).collect::<Vec<_>>(),
+    }))
+    .map_err(DebugDataError::Serialize)
 }
 
 fn send_json(ws: &mut WebSocket<TcpStream>, value: &Value) -> Result<(), DebugDataError> {
@@ -1468,150 +1806,58 @@ fn send_runtime_views(
     ws: &mut WebSocket<TcpStream>,
     runtime_home: &Path,
 ) -> Result<(), DebugDataError> {
-    let execution = last_run_artifact_path(runtime_home, "current_execution_state_path")?
-        .and_then(|p| read_json_value(&p).ok())
-        .unwrap_or_else(|| json!({}));
-    let phase = execution
-        .get("phase")
-        .and_then(Value::as_str)
-        .unwrap_or("idle");
-    send_json(
-        ws,
-        &json!({"type":"runtime.health","status": if phase == "idle" { "available" } else { "available" }, "phase": phase}),
-    )?;
-    send_json(
-        ws,
-        &json!({"type":"runtime.workers","workers":[{"worker_id":"entry","phase":phase}]}),
-    )?;
-    send_json(
-        ws,
-        &json!({"type":"runtime.projects","projects":[{"project_id":"fin","state":"attached"}]}),
-    )?;
-    send_json(
-        ws,
-        &json!({"type":"runtime.daemon","daemon":{"state":"running"}}),
-    )
-}
-
-#[derive(Debug, Clone, serde::Serialize)]
-struct MobileSessionItem {
-    session_id: String,
-    task_id: String,
-    topic: String,
-    phase: String,
-    project: String,
-    updated_at: String,
-    title: String,
-    preview_100: String,
-    archived: bool,
-}
-
-fn list_sessions(runtime_home: &Path) -> Vec<MobileSessionItem> {
-    let root = runtime_home.join("sessions");
-    let mut out = Vec::new();
-    let Ok(years) = std::fs::read_dir(root) else {
-        return out;
-    };
-    for year in years.flatten() {
-        let Ok(months) = std::fs::read_dir(year.path()) else {
-            continue;
-        };
-        for month in months.flatten() {
-            let Ok(session_dirs) = std::fs::read_dir(month.path()) else {
-                continue;
-            };
-            for session in session_dirs.flatten() {
-                let path = session.path();
-                if !path.is_dir() {
-                    continue;
-                }
-                let session_id = session.file_name().to_string_lossy().to_string();
-                let msg_path = path.join("conversation/messages.json");
-                let messages = read_json_value(&msg_path).ok();
-                let mut title = String::new();
-                let mut preview = String::new();
-                let mut task_id = "task-unknown".to_string();
-                let mut archived = false;
-                if let Some(Value::Array(list)) = messages {
-                    for item in &list {
-                        if title.is_empty()
-                            && item.get("role").and_then(Value::as_str) == Some("user")
-                        {
-                            title = item
-                                .get("content")
-                                .and_then(Value::as_str)
-                                .unwrap_or_default()
-                                .chars()
-                                .take(24)
-                                .collect();
-                        }
-                    }
-                    if let Some(last) = list.last() {
-                        preview = last
-                            .get("content")
-                            .and_then(Value::as_str)
-                            .unwrap_or_default()
-                            .chars()
-                            .take(100)
-                            .collect();
-                        if let Some(task) = last.get("task_id").and_then(Value::as_str) {
-                            task_id = task.to_string();
-                        }
-                    }
-                }
-                let meta_path = runtime_home
-                    .join("sessions")
-                    .join("meta")
-                    .join(format!("{session_id}.json"));
-                if meta_path.exists()
-                    && let Ok(meta) = read_json_value(&meta_path)
-                {
-                    if let Some(v) = meta.get("title").and_then(Value::as_str)
-                        && !v.trim().is_empty()
-                    {
-                        title = v.to_string();
-                    }
-                    archived = meta
-                        .get("archived")
-                        .and_then(Value::as_bool)
-                        .unwrap_or(false);
-                }
-                let updated_at = std::fs::metadata(&msg_path)
-                    .ok()
-                    .and_then(|m| m.modified().ok())
-                    .and_then(|t| t.duration_since(UNIX_EPOCH).ok())
-                    .map(|d| d.as_millis().to_string())
-                    .unwrap_or_else(|| "0".into());
-                out.push(MobileSessionItem {
-                    session_id,
-                    task_id,
-                    topic: "fin".into(),
-                    phase: "ready".into(),
-                    project: "fin".into(),
-                    updated_at,
-                    title,
-                    preview_100: preview,
-                    archived,
-                });
-            }
-        }
+    let messages = runtime_view_messages(runtime_home)?;
+    for message in messages {
+        send_json(ws, &message)?;
     }
-    out
+    Ok(())
 }
 
-fn find_session_dir(runtime_home: &Path, session_id: &str) -> Option<PathBuf> {
-    let root = runtime_home.join("sessions");
-    let years = std::fs::read_dir(root).ok()?;
-    for year in years.flatten() {
-        let months = std::fs::read_dir(year.path()).ok()?;
-        for month in months.flatten() {
-            let session = month.path().join(session_id);
-            if session.is_dir() {
-                return Some(session);
-            }
-        }
+fn update_session_meta(
+    runtime_home: &Path,
+    session_id: &str,
+    title: Option<&str>,
+    archived: Option<bool>,
+    deleted: bool,
+) -> Result<(), DebugDataError> {
+    if session_id.trim().is_empty() {
+        return Ok(());
     }
-    None
+    let dir = runtime_home.join("sessions/meta");
+    fs::create_dir_all(&dir).map_err(|source| DebugDataError::Io {
+        path: dir.display().to_string(),
+        source,
+    })?;
+    let path = dir.join(format!("{session_id}.json"));
+    let mut meta = read_json_value(&path).unwrap_or_else(|_| json!({}));
+    meta["session_id"] = json!(session_id);
+    if let Some(title) = title.map(str::trim).filter(|item| !item.is_empty()) {
+        meta["title"] = json!(title);
+    }
+    if let Some(archived) = archived {
+        meta["archived"] = json!(archived);
+    }
+    if deleted {
+        meta["deleted"] = json!(true);
+        meta["archived"] = json!(true);
+    }
+    fs::write(&path, serde_json::to_vec_pretty(&meta)?).map_err(|source| DebugDataError::Io {
+        path: path.display().to_string(),
+        source,
+    })
+}
+
+fn update_session_metas(
+    runtime_home: &Path,
+    session_ids: &[String],
+    title: Option<&str>,
+    archived: Option<bool>,
+    deleted: bool,
+) -> Result<(), DebugDataError> {
+    for session_id in session_ids {
+        update_session_meta(runtime_home, session_id, title, archived, deleted)?;
+    }
+    Ok(())
 }
 
 fn send_session_history(
@@ -1625,17 +1871,21 @@ fn send_session_history(
         .and_then(Value::as_str)
         .unwrap_or("session-unknown");
     let target_session_id = session_id.unwrap_or(last_session_id);
+    if !session_is_visible(runtime_home, target_session_id) {
+        return send_json(
+            ws,
+            &json!({"type":"session.history","session_id":target_session_id,"turns":[]}),
+        );
+    }
     let msg_path = if target_session_id == last_session_id {
-        let Some(msg_path_rel) = last_run
-            .get("session_messages_path")
-            .and_then(Value::as_str)
-        else {
+        if let Some(session_dir) = find_session_dir(runtime_home, target_session_id) {
+            session_dir.join("conversation/messages.json")
+        } else {
             return send_json(
                 ws,
                 &json!({"type":"session.history","session_id":target_session_id,"turns":[]}),
             );
-        };
-        runtime_home.join(msg_path_rel)
+        }
     } else if let Some(session_dir) = find_session_dir(runtime_home, target_session_id) {
         session_dir.join("conversation/messages.json")
     } else {
@@ -1715,6 +1965,22 @@ fn send_session_history(
 #[cfg(test)]
 mod mobile_item_contract_tests {
     use super::*;
+    use std::fs;
+
+    fn temp_runtime_home(prefix: &str) -> PathBuf {
+        let unique = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .expect("time")
+            .as_nanos();
+        std::env::temp_dir().join(format!("fin-{prefix}-{unique}"))
+    }
+
+    fn write_json(path: &Path, value: &Value) {
+        if let Some(parent) = path.parent() {
+            fs::create_dir_all(parent).expect("parent dir");
+        }
+        fs::write(path, serde_json::to_vec(value).expect("json")).expect("write json");
+    }
 
     #[test]
     fn maps_tool_record_to_started_and_completed_item() {
@@ -1821,5 +2087,595 @@ mod mobile_item_contract_tests {
                 .unwrap_or("")
                 .contains("provider")
         );
+    }
+
+    #[test]
+    fn unknown_post_handshake_message_is_not_handshake_protocol_mismatch() {
+        let message = unknown_mobile_message("session.delete", true);
+        assert_eq!(message["type"], "protocol.error");
+        assert_eq!(message["reason"], "unknown_message_type");
+        assert_eq!(message["message_type"], "session.delete");
+    }
+
+    #[test]
+    fn unknown_pre_handshake_message_requires_auth_without_protocol_mismatch() {
+        let message = unknown_mobile_message("session.delete", false);
+        assert_eq!(message["type"], "handshake.auth_failed");
+        assert_eq!(message["reason"], "handshake_required");
+        assert_eq!(message["message_type"], "session.delete");
+    }
+
+    #[test]
+    fn session_list_ignores_meta_track_and_filters_deleted_sessions() {
+        let runtime_home = temp_runtime_home("mobile-session-meta-filter");
+        let active_id = "session-active-mainline";
+        let deleted_id = "session-deleted-mainline";
+        let active_ledger = LedgerStore::for_session(&runtime_home, active_id).expect("ledger");
+        active_ledger
+            .init(
+                Some("task-active"),
+                Some(active_id),
+                "2026-05-24T10:00:00+08:00",
+            )
+            .expect("init active");
+        active_ledger
+            .append(fin_runtime::AppendLedgerRecordInput {
+                ts: "2026-05-24T10:00:00+08:00".into(),
+                track: LedgerTrackKind::SessionSnapshot,
+                record_id: "snapshot-active".into(),
+                record_kind: "session_snapshot".into(),
+                refs: fin_contracts::LedgerRefs {
+                    agent_id: Some("worker-active".into()),
+                    entity: fin_contracts::EntityRefs {
+                        session_id: Some(active_id.into()),
+                        task_id: Some("task-active".into()),
+                        ..fin_contracts::EntityRefs::default()
+                    },
+                    ledger_id: Some(active_id.into()),
+                    record_refs: Vec::new(),
+                },
+                payload: serde_json::to_value(SessionSnapshotRecord {
+                    snapshot_id: "snapshot-active".into(),
+                    operation_id: "op-active".into(),
+                    trace_id: "trace-active".into(),
+                    turn_id: "turn-active".into(),
+                    refs: fin_contracts::EntityRefs {
+                        session_id: Some(active_id.into()),
+                        task_id: Some("task-active".into()),
+                        ..fin_contracts::EntityRefs::default()
+                    },
+                    user_input: Some("active task".into()),
+                    assistant_summary: "active summary".into(),
+                    important_tool_refs: Vec::new(),
+                    artifact_refs: Vec::new(),
+                    summary: Some("active title".into()),
+                    created_at: "2026-05-24T10:00:00+08:00".into(),
+                })
+                .expect("snapshot active"),
+                caused_by: Some("detail-active".into()),
+                supersedes: None,
+            })
+            .expect("append active");
+        let deleted_ledger = LedgerStore::for_session(&runtime_home, deleted_id).expect("ledger");
+        deleted_ledger
+            .init(
+                Some("task-deleted"),
+                Some(deleted_id),
+                "2026-05-24T10:00:01+08:00",
+            )
+            .expect("init deleted");
+        deleted_ledger
+            .append(fin_runtime::AppendLedgerRecordInput {
+                ts: "2026-05-24T10:00:01+08:00".into(),
+                track: LedgerTrackKind::SessionSnapshot,
+                record_id: "snapshot-deleted".into(),
+                record_kind: "session_snapshot".into(),
+                refs: fin_contracts::LedgerRefs {
+                    agent_id: Some("worker-deleted".into()),
+                    entity: fin_contracts::EntityRefs {
+                        session_id: Some(deleted_id.into()),
+                        task_id: Some("task-deleted".into()),
+                        ..fin_contracts::EntityRefs::default()
+                    },
+                    ledger_id: Some(deleted_id.into()),
+                    record_refs: Vec::new(),
+                },
+                payload: serde_json::to_value(SessionSnapshotRecord {
+                    snapshot_id: "snapshot-deleted".into(),
+                    operation_id: "op-deleted".into(),
+                    trace_id: "trace-deleted".into(),
+                    turn_id: "turn-deleted".into(),
+                    refs: fin_contracts::EntityRefs {
+                        session_id: Some(deleted_id.into()),
+                        task_id: Some("task-deleted".into()),
+                        ..fin_contracts::EntityRefs::default()
+                    },
+                    user_input: Some("deleted task".into()),
+                    assistant_summary: "deleted summary".into(),
+                    important_tool_refs: Vec::new(),
+                    artifact_refs: Vec::new(),
+                    summary: Some("deleted title".into()),
+                    created_at: "2026-05-24T10:00:01+08:00".into(),
+                })
+                .expect("snapshot deleted"),
+                caused_by: Some("detail-deleted".into()),
+                supersedes: None,
+            })
+            .expect("append deleted");
+        write_json(
+            &runtime_home
+                .join("sessions/meta")
+                .join(format!("{active_id}.json")),
+            &json!({ "session_id": active_id, "title":"Renamed active" }),
+        );
+        write_json(
+            &runtime_home
+                .join("sessions/meta")
+                .join(format!("{deleted_id}.json")),
+            &json!({ "session_id": deleted_id, "deleted": true, "archived": true }),
+        );
+
+        let sessions = list_sessions(&runtime_home);
+
+        assert_eq!(sessions.len(), 1);
+        assert_eq!(sessions[0].session_id, active_id);
+        assert_eq!(sessions[0].title, "Renamed active");
+        assert_eq!(sessions[0].preview_100, "active summary");
+        assert_eq!(sessions[0].task_id, "task-active");
+    }
+
+    #[test]
+    fn deleted_session_is_not_visible_for_default_history() {
+        let runtime_home = temp_runtime_home("mobile-history-deleted-filter");
+        let session_id = "session-deleted-history";
+        write_json(
+            &runtime_home
+                .join("sessions/2026/05")
+                .join(session_id)
+                .join("conversation/messages.json"),
+            &json!([{ "role":"user", "content":"deleted should not render" }]),
+        );
+        write_json(
+            &runtime_home.join("runtime/current/last_run.json"),
+            &json!({
+                "session_id": session_id,
+                "session_messages_path": format!("sessions/2026/05/{session_id}/conversation/messages.json")
+            }),
+        );
+        write_json(
+            &runtime_home
+                .join("sessions/meta")
+                .join(format!("{session_id}.json")),
+            &json!({ "session_id": session_id, "deleted": true, "archived": true }),
+        );
+
+        assert!(!session_is_visible(&runtime_home, session_id));
+    }
+
+    #[test]
+    fn runtime_views_include_project_agent_activity_snapshot() {
+        let runtime_home = temp_runtime_home("mobile-activity-cards");
+        write_json(
+            &runtime_home.join("runtime/current/last_run.json"),
+            &json!({
+                "session_id":"system-agent",
+                "task_id":"task-local-multi-agent",
+                "submitted_at":"2026-05-23T00:00:00Z"
+            }),
+        );
+        write_json(
+            &runtime_home.join("runtime/peers/registry.json"),
+            &json!({
+                "peers":[{
+                    "peer_id":"local.project-fin",
+                    "peer_kind":"project_agent",
+                    "presence_state":"online",
+                    "runtime_state":"network_registered",
+                    "connectivity_state":"network_connected",
+                    "binding_state":"agent_rpc_lease",
+                    "lifecycle_state":"online",
+                    "updated_at":"2026-05-23T00:00:00Z"
+                }]
+            }),
+        );
+        let ledger_dir = runtime_home.join("ledgers/project-fin-agent/tracks");
+        fs::create_dir_all(&ledger_dir).expect("ledger dir");
+        fs::write(
+            ledger_dir.join("tools.jsonl"),
+            r#"{"ledger_id":"project-fin-agent","seq":1,"ts":"2026-05-23T00:00:00Z","track":"tools","record_id":"tools-1","record_kind":"tools","refs":{},"payload":{"status":"completed","summary":"project agent consumed delegated turn","tool_call_id":"tool-local-progress"}}
+"#,
+        )
+        .expect("tools track");
+        write_json(
+            &runtime_home.join("runtime/agents/control/runs.json"),
+            &json!([{
+                "agent_run_id":"project-run-local-multi-agent",
+                "agent_id":"local.project-fin",
+                "status":"running",
+                "result_refs":[],
+                "last_heartbeat_at":"2026-05-23T00:00:01Z",
+                "path":"project:fin:local.project-fin"
+            }]),
+        );
+        write_json(
+            &runtime_home.join("runtime/agents/control/mailbox/local.project-fin/inbox.json"),
+            &json!([{
+                "message_id":"msg-dispatch-1",
+                "seq":1,
+                "from_agent_id":"local.system",
+                "to_agent_id":"local.project-fin",
+                "task_id":"task-local-multi-agent",
+                "trigger_turn":true,
+                "payload":{
+                    "kind":"dispatch",
+                    "agent_run_id":"project-run-local-multi-agent",
+                    "task_summary":"research external multi-agent design and propose fin optimizations"
+                },
+                "consumed_at":"2026-05-23T00:00:01Z"
+            }]),
+        );
+
+        let messages = runtime_view_messages(&runtime_home).expect("runtime views");
+        let snapshot = messages
+            .iter()
+            .find(|message| message["type"] == "activity.cards.snapshot")
+            .expect("activity cards snapshot");
+        let cards = snapshot["snapshot"]["source_cards"]
+            .as_array()
+            .expect("source cards");
+        let project = cards
+            .iter()
+            .find(|card| card["source_id"] == "local.project-fin")
+            .expect("project agent card");
+        assert_eq!(project["source_kind"], "project_agent");
+        assert_eq!(project["state"], "running");
+        assert_eq!(project["current_activity"], "delegated task executing");
+        assert!(
+            project["recent_actions"]
+                .as_array()
+                .expect("recent actions")
+                .iter()
+                .any(|action| action["summary"] == "project agent consumed delegated turn")
+        );
+        assert!(
+            project["waiting_detail"]
+                .as_str()
+                .unwrap_or_default()
+                .contains("research external multi-agent design")
+        );
+    }
+
+    #[test]
+    fn incremental_mobile_events_emit_activity_cards_snapshot_when_changed() {
+        let runtime_home = temp_runtime_home("mobile-activity-cards-incremental");
+        write_json(
+            &runtime_home.join("runtime/current/last_run.json"),
+            &json!({
+                "session_id":"system-agent",
+                "task_id":"task-local-multi-agent",
+                "submitted_at":"2026-05-23T00:00:00Z"
+            }),
+        );
+        write_json(
+            &runtime_home.join("runtime/peers/registry.json"),
+            &json!({
+                "peers":[{
+                    "peer_id":"local.project-fin",
+                    "peer_kind":"project_agent",
+                    "presence_state":"online",
+                    "runtime_state":"network_registered",
+                    "connectivity_state":"network_connected",
+                    "binding_state":"agent_rpc_lease",
+                    "lifecycle_state":"online",
+                    "updated_at":"2026-05-23T00:00:00Z"
+                }]
+            }),
+        );
+        let ledger_dir = runtime_home.join("ledgers/project-fin-agent/tracks");
+        fs::create_dir_all(&ledger_dir).expect("ledger dir");
+        fs::write(
+            ledger_dir.join("tools.jsonl"),
+            r#"{"ledger_id":"project-fin-agent","seq":1,"ts":"2026-05-23T00:00:00Z","track":"tools","record_id":"tools-1","record_kind":"tools","refs":{},"payload":{"status":"completed","summary":"project agent consumed delegated turn","tool_call_id":"tool-local-progress"}}
+"#,
+        )
+        .expect("tools track");
+        write_json(
+            &runtime_home.join("runtime/agents/control/runs.json"),
+            &json!([{
+                "agent_run_id":"project-run-local-multi-agent",
+                "agent_id":"local.project-fin",
+                "status":"running",
+                "result_refs":[],
+                "last_heartbeat_at":"2026-05-23T00:00:01Z",
+                "path":"project:fin:local.project-fin"
+            }]),
+        );
+        write_json(
+            &runtime_home.join("runtime/agents/control/mailbox/local.project-fin/inbox.json"),
+            &json!([{
+                "message_id":"msg-dispatch-1",
+                "seq":1,
+                "from_agent_id":"local.system",
+                "to_agent_id":"local.project-fin",
+                "task_id":"task-local-multi-agent",
+                "trigger_turn":true,
+                "payload":{
+                    "kind":"dispatch",
+                    "agent_run_id":"project-run-local-multi-agent",
+                    "task_summary":"research external multi-agent design and propose fin optimizations"
+                },
+                "consumed_at":"2026-05-23T00:00:01Z"
+            }]),
+        );
+
+        let mut last_signature = None;
+        let message =
+            build_activity_cards_snapshot_message_if_changed(&runtime_home, &mut last_signature)
+                .expect("message")
+                .expect("snapshot event");
+        assert_eq!(message["type"], "activity.cards.snapshot");
+        assert_eq!(
+            message["snapshot"]["source_cards"][0]["source_kind"],
+            "project_agent"
+        );
+
+        let second =
+            build_activity_cards_snapshot_message_if_changed(&runtime_home, &mut last_signature)
+                .expect("second");
+        assert!(second.is_none());
+    }
+
+    #[test]
+    fn runtime_views_preserve_completed_project_agent_snapshot() {
+        let runtime_home = temp_runtime_home("mobile-activity-cards-completed");
+        write_json(
+            &runtime_home.join("runtime/current/last_run.json"),
+            &json!({
+                "session_id":"system-agent",
+                "task_id":"task-local-multi-agent",
+                "submitted_at":"2026-05-23T00:00:00Z"
+            }),
+        );
+        write_json(
+            &runtime_home.join("runtime/peers/registry.json"),
+            &json!({
+                "peers":[{
+                    "peer_id":"local.project-fin",
+                    "peer_kind":"project_agent",
+                    "presence_state":"online",
+                    "runtime_state":"network_registered",
+                    "connectivity_state":"network_connected",
+                    "binding_state":"agent_rpc_lease",
+                    "lifecycle_state":"online",
+                    "updated_at":"2026-05-23T00:00:05Z"
+                }]
+            }),
+        );
+        write_json(
+            &runtime_home.join("runtime/agents/control/runs.json"),
+            &json!([{
+                "agent_run_id":"project-run-local-multi-agent",
+                "agent_id":"local.project-fin",
+                "status":"completed",
+                "result_refs":["artifact://report-1"],
+                "last_heartbeat_at":"2026-05-23T00:00:05Z",
+                "closed_at":"2026-05-23T00:00:05Z",
+                "path":"project:fin:local.project-fin"
+            }]),
+        );
+        write_json(
+            &runtime_home.join("runtime/agents/control/mailbox/system-agent/inbox.json"),
+            &json!([{
+                "message_id":"msg-result-1",
+                "seq":2,
+                "from_agent_id":"local.project-fin",
+                "to_agent_id":"system-agent",
+                "task_id":"task-local-multi-agent",
+                "trigger_turn":false,
+                "payload":{
+                    "kind":"project_result",
+                    "agent_run_id":"project-run-local-multi-agent",
+                    "result_summary":"project agent completed delegated research and published receipts"
+                },
+                "consumed_at":"2026-05-23T00:00:05Z"
+            }]),
+        );
+
+        let messages = runtime_view_messages(&runtime_home).expect("runtime views");
+        let snapshot = messages
+            .iter()
+            .find(|message| message["type"] == "activity.cards.snapshot")
+            .expect("activity cards snapshot");
+        let cards = snapshot["snapshot"]["source_cards"]
+            .as_array()
+            .expect("source cards");
+        let project = cards
+            .iter()
+            .find(|card| card["source_id"] == "local.project-fin")
+            .expect("project agent card");
+        assert_eq!(project["source_kind"], "project_agent");
+        assert_eq!(project["state"], "completed");
+        assert_eq!(
+            project["summary"],
+            "project agent completed delegated research and published receipts"
+        );
+        assert_eq!(
+            project["current_activity"],
+            "project agent completed delegated research and published receipts"
+        );
+    }
+
+    #[test]
+    fn mobile_effective_config_uses_user_provider_truth_over_stale_system_provider() {
+        let unique = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .expect("time")
+            .as_nanos();
+        let runtime_home = std::env::temp_dir().join(format!("fin-mobile-config-{unique}"));
+        fs::create_dir_all(runtime_home.join("config")).expect("config dir");
+        fs::write(
+            runtime_home.join("config/user.toml"),
+            r#"
+default_provider = "good"
+
+[providers.good]
+protocol = "anthropic-wire"
+base_url = "https://good.example/anthropic"
+model = "good-model"
+api_key = "good-key"
+"#,
+        )
+        .expect("write user");
+        fs::write(
+            runtime_home.join("config/system.toml"),
+            r#"
+default_provider = "bad"
+
+[providers.bad]
+name = "bad"
+protocol = "anthropic-wire"
+base_url = "https://bad.example/anthropic"
+model = "bad-model"
+
+[providers.bad.credential]
+kind = "direct_api_key"
+api_key = "bad-key"
+
+[providers.bad.headers]
+
+[policy]
+default_role = "project"
+entry_role = "system"
+protocol_version = "fin.m1"
+
+[policy.roles.project]
+stream = false
+timeout_ms = 60000
+
+[policy.roles.project.provider_path]
+strategy = "priority"
+
+[[policy.roles.project.provider_path.targets]]
+provider_name = "bad"
+model = "bad-model"
+
+[policy.roles.system]
+stream = false
+timeout_ms = 60000
+
+[policy.roles.system.provider_path]
+strategy = "priority"
+
+[[policy.roles.system.provider_path.targets]]
+provider_name = "bad"
+model = "bad-model"
+"#,
+        )
+        .expect("write stale system");
+
+        let system = read_effective_system_config(&runtime_home).expect("effective config");
+
+        assert_eq!(system.default_provider, "good");
+        assert!(system.providers.contains_key("good"));
+        assert!(!system.providers.contains_key("bad"));
+    }
+
+    #[test]
+    fn session_list_includes_session_dirs_without_ledger() {
+        let runtime_home = temp_runtime_home("mobile-session-no-ledger");
+        let session_id = "session-no-ledger-fresh";
+        // Create session dir in sessions/ but NO ledger dir
+        let session_dir = runtime_home.join("sessions/2026/05").join(session_id);
+        std::fs::create_dir_all(session_dir.join("conversation")).expect("session dir");
+        std::fs::write(session_dir.join("conversation/messages.json"), b"[]").expect("messages");
+        // Point last_run.json to this session
+        write_json(
+            &runtime_home.join("runtime/current/last_run.json"),
+            &json!({
+                "session_id": session_id,
+                "task_id": "task-no-ledger-fresh",
+            }),
+        );
+
+        let sessions = list_sessions(&runtime_home);
+        let found = sessions.iter().find(|s| s.session_id == session_id);
+        assert!(
+            found.is_some(),
+            "new session without ledger must appear in list, got: {:?}",
+            sessions.iter().map(|s| &s.session_id).collect::<Vec<_>>()
+        );
+        assert_eq!(found.unwrap().task_id, "task-no-ledger-fresh");
+    }
+
+    #[test]
+    fn session_list_merges_ledger_and_session_dirs_without_duplicates() {
+        let runtime_home = temp_runtime_home("mobile-session-merge");
+        let session_id = "session-merge-both";
+        // Create ledger entry
+        let ledger = LedgerStore::for_session(&runtime_home, session_id).expect("ledger");
+        ledger
+            .init(
+                Some("task-merge"),
+                Some(session_id),
+                "2026-05-24T10:00:00+08:00",
+            )
+            .expect("init");
+        ledger
+            .append(fin_runtime::AppendLedgerRecordInput {
+                ts: "2026-05-24T10:00:00+08:00".into(),
+                track: LedgerTrackKind::SessionSnapshot,
+                record_id: "snapshot-merge".into(),
+                record_kind: "session_snapshot".into(),
+                refs: fin_contracts::LedgerRefs {
+                    agent_id: Some("worker-merge".into()),
+                    entity: fin_contracts::EntityRefs {
+                        session_id: Some(session_id.into()),
+                        task_id: Some("task-merge".into()),
+                        ..fin_contracts::EntityRefs::default()
+                    },
+                    ledger_id: Some(session_id.into()),
+                    record_refs: Vec::new(),
+                },
+                payload: serde_json::to_value(SessionSnapshotRecord {
+                    snapshot_id: "snapshot-merge".into(),
+                    operation_id: "op-merge".into(),
+                    trace_id: "trace-merge".into(),
+                    turn_id: "turn-merge".into(),
+                    refs: fin_contracts::EntityRefs {
+                        session_id: Some(session_id.into()),
+                        task_id: Some("task-merge".into()),
+                        ..fin_contracts::EntityRefs::default()
+                    },
+                    user_input: Some("merge task".into()),
+                    assistant_summary: "merge summary".into(),
+                    important_tool_refs: Vec::new(),
+                    artifact_refs: Vec::new(),
+                    summary: Some("merge title".into()),
+                    created_at: "2026-05-24T10:00:00+08:00".into(),
+                })
+                .expect("snapshot merge"),
+                caused_by: Some("detail-merge".into()),
+                supersedes: None,
+            })
+            .expect("append merge");
+        // Also create a matching session dir
+        let session_dir = runtime_home.join("sessions/2026/05").join(session_id);
+        std::fs::create_dir_all(session_dir.join("conversation")).expect("session dir");
+        std::fs::write(session_dir.join("conversation/messages.json"), b"[]").expect("messages");
+
+        let sessions = list_sessions(&runtime_home);
+        let matches: Vec<_> = sessions
+            .iter()
+            .filter(|s| s.session_id == session_id)
+            .collect();
+        assert_eq!(
+            matches.len(),
+            1,
+            "must not have duplicates, got: {:?}",
+            sessions.iter().map(|s| &s.session_id).collect::<Vec<_>>()
+        );
+        // Should use ledger data (has summary), not fallback
+        assert_eq!(matches[0].title, "merge title");
+        assert_eq!(matches[0].preview_100, "merge summary");
     }
 }

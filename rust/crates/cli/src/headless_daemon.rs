@@ -15,8 +15,9 @@ use fin_debug_server::{
 use fin_provider::InferenceProvider;
 use headless_daemon_support::{
     HeadlessCycleSummary, HeadlessDaemonLeaseRecord, HeadlessDaemonPaths, ManagedSession,
-    daemon_id, daemon_recovery, daemon_state, discover_sessions_with_work, persist_daemon_state,
-    persist_lease, persist_recovery_action, process_alive, read_json_if_exists, stop_requested,
+    daemon_id, daemon_recovery, daemon_state, discover_sessions_with_work, lease_is_stale,
+    persist_daemon_state, persist_lease, persist_recovery_action, process_alive,
+    read_json_if_exists, stop_requested,
 };
 use std::{
     fs,
@@ -63,7 +64,7 @@ pub(crate) fn start_headless_daemon(
     let daemon_id = daemon_id(system);
     let paths = HeadlessDaemonPaths::new(&runtime_home);
     if let Some(record) = read_json_if_exists::<HeadlessDaemonLeaseRecord>(&paths.lease_path)? {
-        if process_alive(record.pid) {
+        if process_alive(record.pid) && !lease_is_stale(&record) {
             return Ok(HeadlessDaemonStartReport {
                 daemon_id,
                 status: "already_running".into(),

@@ -184,7 +184,13 @@ struct StoredAssignmentRecord {
 #[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize)]
 struct StoredMailboxMessage {
     #[serde(default)]
+    message_id: String,
+    #[serde(default)]
     target_peer_id: String,
+    #[serde(default)]
+    to_agent_id: String,
+    #[serde(default)]
+    consumed_at: Option<String>,
 }
 
 fn load_agent_presence_summary(runtime_home: &str) -> Option<String> {
@@ -252,7 +258,7 @@ fn load_assignment_queue_summary(runtime_home: &str) -> Option<String> {
 }
 
 fn load_mailbox_summary(runtime_home: &str) -> Option<String> {
-    let mailbox_root = Path::new(runtime_home).join("runtime/mailbox");
+    let mailbox_root = Path::new(runtime_home).join("runtime/agents/control/mailbox");
     let Ok(entries) = fs::read_dir(mailbox_root) else {
         return None;
     };
@@ -268,11 +274,15 @@ fn load_mailbox_summary(runtime_home: &str) -> Option<String> {
         let Ok(items) = serde_json::from_str::<Vec<StoredMailboxMessage>>(&content) else {
             continue;
         };
-        if items.is_empty() {
+        let pending = items
+            .iter()
+            .filter(|item| item.consumed_at.as_deref().unwrap_or("").trim().is_empty())
+            .count();
+        if pending == 0 {
             continue;
         }
-        total_messages += items.len();
-        boxes.push(format!("{peer_id}:{}", items.len()));
+        total_messages += pending;
+        boxes.push(format!("{peer_id}:{pending}"));
     }
     boxes.sort();
 

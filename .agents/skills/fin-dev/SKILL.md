@@ -162,3 +162,9 @@ summary: Android 客户端开发强制测试回环（先测后合入）
 - 当前项目本地 skill 统一收敛到：`.agents/skills/fin-dev/SKILL.md`。
 - 新增经验默认写入 fin-dev，不再新建平行本地 skill（除非用户明确要求拆分）。
 - 若发现旧 skill 与 fin-dev 重复，优先合并到 fin-dev 并删除重复入口，避免多真源分散。
+
+## 8. 提示词/会话渲染经验精华（2026-05-24）
+- 触发信号：模型会调工具但不会持续推进，或 UI 把连续协作渲染成孤立问答。可复用动作：先补红测，强制 prompt 写明“连续监督直到 completion/failed/timeout”与“forward timeline only”，再在 owning render layer 改成 append-only chat thread。
+- 反模式：只给工具名/角色规则，不给 managed execution workflow；或在 UI 里重写旧卡片冒充实时进度。这两种都会破坏真实多 agent 闭环感知。
+
+- 触发信号：多 agent harness 虽有 Agent RPC 握手/派发，但 project 子实例仍直接读取共享 runtime mailbox 文件。可复用动作：优先补 Agent RPC receive/ack 红测，再把子实例收件切到 RPC ingress；否则只是“发送走网络、接收走共享文件”的假双实例。

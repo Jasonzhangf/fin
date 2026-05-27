@@ -2,6 +2,165 @@ use crate::{EntityRefs, InputAttachmentSummary};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum LedgerTrackKind {
+    SessionDetail,
+    SessionSnapshot,
+    Events,
+    Turns,
+    Steps,
+    Tools,
+    Provider,
+    Control,
+    Knowledge,
+}
+
+impl LedgerTrackKind {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::SessionDetail => "session.detail",
+            Self::SessionSnapshot => "session.snapshot",
+            Self::Events => "events",
+            Self::Turns => "turns",
+            Self::Steps => "steps",
+            Self::Tools => "tools",
+            Self::Provider => "provider",
+            Self::Control => "control",
+            Self::Knowledge => "knowledge",
+        }
+    }
+
+    pub fn file_name(&self) -> &'static str {
+        match self {
+            Self::SessionDetail => "session.detail.jsonl",
+            Self::SessionSnapshot => "session.snapshot.jsonl",
+            Self::Events => "events.jsonl",
+            Self::Turns => "turns.jsonl",
+            Self::Steps => "steps.jsonl",
+            Self::Tools => "tools.jsonl",
+            Self::Provider => "provider.jsonl",
+            Self::Control => "control.jsonl",
+            Self::Knowledge => "knowledge.jsonl",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct LedgerRefs {
+    #[serde(flatten)]
+    pub entity: EntityRefs,
+    #[serde(default)]
+    pub agent_id: Option<String>,
+    #[serde(default)]
+    pub ledger_id: Option<String>,
+    #[serde(default)]
+    pub record_refs: Vec<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct LedgerRecordEnvelope {
+    pub ledger_id: String,
+    pub seq: u64,
+    pub ts: String,
+    pub track: LedgerTrackKind,
+    pub record_id: String,
+    pub record_kind: String,
+    pub refs: LedgerRefs,
+    pub payload: serde_json::Value,
+    #[serde(default)]
+    pub caused_by: Option<String>,
+    #[serde(default)]
+    pub supersedes: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct LedgerTimelineIndexRecord {
+    pub ledger_id: String,
+    pub seq: u64,
+    pub ts: String,
+    pub track: LedgerTrackKind,
+    pub record_id: String,
+    pub record_kind: String,
+    pub refs: LedgerRefs,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct LedgerIdentityRecord {
+    pub ledger_id: String,
+    pub schema_version: String,
+    #[serde(default)]
+    pub project_id: Option<String>,
+    #[serde(default)]
+    pub session_id: Option<String>,
+    pub created_at: String,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SessionDetailRecord {
+    pub detail_id: String,
+    pub operation_id: String,
+    pub trace_id: String,
+    pub turn_id: String,
+    #[serde(flatten)]
+    pub refs: EntityRefs,
+    #[serde(default)]
+    pub user_input: Option<String>,
+    #[serde(default)]
+    pub assistant_visible_output: Option<String>,
+    #[serde(default)]
+    pub context_snapshot_ref: Option<String>,
+    #[serde(default)]
+    pub provider_refs: Vec<String>,
+    #[serde(default)]
+    pub tool_refs: Vec<String>,
+    #[serde(default)]
+    pub step_refs: Vec<String>,
+    #[serde(default)]
+    pub control_refs: Vec<String>,
+    #[serde(default)]
+    pub event_refs: Vec<String>,
+    pub created_at: String,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SessionSnapshotRecord {
+    pub snapshot_id: String,
+    pub operation_id: String,
+    pub trace_id: String,
+    pub turn_id: String,
+    #[serde(flatten)]
+    pub refs: EntityRefs,
+    #[serde(default)]
+    pub user_input: Option<String>,
+    pub assistant_summary: String,
+    #[serde(default)]
+    pub important_tool_refs: Vec<String>,
+    #[serde(default)]
+    pub artifact_refs: Vec<String>,
+    #[serde(default)]
+    pub summary: Option<String>,
+    pub created_at: String,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct KnowledgeLedgerRecord {
+    pub knowledge_id: String,
+    pub scope: String,
+    pub statement: String,
+    #[serde(default)]
+    pub evidence_refs: Vec<String>,
+    #[serde(default)]
+    pub source_record_ids: Vec<String>,
+    pub confidence: u8,
+    pub created_at: String,
+    pub valid_from: String,
+    #[serde(default)]
+    pub supersedes: Option<String>,
+    #[serde(default)]
+    pub tags: Vec<String>,
+}
+
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct TokenUsageRecord {
     #[serde(default)]

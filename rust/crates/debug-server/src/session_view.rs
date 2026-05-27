@@ -19,10 +19,14 @@ pub(crate) fn last_run_artifact_path(
     field: &str,
 ) -> Result<Option<PathBuf>, DebugDataError> {
     let last_run = read_last_run_json(runtime_home)?;
-    Ok(last_run
+    let explicit = last_run
         .get(field)
         .and_then(Value::as_str)
-        .map(|relative| runtime_home.join(relative)))
+        .map(|relative| runtime_home.join(relative));
+    if explicit.is_some() {
+        return Ok(explicit);
+    }
+    Ok(derive_session_artifact_path(runtime_home, &last_run, field))
 }
 
 pub(crate) fn sibling_artifact_path(
@@ -67,12 +71,8 @@ pub(crate) fn read_json_value(path: &Path) -> Result<Value, DebugDataError> {
 pub(crate) fn session_event_stream_path(
     runtime_home: &Path,
 ) -> Result<Option<PathBuf>, DebugDataError> {
-    sibling_artifact_path(
-        runtime_home,
-        "session_messages_path",
-        "conversation/messages.json",
-        "events/stream.jsonl",
-    )
+    let last_run = read_last_run_json(runtime_home)?;
+    Ok(current_session_dir(runtime_home, &last_run).map(|dir| dir.join("events/stream.jsonl")))
 }
 
 pub(crate) fn session_event_archive_index_path(
@@ -217,6 +217,70 @@ fn count_non_empty_lines(path: &Path) -> Result<usize, DebugDataError> {
         source,
     })?;
     Ok(body.lines().filter(|line| !line.trim().is_empty()).count())
+}
+
+fn derive_session_artifact_path(
+    runtime_home: &Path,
+    last_run: &Value,
+    field: &str,
+) -> Option<PathBuf> {
+    let session_dir = current_session_dir(runtime_home, last_run)?;
+    let relative = match field {
+        "session_messages_path" => "conversation/messages.json",
+        "session_recent_contexts_path" => "context/recent_contexts.json",
+        "session_recent_digests_path" => "digests/recent_digests.json",
+        "session_recent_reasoning_path" => "reasoning/recent_reasoning_views.json",
+        "session_recent_tool_records_path" => "tools/recent_tool_records.json",
+        "session_recent_closures_path" => "closures/recent_closures.json",
+        "session_recent_turns_path" => "turns/recent_turns.json",
+        "session_event_archive_index_path" => "events/archive_index.json",
+        _ => return None,
+    };
+    Some(session_dir.join(relative))
+}
+
+fn current_session_dir(runtime_home: &Path, last_run: &Value) -> Option<PathBuf> {
+    if let Some(session_id) = last_run.get("session_id").and_then(Value::as_str)
+        && let Some(dir) = find_session_dir(runtime_home, session_id)
+    {
+        return Some(dir);
+    }
+    last_run
+        .get("session_messages_path")
+        .and_then(Value::as_str)
+        .and_then(|relative| relative.strip_suffix("conversation/messages.json"))
+        .map(|prefix| runtime_home.join(prefix.trim_end_matches('/')))
+}
+
+fn find_session_dir(runtime_home: &Path, session_id: &str) -> Option<PathBuf> {
+    let root = runtime_home.join("sessions");
+    let years = fs::read_dir(root).ok()?;
+    for year in years.flatten() {
+        let year_path = year.path();
+        if !year_path.is_dir() {
+            continue;
+        }
+        let year_name = year.file_name().to_string_lossy().to_string();
+        if year_name.len() != 4 || !year_name.chars().all(|ch| ch.is_ascii_digit()) {
+            continue;
+        }
+        let months = fs::read_dir(year_path).ok()?;
+        for month in months.flatten() {
+            let month_path = month.path();
+            if !month_path.is_dir() {
+                continue;
+            }
+            let month_name = month.file_name().to_string_lossy().to_string();
+            if month_name.len() != 2 || !month_name.chars().all(|ch| ch.is_ascii_digit()) {
+                continue;
+            }
+            let dir = month_path.join(session_id);
+            if dir.is_dir() {
+                return Some(dir);
+            }
+        }
+    }
+    None
 }
 
 fn relative_path(path: &Path, runtime_home: &Path) -> String {

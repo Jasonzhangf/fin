@@ -1,5 +1,8 @@
 use crate::{CliError, fs_utils::read_file, runtime_home::resolved_runtime_home};
-use fin_config::{ConfigMapper, SystemConfig, parse_system_toml, parse_user_toml};
+use fin_config::{
+    ConfigMapper, ProviderProfileImport, ProviderProfileImportOptions, SystemConfig,
+    parse_system_toml, parse_user_toml, user_to_toml,
+};
 use fin_provider::{ProviderFacade, ProviderRegistry};
 use std::{fs, path::Path};
 
@@ -17,13 +20,8 @@ pub(crate) fn load_effective_system_config(
     let system_path = runtime_home.join("config/system.toml");
     match fs::read_to_string(&system_path) {
         Ok(content) => {
-            let mut existing = parse_system_toml(&content)?;
-            existing.default_provider = mapped.default_provider;
-            existing.providers = mapped.providers;
-            existing.runtime.runtime_home = mapped.runtime.runtime_home;
-            existing.runtime.device_name = mapped.runtime.device_name;
-            existing.validate()?;
-            Ok(existing)
+            let existing = parse_system_toml(&content)?;
+            Ok(ConfigMapper::merge_user_layer(mapped, existing)?)
         }
         Err(err) if err.kind() == std::io::ErrorKind::NotFound => Ok(mapped),
         Err(source) => Err(CliError::ReadFile {
@@ -36,6 +34,44 @@ pub(crate) fn load_effective_system_config(
 pub(crate) fn load_system_config(path: &Path) -> Result<SystemConfig, CliError> {
     let content = read_file(path)?;
     map_system_config(&content)
+}
+
+pub(crate) fn import_rcc_provider_profile(
+    user_path: &Path,
+    provider_json_path: &Path,
+) -> Result<SystemConfig, CliError> {
+    let user_toml = match fs::read_to_string(user_path) {
+        Ok(content) => content,
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => {
+            "default_provider = \"mini27\"\n".into()
+        }
+        Err(source) => {
+            return Err(CliError::ReadFile {
+                path: user_path.display().to_string(),
+                source,
+            });
+        }
+    };
+    let mut user = parse_user_toml(&user_toml)?;
+    let imported = ProviderProfileImport::from_rcc_file(
+        provider_json_path,
+        &ProviderProfileImportOptions::default(),
+    )?;
+    user.default_provider = imported.provider_name.clone();
+    user.providers
+        .insert(imported.provider_name.clone(), imported.provider);
+    let system = ConfigMapper::map_user_to_system(&user)?;
+    if let Some(parent) = user_path.parent() {
+        fs::create_dir_all(parent).map_err(|source| CliError::WriteFile {
+            path: parent.display().to_string(),
+            source,
+        })?;
+    }
+    fs::write(user_path, user_to_toml(&user)?).map_err(|source| CliError::WriteFile {
+        path: user_path.display().to_string(),
+        source,
+    })?;
+    Ok(system)
 }
 
 pub(crate) fn default_provider_facade(system: &SystemConfig) -> Result<ProviderFacade, CliError> {
@@ -145,5 +181,45 @@ api_key_env = "OPENAI_API_KEY"
         assert!(effective.runtime.startup.system_agent.auto_resume);
         assert_eq!(effective.runtime.startup.project_agents.len(), 0);
         assert_eq!(effective.runtime.device_name.as_deref(), Some("mac-studio"));
+    }
+
+    #[test]
+    fn import_rcc_provider_profile_preserves_existing_providers_and_selects_profile() {
+        let runtime_home = temp_runtime_home("rcc-import");
+        let user_path = runtime_home.join("config/user.toml");
+        fs::write(&user_path, sample_user_toml()).expect("seed user toml");
+        let provider_path = runtime_home.join("config/rcc.json");
+        fs::write(
+            &provider_path,
+            r#"{
+              "provider": {
+                "type": "openai",
+                "baseURL": "http://guizhouyun.site:2080",
+                "models": { "MiniMax-M2.7": {}, "minimax": {} },
+                "auth": { "type": "apikey", "apiKey": "sk-test-minimax" }
+              }
+            }"#,
+        )
+        .expect("write provider profile");
+
+        let system = import_rcc_provider_profile(&user_path, &provider_path).expect("import rcc");
+        let written = fs::read_to_string(&user_path).expect("read written user toml");
+        let user = parse_user_toml(&written).expect("parse written user toml");
+
+        assert_eq!(system.default_provider, "mini27");
+        assert_eq!(
+            system.default_provider_config().unwrap().model,
+            "MiniMax-M2.7"
+        );
+        assert!(user.providers.contains_key("openai"));
+        assert!(user.providers.contains_key("mini27"));
+        assert_eq!(user.default_provider, "mini27");
+        assert_eq!(
+            user.providers["mini27"]
+                .headers
+                .get("authorization")
+                .map(String::as_str),
+            Some("Bearer sk-test-minimax")
+        );
     }
 }

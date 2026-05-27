@@ -61,10 +61,16 @@ fn mailbox_send_then_poll_consume_produces_expected_events() {
             .any(|(event_type, _)| event_type == "mailbox.polled")
     );
 
-    let inbox_path = runtime_home.join("runtime/mailbox/peer-reviewer/inbox.json");
+    let inbox_path = runtime_home.join("runtime/agents/control/mailbox/peer-reviewer/inbox.json");
+    assert!(
+        !runtime_home
+            .join("runtime/mailbox/peer-reviewer/inbox.json")
+            .exists()
+    );
     let inbox_text = fs::read_to_string(&inbox_path).expect("inbox text");
     let inbox: Vec<serde_json::Value> = serde_json::from_str(&inbox_text).expect("inbox json");
-    assert!(inbox.is_empty());
+    assert_eq!(inbox.len(), 1);
+    assert!(inbox[0]["consumed_at"].as_str().is_some());
 }
 
 #[test]
@@ -206,10 +212,16 @@ fn project_worker_assignment_and_mailbox_chain_produces_local_worker_truth() {
             .contains("messages=1")
     );
 
-    let inbox_path = runtime_home.join("runtime/mailbox/local-worker-b/inbox.json");
+    let inbox_path = runtime_home.join("runtime/agents/control/mailbox/local-worker-b/inbox.json");
+    assert!(
+        !runtime_home
+            .join("runtime/mailbox/local-worker-b/inbox.json")
+            .exists()
+    );
     let inbox_text = fs::read_to_string(&inbox_path).expect("worker mailbox");
     let inbox: Vec<serde_json::Value> = serde_json::from_str(&inbox_text).expect("worker inbox");
-    assert!(inbox.is_empty());
+    assert_eq!(inbox.len(), 1);
+    assert!(inbox[0]["consumed_at"].as_str().is_some());
 }
 
 #[test]

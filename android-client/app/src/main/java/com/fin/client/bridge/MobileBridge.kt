@@ -4,6 +4,7 @@ import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import android.webkit.JavascriptInterface
+import android.webkit.WebView
 import androidx.core.content.FileProvider
 import com.fin.client.scan.QrPayloadParser
 import com.fin.client.storage.WsProfileStore
@@ -22,6 +23,7 @@ import java.net.Proxy
 import java.net.Socket
 import java.net.URI
 import java.time.Instant
+import android.util.Base64
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 import org.json.JSONObject
@@ -29,13 +31,21 @@ import org.json.JSONObject
 class MobileBridge(
     private val context: Context,
     private val profileStore: WsProfileStore,
+    private val nativeThemeApplier: ((String) -> Unit)? = null,
+    private val nativeChromeModeApplier: ((String) -> Unit)? = null,
 ) {
     private val tag = "FinMobileBridge"
+    private var webView: WebView? = null
+    private var nativeWebSocket: WebSocket? = null
     private val httpClient = OkHttpClient.Builder()
         .proxy(Proxy.NO_PROXY)
         .connectTimeout(20, TimeUnit.SECONDS)
         .readTimeout(60, TimeUnit.SECONDS)
         .build()
+
+    fun attachWebView(view: WebView) {
+        webView = view
+    }
 
     @JavascriptInterface
     fun showKeyboard(): String {
@@ -59,6 +69,71 @@ class MobileBridge(
     @JavascriptInterface
     fun setDaemonAddress(host: String, port: Int): String {
         profileStore.setDaemonAddress(host, port)
+        return "ok"
+    }
+
+    @JavascriptInterface
+    fun applyNativeTheme(theme: String): String {
+        nativeThemeApplier?.invoke(theme)
+        return "ok"
+    }
+
+    @JavascriptInterface
+    fun applyNativeChromeMode(mode: String): String {
+        nativeChromeModeApplier?.invoke(mode)
+        return "ok"
+    }
+
+    @JavascriptInterface
+    fun nativeWsConnect(endpoint: String, token: String, project: String): String {
+        return runCatching {
+            nativeWebSocket?.close(1000, "replace_connection")
+            val request = Request.Builder().url(endpoint).build()
+            nativeWebSocket = httpClient.newWebSocket(request, object : WebSocketListener() {
+                override fun onOpen(webSocket: WebSocket, response: okhttp3.Response) {
+                    appendConnectionEvent("native_ws.open endpoint=$endpoint")
+                    val handshake = JSONObject().apply {
+                        put("type", "mobile.handshake")
+                        put("token", token)
+                        put("project", project)
+                        put("scopes", org.json.JSONArray(listOf("session.read", "session.write", "runtime.read")))
+                    }
+                    webSocket.send(handshake.toString())
+                    emitNativeWsState("handshaking")
+                }
+
+                override fun onMessage(webSocket: WebSocket, text: String) {
+                    emitNativeWsMessage(text)
+                }
+
+                override fun onFailure(webSocket: WebSocket, t: Throwable, response: okhttp3.Response?) {
+                    val detail = t.message ?: "unknown_failure"
+                    appendConnectionEvent("native_ws.failure endpoint=$endpoint detail=$detail")
+                    emitNativeWsState("endpoint_unreachable:$detail")
+                }
+
+                override fun onClosed(webSocket: WebSocket, code: Int, reason: String) {
+                    appendConnectionEvent("native_ws.closed code=$code reason=$reason")
+                    emitNativeWsState("closed")
+                }
+            })
+            "ok"
+        }.getOrElse {
+            val detail = it.message ?: "unknown"
+            appendConnectionEvent("native_ws.connect_error endpoint=$endpoint detail=$detail")
+            "error:$detail"
+        }
+    }
+
+    @JavascriptInterface
+    fun nativeWsSend(payloadJson: String): String {
+        return if (nativeWebSocket?.send(payloadJson) == true) "ok" else "error:native_ws_not_connected"
+    }
+
+    @JavascriptInterface
+    fun nativeWsClose(): String {
+        nativeWebSocket?.close(1000, "client_close")
+        nativeWebSocket = null
         return "ok"
     }
 
@@ -288,7 +363,7 @@ class MobileBridge(
     fun providerCacheDebug(): String {
         return runCatching {
             val filesDirPath = context.filesDir.absolutePath
-            val cacheFile = File(context.filesDir, "config/provider_config_cache.json")
+            val cacheFile = File(context.filesDir, "config/runtime_config_snapshot.json")
             val exists = cacheFile.exists()
             val size = if (exists) cacheFile.length() else 0L
             val preview = if (exists) {
@@ -413,4 +488,19 @@ class MobileBridge(
 
     @JavascriptInterface
     fun getDeviceInfo(): String = """{"platform":"android","mode":"webui-reuse"}"""
+
+    private fun emitNativeWsMessage(text: String) {
+        val encoded = Base64.encodeToString(text.toByteArray(Charsets.UTF_8), Base64.NO_WRAP)
+        val quoted = JSONObject.quote(encoded)
+        emitJavascript("window.onNativeWsMessageB64 && window.onNativeWsMessageB64($quoted);")
+    }
+
+    private fun emitNativeWsState(state: String) {
+        val quoted = JSONObject.quote(state)
+        emitJavascript("window.onNativeWsState && window.onNativeWsState($quoted);")
+    }
+
+    private fun emitJavascript(script: String) {
+        webView?.post { webView?.evaluateJavascript(script, null) }
+    }
 }

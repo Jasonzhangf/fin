@@ -74,6 +74,7 @@ data class ProviderProfile(
 
 @Serializable
 data class ProviderConfigCache(
+    val cache_kind: String = "runtime_config_snapshot",
     val default_profile: String,
     val profiles: List<ProviderProfile>,
     val active_thinking_effort: String,

@@ -135,12 +135,12 @@ async def main():
 if __name__=='__main__':
     async def with_retry():
         last_err=None
-        for i in range(2):
+        for i in range(5):
             try:
                 return await main()
             except ConnectionClosed as e:
                 last_err=e
-                time.sleep(1.2*(i+1))
+                time.sleep(2**i)
                 continue
         raise last_err if last_err else RuntimeError('unknown e2e failure')
     raise SystemExit(asyncio.run(with_retry()))

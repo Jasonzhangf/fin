@@ -64,6 +64,12 @@ pub(super) fn read_json_if_exists<T: for<'de> Deserialize<'de>>(
     }
 }
 
+pub(super) fn read_json_vec_if_exists<T: for<'de> Deserialize<'de>>(
+    path: &Path,
+) -> Result<Vec<T>, RuntimeError> {
+    read_json_if_exists(path).map(|value| value.unwrap_or_default())
+}
+
 pub(super) fn pending_inbound_notice(
     runtime_home: &Path,
     session_id: Option<&str>,

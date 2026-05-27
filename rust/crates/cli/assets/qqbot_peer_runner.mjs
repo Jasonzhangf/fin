@@ -36,7 +36,15 @@ const state = {
   lastSeq: null,
   intentLevelIndex: 0,
   lastSuccessfulIntentLevel: -1,
+  reconnectCount: 0,
 };
+
+const RETRY_ATTEMPTS = 5;
+const RETRY_BASE_BACKOFF_MS = 1000;
+
+function exponentialBackoffMs(attempt) {
+  return RETRY_BASE_BACKOFF_MS * Math.pow(2, Math.max(0, attempt - 1));
+}
 
 let stdoutBroken = false;
 
@@ -120,28 +128,34 @@ async function getAccessToken(forceRefresh = false) {
   return state.token;
 }
 
-async function apiRequest(method, path, body, retry = true) {
-  const token = await getAccessToken(false);
-  try {
-    return await requestJson(
-      `${API_BASE}${path}`,
-      {
-        method,
-        headers: {
-          Authorization: `QQBot ${token}`,
-          'Content-Type': 'application/json',
+async function apiRequest(method, path, body) {
+  let lastErr = null;
+  for (let attempt = 1; attempt <= RETRY_ATTEMPTS; attempt += 1) {
+    const token = await getAccessToken(attempt > 1);
+    try {
+      return await requestJson(
+        `${API_BASE}${path}`,
+        {
+          method,
+          headers: {
+            Authorization: `QQBot ${token}`,
+            'Content-Type': 'application/json',
+          },
+          body: body ? JSON.stringify(body) : undefined,
         },
-        body: body ? JSON.stringify(body) : undefined,
-      },
-      `api:${path}`,
-    );
-  } catch (err) {
-    if (!retry || !String(err).includes('(401)')) {
-      throw err;
+        `api:${path}`,
+      );
+    } catch (err) {
+      lastErr = err;
+      const text = String(err || '');
+      const retryable = text.includes('(401)') || text.includes('(429)') || text.includes('(500)') || text.includes('(502)') || text.includes('(503)') || text.includes('(504)');
+      if (!retryable || attempt >= RETRY_ATTEMPTS) {
+        throw err;
+      }
+      await new Promise((resolve) => setTimeout(resolve, exponentialBackoffMs(attempt)));
     }
-    await getAccessToken(true);
-    return apiRequest(method, path, body, false);
   }
+  throw lastErr || new Error(`api:${path} failed without concrete error`);
 }
 
 async function getGatewayUrl() {
@@ -196,15 +210,16 @@ function clearConnection() {
   }
 }
 
-function scheduleReconnect(delayMs = 3000) {
+function scheduleReconnect(delayMs = exponentialBackoffMs(Math.min(state.reconnectCount + 1, RETRY_ATTEMPTS))) {
   if (state.stopping || state.reconnectTimer) {
     return;
   }
+  state.reconnectCount += 1;
   state.reconnectTimer = setTimeout(() => {
     state.reconnectTimer = null;
     connect().catch((err) => {
       emit({ event: 'error', data: { phase: 'connect', message: String(err) } });
-      scheduleReconnect(5000);
+      scheduleReconnect();
     });
   }, delayMs);
 }
@@ -366,7 +381,7 @@ async function connect() {
       if (payload.op === 7) {
         emit({ event: 'error', data: { phase: 'server_reconnect', message: 'server requested reconnect' } });
         clearConnection();
-        scheduleReconnect(2000);
+        scheduleReconnect(exponentialBackoffMs(Math.min(state.reconnectCount + 1, RETRY_ATTEMPTS)));
         return;
       }
       if (payload.op === 9) {
@@ -380,7 +395,7 @@ async function connect() {
         }
         emit({ event: 'error', data: { phase: 'invalid_session', canResume } });
         clearConnection();
-        scheduleReconnect(3000);
+        scheduleReconnect(exponentialBackoffMs(Math.min(state.reconnectCount + 1, RETRY_ATTEMPTS)));
       }
     } catch (err) {
       emit({ event: 'error', data: { phase: 'message_parse', message: String(err) } });
@@ -401,7 +416,7 @@ async function connect() {
       state.tokenExpiresAt = 0;
     }
     emit({ event: 'error', data: { phase: 'close', code: event.code, reason: String(event.reason || '') } });
-    scheduleReconnect(event.code === 4008 ? 60000 : 3000);
+    scheduleReconnect(event.code === 4008 ? 60000 : exponentialBackoffMs(Math.min(state.reconnectCount + 1, RETRY_ATTEMPTS)));
   });
 
   ws.addEventListener('error', (event) => {

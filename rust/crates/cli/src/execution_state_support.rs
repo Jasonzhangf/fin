@@ -31,13 +31,6 @@ pub(crate) fn resolve_paths(
     runtime_home: &Path,
     binding: &DebugBinding,
 ) -> Result<Option<SessionExecutionPaths>, CliError> {
-    if let Some(relative) = &binding.session_messages_path {
-        if let Some(prefix) = relative.strip_suffix("conversation/messages.json") {
-            return Ok(Some(SessionExecutionPaths {
-                session_dir: runtime_home.join(prefix.trim_end_matches('/')),
-            }));
-        }
-    }
     let Some(session_id) = binding.session_id.as_deref() else {
         return Ok(None);
     };
@@ -149,10 +142,26 @@ fn find_session_dir(runtime_home: &Path, session_id: &str) -> Option<PathBuf> {
     let root = runtime_home.join("sessions");
     let years = fs::read_dir(root).ok()?;
     for year in years.flatten() {
-        let months = fs::read_dir(year.path()).ok()?;
+        let year_path = year.path();
+        if !year_path.is_dir() {
+            continue;
+        }
+        let year_name = year.file_name().to_string_lossy().to_string();
+        if year_name.len() != 4 || !year_name.chars().all(|ch| ch.is_ascii_digit()) {
+            continue;
+        }
+        let months = fs::read_dir(year_path).ok()?;
         for month in months.flatten() {
-            let dir = month.path().join(session_id);
-            if dir.exists() {
+            let month_path = month.path();
+            if !month_path.is_dir() {
+                continue;
+            }
+            let month_name = month.file_name().to_string_lossy().to_string();
+            if month_name.len() != 2 || !month_name.chars().all(|ch| ch.is_ascii_digit()) {
+                continue;
+            }
+            let dir = month_path.join(session_id);
+            if dir.is_dir() {
                 return Some(dir);
             }
         }

@@ -63,6 +63,21 @@ fn configured_device_name_wins_and_requested_name_is_stable() {
 }
 
 #[test]
+fn system_agent_defaults_to_kobe_without_override() {
+    let runtime_home = temp_runtime_home("system-kobe");
+    let identity = allocate_local_agent_identity(
+        &system(Some("mbp")),
+        &runtime_home,
+        None,
+        "cli",
+        Some("system"),
+    )
+    .expect("identity");
+    assert_eq!(identity.agent_name, "kobe");
+    assert_eq!(identity.agent_id, "mbp.kobe");
+}
+
+#[test]
 fn resolve_agent_identity_by_worker_id_uses_registry() {
     let runtime_home = temp_runtime_home("worker-lookup");
     let identity = allocate_local_agent_identity(
@@ -122,6 +137,23 @@ fn local_name_pool_allocates_distinct_project_names() {
     assert_ne!(first.worker_id, second.worker_id);
     assert_eq!(first.agent_id, "mbp.atlas");
     assert_eq!(second.agent_id, "mbp.nova");
+}
+
+#[test]
+fn configured_name_pool_can_override_project_pool() {
+    let runtime_home = temp_runtime_home("custom-pool");
+    let mut system = system(Some("mbp"));
+    system.runtime.startup.project_agent_name_pool = vec!["mamba".into(), "shaq".into()];
+
+    let first =
+        allocate_local_agent_identity(&system, &runtime_home, None, "cli.a", Some("project"))
+            .expect("first");
+    let second =
+        allocate_local_agent_identity(&system, &runtime_home, None, "cli.b", Some("project"))
+            .expect("second");
+
+    assert_eq!(first.agent_id, "mbp.mamba");
+    assert_eq!(second.agent_id, "mbp.shaq");
 }
 
 #[test]

@@ -70,6 +70,7 @@ fn refresh_executes_local_wake_and_clears_queue_on_rebuild() {
     let peer_state =
         fs::read_to_string(home.join("runtime/peers/registry.json")).expect("peer registry");
     assert!(peer_state.contains("peer-project-agent-fin"));
+    assert!(peer_state.contains(r#""display_name": "builder""#));
     let wake_report = fs::read_to_string(home.join("runtime/current/current_startup_wakeup.json"))
         .expect("wakeup report");
     assert!(wake_report.contains(r#""status": "completed""#));
@@ -94,6 +95,9 @@ fn remote_wake_becomes_waiting_not_idle() {
         wake_report["actions"][0]["status"].as_str(),
         Some("recorded")
     );
+    let peer_state =
+        fs::read_to_string(home.join("runtime/peers/registry.json")).expect("peer registry");
+    assert!(peer_state.contains(r#""display_name": "10.0.0.8.builder""#));
 }
 
 #[test]

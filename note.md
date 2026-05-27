@@ -4482,3 +4482,242 @@ Tool records in first turn: 16
 - Added `docs/contracts/session-ledger-contract.md` as new target contract.
 - Updated `docs/contracts/00-m1-contracts-index.md` and `docs/architecture/29-multi-turn-history-model.md` to point to ledger-first revision.
 - Current implementation gap: existing artifacts are layered but not yet one ledger root with global `timeline/index.jsonl`; `messages.json`/recent_* are still primary read artifacts in several paths; knowledge track is still concept/artifact candidate, not an append-only project-shared timeline track.
+
+## 2026-05-23 Local Multi-Agent Harness Migration To ~/code/fin
+- Correction: earlier harness work was accidentally implemented in `~/Documents/github/fin`; migrated the relevant code into the canonical repo `~/code/fin`.
+- Removed double CLI semantics: legacy `project-agent add|remove|list` variants and headed-parity controls now route through one `project-agent <user.toml> <args...>` command implementation in `project_agent_harness_commands.rs`.
+- Verified focused Rust tests: `cargo test --manifest-path rust/Cargo.toml -p fin-cli project_agent -- --nocapture`; `cargo test --manifest-path rust/Cargo.toml -p fin-cli local_multi_agent -- --nocapture`.
+- Verified real local E2E in `~/code/fin`: `/tmp/fin-code-agent-e2e.HyI1HJ`, endpoint `127.0.0.1:63525`, PIDs `8200`/`8201`, receipt passed auth/fault/result/compatibility/cleanup assertions.
+- Verified Web/agent接入: `fin-debug-server agent_rpc` tests passed; status probe and channel ingress project-agent config tests passed.
+- Verified Android direct build: `cd android-client && ./gradlew :app:assembleDebug` succeeded.
+- `scripts/build-all.sh` now passes source tests/staging but install smoke `runtime-session` fails due provider gateway `503 Gateway Error: 没有可用的内网节点`; this is external provider availability, not Android Gradle failure.
+
+## 2026-05-23 config-entry review
+- User correction: provider/profile/gateway lookup failures are implementation errors in the unified config entry, not external-provider excuses.
+- Current target: make headful/headless/system/project/channel/model/provider all enter through one runtime config truth.
+
+## 2026-05-23 UI project-agent turn rendering regression
+- User requirement: local multi-agent harness must be part of every build regression, then fill Android/WebUI turn consumption/rendering for delegated project-agent sessions.
+- Test scenarios designed first:
+  - build smoke runs local-multi-agent-harness with static LLM and verifies Agent RPC durable mailbox receipt fields.
+  - runtime activity card builder reads project-agent ledger tool/provider tracks into `recent_actions`.
+  - mobile WS runtime views emit `activity.cards.snapshot` containing project-agent cards and actions.
+  - Android shell smoke consumes `activity.cards.snapshot`, defaults project card collapsed, and expands timeline on click/toggle.
+  - QQBot text channel regression must not turn UI activity-card snapshots into extra outbound user-visible messages.
+- Evidence so far:
+  - `node android-client/scripts/smoke/ws-event-contract-smoke.mjs` => `SMOKE_OK`.
+  - `python3 scripts/check-code-line-limit.py` => ok.
+  - targeted runtime/debug-server tests for project card snapshot passed.
+  - QQBot two formerly failing e2e tests passed individually.
+
+## 2026-05-23 Android connection and theme correction
+- User screenshot showed Android stuck at `reconnecting(4)` with `runtime=schema_error:runtime.health`; Mac-side probes verified `ws://127.0.0.1:4040/ws` and `ws://100.66.1.82:4040/ws` both return `handshake.ok`, so daemon/route are reachable from host and UI needed stronger Android-side transport diagnostics.
+- Fix: Android bridge now owns native OkHttp WebSocket transport and forwards daemon messages to WebView via `onNativeWsMessage`; Web shell uses `nativeWsConnect/nativeWsSend` before falling back to WebView WebSocket. This avoids opaque WebView reconnect loops and logs native probe/failure details.
+- UI theme correction: replaced high-saturation gradients with low-saturation modern palettes; buttons/cards/backgrounds use flat surfaces and one accent per theme.
+- Verification: `node android-client/scripts/smoke/ws-event-contract-smoke.mjs` => `SMOKE_OK`; `./gradlew :app:assembleDebug --no-daemon` => BUILD SUCCESSFUL; `./scripts/build-all.sh` => build/install/APK success.
+
+## 2026-05-23 Android sessions panel protocol/chrome fix
+- User-reported symptoms: Android sessions page showed “协议不匹配”, extra menu/native input chrome remained, and screenshots initially appeared black.
+- Evidence trail:
+  - HTML script syntax check passed; black screenshots were caused by device lockscreen/NotificationShade, confirmed by `dumpsys window` and uiautomator before unlock.
+  - After unlock, app focused `com.fin.client/.MainActivity`, screenshot `/tmp/fin-after-unlock-attempt.png` was non-black, and WS log showed `handshake=ok` + `state=healthy` + `runtime.health status=available`.
+  - Sessions screenshot `/tmp/fin-sessions-open-after-fix.png` shows `全部任务`, multi-select CRUD buttons, no bottom native input bar; uiautomator tree has `has_all_tasks True`, `has_ask_anything False`.
+- Fixes:
+  - `mobile-shell.html`: unknown daemon/runtime events are logged only and no longer masquerade as protocol mismatch; actual JSON/base64 decode errors still set `protocol_mismatch`.
+  - `MobileBridge` + `MainActivity`: added single native chrome mode bridge `applyNativeChromeMode`; sessions mode hides native input bar and keyboard, chat mode restores it.
+  - `ws-event-contract-smoke.mjs`: regression asserts unknown events do not become protocol mismatch.
+- Validation:
+  - `node` HTML script parse => `HTML_SCRIPT_OK 1`.
+  - `node android-client/scripts/smoke/ws-event-contract-smoke.mjs` => `SMOKE_OK`.
+  - `cargo test --manifest-path rust/Cargo.toml -p fin-debug-server mobile_item_contract_tests -- --nocapture` => 7 passed.
+  - `JAVA_HOME=/Applications/Android Studio.app/Contents/jbr/Contents/Home ./gradlew :app:assembleDebug --no-daemon` => BUILD SUCCESSFUL.
+  - `adb install -r android-client/update-dist/fin-latest-debug.apk` => Success.
+  - `python3 scripts/check-code-line-limit.py` => ok.
+
+## 2026-05-23 Android session delete aftermath fix
+- 修复点：Android 删除当前 session 后必须清空 `currentSessionId`、`turns`、pending/tool/trace 状态；后续 `session.list` 重新 reconcile，避免主界面继续显示已删除 session 历史。
+- 修复点：Android 可见工具 timeline 默认隐藏 `provider.call` / provider target / framework internal item，只保留失败项和真实用户可读工具项，避免 provider call 重复污染会话界面。
+- 回归：`node android-client/scripts/smoke/ws-event-contract-smoke.mjs` 通过，覆盖删除当前 session 清屏和 provider.call 隐藏。
+- 构建安装：`./gradlew :app:assembleDebug --no-daemon` 成功，`adb install -r update-dist/fin-latest-debug.apk` 成功。
+- 运行态注意：真机当前 profile 指向 `ws://100.66.1.82:4040/ws`；本轮后续验证遇到设备到该 Tailscale endpoint 超时，`adb reverse` 也未打到 host 4040，因此 live 网络截图不能作为最终 UI 验收证据。
+
+## 2026-05-23 Android 顶部 agent 状态修正
+- 用户纠正：peer/agent 状态栏应该并入顶部栏同一行，不应作为内容区独立第二行。
+- 已落实：`mobile-shell.html` 将 `agentCards` 移到 `.top` 中；runtime peer card 优先使用持久 `display_name/agent_name`，避免展示泛化 `project_agent`；工具执行行改为 Finger 风格紧凑 flat row。
+- 验证：`node android-client/scripts/smoke/ws-event-contract-smoke.mjs`、`cargo test -p fin-runtime activity_cards`、`cargo test -p fin-cli startup_wakeup`、Android build-and-publish、`adb install -r` 均通过。
+
+## 2026-05-23 Agent 命名策略修正
+- 用户要求：默认 system agent 名为 Kobe；project agent 有 20 个默认名字池；未覆盖时从池中稳定分配；本机只显示 agent，非本机显示 device.agent 或 ip.agent。
+- 已落实：默认配置 `runtime-startup.toml` 增加 `system_agent.agent_name = "Kobe"` 和 20 名 `project_agent_defaults.name_pool`；runtime local identity 未覆盖 system 默认 `kobe`，project 从池稳定分配；startup managed peer 本机 display_name 为 agent，remote display_name 从 endpoint host 生成 `ip.agent`；network RPC peer 写入 `agent_name/display_name/device_name/endpoint`。
+- 验证：Android smoke、fin-config startup tests、fin-runtime agent_naming/activity_cards、fin-cli agent_presence/startup_wakeup、fin-debug-server agent_rpc、Android build-and-publish + adb install 均通过。
+
+## 2026-05-23 Android agent 状态显示二次修正
+- 现场截图问题：状态栏显示 `agent · 闲`，原因是 live `~/.fin/runtime/peers/registry.json` 仍有旧 peer 记录无 `agent_name/display_name`，且 Android 对 `title=agent` 没有强制兜底。
+- 已修：Android `shortAgentName` 遇到空/agent/project_agent 时从 `source_id` 派生稳定非泛化名字；idle 改蓝色、busy 改绿色；`provider_wait/inference/reasoning/推理` 判定 busy。
+- 已补：live registry 旧数据迁移为 `kobe/Kobe`、`fin`、`atlas`；全局安装 `0.1.0186` 并显式 stop/start daemon，新 pid 87610。
+
+## 2026-05-23 Android 会话列表新会话入口
+- 现场截图问题：会话列表只有全选/重命名/归档/删除，没有新会话入口。
+- 已修：`sessionsPanel` toolbar 增加“新会话”按钮；点击发送 `session.command` + `/new`，复用既有 slash command 创建/绑定会话，避免新增第二套 session 创建协议。
+- 验证：Android WS smoke 断言 `/new` command 发出；`cargo test -p fin-cli slash_new_creates_and_binds_new_session` 通过；Android build-and-publish + `adb install -r` 成功。
+
+## 2026-05-23 Android 会话绑定修正
+- 现场问题：删除所有会话后再新建，不会自动绑定最新会话；点击会话列表项也没有明确把输入绑定到该会话。
+- 已修：`createNewSession` 设置 `pendingNewSession`，下一次 `session.list` 自动绑定列表最新项；列表项点击改为 `chooseSession`，清空多选、选中当前项并发送 `session.bind`，meta 显示“当前输入”。
+- 验证：Android smoke 覆盖新建自动绑定和点击选择绑定；Android build-and-publish + `adb install -r` 成功。
+
+## 2026-05-23 Android 输入框消失修正
+- 现场问题：会话切换后回到主界面底部输入框消失。
+- 根因：CSS 里 `body.native-input .bar{display:none}` 会在 native-input 模式永久隐藏 Web 输入栏；切换 session 后即使回 chat 仍看不到输入框。
+- 已修：删除 `body.native-input .bar{display:none}`，只保留 sessions 面板打开时隐藏 `.bar`；正常 chat 模式始终显示 Web 输入栏。
+- 验证：Android smoke 通过；Android build-and-publish + `adb install -r` 成功。
+## 2026-05-24 Android UI ledger/pinned-agent fix
+- 目标：修复 turn 历史卡片被 live tool 事件重绘，以及 project-agent 派发后只有 pill 无 pinned progress 详情。
+- 修改点限定在 Android shell 真源：`android-client/app/src/main/assets/mobile-shell.html`；回归门禁：`android-client/scripts/smoke/ws-event-contract-smoke.mjs`。
+- 设计：把 finalized history 与 live pending 分区渲染；history append-only，只在 `session.history` 或 `turn.rendered` 追加/重建；project-agent 详情从 `activity.cards.snapshot.source_cards` 渲染为 pinned expandable cards。
+- 验证计划：先跑 smoke，再构建 Android APK；若 smoke 失败，按失败点继续修。
+- delegated lifecycle 真根因确认：local harness 真实 dispatch 已被 project mailbox 消费，但 project child process 用 `project-fin-agent` 身份发回结果，而 control-plane durable identity 是 `local.project-fin`，导致 send_agent_input/update_run_status 被拒，run 永远停在 `running`。唯一修复点是 harness child identity 与 registered primary identity 对齐，不能继续保留临时文件回传双实现。
+- 最终闭环回归推进：新增 `scripts/run-local-multi-agent-e2e.sh`，统一落盘 local multi-agent static/live receipts；`scripts/regression/run_local_regression.sh` 默认纳入 static 双实例 E2E，live 模式追加真实 LLM 双实例 E2E；`scripts/build-all.sh` 先跑 local regression 再构建 Android。
+
+## 2026-05-24 prompt+chat-flow audit
+- 真源审计：实际问题不在 docs，而在 runtime prompt 装配没有把 cross-cwd 必须委派 + 该用哪些 framework tools 讲透，模型只拿到原则，拿不到可执行路由动作。
+- UI 真源审计：当前 `mobile-shell.html` 仍按 turn-card（你/assistant 一张卡）渲染，天然打断连续会话；应改为 append-only message thread，同 turn 内分 user / assistant / live status / tool timeline 多消息块。
+- 本轮唯一改动点：`rust/crates/runtime/src/prompt_assembly.rs` 补 system/project 行为规则；`android-client/app/src/main/assets/mobile-shell.html` 改 render pipeline；对应测试补到 `rust/crates/runtime/src/prompt_tests_basics.rs` 与 `android-client/scripts/smoke/ws-event-contract-smoke.mjs`。
+2026-05-24 prompt/render audit:
+- prompt_assembly currently enforces routing/tool names but lacks explicit conversational continuity + managed execution loop guidance in stable/role rules.
+- debug-server webui still renders via turn cards/detail cards, not a strict append-only chat-thread projection aligned with Android shell.
+- next: add red tests for prompt continuity language and webui chat-thread render contract, then patch owning layers.
+- 2026-05-24 ledger-first read-side: started migrating session list and qqbot deliver cursor away from conversation/messages.json toward ledgers/session.snapshot; added red tests for missing projection compatibility.
+- 2026-05-24 read-side continued: status_probe now resolves session-side truth by session_id/session dir instead of session_messages_path anchor; debug-server mobile session list now reads ledger session.snapshot instead of conversation/messages.json.
+- 2026-05-24 closeout target crystallized: the single remaining delivery target is "prompt knows how to use the framework + UI renders one continuous conversation timeline + real local dual-instance multi-agent lifecycle closes with receipts". Added execution doc at `docs/goals/prompt-and-conversation-continuity-closeout-plan.md`.
+
+## 2026-05-24 prompt+thread continuity audit
+- 唯一真源候选：runtime prompt assembly + debug/mobile thread render。
+- 当前 gap1：prompt 已有 dispatch/no-silent-stop，但还需更强的连续会话、follow-through、append-only timeline、delegation 收尾规则。
+- 当前 gap2：移动端仍有较强问答式/面板式结构，需要确认 turns 是否按 append-only thread 渲染，以及 live progress 是否作为 thread row 追加。
+- 先补红测：runtime prompt contract + web/mobile render contract。
+
+## 2026-05-24 prompt/workflow continuity closeout
+- 已补 runtime prompt 真源：明确工具调用必须处于 managed execution loop（intent -> tool -> inspect result -> continue/wait/recover/review/close），避免模型只会调一次工具就停。
+- 已补 docs prompt baseline，避免 runtime 与 docs 双真源漂移。
+- 验证：cargo test -p fin-runtime prompt_tests；cargo test -p fin-debug-server response_for_chat_js_serves_compiled_module。
+- live provider probe 已按 MiniMax OpenAI-compatible 真源修正并成功；provider-live-smoke 当前被外部 weekly quota 阻断，不属于本地实现错误。
+
+## 2026-05-24 multi-agent peer-plane correction
+- 真源审计结论：local multi-agent harness 原先只有 dispatch/report 走 Agent RPC，project node 收件仍直接 consume shared runtime mailbox，属于假 peer-plane。
+- 已补 owning layer：`rust/crates/debug-server/src/agent_rpc.rs` 增加 `/agent/v1/mailbox/receive`；`rust/crates/cli/src/local_multi_agent_node.rs` 改为经 Agent RPC receive 拉取 dispatch，不再直接读共享 mailbox 文件。
+- 已补红绿测试：`rust/crates/debug-server/src/agent_rpc_tests.rs` 增加 real tcp mailbox receive/consumed 断言；`cargo test -p fin-debug-server agent_rpc_tests -- --nocapture`、`cargo test -p fin-cli local_multi_agent_lifecycle_harness_tests -- --nocapture` 通过。
+## 2026-05-24 prompt+webui continuity implementation
+- 目标：把 system/project managed execution workflow 讲透给模型，并把 WebUI 主对话区改成 append-only conversation thread，前台/派发进度进入时间线而非独立问答外面板。
+- 红测：`rust/crates/runtime/src/prompt_tests_basics.rs` 增加 managed execution recipe / dispatch toolchain / project recipe 断言。
+- 实现：`rust/crates/runtime/src/prompt_assembly.rs` 补 recipe 规则；`rust/crates/debug-server/webui/src/chat.ts` 改为把 frontstage activity 作为 `System Progress` chat-thread 插入时间线。
+- 验证进行中：cargo prompt_tests、debug-server chat compile gate、node /tmp/chat_render_smoke.mjs。
+- 2026-05-24 验证结果：`cargo test -p fin-runtime prompt_tests` 通过；`cargo test -p fin-debug-server response_for_chat_js_serves_compiled_module` 通过；`node scripts/webui/chat-render-smoke.mjs` 通过；`cargo test -p fin-runtime activity_cards` 通过；`cargo test -p fin-cli local_multi_agent_lifecycle_harness_tests` 通过。
+- 清理：删除 `rust/crates/cli/src/local_multi_agent_rpc.rs` 未使用的 `rpc_report_project_completed`，并移除 harness 中 `_project_lease_id` 假保留变量，继续收敛单一 Agent RPC 真源。
+- 2026-05-24 审计发现：`runtime/mailbox/*` 旧协作路径仍与 `runtime/agents/control/mailbox/*` 并存，违反“统一走 AgentControlStore / mailbox / run status”目标。
+- 先补红测：把 runtime 协作 mailbox 相关测试期望切到 `runtime/agents/control/mailbox/*`，用失败证明旧实现仍在命中错误真源。
+- 2026-05-24 runtime mailbox 统一收敛：红测证明 `mailbox.send/poll` 仍写旧 `runtime/mailbox/*`；已开始切 `tool_dispatch_extended_collab_mailbox.rs` 到 `AgentControlStore` + `runtime/agents/control/mailbox/*`。
+- 当前编译/回归焦点：`tool_dispatch_tests::collab`、`context_view_combines_task_board_and_collab_backlog_for_same_active_task`、registry mailbox summary。
+- 2026-05-24 mailbox 旧路径去真源继续推进：新增断言证明 `runtime/mailbox/<peer>/inbox.json` 不应再被创建；当前协作消息只允许落在 `runtime/agents/control/mailbox/*`。
+- 同步收口工具文案：`tool_catalog.rs` 不再描述“mailbox queue artifact”，改为 framework-owned durable agent mailbox。
+- 2026-05-24 harness root-cause fixed：system/project node 在 Agent RPC receive/send 失败时之前会直接退出，导致 `system-node-summary.json` 永远不落盘；现在改为 node loop 记录 `last_error` 并继续轮询，harness 与静态 E2E 已恢复通过。
+- 证据：`cargo test -p fin-cli local_multi_agent_lifecycle_harness_tests -- --nocapture` 通过；`./scripts/run-local-multi-agent-e2e.sh static test-debug-rpc-loop-20260524-124924` 产出 receipt，`system_node_consumed_result=true`。
+
+## 2026-05-24 prompt/tool-guidance + continuous-thread closeout
+- 用户当前问题分成两个 owning layer：
+  1. `rust/crates/runtime/src/prompt_assembly.rs` / `docs/prompts/02-role-baselines-v1.md` 负责告诉模型“何时调度、先说意图、调完工具后如何继续、不要只停在原始工具输出”。
+  2. `android-client/app/src/main/assets/mobile-shell.html` 负责把同一 session 渲染成单一连续线程，而不是历史区 + 实时区割裂的问答式面板。
+- 本轮唯一 UI 真源修改点是 Android shell：移除 `turnHistory + turnLive` 双容器，改成 `conversationThread` 单线程容器；finalized history 仍 append-only，live pending 仍实时更新，但两者同属一条连续 thread。
+- 本轮 docs 同步：`docs/prompts/02-role-baselines-v1.md` 增加 continuous conversation thread / append-only progress / tool result follow-through 规则，避免 runtime prompt 与文档漂移。
+- 验证：
+  - `node android-client/scripts/smoke/ws-event-contract-smoke.mjs` => `SMOKE_OK`
+  - `node scripts/webui/chat-render-smoke.mjs` => `chat-render-smoke:ok`
+  - `cargo test --manifest-path rust/Cargo.toml -p fin-runtime prompt_tests -- --nocapture` => 11 passed
+- 唯一性说明：
+  - prompt 不会用工具的问题，唯一正确修改处是 runtime prompt assembly/docs 基线，而不是 UI 或 tool dispatcher；因为工具能力已存在，缺的是模型行为契约。
+  - 对话被打断的问题，唯一正确修改处是 session render 真源容器；若继续保留 `history/live` 双容器并只改样式，只会伪装连续，不会真的形成单线程时间线。
+
+## 2026-05-24 local multi-agent harness stability + live dual-instance evidence
+- 新增门禁：`activity_cards_project_actions_tests` 现在覆盖 project-agent card 的 `failed / timeout(waiting) / closed(offline) / disconnect / reconnect` 映射，不再只验证 running/completed。
+- 新增 harness 断言：`local_multi_agent_lifecycle_harness_tests` 现在直接检查 `system-node-summary.json` 由 system node 落盘，且 `runs.json` 中 delegated run 必须进入 `completed` 终态；不再只看 receipt 布尔位。
+- 根因修复：`rust/crates/cli/src/local_multi_agent_node.rs` 的 project node 在发送 `project_progress / project_result / run/status completed` 时，如果瞬时 RPC 抖动，会出现“result 已回 system，但 run 仍停在 running，wait_agent 偶发 timeout”的竞态。唯一正确修复点是 outbound Agent RPC 真源处补显式重试，而不是在 harness parent 或 UI 上伪造完成。
+- 已补 `retry_rpc`，对 `project_progress / project_result / project_run_status_completed` 统一做 3 次短退避重试。
+- 验证：
+  - `cargo test --manifest-path rust/Cargo.toml -p fin-cli local_multi_agent_lifecycle_harness_tests -- --nocapture` 通过
+  - `./scripts/run-local-multi-agent-e2e.sh static test-goal-static-20260524-130050` 通过，receipt: `reports/regression/local-multi-agent/test-goal-static-20260524-130050-receipt.json`
+  - `./scripts/run-local-multi-agent-e2e.sh live test-goal-live-20260524-130105` 通过，真实 LLM receipt: `reports/regression/local-multi-agent/test-goal-live-20260524-130105-receipt.json`
+- live receipt 关键字段：`llm_provider_name=mini27`、`llm_model=MiniMax-M2.7`、`llm_status=200`、`llm_output_chars=592`、`system_node_consumed_result=true`、`project_cwd_verified=true`、`compatibility_projection_ok=true`。
+
+## 2026-05-24 live runtime -> WebUI render truth closeout
+- 审计发现真实缺口：live 双实例 runtime 中 `project_result` 落在 `runtime/agents/control/mailbox/local.system/inbox.json`，而 activity cards 读取 completed summary 时只看 `system-agent` mailbox，导致真实 live WebUI 渲染丢失 delegated completion summary。
+- 唯一正确修改点：`rust/crates/runtime/src/activity_cards_render.rs` 的 result mailbox 聚合逻辑。这里必须同时读取 `system-agent` 与所有 `peer_kind=system_agent` 的 runtime system identities，不能在 WebUI 前端补猜测。
+- 已补红测：`project_agent_card_reads_completed_summary_from_runtime_system_identity_mailbox`。
+- 已补强证据脚本：`scripts/webui/live-runtime-chat-smoke.mjs`，直接用真实双实例 E2E 产出的 `runtime-home` 启 `web-debug`，抓真实 `/api/session_messages.json`、`/api/activity_cards.json`、`/api/last_run.json`，再用前端 `chat.js` 渲染，断言连续线程与 delegated completion summary 都出现。
+- 真实结果：
+  - `node scripts/webui/live-runtime-chat-smoke.mjs test-goal-static-20260524-130050` => `live-runtime-chat-smoke:ok`
+  - `node scripts/webui/live-runtime-chat-smoke.mjs test-goal-live-20260524-130105` => `live-runtime-chat-smoke:ok`
+- 回归接线：`scripts/regression/run_local_regression.sh` 已纳入 static/live 双实例后的 WebUI render smoke；`docs/architecture/15-install-build-regression-flow.md` 已冻结“真实 runtime_home -> WebUI 渲染”作为多 agent observable smoke 标准。
+
+## 2026-05-24 live regression blocking semantics correction
+- 完成度审计发现：`scripts/regression/run_local_regression.sh --with-live` 唯一红灯是 `g3_live_optional`，其失败原因来自外部 provider weekly quota，不是多 agent 主链错误；而更强的 `g3_local_multi_agent_live_e2e` 与 `g3_local_multi_agent_live_webui_render` 已通过。
+- 因此回归语义必须分层：
+  - `provider-live-smoke` 归属 provider slice health，可记录但不阻断多 agent 总闭环。
+  - `local_multi_agent_live_e2e + live_runtime_chat_smoke` 才是多 agent 主目标的 blocking live gates。
+- 已修改 `scripts/regression/run_local_regression.sh`：`g3_live_optional` 记录为 `blocking=false`；summary/status 明确区分 blocking vs non-blocking。
+
+## 2026-05-24 shared error/retry owning layer correction
+- 用户要求：1) 错误处理都收敛到唯一处理模块；2) 错误重试都指数回退。
+- owning layer 审计结论：跨 crate 通用的“重试策略 + 错误链摘要”不应留在 `fin-cli` 或 `fin-provider` 私有文件里，唯一正确归属是 `rust/crates/shared/src/lib.rs`。
+- 已收敛：`fin-shared` 现承载 `DEFAULT_RETRY_ATTEMPTS`、`DEFAULT_RETRY_BASE_BACKOFF_SECS`、`exponential_backoff()`、`summarize_error_chain()`；`fin-cli` 和 `fin-provider` 改为消费共享真源。
+- 当前语义：所有 retryable/transient 错误统一走 5 次指数回退，且从 1s 起步；逻辑/鉴权/明确 4xx 不盲重试。
+- 验证计划：`cargo test -p fin-shared`、`cargo test -p fin-provider anthropic_execute_retries_retryable_request_failures`、`cargo test -p fin-cli rpc_retry_uses_exponential_backoff_schedule`、`cargo test -p fin-cli node_retry_uses_exponential_backoff_schedule`。
+
+## 2026-05-24 script/harness retry convergence
+- 第二轮收敛目标：把脚本层与 harness 层的“真实 retry 行为”对齐到与 `fin-shared` 等价的指数回退语义，而不是继续保留 `600ms`、`1.2*(i+1)`、固定 `3s/5s`。
+- 已改 owner：
+  - `rust/crates/cli/src/install_smoke.rs`：install smoke command 失败后按 5 次、1s 起步指数回退。
+  - `rust/crates/cli/assets/qqbot_peer_runner.mjs`：API 请求与 reconnect 统一到 5 次、1s 起步指数回退；只对可重试状态码继续。
+  - `android-client/app/src/main/assets/mobile-shell.html`：WS reconnect backoff 改为 1s/2s/4s/8s/16s 封顶。
+  - `scripts/android-mvp/run_turn_channel_e2e.py`：ConnectionClosed retry 改为 5 次、1s 起步指数回退。
+- 未动项说明：`wait_http` / 轮询等待 / 非错误 owner 的 sleep 先不混入“错误重试策略”收敛，避免把 polling 和 retry 混成一层。
+
+## 2026-05-24 shared+block+orchestration refactor planning
+- 用户要求：先做结构审计，再给出拆分计划与 /goal。
+- 已落盘计划：`docs/goals/shared-block-orchestration-refactor-plan.md`。
+- 审计结论：当前主要问题不是没有 crate 边界，而是 `cli/runtime/debug-server/provider` 内部仍大量 shared/block/orchestration 混装；`fin-shared` 过薄、`fin-orchestrator` 未成为真实 owner。
+- 第一阶段唯一主路径已冻结：先扩 `fin-shared`，再拆 `runtime::agent_control`，再拆 `runtime::closure_runtime`，再拆 `provider::lib`，最后拆 `cli::session_commands` 与 `debug-server::mobile_ws`。
+
+## 2026-05-24 agent-driven dispatch / passive harness audit
+
+- 新规则已落到：
+  - `docs/architecture/43-agent-driven-dispatch-and-passive-harness.md`
+  - `skills/fin-general-dev/SKILL.md`
+  - `skills/fin-prompt-system/SKILL.md`
+- 当前错误实现真源确认：
+  - `local_multi_agent_lifecycle_harness.rs` 预写 `task.dispatch.sent/received`，说明 dispatch 业务语义被 harness 预编排。
+  - `local_multi_agent_rpc.rs` 的 `rpc_send_dispatch` 仍是 `local.system -> local.system` 的 self-loopback，不是 system 推理后发给 project。
+  - `local_multi_agent_node.rs` 的 `handle_system_inbox` 只处理 `project_result`，且固定 `user_summary=dispatch project task`，没有 system 基于真实结果继续推理的闭环。
+- 结论：当前 transport/lifecycle 骨架可复用，但业务语义必须继续从 harness 剥离到 prompt + tool + runtime truth。
+
+## 2026-05-27 android item lifecycle real-device verification (install + clean-slice)
+- 触发：用户要求“你需要安装”，并强调不是 build，而是推理链路 turn 过程消息被消费。
+- 执行：
+  1) `adb -s 100.127.23.27:1234 install -r android-client/app/build/outputs/apk/debug/app-debug.apk` 成功；
+  2) 清空 app 内连接日志 `run-as com.fin.client sh -c ': > files/logs/connection-events.log'`；
+  3) 真机重启后跑两轮注入并截图，证据落盘到 `reports/android-device-e2e/20260527-current/`；
+  4) 全量回归 `./scripts/regression/run_android_client_matrix.sh` 全绿（含 ws event contract / layout focus / turn channel e2e / projection check）。
+- 关键证据：
+  - `reports/android-device-e2e/20260527-current/connection-events-current-v3.log`（同一文件包含 turn.item.started/completed/failed + turn.completed/turn.rendered）
+  - `reports/android-device-e2e/20260527-current/screen-normal-turn-v3.png`
+  - `reports/android-device-e2e/20260527-current/screen-failed-turn-v3.png`
+  - `reports/android-mvp-logs/turn-channel-e2e.log`（item lifecycle checks=true, failed_items_keep_error_summary=true）
+- 风险与后续：`adb am start --es finAutoSend` 带空格 payload 可能被切分，手工注入建议改为 base64 extra 或 native debug API，避免注入文本变形影响“失败 turn”可复现性。
+
+## 2026-05-27 android scroll lock fix (touch-aware)
+- 用户反馈："对话框无法上滑滚动"。
+- 根因确认：`scrollToBottom` 在增量渲染期间仍会触发，并且使用了 `window.scrollTo(...)`，与 WebView/触摸滚动竞争，导致上滑被拉回。
+- 唯一修复点：`mobile-shell.html` 滚动 owner 层（render + scroll policy）。
+- 修复：新增 `userTouchScrolling`，在 touchstart/touchmove/touchend 期间禁止自动吸底；移除 `window.scrollTo` 只保留容器 `content.scrollTop`；保留 history force pin 仅用于初次历史加载。
+- 回归同步：
+  - `MobileShellLayoutContractTest.kt` 增加 touch scroll 合同断言 + 禁止 `window.scrollTo`。
+  - `layout-focus-contract-smoke.mjs` 同步合同。

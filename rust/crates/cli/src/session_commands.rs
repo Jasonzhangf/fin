@@ -11,10 +11,12 @@ use crate::{
     },
     session_binding::{
         ensure_session_layout, find_session_dir, infer_session_task_id,
-        infer_session_topic_thread_id, read_json_or_empty, rebind_last_run,
-        rebind_last_run_binding, relative_to_runtime, trim_head, write_json,
+        infer_session_topic_thread_id, rebind_last_run, rebind_last_run_binding,
+        relative_to_runtime, trim_head,
     },
+    session_command_blocks::{delete_session_dir, list_sessions, set_session_meta},
     session_routing_commands::try_handle_routing_command,
+    shared_io::{shared_append_jsonl, shared_read_json_or_empty, shared_write_json},
     time::local_timestamp_now,
 };
 use chrono::{Datelike, Local};
@@ -92,11 +94,13 @@ fn handle_sessions(
         .take(20)
         .map(|item| {
             format!(
-                "{}{} | {} | {}",
+                "{}{} | {} | {} | {} | {}",
                 if item.archived { "[archived] " } else { "" },
                 item.session_id,
                 item.updated_at,
-                item.title.as_deref().unwrap_or("-")
+                item.title.as_deref().unwrap_or("-"),
+                item.task_id.as_deref().unwrap_or("-"),
+                item.preview_100.as_deref().unwrap_or("-"),
             )
         })
         .collect::<Vec<_>>()
@@ -180,7 +184,7 @@ fn handle_session_subcommand(
             if !force {
                 extract_session_knowledge(runtime_home, session_id, manual_note.as_deref())?;
             }
-            delete_session(runtime_home, session_id)?;
+            delete_session_dir(runtime_home, session_id, find_session_dir)?;
             let message = if force {
                 format!("session deleted by force: {session_id}")
             } else {
@@ -215,103 +219,91 @@ fn system_notice(binding: &DebugBinding, answer: &str, suffix: &str) -> ChatSend
     }
 }
 
-#[derive(Debug, Clone)]
-struct SessionListItem {
-    session_id: String,
-    updated_at: String,
-    title: Option<String>,
-    archived: bool,
-}
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use fin_contracts::{EntityRefs, LedgerRefs, LedgerTrackKind, SessionSnapshotRecord};
+    use fin_runtime::{AppendLedgerRecordInput, LedgerStore};
+    use std::{
+        sync::atomic::{AtomicU64, Ordering},
+        time::{SystemTime, UNIX_EPOCH},
+    };
 
-fn list_sessions(runtime_home: &Path) -> Result<Vec<SessionListItem>, CliError> {
-    let root = runtime_home.join("sessions");
-    if !root.exists() {
-        return Ok(Vec::new());
+    static TEMP_HOME_SEQ: AtomicU64 = AtomicU64::new(1);
+
+    fn temp_runtime_home() -> std::path::PathBuf {
+        std::env::temp_dir().join(format!(
+            "fin-session-list-{}-{}-{}",
+            std::process::id(),
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .expect("time")
+                .as_nanos(),
+            TEMP_HOME_SEQ.fetch_add(1, Ordering::Relaxed),
+        ))
     }
-    let mut items = Vec::new();
-    for year in fs::read_dir(&root).map_err(|source| CliError::ReadFile {
-        path: root.display().to_string(),
-        source,
-    })? {
-        let year = match year {
-            Ok(value) => value,
-            Err(_) => continue,
+
+    #[test]
+    fn list_sessions_uses_ledger_snapshot_when_messages_projection_missing() {
+        let home = temp_runtime_home();
+        std::fs::create_dir_all(home.join("sessions/meta")).expect("meta dir");
+        std::fs::write(
+            home.join("sessions/meta/session-ledger.json"),
+            br#"{"session_id":"session-ledger","title":"Ledger Session","archived":false}"#,
+        )
+        .expect("meta");
+        let ledger = LedgerStore::for_session(&home, "session-ledger").expect("ledger");
+        let refs = EntityRefs {
+            session_id: Some("session-ledger".into()),
+            task_id: Some("task-ledger".into()),
+            worker_id: Some("worker-ledger".into()),
+            ..EntityRefs::default()
         };
-        for month in match fs::read_dir(year.path()) {
-            Ok(value) => value,
-            Err(_) => continue,
-        } {
-            let month = match month {
-                Ok(value) => value,
-                Err(_) => continue,
-            };
-            for session in match fs::read_dir(month.path()) {
-                Ok(value) => value,
-                Err(_) => continue,
-            } {
-                let session = match session {
-                    Ok(value) => value,
-                    Err(_) => continue,
-                };
-                if !session.path().is_dir() {
-                    continue;
-                }
-                let session_id = session.file_name().to_string_lossy().to_string();
-                let message_path = session.path().join("conversation/messages.json");
-                let updated_at = fs::metadata(&message_path)
-                    .ok()
-                    .and_then(|m| m.modified().ok())
-                    .map(|t| format!("{t:?}"))
-                    .unwrap_or_else(|| "unknown".into());
-                let meta = read_session_meta(runtime_home, &session_id);
-                items.push(SessionListItem {
-                    session_id,
-                    updated_at,
-                    title: meta
-                        .as_ref()
-                        .and_then(|v| v.get("title").and_then(|x| x.as_str()).map(str::to_string)),
-                    archived: meta
-                        .as_ref()
-                        .and_then(|v| v.get("archived").and_then(|x| x.as_bool()))
-                        .unwrap_or(false),
-                });
-            }
-        }
-    }
-    items.sort_by(|a, b| b.updated_at.cmp(&a.updated_at));
-    Ok(items)
-}
+        ledger
+            .init(
+                Some("task-ledger"),
+                Some("session-ledger"),
+                "2026-05-24T10:00:00+08:00",
+            )
+            .expect("init");
+        let snapshot = SessionSnapshotRecord {
+            snapshot_id: "snapshot-1".into(),
+            operation_id: "op-1".into(),
+            trace_id: "trace-1".into(),
+            turn_id: "turn-1".into(),
+            refs: refs.clone(),
+            user_input: Some("hello".into()),
+            assistant_summary: "ledger summary only".into(),
+            important_tool_refs: Vec::new(),
+            artifact_refs: Vec::new(),
+            summary: Some("ledger title".into()),
+            created_at: "2026-05-24T10:00:00+08:00".into(),
+        };
+        ledger
+            .append(AppendLedgerRecordInput {
+                ts: "2026-05-24T10:00:00+08:00".into(),
+                track: LedgerTrackKind::SessionSnapshot,
+                record_id: "snapshot-1".into(),
+                record_kind: "session_snapshot".into(),
+                refs: LedgerRefs {
+                    agent_id: Some("worker-ledger".into()),
+                    entity: refs,
+                    ledger_id: Some("session-ledger".into()),
+                    record_refs: Vec::new(),
+                },
+                payload: serde_json::to_value(snapshot).expect("snapshot"),
+                caused_by: Some("detail-1".into()),
+                supersedes: None,
+            })
+            .expect("append");
 
-fn session_meta_path(runtime_home: &Path, session_id: &str) -> std::path::PathBuf {
-    runtime_home
-        .join("sessions")
-        .join("meta")
-        .join(format!("{session_id}.json"))
-}
-
-fn read_session_meta(runtime_home: &Path, session_id: &str) -> Option<serde_json::Value> {
-    let path = session_meta_path(runtime_home, session_id);
-    fs::read_to_string(path)
-        .ok()
-        .and_then(|content| serde_json::from_str::<serde_json::Value>(&content).ok())
-}
-
-fn set_session_meta(
-    runtime_home: &Path,
-    session_id: &str,
-    title: Option<&str>,
-    archived: Option<bool>,
-) -> Result<(), CliError> {
-    let path = session_meta_path(runtime_home, session_id);
-    let mut value = read_session_meta(runtime_home, session_id)
-        .unwrap_or_else(|| json!({"session_id":session_id}));
-    if let Some(title) = title {
-        value["title"] = json!(title);
+        let items = list_sessions(&home).expect("list sessions");
+        assert_eq!(items.len(), 1);
+        assert_eq!(items[0].session_id, "session-ledger");
+        assert_eq!(items[0].title.as_deref(), Some("Ledger Session"));
+        assert_eq!(items[0].task_id.as_deref(), Some("task-ledger"));
+        assert_eq!(items[0].preview_100.as_deref(), Some("ledger summary only"));
     }
-    if let Some(archived) = archived {
-        value["archived"] = json!(archived);
-    }
-    write_json(&path, &value)
 }
 
 fn parse_delete_manual_note(args: &[&str]) -> Option<String> {
@@ -368,7 +360,7 @@ fn extract_session_knowledge(
         },
         "digests": digests,
     });
-    write_json(&entries_dir.join(format!("{entry_id}.json")), &entry)?;
+    shared_write_json(&entries_dir.join(format!("{entry_id}.json")), &entry)?;
 
     let by_session_path = indexes_dir.join("by_session.json");
     let mut by_session = fs::read_to_string(&by_session_path)
@@ -382,20 +374,7 @@ fn extract_session_knowledge(
     let mut updated = list;
     updated.push(json!(entry_id));
     by_session[session_id] = json!(updated);
-    write_json(&by_session_path, &by_session)?;
-    Ok(())
-}
-
-fn delete_session(runtime_home: &Path, session_id: &str) -> Result<(), CliError> {
-    let Some((_year, _month, session_dir)) = find_session_dir(runtime_home, session_id) else {
-        return Ok(());
-    };
-    fs::remove_dir_all(&session_dir).map_err(|source| CliError::WriteFile {
-        path: session_dir.display().to_string(),
-        source,
-    })?;
-    let meta = session_meta_path(runtime_home, session_id);
-    let _ = fs::remove_file(meta);
+    shared_write_json(&by_session_path, &by_session)?;
     Ok(())
 }
 
@@ -622,15 +601,16 @@ fn handle_compact(
         stream: worker.policy.stream,
         captured_at: now.clone(),
     };
-    write_json(
+    shared_write_json(
         &runtime_home.join("runtime/current/current_context.json"),
         &snapshot,
     )?;
     let recent_context_path = session_dir.join("context/recent_contexts.json");
-    let mut recent_contexts = read_json_or_empty::<ContextSnapshotRecord>(&recent_context_path)?;
+    let mut recent_contexts =
+        shared_read_json_or_empty::<ContextSnapshotRecord>(&recent_context_path)?;
     recent_contexts.push(snapshot.clone());
     trim_head(&mut recent_contexts, RECENT_CONTEXT_LIMIT);
-    write_json(&recent_context_path, &recent_contexts)?;
+    shared_write_json(&recent_context_path, &recent_contexts)?;
 
     let compacted = ContextCompactionEngine.compact(CompactionInput {
         session_id: session_id.to_string(),
@@ -646,9 +626,9 @@ fn handle_compact(
         compacted_at: now.clone(),
     });
     let compacted_path = session_dir.join("context/compacted_history.json");
-    write_json(&compacted_path, &compacted)?;
+    shared_write_json(&compacted_path, &compacted)?;
     let compact_event_path = session_dir.join("context/compaction-events.jsonl");
-    append_jsonl(&compact_event_path, &compacted)?;
+    shared_append_jsonl(&compact_event_path, &compacted)?;
 
     let rebuild_index = json!({
         "rebuilt_at": now,
@@ -663,11 +643,11 @@ fn handle_compact(
         "replaced_message_count": compacted.replaced_message_count,
         "retained_artifact_refs": compacted.retained_artifact_refs,
     });
-    write_json(
+    shared_write_json(
         &runtime_home.join("runtime/current/current_rebuild_index.json"),
         &rebuild_index,
     )?;
-    write_json(
+    shared_write_json(
         &session_dir.join("context/rebuild-index.json"),
         &rebuild_index,
     )?;
@@ -798,29 +778,4 @@ fn handle_tick(runtime_home: &Path, binding: &DebugBinding) -> Result<ChatSendRe
         note: None,
         routing_action: None,
     })
-}
-
-fn append_jsonl<T: serde::Serialize>(path: &Path, value: &T) -> Result<(), CliError> {
-    if let Some(parent) = path.parent() {
-        fs::create_dir_all(parent).map_err(|source| CliError::WriteFile {
-            path: parent.display().to_string(),
-            source,
-        })?;
-    }
-    let mut line = serde_json::to_string(value)?;
-    line.push('\n');
-    use std::io::Write;
-    let mut file = fs::OpenOptions::new()
-        .create(true)
-        .append(true)
-        .open(path)
-        .map_err(|source| CliError::WriteFile {
-            path: path.display().to_string(),
-            source,
-        })?;
-    file.write_all(line.as_bytes())
-        .map_err(|source| CliError::WriteFile {
-            path: path.display().to_string(),
-            source,
-        })
 }

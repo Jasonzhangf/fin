@@ -12,19 +12,47 @@ pub(crate) fn find_project_agent_config<'a>(
         .iter()
         .find(|project| {
             project_id.is_some_and(|value| value == project.project_id)
-                || agent_name.is_some_and(|value| value == project_agent_name(project))
+                || agent_name.is_some_and(|value| value == project_agent_name(system, project))
         })
 }
 
-pub(crate) fn project_agent_name(project: &ProjectAgentStartupConfig) -> String {
+pub(crate) fn project_agent_name(
+    system: &SystemConfig,
+    project: &ProjectAgentStartupConfig,
+) -> String {
     project
         .agent_name
         .as_deref()
         .and_then(sanitize_name_part)
         .unwrap_or_else(|| {
-            sanitize_name_part(format!("project-{}", project.project_id).as_str())
+            pooled_project_agent_name(system, project)
+                .or_else(|| sanitize_name_part(format!("project-{}", project.project_id).as_str()))
                 .unwrap_or_else(|| "project".into())
         })
+}
+
+fn pooled_project_agent_name(
+    system: &SystemConfig,
+    project: &ProjectAgentStartupConfig,
+) -> Option<String> {
+    let pool = system
+        .runtime
+        .startup
+        .project_agent_name_pool
+        .iter()
+        .filter_map(|name| sanitize_name_part(name))
+        .collect::<Vec<_>>();
+    if pool.is_empty() {
+        return None;
+    }
+    let index = stable_name_index(project.project_id.as_str(), pool.len());
+    pool.get(index).cloned()
+}
+
+fn stable_name_index(project_id: &str, len: usize) -> usize {
+    project_id.bytes().fold(0usize, |acc, byte| {
+        acc.wrapping_mul(31).wrapping_add(byte as usize)
+    }) % len
 }
 
 pub(crate) fn project_mode_name(project: &ProjectAgentStartupConfig) -> String {

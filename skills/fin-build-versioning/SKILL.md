@@ -113,7 +113,10 @@ description: Standard build, regression, install, promote, rollback, and version
 若改动影响 provider / runtime / debug：
 - 必须包含真实或半真实 provider regression
 - 必须验证 `current_context.json` / `current_projection.json` / `latest_events.jsonl`
-- 网络型 provider smoke 允许显式、有日志的 bounded retry（当前 install flow 默认 3 次），但不得静默 fallback
+- 网络型 provider smoke 允许显式、有日志的 bounded retry（当前统一规则：**指数回退 5 次，且从 1s 起步**），但不得静默 fallback
+- 若失败属于外部 quota / weekly limit / provider-side transient refusal，按 Jason 规则只有“**同类错误连续 3 次**”才升级为真实阻断；未到 3 次前只能记 warning/observation，不能否定已通过的本地主链验收。
+- 代码与 harness 遇到 retryable/transient 错误时，统一采用**指数回退 5 次，1s/2s/4s/8s/16s**；不得只做毫秒级或 3 次线性 sleep 重试，更不能静默重试无日志。
+- 脚本层 / Android shell / QQBot peer runner 若承担真实连接、重连、安装 smoke、E2E retry，也必须服从同一策略；禁止各自定义 `600ms`、`1.2*(i+1)`、固定 `3s/5s` 之类散装节奏。
 
 ## 7) Evidence sinks
 

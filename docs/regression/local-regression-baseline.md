@@ -5,14 +5,14 @@
 - Run local regression in 3 levels:
   - L0: offline deterministic checks (no network/provider required)
   - L1: local daemon/ws event-path checks (localhost only)
-  - L2: optional live-provider checks (opt-in)
+  - L2: mandatory live-provider / real-LLM checks
 
 ## Gates
 
 ### Gate G0 (entry + offline)
 - Command: `scripts/regression/run_local_regression.sh`
-- Must default to run L0+L1 only.
-- Must support `--with-live` to include L2.
+- Must default to run L0+L1+L2.
+- Local multi-agent E2E must use real LLM by default; static/mock mode is not an acceptance path.
 
 ### Gate G1 (basic reasoning)
 - `fin-cli config-check <user.toml>`

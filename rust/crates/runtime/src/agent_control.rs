@@ -1,82 +1,15 @@
+use crate::agent_control_io::{
+    identities_path, identity_path, mailbox_path, read_identity_required, read_json,
+    read_run_required, run_path, runs_path, sanitize_id, write_json,
+};
+use fin_shared::{
+    AgentIdentity, AgentKind, AgentRunRecord, CloseAgentResult, RegisterPrimaryAgentInput,
+    ResumeAgentResult, SpawnSubagentInput, WaitAgentResult, primary_path, validate_context_policy,
+};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use std::{
-    fs,
-    path::{Path, PathBuf},
-};
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum AgentKind {
-    SystemAgent,
-    ProjectAgent,
-    Subagent,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum ContextMode {
-    TaskSummaryOnly,
-    LastNTurns,
-    FullSessionContext,
-}
-
-impl Default for ContextMode {
-    fn default() -> Self {
-        Self::TaskSummaryOnly
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct ContextPolicy {
-    pub mode: ContextMode,
-    pub last_n_turns: Option<u32>,
-    pub reason: Option<String>,
-}
-
-impl Default for ContextPolicy {
-    fn default() -> Self {
-        Self {
-            mode: ContextMode::TaskSummaryOnly,
-            last_n_turns: None,
-            reason: None,
-        }
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
-pub struct CapabilityDescriptor {
-    pub capability_ids: Vec<String>,
-    pub tool_allowlist: Vec<String>,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct AgentIdentity {
-    pub agent_id: String,
-    pub kind: AgentKind,
-    pub parent_agent_id: Option<String>,
-    pub project_id: Option<String>,
-    pub device_binding: String,
-    pub auth_subject: String,
-    pub capability_descriptor: CapabilityDescriptor,
-    pub auth_lease_id: String,
-    pub path: String,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct AgentRunRecord {
-    pub agent_run_id: String,
-    pub agent_id: String,
-    pub parent_run_id: Option<String>,
-    pub task_id: Option<String>,
-    pub assignment_id: Option<String>,
-    pub status: String,
-    pub result_refs: Vec<String>,
-    pub last_heartbeat_at: String,
-    pub closed_at: Option<String>,
-    pub context_policy: Option<ContextPolicy>,
-    pub path: String,
-}
+use std::path::{Path, PathBuf};
+use std::time::{Duration, Instant};
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct AgentMailboxMessage {
@@ -91,29 +24,6 @@ pub struct AgentMailboxMessage {
     pub consumed_at: Option<String>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct RegisterPrimaryAgentInput {
-    pub agent_id: String,
-    pub kind: AgentKind,
-    pub project_id: Option<String>,
-    pub device_binding: String,
-    pub auth_subject: String,
-    pub auth_lease_id: String,
-    pub capability_descriptor: CapabilityDescriptor,
-    pub now: String,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct SpawnSubagentInput {
-    pub parent_agent_id: String,
-    pub parent_run_id: Option<String>,
-    pub agent_run_id: String,
-    pub task_id: Option<String>,
-    pub assignment_id: Option<String>,
-    pub context_policy: ContextPolicy,
-    pub now: String,
-}
-
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct SendAgentInput {
     pub message_id: String,
@@ -123,30 +33,6 @@ pub struct SendAgentInput {
     pub task_id: Option<String>,
     pub trigger_turn: bool,
     pub payload: Value,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct WaitAgentResult {
-    pub status: String,
-    pub agent_run_id: String,
-    pub result_refs: Vec<String>,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct CloseAgentResult {
-    pub agent_id: String,
-    pub agent_run_id: Option<String>,
-    pub status: String,
-    pub action: String,
-    pub affected_run_ids: Vec<String>,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct ResumeAgentResult {
-    pub agent_id: String,
-    pub agent_run_id: String,
-    pub status: String,
-    pub path: String,
 }
 
 #[derive(Debug, Clone)]
@@ -193,7 +79,7 @@ impl AgentControlStore {
         &self,
         input: SpawnSubagentInput,
     ) -> Result<(AgentIdentity, AgentRunRecord), String> {
-        let parent = self.read_identity_required(&input.parent_agent_id)?;
+        let parent = read_identity_required(&self.root, &input.parent_agent_id)?;
         if matches!(parent.kind, AgentKind::Subagent) {
             return Err("subagent cannot mint an independent durable child identity".into());
         }
@@ -232,8 +118,8 @@ impl AgentControlStore {
     }
 
     pub fn send_agent_input(&self, input: SendAgentInput) -> Result<AgentMailboxMessage, String> {
-        self.read_identity_required(&input.from_agent_id)?;
-        self.read_identity_required(&input.to_agent_id)?;
+        read_identity_required(&self.root, &input.from_agent_id)?;
+        read_identity_required(&self.root, &input.to_agent_id)?;
         let mut inbox = self.read_mailbox(&input.to_agent_id)?;
         let seq = inbox.last().map(|item| item.seq).unwrap_or(0) + 1;
         let message = AgentMailboxMessage {
@@ -252,21 +138,54 @@ impl AgentControlStore {
         Ok(message)
     }
 
-    pub fn wait_agent(&self, agent_run_id: &str) -> Result<WaitAgentResult, String> {
-        let run = self.read_run_required(agent_run_id)?;
-        let status = match run.status.as_str() {
-            "completed" | "failed" | "timeout" | "closed" => run.status.clone(),
-            _ => "timeout".into(),
+    pub fn consume_next_mailbox_message(
+        &self,
+        agent_id: &str,
+        consumed_at: &str,
+    ) -> Result<Option<AgentMailboxMessage>, String> {
+        read_identity_required(&self.root, agent_id)?;
+        let mut inbox = self.read_mailbox(agent_id)?;
+        let Some(index) = inbox
+            .iter()
+            .position(|message| message.consumed_at.is_none())
+        else {
+            return Ok(None);
         };
-        Ok(WaitAgentResult {
-            status,
-            agent_run_id: run.agent_run_id,
-            result_refs: run.result_refs,
-        })
+        inbox[index].consumed_at = Some(consumed_at.into());
+        let message = inbox[index].clone();
+        self.write_mailbox(agent_id, &inbox)?;
+        Ok(Some(message))
+    }
+
+    pub fn wait_agent(&self, agent_run_id: &str) -> Result<WaitAgentResult, String> {
+        let started = Instant::now();
+        let timeout = Duration::from_secs(90);
+        loop {
+            let run = read_run_required(&self.root, agent_run_id)?;
+            match run.status.as_str() {
+                "completed" | "failed" | "timeout" | "closed" => {
+                    return Ok(WaitAgentResult {
+                        status: run.status,
+                        agent_run_id: run.agent_run_id,
+                        result_refs: run.result_refs,
+                    });
+                }
+                _ => {
+                    if started.elapsed() >= timeout {
+                        return Ok(WaitAgentResult {
+                            status: "timeout".into(),
+                            agent_run_id: run.agent_run_id,
+                            result_refs: run.result_refs,
+                        });
+                    }
+                    std::thread::sleep(Duration::from_millis(50));
+                }
+            }
+        }
     }
 
     pub fn close_agent(&self, agent_id: &str, now: &str) -> Result<CloseAgentResult, String> {
-        let identity = self.read_identity_required(agent_id)?;
+        let identity = read_identity_required(&self.root, agent_id)?;
         match identity.kind {
             AgentKind::Subagent => {
                 let runs = self.read_run_registry()?;
@@ -306,7 +225,7 @@ impl AgentControlStore {
         agent_run_id: Option<&str>,
         now: &str,
     ) -> Result<ResumeAgentResult, String> {
-        let identity = self.read_identity_required(agent_id)?;
+        let identity = read_identity_required(&self.root, agent_id)?;
         match identity.kind {
             AgentKind::SystemAgent | AgentKind::ProjectAgent => {
                 let run_id = agent_run_id
@@ -337,7 +256,7 @@ impl AgentControlStore {
             AgentKind::Subagent => {
                 let run_id = agent_run_id
                     .ok_or_else(|| "subagent resume requires agent_run_id".to_string())?;
-                let mut run = self.read_run_required(run_id)?;
+                let mut run = read_run_required(&self.root, run_id)?;
                 if run.agent_id != identity.agent_id {
                     return Err("agent_run_id does not belong to subagent identity".into());
                 }
@@ -363,7 +282,7 @@ impl AgentControlStore {
         result_refs: Vec<String>,
         now: &str,
     ) -> Result<AgentRunRecord, String> {
-        let mut run = self.read_run_required(agent_run_id)?;
+        let mut run = read_run_required(&self.root, agent_run_id)?;
         run.status = status.into();
         run.result_refs = result_refs;
         run.last_heartbeat_at = now.into();
@@ -375,61 +294,28 @@ impl AgentControlStore {
         Ok(run)
     }
 
+    pub fn read_run(&self, agent_run_id: &str) -> Option<AgentRunRecord> {
+        read_run_required(&self.root, agent_run_id).ok()
+    }
+
     pub fn read_mailbox(&self, agent_id: &str) -> Result<Vec<AgentMailboxMessage>, String> {
-        read_json(&self.mailbox_path(agent_id)).map(|value| value.unwrap_or_default())
-    }
-
-    fn identities_path(&self) -> PathBuf {
-        self.root.join("identities.json")
-    }
-
-    fn runs_path(&self) -> PathBuf {
-        self.root.join("runs.json")
-    }
-
-    fn identity_path(&self, agent_id: &str) -> PathBuf {
-        self.root
-            .join("identities")
-            .join(format!("{}.json", safe_file_name(agent_id)))
-    }
-
-    fn run_path(&self, agent_run_id: &str) -> PathBuf {
-        self.root
-            .join("runs")
-            .join(format!("{}.json", safe_file_name(agent_run_id)))
-    }
-
-    fn mailbox_path(&self, agent_id: &str) -> PathBuf {
-        self.root
-            .join("mailbox")
-            .join(safe_file_name(agent_id))
-            .join("inbox.json")
-    }
-
-    fn read_identity_required(&self, agent_id: &str) -> Result<AgentIdentity, String> {
-        read_json(&self.identity_path(agent_id))?
-            .ok_or_else(|| format!("unknown agent identity: {agent_id}"))
-    }
-
-    fn read_run_required(&self, agent_run_id: &str) -> Result<AgentRunRecord, String> {
-        read_json(&self.run_path(agent_run_id))?
-            .ok_or_else(|| format!("unknown agent run: {agent_run_id}"))
+        read_json(&mailbox_path(&self.root, agent_id)).map(|value| value.unwrap_or_default())
     }
 
     fn write_identity(&self, identity: &AgentIdentity) -> Result<(), String> {
-        write_json(&self.identity_path(&identity.agent_id), identity)
+        write_json(&identity_path(&self.root, &identity.agent_id), identity)
     }
 
     fn write_run(&self, run: &AgentRunRecord) -> Result<(), String> {
-        write_json(&self.run_path(&run.agent_run_id), run)
+        write_json(&run_path(&self.root, &run.agent_run_id), run)
     }
 
     fn read_identity_registry(&self) -> Result<Vec<AgentIdentity>, String> {
-        read_json(&self.identities_path()).map(|value| value.unwrap_or_default())
+        read_json(&identities_path(&self.root)).map(|value| value.unwrap_or_default())
     }
 
     fn read_run_registry(&self) -> Result<Vec<AgentRunRecord>, String> {
-        read_json(&self.runs_path()).map(|value| value.unwrap_or_default())
+        read_json(&runs_path(&self.root)).map(|value| value.unwrap_or_default())
     }
 
     fn upsert_identity_registry(&self, identity: AgentIdentity) -> Result<(), String> {
@@ -437,7 +323,7 @@ impl AgentControlStore {
         identities.retain(|item| item.agent_id != identity.agent_id);
         identities.push(identity);
         identities.sort_by(|left, right| left.agent_id.cmp(&right.agent_id));
-        write_json(&self.identities_path(), &identities)
+        write_json(&identities_path(&self.root), &identities)
     }
 
     fn upsert_run_registry(&self, run: AgentRunRecord) -> Result<(), String> {
@@ -445,7 +331,7 @@ impl AgentControlStore {
         runs.retain(|item| item.agent_run_id != run.agent_run_id);
         runs.push(run);
         runs.sort_by(|left, right| left.agent_run_id.cmp(&right.agent_run_id));
-        write_json(&self.runs_path(), &runs)
+        write_json(&runs_path(&self.root), &runs)
     }
 
     fn write_mailbox(
@@ -453,66 +339,6 @@ impl AgentControlStore {
         agent_id: &str,
         messages: &[AgentMailboxMessage],
     ) -> Result<(), String> {
-        write_json(&self.mailbox_path(agent_id), messages)
+        write_json(&mailbox_path(&self.root, agent_id), messages)
     }
-}
-
-fn primary_path(kind: &AgentKind, agent_id: &str, project_id: Option<&str>) -> String {
-    match kind {
-        AgentKind::SystemAgent => format!("system:{agent_id}"),
-        AgentKind::ProjectAgent => {
-            format!("project:{}:{agent_id}", project_id.unwrap_or("unknown"))
-        }
-        AgentKind::Subagent => unreachable!("subagent primary path is derived from parent run"),
-    }
-}
-
-fn validate_context_policy(policy: &ContextPolicy) -> Result<(), String> {
-    if matches!(policy.mode, ContextMode::FullSessionContext)
-        && policy.reason.as_deref().unwrap_or("").trim().is_empty()
-    {
-        return Err("full_session_context requires reason".into());
-    }
-    if matches!(policy.mode, ContextMode::LastNTurns) && policy.last_n_turns.unwrap_or(0) == 0 {
-        return Err("last_n_turns context mode requires last_n_turns > 0".into());
-    }
-    Ok(())
-}
-
-fn read_json<T: for<'de> Deserialize<'de>>(path: &Path) -> Result<Option<T>, String> {
-    match fs::read_to_string(path) {
-        Ok(content) => serde_json::from_str::<T>(&content)
-            .map(Some)
-            .map_err(|err| err.to_string()),
-        Err(err) if err.kind() == std::io::ErrorKind::NotFound => Ok(None),
-        Err(err) => Err(err.to_string()),
-    }
-}
-
-fn write_json<T: Serialize + ?Sized>(path: &Path, value: &T) -> Result<(), String> {
-    if let Some(parent) = path.parent() {
-        fs::create_dir_all(parent).map_err(|err| err.to_string())?;
-    }
-    fs::write(
-        path,
-        serde_json::to_vec_pretty(value).map_err(|err| err.to_string())?,
-    )
-    .map_err(|err| err.to_string())
-}
-
-fn safe_file_name(value: &str) -> String {
-    value
-        .chars()
-        .map(|ch| {
-            if ch.is_ascii_alphanumeric() || matches!(ch, '-' | '_' | '.') {
-                ch
-            } else {
-                '_'
-            }
-        })
-        .collect()
-}
-
-fn sanitize_id(value: &str) -> String {
-    safe_file_name(value).trim_matches('_').to_string()
 }

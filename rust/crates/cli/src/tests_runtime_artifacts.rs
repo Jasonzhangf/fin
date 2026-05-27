@@ -1,5 +1,6 @@
 use super::*;
 use chrono::Datelike;
+use fin_runtime::{LedgerQuery, LedgerStore};
 
 #[test]
 fn transcript_session_persists_recent_context_history() {
@@ -225,6 +226,43 @@ fn transcript_session_persists_recent_context_history() {
         messages[5]
             .content
             .contains("simulated response for third turn")
+    );
+
+    let ledger = LedgerStore::for_session(&home, "session-test-transcript").expect("ledger");
+    let detail_records = ledger
+        .query(&LedgerQuery {
+            session_id: Some("session-test-transcript".into()),
+            track: Some(fin_contracts::LedgerTrackKind::SessionDetail),
+            ..LedgerQuery::default()
+        })
+        .expect("detail query");
+    let snapshot_records = ledger
+        .query(&LedgerQuery {
+            session_id: Some("session-test-transcript".into()),
+            track: Some(fin_contracts::LedgerTrackKind::SessionSnapshot),
+            ..LedgerQuery::default()
+        })
+        .expect("snapshot query");
+    assert_eq!(
+        detail_records.len(),
+        3,
+        "each closure must append one session.detail ledger record"
+    );
+    assert_eq!(
+        snapshot_records.len(),
+        3,
+        "each closure must append one session.snapshot ledger record"
+    );
+    let snapshot_report = ledger
+        .rebuild_session_snapshot("session-test-transcript")
+        .expect("snapshot rebuild");
+    assert_eq!(
+        snapshot_report.status, "ok",
+        "snapshot projection must rebuild cleanly from ledger detail"
+    );
+    assert!(
+        snapshot_report.missing_snapshot_detail_ids.is_empty(),
+        "snapshot rebuild must not miss detail refs"
     );
 
     let recent_reasoning: Vec<fin_contracts::ReasoningViewRecord> = serde_json::from_str(
