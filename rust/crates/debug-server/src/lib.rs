@@ -377,11 +377,22 @@ fn serve_debug_mvp_on_listener(
     handler: &(impl DebugActionHandler + Sync),
 ) -> Result<(), DebugDataError> {
     thread::scope(|scope| {
-        for stream in listener.incoming() {
-            let mut stream = stream.map_err(|source| DebugDataError::Io {
-                path: "debug-server-listener".into(),
-                source,
-            })?;
+        loop {
+            let mut stream = match listener.accept() {
+                Ok((stream, _)) => stream,
+                Err(ref source)
+                    if source.kind() == std::io::ErrorKind::WouldBlock
+                        || source.kind() == std::io::ErrorKind::Interrupted =>
+                {
+                    thread::sleep(Duration::from_millis(10));
+                    continue;
+                }
+                Err(source) => {
+                    eprintln!("accept error (retrying): {source}");
+                    thread::sleep(Duration::from_millis(100));
+                    continue;
+                }
+            };
             let runtime_home = runtime_home.to_path_buf();
             scope.spawn(move || {
                 let mut probe = [0_u8; 2048];
@@ -415,7 +426,6 @@ fn serve_debug_mvp_on_listener(
             });
         }
 
-        Ok(())
     })
 }
 
@@ -427,11 +437,22 @@ fn serve_debug_mvp_on_listener_owned<H>(
 where
     H: DebugActionHandler + Sync + Send + 'static,
 {
-    for stream in listener.incoming() {
-        let mut stream = stream.map_err(|source| DebugDataError::Io {
-            path: "debug-server-listener".into(),
-            source,
-        })?;
+    let _ = listener.set_nonblocking(false);
+    loop {
+        let mut stream = match listener.accept() {
+            Ok((stream, _)) => stream,
+            Err(source) if source.kind() == std::io::ErrorKind::WouldBlock
+                || source.kind() == std::io::ErrorKind::Interrupted =>
+            {
+                thread::sleep(Duration::from_millis(10));
+                continue;
+            }
+            Err(source) => {
+                eprintln!("accept error (retrying): {source}");
+                thread::sleep(Duration::from_millis(100));
+                continue;
+            }
+        };
         let runtime_home = runtime_home.clone();
         let handler = handler.clone();
         thread::spawn(move || {
@@ -464,7 +485,6 @@ where
         });
     }
 
-    Ok(())
 }
 #[cfg(test)]
 pub(crate) use routes::response_for_path;

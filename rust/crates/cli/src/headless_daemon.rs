@@ -63,6 +63,24 @@ pub(crate) fn start_headless_daemon(
     let runtime_home = init_runtime_home(user_toml, system, override_path)?;
     let daemon_id = daemon_id(system);
     let paths = HeadlessDaemonPaths::new(&runtime_home);
+    // Mutual exclusion: check if port is already bound (another daemon is alive)
+    let bind_addr = daemon_control_plane_bind_addr();
+    match std::net::TcpListener::bind(bind_addr.as_str()) {
+        Ok(test_listener) => {
+            // Port is free — release it so daemon-run can bind it
+            drop(test_listener);
+        }
+        Err(_) => {
+            // Port is held — another daemon is alive
+            return Ok(HeadlessDaemonStartReport {
+                daemon_id,
+                status: "already_running".into(),
+                pid: None,
+                runtime_home,
+            });
+        }
+    }
+    // Double check via lease
     if let Some(record) = read_json_if_exists::<HeadlessDaemonLeaseRecord>(&paths.lease_path)? {
         if process_alive(record.pid) && !lease_is_stale(&record) {
             return Ok(HeadlessDaemonStartReport {
@@ -167,7 +185,7 @@ pub(crate) fn run_headless_daemon_with_provider(
         .unwrap_or(usize::MAX);
     let started_at = crate::time::local_timestamp_now();
     let handler = CliDebugActionHandler::new(user_toml.to_string(), system.clone())?;
-    let _control_plane = start_daemon_control_plane(&runtime_home, handler.clone())?;
+    let control_plane_handle = start_daemon_control_plane(&runtime_home, handler.clone())?;
     let _agent_rpc = start_agent_rpc_if_enabled(&runtime_home, system)?;
     let _ = ensure_entry_agent_presence(system, &runtime_home, &started_at)?;
     let mut cycles_completed = 0usize;
@@ -190,6 +208,11 @@ pub(crate) fn run_headless_daemon_with_provider(
                 ),
             )?;
             break;
+        }
+        // Restart control plane thread if it died
+        if control_plane_handle.is_finished() {
+            eprintln!("control plane thread died, restarting");
+            let _ = start_daemon_control_plane(&runtime_home, handler.clone())?;
         }
         let cycle_now = crate::time::local_timestamp_now();
         let startup = refresh_startup_control_plane(&runtime_home, system, &cycle_now)?;

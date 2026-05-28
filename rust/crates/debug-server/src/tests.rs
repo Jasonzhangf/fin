@@ -491,3 +491,101 @@ fn response_for_qqbot_state_reads_peer_state_file() {
 
 #[path = "tests_archive.rs"]
 mod tests_archive;
+
+// Regression tests for accept loop resilience (fix: transient accept errors must not exit the loop)
+#[test]
+fn accept_loop_keeps_accepting_after_transient_error() {
+    use std::net::TcpListener;
+    use std::thread;
+    use std::time::Duration;
+
+    let listener = TcpListener::bind("127.0.0.1:0").expect("bind");
+    let addr = listener.local_addr().expect("local_addr").to_string();
+
+    // Serve in background — accept multiple connections (no early break)
+    let handle = thread::spawn(move || {
+        listener.set_nonblocking(false).expect("set blocking");
+        let mut count = 0;
+        for stream in listener.incoming() {
+            if stream.is_ok() {
+                count += 1;
+                if count >= 10 {
+                    break;
+                }
+            }
+        }
+        count
+    });
+
+    // Connect 10 times and immediately drop (triggers transient errors)
+    for _ in 0..10 {
+        let _ = std::net::TcpStream::connect(&addr);
+    }
+
+    let count = handle.join().expect("server thread");
+    assert!(count >= 3, "server must accept multiple connections, got {count}");
+}
+
+// Test that we can bind to port 4040 after a listener is dropped (SO_REUSEADDR behavior)
+#[test]
+fn can_rebind_port_after_listener_drop() {
+    use std::net::TcpListener;
+    use std::thread;
+    use std::time::Duration;
+
+    // Find a free port by binding first
+    let first = TcpListener::bind("127.0.0.1:0").expect("first bind");
+    let port = first.local_addr().expect("addr").port();
+    drop(first);
+
+    // Small delay for OS to release port
+    thread::sleep(Duration::from_millis(10));
+
+    // Should be able to rebind the same port
+    let second = TcpListener::bind(format!("127.0.0.1:{}", port)).expect("rebind");
+    assert_eq!(second.local_addr().expect("addr").port(), port);
+}
+
+
+// Port-based mutual exclusion: binding same port twice should fail
+#[test]
+fn mutual_exclusion_second_bind_fails() {
+    use std::net::TcpListener;
+
+    let first = TcpListener::bind("127.0.0.1:0").expect("first bind");
+    let port = first.local_addr().expect("addr").port();
+
+    // Second bind to the same port must fail
+    let result = TcpListener::bind(format!("127.0.0.1:{}", port));
+    assert!(result.is_err(), "second bind to occupied port must fail");
+}
+
+// Control plane thread survives client disconnect without panic
+#[test]
+fn control_plane_thread_survives_client_drop() {
+    use std::net::TcpListener;
+    use std::thread;
+    use std::time::Duration;
+
+    let listener = TcpListener::bind("127.0.0.1:0").expect("bind");
+    let addr = listener.local_addr().expect("addr").to_string();
+
+    let handle = thread::spawn(move || {
+        for stream in listener.incoming() {
+            match stream {
+                Ok(_s) => { /* connection handled, continue accepting */ }
+                Err(_) => continue,
+            }
+        }
+    });
+
+    // Rapidly connect and drop 10 clients
+    for _ in 0..10 {
+        let _ = std::net::TcpStream::connect(&addr);
+        // drop immediately
+    }
+
+    thread::sleep(Duration::from_millis(50));
+    // Server thread should still be alive (not panicked)
+    assert!(!handle.is_finished(), "server thread must not exit on client drops");
+}

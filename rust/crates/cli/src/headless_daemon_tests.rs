@@ -464,3 +464,39 @@ fn stop_headless_daemon_writes_stop_request() {
     assert_eq!(report.pid, Some(12345));
     assert!(home.join("runtime/locks/headless-daemon.stop").exists());
 }
+
+#[test]
+fn start_daemon_rejects_when_port_already_bound() {
+    use std::net::TcpListener;
+
+    let _guard = env_lock().lock().expect("env lock");
+    let previous_bind = std::env::var("FIN_DAEMON_CONTROL_PLANE_BIND").ok();
+
+    // Bind a unique port to simulate an existing daemon
+    let listener = TcpListener::bind("127.0.0.1:0").expect("bind");
+    let port = listener.local_addr().expect("addr").port();
+    unsafe {
+        std::env::set_var("FIN_DAEMON_CONTROL_PLANE_BIND", format!("127.0.0.1:{}", port));
+    }
+
+    let home = temp_runtime_home("port-mutex");
+    ensure_runtime_home_layout(&home).expect("runtime home");
+    let user_toml = sample_user_toml();
+    let system = map_system_config(&user_toml).expect("system config");
+
+    let report = crate::headless_daemon::start_headless_daemon(
+        &user_toml,
+        &system,
+        Some(home.as_path()),
+    ).expect("start report");
+
+    assert_eq!(report.status, "already_running", "must refuse to start when port is held");
+    // Restore env
+    if let Some(value) = previous_bind {
+        unsafe { std::env::set_var("FIN_DAEMON_CONTROL_PLANE_BIND", value); }
+    } else {
+        unsafe { std::env::remove_var("FIN_DAEMON_CONTROL_PLANE_BIND"); }
+    }
+    drop(listener);
+    let _ = std::fs::remove_dir_all(&home);
+}
