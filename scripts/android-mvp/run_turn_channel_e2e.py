@@ -121,6 +121,12 @@ async def main():
         check(status,'item_started_present',len(item_started)>0,{'count':len(item_started)})
         check(status,'item_terminal_present',len(item_terminal)>0,{'count':len(item_terminal)})
         check(status,'each_item_started_has_terminal',all(e.get('item_id') in terminal_by_id for e in item_started))
+        check(
+            status,
+            'item_delta_channel_supported',
+            any(e.get('type') == 'turn.item.delta' for e in events)
+            or any(e.get('type') in ('turn.item.started', 'turn.item.completed', 'turn.item.failed') for e in events)
+        )
         for f in ('item_id','label','title','purpose','status'):
             check(status,f'item_started_has_{f}',all(str(e.get(f,'')).strip() for e in item_started))
         bad={'','tool','unknown'}
