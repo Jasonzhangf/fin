@@ -1,0 +1,89 @@
+[fin] real provider smoke
+  run_id=test-android-mimo-goal-20260528-audit
+  user_toml=/Users/fanzhang/.fin/harness/runs/test-android-mimo-goal-20260528-audit/user.test.toml
+  runtime_home=/Users/fanzhang/.fin/harness/runs/test-android-mimo-goal-20260528-audit/runtime-home
+[fin] probe transient quota/rate-limit on attempt 1; retrying in 1s
+{
+  "provider": "mini27",
+  "protocol": "open-ai-compatible",
+  "model": "MiniMax-M2.7",
+  "endpoint": "http://guizhouyun.site:2080/v1/chat/completions",
+  "api_key_source": "direct",
+  "user_agent": "opencode/1.2.27",
+  "custom_header_names": [],
+  "status": 200,
+  "request_id": null,
+  "response_id": "06664dfc76940b533eb88d2b46c4eefd",
+  "stop_reason": "stop",
+  "output_text": "OK",
+  "reasoning_text": "The user says: \"Reply with exactly OK.\"\n\nWe must produce exactly \"OK\". The user asks us to respond with exactly OK. That's fine. There's no conflict with policies. The answer should be just \"OK\". No extra whitespace? The instruction says \"exactly OK\". Typically that includes the characters O K, perhaps uppercase, no period, no extra. So we output exactly:\n\nOK\n\nMake sure no extra spaces or newline? Probably just \"OK\". Usually that's fine. There's no context. So answer.",
+  "base_resp_status_code": 0,
+  "base_resp_status_msg": "",
+  "ok": true
+}
+warning: methods `build_anthropic_headers` and `build_openai_headers` are never used
+   --> crates/provider/src/lib.rs:310:8
+    |
+213 | impl ProviderFacade {
+    | ------------------- methods in this implementation
+...
+310 |     fn build_anthropic_headers(&self) -> Result<reqwest::header::HeaderMap, ProviderError> {
+    |        ^^^^^^^^^^^^^^^^^^^^^^^
+...
+315 |     fn build_openai_headers(&self) -> Result<reqwest::header::HeaderMap, ProviderError> {
+    |        ^^^^^^^^^^^^^^^^^^^^
+    |
+    = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: `fin-provider` (lib) generated 1 warning
+warning: unused import: `fs`
+  --> crates/runtime/src/tool_dispatch_extended_collab_coordination.rs:10:5
+   |
+10 |     fs,
+   |     ^^
+   |
+   = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: `fin-runtime` (lib) generated 1 warning (run `cargo fix --lib -p fin-runtime` to apply 1 suggestion)
+warning: unused imports: `LedgerTrackKind` and `SessionSnapshotRecord`
+  --> crates/debug-server/src/mobile_ws.rs:11:28
+   |
+11 |     ActivityCardsSnapshot, LedgerTrackKind, ProviderTarget, SessionSnapshotRecord,
+   |                            ^^^^^^^^^^^^^^^                  ^^^^^^^^^^^^^^^^^^^^^
+   |
+   = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused import: `LedgerStore`
+  --> crates/debug-server/src/mobile_ws.rs:14:19
+   |
+14 | use fin_runtime::{LedgerStore, build_activity_cards};
+   |                   ^^^^^^^^^^^
+
+warning: use of deprecated method `tungstenite::WebSocket::<Stream>::read_message`: Use `read`
+  --> crates/debug-server/src/mobile_ws.rs:52:22
+   |
+52 |         let msg = ws.read_message().map_err(|source| DebugDataError::Io {
+   |                      ^^^^^^^^^^^^
+   |
+   = note: `#[warn(deprecated)]` on by default
+
+warning: use of deprecated method `tungstenite::WebSocket::<Stream>::write_message`: Use `send`
+    --> crates/debug-server/src/mobile_ws.rs:1783:8
+     |
+1783 |     ws.write_message(Message::Text(value.to_string()))
+     |        ^^^^^^^^^^^^^
+
+warning: function `sibling_artifact_path` is never used
+  --> crates/debug-server/src/session_view.rs:32:15
+   |
+32 | pub(crate) fn sibling_artifact_path(
+   |               ^^^^^^^^^^^^^^^^^^^^^
+   |
+   = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: `fin-debug-server` (lib) generated 5 warnings (run `cargo fix --lib -p fin-debug-server` to apply 2 suggestions)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.08s
+     Running `rust/target/debug/fin-cli provider-live-smoke /Users/fanzhang/.fin/harness/runs/test-android-mimo-goal-20260528-audit/user.test.toml`
+provider live smoke ok: run_id=test-android-mimo-goal-20260528-audit session=session-test-android-mimo-goal-20260528-audit task=task-test-android-mimo-goal-20260528-audit turns=3 report=/Users/fanzhang/.fin/harness/runs/test-android-mimo-goal-20260528-audit/provider-live-smoke-report.json runtime_home=/Users/fanzhang/.fin/harness/runs/test-android-mimo-goal-20260528-audit/runtime-home
+-audit turns=3 receipt=/Users/fanzhang/.fin/harness/runs/test-android-mimo-goal-20260528-audit/provider-live-smoke-report.json
+[fin] live smoke receipt: /Users/fanzhang/.fin/harness/runs/test-android-mimo-goal-20260528-audit/provider-live-smoke-report.json

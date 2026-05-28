@@ -1,0 +1,144 @@
+2026-05-27T15:17:36.012154Z app.onCreate webview_init
+2026-05-27T15:17:36.103869Z native_input_inset css_px=150 bar_px=528 keyboard_px=0
+2026-05-27T15:17:36.175819Z profiles_loaded count=1 current=daemon
+2026-05-27T15:17:36.209439Z init_autoconnect profile=daemon profiles=1
+2026-05-27T15:17:36.217971Z app.page.finished url=file:///android_asset/mobile-shell.html
+2026-05-27T15:17:36.218476Z device_e2e_intent_autosend len=13
+2026-05-27T15:17:37.079064Z state=connecting
+2026-05-27T15:17:37.081130Z endpoint=ws://100.66.1.82:4040/ws
+2026-05-27T15:17:44.871324Z native_ws.failure endpoint=ws://100.66.1.82:4040/ws detail=Failed to connect to /100.66.1.82:4040
+2026-05-27T15:17:44.872743Z state=endpoint_unreachable:Failed to connect to /100.66.1.82:4040
+2026-05-27T15:17:44.879486Z state=reconnecting(1)
+2026-05-27T15:17:44.879960Z reconnect_reason=native-failure wait_ms=1000
+2026-05-27T15:17:47.542703Z state=reconnecting
+2026-05-27T15:17:47.543911Z endpoint=ws://100.66.1.82:4040/ws
+2026-05-27T15:18:04.692520Z native_ws.open endpoint=ws://100.66.1.82:4040/ws
+2026-05-27T15:18:04.697835Z state=handshaking
+2026-05-27T15:18:04.703989Z handshake=ok
+2026-05-27T15:18:04.704777Z state=subscribed
+2026-05-27T15:18:04.705093Z state=healthy
+2026-05-27T15:18:04.716629Z ws_event=runtime.health item_id= label= status=available
+2026-05-27T15:18:04.818321Z device_e2e_sent id=m-1779895084816 len=13
+2026-05-27T15:18:05.123696Z ws_event=turn.item.started item_id=tool-provider-call-op-test-install-0-1-0196-mainline-0042 label=provider.call status=running
+2026-05-27T15:18:05.126588Z ws_event=turn.item.completed item_id=tool-provider-call-op-test-install-0-1-0196-mainline-0042 label=provider.call status=completed
+2026-05-27T15:18:05.129566Z ws_event=turn.item.started item_id=tool-model-op-test-install-0-1-0196-mainline-0042-r01-00 label=session.list status=running
+2026-05-27T15:18:05.136232Z ws_event=turn.item.completed item_id=tool-model-op-test-install-0-1-0196-mainline-0042-r01-00 label=session.list status=completed
+2026-05-27T15:18:05.137309Z ws_event=turn.item.started item_id=tool-model-op-test-install-0-1-0196-mainline-0042-r02-00 label=reasoning.stop status=running
+2026-05-27T15:18:05.138598Z ws_event=turn.item.completed item_id=tool-model-op-test-install-0-1-0196-mainline-0042-r02-00 label=reasoning.stop status=completed
+2026-05-27T15:18:16.065587Z ws_event=turn.item.started item_id=tool-provider-call-op-test-install-0-1-0196-mainline-0043 label=provider.call status=running
+2026-05-27T15:18:16.071824Z ws_event=turn.item.completed item_id=tool-provider-call-op-test-install-0-1-0196-mainline-0043 label=provider.call status=completed
+2026-05-27T15:18:16.073498Z ws_event=turn.completed item_id= label= status=completed
+2026-05-27T15:18:16.074400Z ws_event=turn.rendered item_id= label= status=
+2026-05-27T15:18:32.418885Z app.onCreate webview_init
+2026-05-27T15:18:32.500593Z native_input_inset css_px=150 bar_px=528 keyboard_px=0
+2026-05-27T15:18:32.604417Z profiles_loaded count=1 current=daemon
+2026-05-27T15:18:32.605142Z init_autoconnect profile=daemon profiles=1
+2026-05-27T15:18:32.609720Z app.page.finished url=file:///android_asset/mobile-shell.html
+2026-05-27T15:18:32.609994Z device_e2e_intent_autosend len=59
+2026-05-27T15:18:32.856486Z state=connecting
+2026-05-27T15:18:32.857260Z endpoint=ws://100.66.1.82:4040/ws
+2026-05-27T15:18:32.894541Z native_ws.open endpoint=ws://100.66.1.82:4040/ws
+2026-05-27T15:18:32.895970Z state=handshaking
+2026-05-27T15:18:32.906127Z handshake=ok
+2026-05-27T15:18:32.909890Z state=subscribed
+2026-05-27T15:18:32.910355Z state=healthy
+2026-05-27T15:18:32.922625Z ws_event=runtime.health item_id= label= status=available
+2026-05-27T15:18:35.116295Z device_e2e_sent id=m-1779895115113 len=59
+2026-05-27T15:18:35.385559Z ws_event=turn.item.started item_id=tool-provider-call-op-test-install-0-1-0196-mainline-0043 label=provider.call status=running
+2026-05-27T15:18:35.387838Z ws_event=turn.item.completed item_id=tool-provider-call-op-test-install-0-1-0196-mainline-0043 label=provider.call status=completed
+2026-05-27T15:18:43.163180Z ws_event=turn.item.started item_id=tool-provider-call-op-test-install-0-1-0196-mainline-0044 label=provider.call status=running
+2026-05-27T15:18:43.169995Z ws_event=turn.item.completed item_id=tool-provider-call-op-test-install-0-1-0196-mainline-0044 label=provider.call status=completed
+2026-05-27T15:18:43.195816Z ws_event=turn.item.started item_id=tool-provider-call-op-test-install-0-1-0196-mainline-0044 label=provider.call status=running
+2026-05-27T15:18:43.197334Z ws_event=turn.item.completed item_id=tool-provider-call-op-test-install-0-1-0196-mainline-0044 label=provider.call status=completed
+2026-05-27T15:18:43.198808Z ws_event=turn.completed item_id= label= status=completed
+2026-05-27T15:18:43.200163Z ws_event=turn.rendered item_id= label= status=
+2026-05-27T15:24:01.744318Z input_request_keyboard
+2026-05-27T15:24:01.746384Z input_focus
+2026-05-27T15:24:01.751116Z ime_show_requested
+2026-05-27T15:24:01.755552Z input_blur
+2026-05-27T15:24:01.757134Z input_request_keyboard
+2026-05-27T15:24:01.758665Z input_focus
+2026-05-27T15:24:01.764679Z ime_show_requested
+2026-05-27T15:24:01.817118Z native_input_inset css_px=448 bar_px=528 keyboard_px=1041
+2026-05-27T15:27:41.424929Z app.onCreate webview_init
+2026-05-27T15:27:41.533587Z native_input_inset css_px=150 bar_px=528 keyboard_px=0
+2026-05-27T15:27:41.637870Z profiles_loaded count=1 current=daemon
+2026-05-27T15:27:41.638780Z init_autoconnect profile=daemon profiles=1
+2026-05-27T15:27:41.653009Z app.page.finished url=file:///android_asset/mobile-shell.html
+2026-05-27T15:27:42.043333Z state=connecting
+2026-05-27T15:27:42.044001Z endpoint=ws://100.66.1.82:4040/ws
+2026-05-27T15:27:42.061178Z native_ws.open endpoint=ws://100.66.1.82:4040/ws
+2026-05-27T15:27:42.062594Z state=handshaking
+2026-05-27T15:27:42.066830Z handshake=ok
+2026-05-27T15:27:42.067601Z state=subscribed
+2026-05-27T15:27:42.068069Z state=healthy
+2026-05-27T15:27:42.080024Z ws_event=runtime.health item_id= label= status=available
+2026-05-27T15:27:48.341504Z native_ws.failure endpoint=ws://100.66.1.82:4040/ws detail=Software caused connection abort
+2026-05-27T15:27:48.343497Z state=endpoint_unreachable:Software caused connection abort
+2026-05-27T15:27:48.345239Z state=reconnecting(1)
+2026-05-27T15:27:48.346176Z reconnect_reason=native-failure wait_ms=1000
+2026-05-27T15:27:51.250104Z state=reconnecting
+2026-05-27T15:27:51.251343Z endpoint=ws://100.66.1.82:4040/ws
+2026-05-27T15:39:13.537511Z app.onCreate webview_init
+2026-05-27T15:39:13.663763Z native_input_inset css_px=150 bar_px=528 keyboard_px=0
+2026-05-27T15:39:13.764171Z profiles_loaded count=1 current=daemon
+2026-05-27T15:39:13.767322Z init_autoconnect profile=daemon profiles=1
+2026-05-27T15:39:13.774483Z app.page.finished url=file:///android_asset/mobile-shell.html
+2026-05-27T15:39:15.371076Z state=connecting
+2026-05-27T15:39:15.374049Z endpoint=ws://100.66.1.82:4040/ws
+2026-05-27T15:39:19.830476Z native_ws.failure endpoint=ws://100.66.1.82:4040/ws detail=Failed to connect to /100.66.1.82:4040
+2026-05-27T15:39:19.831740Z state=endpoint_unreachable:Failed to connect to /100.66.1.82:4040
+2026-05-27T15:39:19.832479Z state=reconnecting(1)
+2026-05-27T15:39:19.833194Z reconnect_reason=native-failure wait_ms=1000
+2026-05-27T15:39:21.897296Z state=reconnecting
+2026-05-27T15:39:21.899507Z endpoint=ws://100.66.1.82:4040/ws
+2026-05-27T15:48:30.317662Z native_ws.failure endpoint=ws://100.66.1.82:4040/ws detail=Failed to connect to /100.66.1.82:4040
+2026-05-27T15:48:30.477687Z state=endpoint_unreachable:Failed to connect to /100.66.1.82:4040
+2026-05-27T15:48:30.486775Z state=reconnecting(2)
+2026-05-27T15:48:30.493997Z reconnect_reason=native-failure wait_ms=2000
+2026-05-27T15:48:32.499939Z state=reconnecting
+2026-05-27T15:48:32.500561Z endpoint=ws://100.66.1.82:4040/ws
+2026-05-27T15:48:32.522075Z native_ws.open endpoint=ws://100.66.1.82:4040/ws
+2026-05-27T15:48:32.523399Z state=handshaking
+2026-05-27T15:48:32.527119Z handshake=ok
+2026-05-27T15:48:32.528092Z state=subscribed
+2026-05-27T15:48:32.528614Z state=healthy
+2026-05-27T15:48:32.536623Z ws_event=runtime.health item_id= label= status=available
+2026-05-27T15:48:36.512662Z app.onCreate webview_init
+2026-05-27T15:48:36.544724Z native_input_inset css_px=150 bar_px=528 keyboard_px=0
+2026-05-27T15:48:36.557995Z profiles_loaded count=1 current=daemon
+2026-05-27T15:48:36.558502Z init_autoconnect profile=daemon profiles=1
+2026-05-27T15:48:36.564444Z app.page.finished url=file:///android_asset/mobile-shell.html
+2026-05-27T15:48:36.811123Z state=connecting
+2026-05-27T15:48:36.812021Z endpoint=ws://100.66.1.82:4040/ws
+2026-05-27T15:48:36.856424Z native_ws.open endpoint=ws://100.66.1.82:4040/ws
+2026-05-27T15:48:36.857958Z state=handshaking
+2026-05-27T15:48:36.862096Z handshake=ok
+2026-05-27T15:48:36.864026Z state=subscribed
+2026-05-27T15:48:36.864638Z state=healthy
+2026-05-27T15:48:36.872484Z ws_event=runtime.health item_id= label= status=available
+2026-05-27T15:48:45.967346Z native_input_focus
+2026-05-27T15:48:46.033450Z native_input_inset css_px=448 bar_px=528 keyboard_px=1041
+2026-05-27T15:48:48.207173Z native_input_inset css_px=150 bar_px=528 keyboard_px=0
+2026-05-27T15:48:49.997186Z native_input_focus
+2026-05-27T15:48:50.045587Z native_input_inset css_px=448 bar_px=528 keyboard_px=1041
+2026-05-27T15:49:06.345318Z native_input_inset css_px=150 bar_px=528 keyboard_px=0
+2026-05-27T15:49:42.302303Z native_ws.failure endpoint=ws://100.66.1.82:4040/ws detail=Software caused connection abort
+2026-05-27T15:49:42.302304Z native_ws.failure endpoint=ws://100.66.1.82:4040/ws detail=Software caused connection abort
+2026-05-27T15:49:42.308244Z state=endpoint_unreachable:Software caused connection abort
+2026-05-27T15:49:42.309533Z state=reconnecting(1)
+2026-05-27T15:49:42.310109Z reconnect_reason=native-failure wait_ms=1000
+2026-05-27T15:49:44.354253Z state=reconnecting
+2026-05-27T15:49:44.356153Z endpoint=ws://100.66.1.82:4040/ws
+2026-05-27T15:50:27.828955Z native_ws.failure endpoint=ws://100.66.1.82:4040/ws detail=Failed to connect to /100.66.1.82:4040
+2026-05-27T15:50:27.891144Z state=endpoint_unreachable:Failed to connect to /100.66.1.82:4040
+2026-05-27T15:50:27.905767Z state=reconnecting(2)
+2026-05-27T15:50:27.913231Z reconnect_reason=native-failure wait_ms=2000
+2026-05-27T15:50:29.916107Z state=reconnecting
+2026-05-27T15:50:29.916989Z endpoint=ws://100.66.1.82:4040/ws
+2026-05-27T15:50:29.938643Z native_ws.open endpoint=ws://100.66.1.82:4040/ws
+2026-05-27T15:50:29.939711Z state=handshaking
+2026-05-27T15:50:29.943719Z handshake=ok
+2026-05-27T15:50:29.944253Z state=subscribed
+2026-05-27T15:50:29.944540Z state=healthy
+2026-05-27T15:50:29.956798Z ws_event=runtime.health item_id= label= status=available
