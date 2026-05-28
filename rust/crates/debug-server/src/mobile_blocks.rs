@@ -342,6 +342,7 @@ pub(crate) fn runtime_view_messages(runtime_home: &Path) -> Result<Vec<Value>, D
         .unwrap_or("idle");
     let mut messages = vec![
         serde_json::json!({"type":"runtime.health","status":"available","phase": phase}),
+        serde_json::json!({"type":"provider.health","status":"available"}),
         serde_json::json!({"type":"runtime.workers","workers":[{"worker_id":"entry","phase":phase}]}),
         serde_json::json!({"type":"runtime.projects","projects":[{"project_id":"fin","state":"attached"}]}),
     ];
