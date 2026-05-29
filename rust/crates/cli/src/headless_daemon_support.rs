@@ -235,6 +235,7 @@ pub(super) fn read_json_if_exists<T: for<'de> Deserialize<'de>>(
     path: &Path,
 ) -> Result<Option<T>, CliError> {
     match fs::read_to_string(path) {
+        Ok(content) if content.trim().is_empty() => Ok(None),
         Ok(content) => serde_json::from_str(&content)
             .map(Some)
             .map_err(CliError::Serialize),

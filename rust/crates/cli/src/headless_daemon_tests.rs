@@ -521,6 +521,7 @@ fn concurrent_starts_only_one_succeeds() {
 
     let _guard = env_lock().lock().unwrap_or_else(|e| e.into_inner());
     let previous_bind = std::env::var("FIN_DAEMON_CONTROL_PLANE_BIND").ok();
+    let previous_cycles = std::env::var("FIN_HEADLESS_DAEMON_MAX_CYCLES").ok();
 
     // Use a random high port to avoid conflicting with any real daemon
     let listener = TcpListener::bind("127.0.0.1:0").expect("bind ephemeral");
@@ -532,6 +533,7 @@ fn concurrent_starts_only_one_succeeds() {
             "FIN_DAEMON_CONTROL_PLANE_BIND",
             format!("127.0.0.1:{}", port),
         );
+        std::env::set_var("FIN_HEADLESS_DAEMON_MAX_CYCLES", "1");
     }
 
     // Both threads share the SAME runtime_home — true contention over the same daemon.
@@ -579,6 +581,15 @@ fn concurrent_starts_only_one_succeeds() {
     } else {
         unsafe {
             std::env::remove_var("FIN_DAEMON_CONTROL_PLANE_BIND");
+        }
+    }
+    if let Some(value) = previous_cycles {
+        unsafe {
+            std::env::set_var("FIN_HEADLESS_DAEMON_MAX_CYCLES", value);
+        }
+    } else {
+        unsafe {
+            std::env::remove_var("FIN_HEADLESS_DAEMON_MAX_CYCLES");
         }
     }
     let _ = std::fs::remove_dir_all(&home);
