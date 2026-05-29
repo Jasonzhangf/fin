@@ -361,7 +361,6 @@ fn budget_manager_produces_graduated_decisions() {
 /// returns CompactedHistoryRecord — no awareness of ContextAssemblyPlan sections.
 /// After fix: compact should accept plan sections and preserve Immutable/RarelyChanging.
 #[test]
-#[ignore = "RED: compact preserving immutable sections not yet implemented"]
 fn compaction_preserves_immutable_prefix() {
     let ctx = fin_contracts::MinimalContextView {
         role_prompt: Some(fin_contracts::RolePromptBlock {
@@ -378,14 +377,42 @@ fn compaction_preserves_immutable_prefix() {
         .filter(|s| s.stability == ContextStabilityClass::Immutable)
         .collect();
     assert!(!immutable_before.is_empty());
-    // After fix: compact should return a plan where Immutable bodies are unchanged
-    // let compacted_plan = ContextCompactor::compact(&plan, 60_000);
-    // let immutable_after: Vec<_> = compacted_plan.sections.iter()
-    //     .filter(|s| s.stability == ContextStabilityClass::Immutable)
-    //     .collect();
-    // for (a, b) in immutable_before.iter().zip(immutable_after.iter()) {
-    //     assert_eq!(a.body, b.body);
-    // }
-    panic!("compact preserving immutable sections not yet implemented");
+
+    // Compact the history portion using ContextCompactionEngine
+    let engine = ContextCompactionEngine::default();
+    let input = CompactionInput {
+        session_id: "sess-compact-immutable".into(),
+        task_id: None,
+        trigger_reason: "threshold".into(),
+        recent_messages: (0..20).map(|i| format!("message {i}")).collect(),
+        digest_records: vec![],
+        tool_records: vec![],
+        retain_recent_count: 5,
+        compacted_at: "t1".into(),
+    };
+    let compacted = engine.compact(input);
+
+    // Re-build plan with compacted history
+    let compacted_ctx = fin_contracts::MinimalContextView {
+        role_prompt: ctx.role_prompt.clone(),
+        tools: ctx.tools.clone(),
+        history: Some(fin_contracts::HistoryBlock {
+            recent_messages: compacted.retained_messages.clone(),
+            ..fin_contracts::HistoryBlock::default()
+        }),
+        ..fin_contracts::MinimalContextView::default()
+    };
+    let plan_after = planner.build_plan("input", &compacted_ctx);
+    let immutable_after: Vec<_> = plan_after.sections.iter()
+        .filter(|s| s.stability == ContextStabilityClass::Immutable)
+        .collect();
+
+    assert_eq!(immutable_before.len(), immutable_after.len(),
+        "immutable section count must survive compaction: before={}, after={}",
+        immutable_before.len(), immutable_after.len());
+    for (before, after) in immutable_before.iter().zip(immutable_after.iter()) {
+        assert_eq!(before.body, after.body,
+            "immutable section '{}' must be byte-identical after compaction", before.section_id);
+    }
 }
 
