@@ -422,7 +422,7 @@ fn persist_context_baseline(
 ) -> Result<(), RuntimeError> {
     let plan = crate::ContextAssemblyPlanner::default()
         .build_plan(&run.operation.payload.input, &run.operation.payload.context);
-    let baseline = ContextBaselineManager.create(
+    let baseline = ContextBaselineManager::default().create(
         run.progress
             .refs
             .session_id

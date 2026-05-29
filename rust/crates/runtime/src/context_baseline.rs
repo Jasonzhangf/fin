@@ -21,8 +21,21 @@ pub struct ContextBaselineDiff {
     pub tool_schema_hash: String,
 }
 
-#[derive(Debug, Clone, Default)]
-pub struct ContextBaselineManager;
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PrefixDriftEvent {
+    pub session_id: String,
+    pub turn_index: usize,
+    pub previous_prefix_hash: String,
+    pub current_prefix_hash: String,
+    pub changed_fields: Vec<String>,
+    pub detected_at: String,
+}
+
+#[derive(Debug, Default)]
+pub struct ContextBaselineManager {
+    drift_log: std::sync::Mutex<Vec<PrefixDriftEvent>>,
+}
 
 impl ContextBaselineManager {
     pub fn create(
@@ -40,6 +53,16 @@ impl ContextBaselineManager {
             tool_schema_hash: tool_schema_hash(plan),
             created_at: created_at.into(),
         }
+    }
+
+    pub fn drift_history(&self, session_id: &str) -> Vec<PrefixDriftEvent> {
+        self.drift_log
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .iter()
+            .filter(|event| event.session_id == session_id)
+            .cloned()
+            .collect()
     }
 
     pub fn diff(
@@ -68,8 +91,22 @@ impl ContextBaselineManager {
         if previous.tool_schema_hash != tool_schema_hash {
             changed_fields.push("tool_schema_hash".into());
         }
+        let requires_full_reinject = !changed_fields.is_empty();
+        if requires_full_reinject && !previous.session_id.is_empty() {
+            if let Ok(mut log) = self.drift_log.lock() {
+                let idx = log.len();
+                log.push(PrefixDriftEvent {
+                    session_id: previous.session_id.clone(),
+                    turn_index: idx,
+                    previous_prefix_hash: previous.stable_prefix_hash.clone(),
+                    current_prefix_hash: stable_prefix_hash.clone(),
+                    changed_fields: changed_fields.clone(),
+                    detected_at: std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs().to_string()).unwrap_or_default(),
+                });
+            }
+        }
         ContextBaselineDiff {
-            requires_full_reinject: !changed_fields.is_empty(),
+            requires_full_reinject,
             changed_fields,
             stable_prefix_hash,
             tool_schema_hash,

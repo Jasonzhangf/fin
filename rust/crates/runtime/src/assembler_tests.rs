@@ -348,7 +348,7 @@ fn context_baseline_requires_full_once_then_diff_when_stable_prefix_unchanged() 
         compact_threshold_tokens: 100_000,
     };
     let first_plan = planner.build_plan("first", &context);
-    let manager = ContextBaselineManager;
+    let manager = ContextBaselineManager::default();
     let first_diff = manager.diff(None, &first_plan, "project");
     assert!(first_diff.requires_full_reinject);
     assert_eq!(first_diff.changed_fields, vec!["missing_baseline"]);

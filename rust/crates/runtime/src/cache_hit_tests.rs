@@ -268,7 +268,6 @@ fn budget_decision_reports_cached_ratio() {
 /// Current code: diff() compares two snapshots but does not record history.
 /// After fix: add drift_history() method that returns drift events.
 #[test]
-#[ignore = "RED: ContextBaselineManager.drift_history() not yet implemented"]
 fn baseline_manager_tracks_drift_history() {
     let planner = ContextAssemblyPlanner::default();
     let ctx1 = fin_contracts::MinimalContextView {
@@ -293,10 +292,8 @@ fn baseline_manager_tracks_drift_history() {
     let r1 = mgr.create("sess-drift", &plan1, "system", "t1");
     let diff = mgr.diff(Some(&r1), &plan2, "system");
     assert!(diff.requires_full_reinject);
-    // After fix: mgr.drift_history("sess-drift") should return 1 event
-    // let history = mgr.drift_history("sess-drift");
-    // assert_eq!(history.len(), 1);
-    panic!("drift_history() not yet implemented");
+    let history = mgr.drift_history("sess-drift");
+    assert_eq!(history.len(), 1, "expected 1 drift event, got {}", history.len());
 }
 
 /// RED: ContextBudgetDecision must include tail_budget for fold operations.
