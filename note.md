@@ -4721,3 +4721,33 @@ Tool records in first turn: 16
 - 回归同步：
   - `MobileShellLayoutContractTest.kt` 增加 touch scroll 合同断言 + 禁止 `window.scrollTo`。
   - `layout-focus-contract-smoke.mjs` 同步合同。
+
+## 2026-05-29 prompt cache high-hit-rate optimization (reasonix pattern)
+- 触发：客户端连不上 Daemon + 用户要求基于 Deepseek-reasonix 的 cache 高命中模式优化 fin。
+- 第一阶段（daemon 修复）：
+  1) 根因： 的 accept loop 用 `?` 传播错误，一次瞬时错误就让 control plane 线程永久退出。
+  2) 修复：accept loop 改为 match + retry（WouldBlock/Interrupted 短重试，其他错误 100ms 重试）。
+  3) 新增端口绑定互斥（start 前先 bind 探测）+ control plane 线程 is_finished 自动重启。
+  4) commit: db24bfd
+- 第二阶段（红测先行）：
+  1) 分析 reasonix ImmutablePrefix + AppendOnlyLog + 5 级 threshold + cache probe 脚本。
+  2) 设计 5 绿 + 5 红测试，红测用 #[ignore] 标记未实现行为。
+  3) commit: 7c99d61
+- 第三阶段（逐个变绿）：
+  1) ContextBudgetDecision 升级：FoldLevel 4 级（NoFold/NormalFold/AggressiveFold/ForceSummary）+ cached_ratio + tail_budget。
+  2) ContextBaselineManager 升级：PrefixDriftEvent + drift_history() 方法，diff() 自动记录 drift 事件。
+  3) compaction_preserves_immutable_prefix 测试通过（现有引擎已天然保持）。
+  4) 10/10 测试全绿，0 ignored。
+  5) commits: 67057f0, 5b67def, f14aebc
+- 剩余 P1 工作：
+  - AppendOnlyMessageLog 结构化约束（当前只靠约定，无编译期保证）
+  - Cache probe 脚本（scripts/probe-cache-hit.sh）
+  - cached_ratio 连续低值 → 自动触发 verify_fingerprint 逻辑
+
+## 2026-05-29 prompt cache optimization - P1 completion
+- AppendOnlyMessageLog 实现：append-only 结构化约束 + debug_assert 断言 compact 不增长。
+- Cache probe 脚本：scripts/probe-cache-hit.sh，N 轮 warm-turn 验证 cached_ratio >= threshold。
+- Prefix drift 检测：closure_runtime_rounds.rs 中 round_index > 0 && cached_ratio < 0.3 时触发 prefix_drift_detected。
+- 13 个 cache_hit 测试全绿（0 ignored）。
+- commit: 8afeb83
+

@@ -1,9 +1,9 @@
 {
-  "run_id": "test-local-reg-20260527-214347",
+  "run_id": "test-local-reg-20260529-091558",
   "gates": [
     {
       "name": "g0_config_check",
-      "cmd": "cargo run -p fin-cli --manifest-path rust/Cargo.toml -- config-check '/Users/fanzhang/.fin/harness/runs/test-local-reg-20260527-214347/user.test.toml'",
+      "cmd": "cargo run -p fin-cli --manifest-path rust/Cargo.toml -- config-check '/Users/fanzhang/.fin/harness/runs/test-local-reg-20260529-091558/user.test.toml'",
       "ok": true,
       "code": 0,
       "log": "reports/regression/g0_config_check.log",
@@ -74,6 +74,14 @@
       "blocking": true
     },
     {
+      "name": "g2_android_layout_focus_contract",
+      "cmd": "node android-client/scripts/smoke/layout-focus-contract-smoke.mjs",
+      "ok": true,
+      "code": 0,
+      "log": "reports/regression/g2_android_layout_focus_contract.log",
+      "blocking": true
+    },
+    {
       "name": "g2_android_log_ingest",
       "cmd": "python3 scripts/regression/check_android_log_ingest_gate.py",
       "ok": true,
@@ -83,7 +91,7 @@
     },
     {
       "name": "g3_live_provider_smoke",
-      "cmd": "scripts/run-real-provider-smoke.sh 'test-local-reg-20260527-214347-live'",
+      "cmd": "scripts/run-real-provider-smoke.sh 'test-local-reg-20260529-091558-live'",
       "ok": true,
       "code": 0,
       "log": "reports/regression/g3_live_provider_smoke.log",
@@ -91,7 +99,7 @@
     },
     {
       "name": "g3_local_multi_agent_live_e2e",
-      "cmd": "scripts/run-local-multi-agent-e2e.sh live 'test-local-reg-20260527-214347-live-multi-agent'",
+      "cmd": "scripts/run-local-multi-agent-e2e.sh live 'test-local-reg-20260529-091558-live-multi-agent'",
       "ok": false,
       "code": 1,
       "log": "reports/regression/g3_local_multi_agent_live_e2e.log",
@@ -99,13 +107,13 @@
     },
     {
       "name": "g3_local_multi_agent_live_webui_render",
-      "cmd": "node scripts/webui/live-runtime-chat-smoke.mjs 'test-local-reg-20260527-214347-live-multi-agent'",
+      "cmd": "node scripts/webui/live-runtime-chat-smoke.mjs 'test-local-reg-20260529-091558-live-multi-agent'",
       "ok": false,
       "code": 1,
       "log": "reports/regression/g3_local_multi_agent_live_webui_render.log",
       "blocking": true
     }
   ],
-  "ts": "2026-05-27T13:47:08.306051Z",
+  "ts": "2026-05-29T01:18:55.850196Z",
   "overall_ok": false
 }
