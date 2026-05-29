@@ -29,6 +29,11 @@ pub(super) fn execute_round(
     let assembler = ModelInputAssembler::default();
     let assembly_plan = assembler.assembly_plan(&input, round_context);
     let budget_decision = ContextBudgetManager::default().decide(&assembly_plan, None);
+    // Prefix drift detection: if cached_ratio < 0.3 on a warm turn (round_index > 0),
+    // the provider prefix may have drifted. Log a warning event.
+    if round_index > 0 && budget_decision.cached_ratio < 0.3 && budget_decision.cached_ratio > 0.0 {
+        eprintln!("prefix_drift_detected: cached_ratio={:.2} round={}", budget_decision.cached_ratio, round_index);
+    }
     let compacted_history =
         if budget_decision.decision == ContextCompactionDecisionKind::PreTurnCompact {
             Some(compact_round_history(

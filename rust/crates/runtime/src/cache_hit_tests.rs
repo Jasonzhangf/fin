@@ -416,3 +416,44 @@ fn compaction_preserves_immutable_prefix() {
     }
 }
 
+/// AppendOnlyMessageLog: append is only way to add entries
+#[test]
+fn append_only_log_structural_enforcement() {
+    use crate::AppendOnlyMessageLog;
+    let mut log = AppendOnlyMessageLog::new();
+    assert!(log.is_empty());
+    log.append("msg1".into());
+    log.append("msg2".into());
+    log.extend(vec!["msg3".into(), "msg4".into()]);
+    assert_eq!(log.len(), 4);
+    assert!(!log.is_compacted());
+    assert_eq!(log.append_count(), 4);
+    assert_eq!(log.compact_count(), 0);
+}
+
+/// AppendOnlyMessageLog: compact is the only legal mutation path
+#[test]
+fn append_only_log_compact_sets_flag() {
+    use crate::AppendOnlyMessageLog;
+    let mut log = AppendOnlyMessageLog::new();
+    log.extend(vec!["a".into(), "b".into(), "c".into()]);
+    log.compact(vec!["[summary]".into(), "c".into()]);
+    assert!(log.is_compacted());
+    assert_eq!(log.len(), 2);
+    assert_eq!(log.entries()[0], "[summary]");
+    assert_eq!(log.compact_count(), 1);
+}
+
+/// AppendOnlyMessageLog: append still works after compact
+#[test]
+fn append_only_log_append_after_compact() {
+    use crate::AppendOnlyMessageLog;
+    let mut log = AppendOnlyMessageLog::new();
+    log.append("old".into());
+    log.compact(vec!["[summary]".into()]);
+    assert!(log.is_compacted());
+    log.append("new".into());
+    assert_eq!(log.len(), 2);
+    assert_eq!(log.entries()[1], "new");
+}
+

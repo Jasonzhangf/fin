@@ -24,6 +24,7 @@ mod agent_naming;
 mod assembler_tests;
 mod assignment_queue;
 mod closure_runtime;
+mod append_only_message_log;
 mod context_assembly_plan;
 mod context_baseline;
 mod context_block_render;
@@ -114,6 +115,7 @@ pub use context_assembly_plan::{
     ContextStabilityClass,
 };
 pub use context_baseline::{ContextBaselineDiff, ContextBaselineManager, ContextBaselineRecord};
+pub use append_only_message_log::AppendOnlyMessageLog;
 pub use context_budget::{
     ContextBudgetDecision, ContextBudgetManager, ContextCompactionDecisionKind, FoldLevel,
 };
