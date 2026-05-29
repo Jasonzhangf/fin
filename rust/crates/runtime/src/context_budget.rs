@@ -2,6 +2,16 @@ use crate::context_assembly_plan::ContextAssemblyPlan;
 use fin_provider::TokenUsage;
 use serde::{Deserialize, Serialize};
 
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum FoldLevel {
+    NoFold = 0,
+    NormalFold = 1,
+    AggressiveFold = 2,
+    ForceSummary = 3,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ContextCompactionDecisionKind {
@@ -9,7 +19,7 @@ pub enum ContextCompactionDecisionKind {
     PreTurnCompact,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ContextBudgetDecision {
     pub decision: ContextCompactionDecisionKind,
     pub observed_prompt_tokens: usize,
@@ -17,6 +27,9 @@ pub struct ContextBudgetDecision {
     pub evidence_source: String,
     pub evidence_strength: String,
     pub reason: String,
+    pub fold_level: FoldLevel,
+    pub cached_ratio: f64,
+    pub tail_budget: Option<usize>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -58,6 +71,37 @@ impl ContextBudgetManager {
                 )
             });
         let reached_threshold = observed_prompt_tokens >= threshold_tokens;
+        let ratio = if threshold_tokens > 0 {
+            observed_prompt_tokens as f64 / threshold_tokens as f64
+        } else {
+            0.0
+        };
+        let cached_ratio = provider_usage
+            .and_then(|usage| {
+                let cached = usage.cached_tokens? as f64;
+                let prompt = usage.prompt_tokens? as f64;
+                if prompt > 0.0 { Some(cached / prompt) } else { None }
+            })
+            .unwrap_or(0.0);
+        let fold_level = if ratio < 0.75 {
+            FoldLevel::NoFold
+        } else if ratio < 0.78 {
+            FoldLevel::NormalFold
+        } else if ratio < 0.85 {
+            FoldLevel::AggressiveFold
+        } else {
+            FoldLevel::ForceSummary
+        };
+        let tail_budget = if !matches!(fold_level, FoldLevel::NoFold) {
+            let tail_fraction = match fold_level {
+                FoldLevel::NormalFold => 0.2,
+                FoldLevel::AggressiveFold => 0.1,
+                _ => 0.0,
+            };
+            Some((observed_prompt_tokens as f64 * tail_fraction) as usize)
+        } else {
+            None
+        };
         ContextBudgetDecision {
             decision: if reached_threshold {
                 ContextCompactionDecisionKind::PreTurnCompact
@@ -73,6 +117,9 @@ impl ContextBudgetManager {
             } else {
                 "below_threshold".into()
             },
+            fold_level,
+            cached_ratio,
+            tail_budget,
         }
     }
 }

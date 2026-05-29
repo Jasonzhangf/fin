@@ -239,7 +239,6 @@ fn history_sections_monotonically_grow() {
 /// Current code: ContextBudgetDecision has no cached_ratio field.
 /// After fix: add cached_ratio: f64 to ContextBudgetDecision.
 #[test]
-#[ignore = "RED: ContextBudgetDecision.cached_ratio not yet implemented"]
 fn budget_decision_reports_cached_ratio() {
     let plan = ContextAssemblyPlan {
         sections: vec![],
@@ -260,9 +259,8 @@ fn budget_decision_reports_cached_ratio() {
     };
     let mgr = ContextBudgetManager::new(120_000);
     let decision = mgr.decide(&plan, Some(&usage));
-    // After fix: decision.cached_ratio should be ~0.85
-    // assert!(decision.cached_ratio > 0.8);
-    panic!("cached_ratio field not yet implemented on ContextBudgetDecision");
+    assert!(decision.cached_ratio > 0.8,
+        "expected cached_ratio > 0.8, got {}", decision.cached_ratio);
 }
 
 /// RED: ContextBaselineManager must track prefix drift history.
@@ -306,7 +304,6 @@ fn baseline_manager_tracks_drift_history() {
 /// Current code: ContextBudgetDecision has no tail_budget field.
 /// After fix: add tail_budget: Option<usize>.
 #[test]
-#[ignore = "RED: ContextBudgetDecision.tail_budget not yet implemented"]
 fn fold_decision_includes_tail_budget() {
     let plan = ContextAssemblyPlan {
         sections: vec![],
@@ -319,18 +316,17 @@ fn fold_decision_includes_tail_budget() {
     };
     let mgr = ContextBudgetManager::new(120_000);
     let decision = mgr.decide(&plan, None);
-    // After fix: decision.tail_budget should be Some(19_000) for a 20% fold
-    // assert!(decision.tail_budget.is_some());
-    // let tail = decision.tail_budget.unwrap();
-    // assert!(tail > 0 && tail < 95_000);
-    panic!("tail_budget not yet implemented");
+    assert!(decision.tail_budget.is_some(),
+        "fold decision must specify tail_budget");
+    let tail = decision.tail_budget.unwrap();
+    assert!(tail > 0 && tail < 95_000,
+        "tail_budget must be between 0 and prompt_tokens, got {tail}");
 }
 
 /// RED: ContextBudgetManager must produce graduated fold decisions.
 /// reasonix has 4 threshold levels; fin currently only NoCompact / PreTurnCompact.
 /// After fix: add FoldLevel enum with 4 levels, ContextBudgetDecision.fold_level field.
 #[test]
-#[ignore = "RED: graduated fold levels not yet implemented"]
 fn budget_manager_produces_graduated_decisions() {
     // At 50%: should be NoFold
     // At 76%: should be NormalFold (tail_fraction=0.2)
@@ -358,10 +354,8 @@ fn budget_manager_produces_graduated_decisions() {
     };
     let d76 = mgr.decide(&plan_76, None);
     let d88 = mgr.decide(&plan_88, None);
-    // After fix: d76.fold_level != d88.fold_level
-    // Currently both return PreTurnCompact
-    assert!(d76.decision != d88.decision,
-        "76pct and 88pct should produce different fold levels");
+    assert!(d76.fold_level != d88.fold_level,
+        "76pct ({:?}) and 88pct ({:?}) should produce different fold levels", d76.fold_level, d88.fold_level);
 }
 
 /// RED: ContextCompactionEngine must preserve Immutable prefix sections.

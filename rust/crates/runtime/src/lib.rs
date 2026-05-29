@@ -115,7 +115,7 @@ pub use context_assembly_plan::{
 };
 pub use context_baseline::{ContextBaselineDiff, ContextBaselineManager, ContextBaselineRecord};
 pub use context_budget::{
-    ContextBudgetDecision, ContextBudgetManager, ContextCompactionDecisionKind,
+    ContextBudgetDecision, ContextBudgetManager, ContextCompactionDecisionKind, FoldLevel,
 };
 pub use context_compaction::{CompactedHistoryRecord, CompactionInput, ContextCompactionEngine};
 pub use context_view::{ContextAssemblyInput, ContextViewBuilder};
