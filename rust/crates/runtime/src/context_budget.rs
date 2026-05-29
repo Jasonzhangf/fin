@@ -2,7 +2,6 @@ use crate::context_assembly_plan::ContextAssemblyPlan;
 use fin_provider::TokenUsage;
 use serde::{Deserialize, Serialize};
 
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum FoldLevel {
@@ -80,7 +79,11 @@ impl ContextBudgetManager {
             .and_then(|usage| {
                 let cached = usage.cached_tokens? as f64;
                 let prompt = usage.prompt_tokens? as f64;
-                if prompt > 0.0 { Some(cached / prompt) } else { None }
+                if prompt > 0.0 {
+                    Some(cached / prompt)
+                } else {
+                    None
+                }
             })
             .unwrap_or(0.0);
         let fold_level = if ratio < 0.75 {

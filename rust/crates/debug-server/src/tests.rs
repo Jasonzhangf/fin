@@ -523,7 +523,10 @@ fn accept_loop_keeps_accepting_after_transient_error() {
     }
 
     let count = handle.join().expect("server thread");
-    assert!(count >= 3, "server must accept multiple connections, got {count}");
+    assert!(
+        count >= 3,
+        "server must accept multiple connections, got {count}"
+    );
 }
 
 // Test that we can bind to port 4040 after a listener is dropped (SO_REUSEADDR behavior)
@@ -545,7 +548,6 @@ fn can_rebind_port_after_listener_drop() {
     let second = TcpListener::bind(format!("127.0.0.1:{}", port)).expect("rebind");
     assert_eq!(second.local_addr().expect("addr").port(), port);
 }
-
 
 // Port-based mutual exclusion: binding same port twice should fail
 #[test]
@@ -587,5 +589,8 @@ fn control_plane_thread_survives_client_drop() {
 
     thread::sleep(Duration::from_millis(50));
     // Server thread should still be alive (not panicked)
-    assert!(!handle.is_finished(), "server thread must not exit on client drops");
+    assert!(
+        !handle.is_finished(),
+        "server thread must not exit on client drops"
+    );
 }

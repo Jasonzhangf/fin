@@ -8,7 +8,9 @@
 //! 5. cached_tokens from provider must influence fold aggressiveness.
 
 use super::*;
-use fin_contracts::{MinimalContextView, RolePromptBlock, ToolCatalogBlock, ToolCatalogEntry, HistoryBlock};
+use fin_contracts::{
+    HistoryBlock, MinimalContextView, RolePromptBlock, ToolCatalogBlock, ToolCatalogEntry,
+};
 
 fn make_plan(input: &str, context: &MinimalContextView) -> ContextAssemblyPlan {
     ContextAssemblyPlanner::default().build_plan(input, context)
@@ -84,13 +86,28 @@ fn immutable_prefix_hash_stable_across_turns() {
     let ctx_turn2 = make_context_with_tools_and_history(
         "You are a helpful assistant.",
         &["read_file", "write_file"],
-        &["user: hello", "assistant: hi there", "user: list files", "assistant: here are the files: a.rs, b.rs"],
+        &[
+            "user: hello",
+            "assistant: hi there",
+            "user: list files",
+            "assistant: here are the files: a.rs, b.rs",
+        ],
     );
     let plan2 = make_plan("read a.rs", &ctx_turn2);
 
     let baseline_mgr = ContextBaselineManager::default();
-    let record1 = baseline_mgr.create("sess-cache-1", &plan1, "system", "2026-05-29T00:00:00+08:00");
-    let record2 = baseline_mgr.create("sess-cache-1", &plan2, "system", "2026-05-29T00:01:00+08:00");
+    let record1 = baseline_mgr.create(
+        "sess-cache-1",
+        &plan1,
+        "system",
+        "2026-05-29T00:00:00+08:00",
+    );
+    let record2 = baseline_mgr.create(
+        "sess-cache-1",
+        &plan2,
+        "system",
+        "2026-05-29T00:01:00+08:00",
+    );
 
     assert_eq!(
         record1.stable_prefix_hash, record2.stable_prefix_hash,
@@ -106,11 +123,7 @@ fn immutable_prefix_hash_stable_across_turns() {
 /// This is the append-only invariant: history grows, prefix stays.
 #[test]
 fn adding_history_turn_preserves_prefix() {
-    let ctx1 = make_context_with_tools_and_history(
-        "System prompt",
-        &["search"],
-        &["turn 1"],
-    );
+    let ctx1 = make_context_with_tools_and_history("System prompt", &["search"], &["turn 1"]);
     let ctx2 = make_context_with_tools_and_history(
         "System prompt",
         &["search"],
@@ -119,20 +132,33 @@ fn adding_history_turn_preserves_prefix() {
     let plan1 = make_plan("query", &ctx1);
     let plan2 = make_plan("query", &ctx2);
 
-    let immutable1: Vec<_> = plan1.sections.iter()
+    let immutable1: Vec<_> = plan1
+        .sections
+        .iter()
         .filter(|s| matches!(s.stability, ContextStabilityClass::Immutable))
         .collect();
-    let immutable2: Vec<_> = plan2.sections.iter()
+    let immutable2: Vec<_> = plan2
+        .sections
+        .iter()
         .filter(|s| matches!(s.stability, ContextStabilityClass::Immutable))
         .collect();
 
-    assert_eq!(immutable1.len(), immutable2.len(),
-        "immutable section count must not change when history grows");
+    assert_eq!(
+        immutable1.len(),
+        immutable2.len(),
+        "immutable section count must not change when history grows"
+    );
     for (a, b) in immutable1.iter().zip(immutable2.iter()) {
-        assert_eq!(a.section_hash, b.section_hash,
-            "immutable section '{}' hash must not change", a.section_id);
-        assert_eq!(a.body, b.body,
-            "immutable section '{}' body must be byte-identical", a.section_id);
+        assert_eq!(
+            a.section_hash, b.section_hash,
+            "immutable section '{}' hash must not change",
+            a.section_id
+        );
+        assert_eq!(
+            a.body, b.body,
+            "immutable section '{}' body must be byte-identical",
+            a.section_id
+        );
     }
 }
 
@@ -140,11 +166,7 @@ fn adding_history_turn_preserves_prefix() {
 /// reasonix addTool/removeTool invalidates prefix → cache miss expected.
 #[test]
 fn tool_schema_change_triggers_full_reinject() {
-    let ctx1 = make_context_with_tools_and_history(
-        "System prompt",
-        &["read_file"],
-        &["turn 1"],
-    );
+    let ctx1 = make_context_with_tools_and_history("System prompt", &["read_file"], &["turn 1"]);
     let ctx2 = make_context_with_tools_and_history(
         "System prompt",
         &["read_file", "write_file"],
@@ -154,13 +176,22 @@ fn tool_schema_change_triggers_full_reinject() {
     let plan2 = make_plan("query", &ctx2);
 
     let mgr = ContextBaselineManager::default();
-    let record1 = mgr.create("sess-tool-change", &plan1, "system", "2026-05-29T00:00:00+08:00");
+    let record1 = mgr.create(
+        "sess-tool-change",
+        &plan1,
+        "system",
+        "2026-05-29T00:00:00+08:00",
+    );
     let diff = mgr.diff(Some(&record1), &plan2, "system");
 
-    assert!(diff.requires_full_reinject,
-        "changing tool set must trigger full reinject");
-    assert!(diff.tool_schema_hash != record1.tool_schema_hash,
-        "tool schema hash must differ after adding a tool");
+    assert!(
+        diff.requires_full_reinject,
+        "changing tool set must trigger full reinject"
+    );
+    assert!(
+        diff.tool_schema_hash != record1.tool_schema_hash,
+        "tool schema hash must differ after adding a tool"
+    );
 }
 
 /// Test 4: ContextBudgetManager must produce graduated fold decisions.
@@ -180,7 +211,10 @@ fn budget_manager_binary_decisions_work() {
         },
     };
     let decision_low = mgr.decide(&plan_low, None);
-    assert_eq!(decision_low.decision, ContextCompactionDecisionKind::NoCompact);
+    assert_eq!(
+        decision_low.decision,
+        ContextCompactionDecisionKind::NoCompact
+    );
 
     // At threshold → PreTurnCompact (current binary behavior)
     let plan_high = ContextAssemblyPlan {
@@ -193,7 +227,10 @@ fn budget_manager_binary_decisions_work() {
         },
     };
     let decision_high = mgr.decide(&plan_high, None);
-    assert_eq!(decision_high.decision, ContextCompactionDecisionKind::PreTurnCompact);
+    assert_eq!(
+        decision_high.decision,
+        ContextCompactionDecisionKind::PreTurnCompact
+    );
 
     // This test passes with current code (binary). The red test below checks for
     // the missing graduated behavior.
@@ -201,18 +238,12 @@ fn budget_manager_binary_decisions_work() {
 
 // Test 5 removed: requires new ContextBudgetDecision fields (cached_ratio, prefix_drift_detected)
 
-
-
 /// Test 7 (RED): append-only history sections must not shrink between turns.
 /// reasonix AppendOnlyLog ensures history never decreases in size.
 /// fin ContextAssemblyPlan history sections must not shrink unless explicitly compacted.
 #[test]
 fn history_sections_monotonically_grow() {
-    let ctx1 = make_context_with_tools_and_history(
-        "System",
-        &[],
-        &["msg1", "msg2", "msg3"],
-    );
+    let ctx1 = make_context_with_tools_and_history("System", &[], &["msg1", "msg2", "msg3"]);
     let ctx2 = make_context_with_tools_and_history(
         "System",
         &[],
@@ -221,15 +252,21 @@ fn history_sections_monotonically_grow() {
     let plan1 = make_plan("q1", &ctx1);
     let plan2 = make_plan("q2", &ctx2);
 
-    let history1_count = plan1.sections.iter()
+    let history1_count = plan1
+        .sections
+        .iter()
         .filter(|s| s.stability == ContextStabilityClass::AppendOnlyHistory)
         .count();
-    let history2_count = plan2.sections.iter()
+    let history2_count = plan2
+        .sections
+        .iter()
         .filter(|s| s.stability == ContextStabilityClass::AppendOnlyHistory)
         .count();
 
-    assert!(history2_count >= history1_count,
-        "history sections must not shrink: turn1={history1_count} turn2={history2_count}");
+    assert!(
+        history2_count >= history1_count,
+        "history sections must not shrink: turn1={history1_count} turn2={history2_count}"
+    );
 }
 
 // ==================== RED TESTS (behaviors not yet implemented) ====================
@@ -259,8 +296,11 @@ fn budget_decision_reports_cached_ratio() {
     };
     let mgr = ContextBudgetManager::new(120_000);
     let decision = mgr.decide(&plan, Some(&usage));
-    assert!(decision.cached_ratio > 0.8,
-        "expected cached_ratio > 0.8, got {}", decision.cached_ratio);
+    assert!(
+        decision.cached_ratio > 0.8,
+        "expected cached_ratio > 0.8, got {}",
+        decision.cached_ratio
+    );
 }
 
 /// RED: ContextBaselineManager must track prefix drift history.
@@ -293,7 +333,12 @@ fn baseline_manager_tracks_drift_history() {
     let diff = mgr.diff(Some(&r1), &plan2, "system");
     assert!(diff.requires_full_reinject);
     let history = mgr.drift_history("sess-drift");
-    assert_eq!(history.len(), 1, "expected 1 drift event, got {}", history.len());
+    assert_eq!(
+        history.len(),
+        1,
+        "expected 1 drift event, got {}",
+        history.len()
+    );
 }
 
 /// RED: ContextBudgetDecision must include tail_budget for fold operations.
@@ -313,11 +358,15 @@ fn fold_decision_includes_tail_budget() {
     };
     let mgr = ContextBudgetManager::new(120_000);
     let decision = mgr.decide(&plan, None);
-    assert!(decision.tail_budget.is_some(),
-        "fold decision must specify tail_budget");
+    assert!(
+        decision.tail_budget.is_some(),
+        "fold decision must specify tail_budget"
+    );
     let tail = decision.tail_budget.unwrap();
-    assert!(tail > 0 && tail < 95_000,
-        "tail_budget must be between 0 and prompt_tokens, got {tail}");
+    assert!(
+        tail > 0 && tail < 95_000,
+        "tail_budget must be between 0 and prompt_tokens, got {tail}"
+    );
 }
 
 /// RED: ContextBudgetManager must produce graduated fold decisions.
@@ -351,8 +400,12 @@ fn budget_manager_produces_graduated_decisions() {
     };
     let d76 = mgr.decide(&plan_76, None);
     let d88 = mgr.decide(&plan_88, None);
-    assert!(d76.fold_level != d88.fold_level,
-        "76pct ({:?}) and 88pct ({:?}) should produce different fold levels", d76.fold_level, d88.fold_level);
+    assert!(
+        d76.fold_level != d88.fold_level,
+        "76pct ({:?}) and 88pct ({:?}) should produce different fold levels",
+        d76.fold_level,
+        d88.fold_level
+    );
 }
 
 /// RED: ContextCompactionEngine must preserve Immutable prefix sections.
@@ -373,7 +426,9 @@ fn compaction_preserves_immutable_prefix() {
     };
     let planner = ContextAssemblyPlanner::default();
     let plan = planner.build_plan("input", &ctx);
-    let immutable_before: Vec<_> = plan.sections.iter()
+    let immutable_before: Vec<_> = plan
+        .sections
+        .iter()
         .filter(|s| s.stability == ContextStabilityClass::Immutable)
         .collect();
     assert!(!immutable_before.is_empty());
@@ -403,16 +458,25 @@ fn compaction_preserves_immutable_prefix() {
         ..fin_contracts::MinimalContextView::default()
     };
     let plan_after = planner.build_plan("input", &compacted_ctx);
-    let immutable_after: Vec<_> = plan_after.sections.iter()
+    let immutable_after: Vec<_> = plan_after
+        .sections
+        .iter()
         .filter(|s| s.stability == ContextStabilityClass::Immutable)
         .collect();
 
-    assert_eq!(immutable_before.len(), immutable_after.len(),
+    assert_eq!(
+        immutable_before.len(),
+        immutable_after.len(),
         "immutable section count must survive compaction: before={}, after={}",
-        immutable_before.len(), immutable_after.len());
+        immutable_before.len(),
+        immutable_after.len()
+    );
     for (before, after) in immutable_before.iter().zip(immutable_after.iter()) {
-        assert_eq!(before.body, after.body,
-            "immutable section '{}' must be byte-identical after compaction", before.section_id);
+        assert_eq!(
+            before.body, after.body,
+            "immutable section '{}' must be byte-identical after compaction",
+            before.section_id
+        );
     }
 }
 
@@ -456,4 +520,3 @@ fn append_only_log_append_after_compact() {
     assert_eq!(log.len(), 2);
     assert_eq!(log.entries()[1], "new");
 }
-

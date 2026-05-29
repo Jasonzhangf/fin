@@ -425,7 +425,6 @@ fn serve_debug_mvp_on_listener(
                 }
             });
         }
-
     })
 }
 
@@ -441,8 +440,9 @@ where
     loop {
         let mut stream = match listener.accept() {
             Ok((stream, _)) => stream,
-            Err(source) if source.kind() == std::io::ErrorKind::WouldBlock
-                || source.kind() == std::io::ErrorKind::Interrupted =>
+            Err(source)
+                if source.kind() == std::io::ErrorKind::WouldBlock
+                    || source.kind() == std::io::ErrorKind::Interrupted =>
             {
                 thread::sleep(Duration::from_millis(10));
                 continue;
@@ -484,7 +484,6 @@ where
             }
         });
     }
-
 }
 #[cfg(test)]
 pub(crate) use routes::response_for_path;

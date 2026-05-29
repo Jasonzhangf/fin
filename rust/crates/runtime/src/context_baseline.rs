@@ -21,7 +21,6 @@ pub struct ContextBaselineDiff {
     pub tool_schema_hash: String,
 }
 
-
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct PrefixDriftEvent {
     pub session_id: String,
@@ -101,7 +100,10 @@ impl ContextBaselineManager {
                     previous_prefix_hash: previous.stable_prefix_hash.clone(),
                     current_prefix_hash: stable_prefix_hash.clone(),
                     changed_fields: changed_fields.clone(),
-                    detected_at: std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs().to_string()).unwrap_or_default(),
+                    detected_at: std::time::SystemTime::now()
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .map(|d| d.as_secs().to_string())
+                        .unwrap_or_default(),
                 });
             }
         }

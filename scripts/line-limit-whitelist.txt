@@ -21,3 +21,6 @@ rust/crates/runtime/src/session_materializer.rs
 rust/crates/cli/src/local_multi_agent_node.rs
 rust/crates/debug-server/webui/src/chat.ts
 rust/crates/runtime/src/activity_cards_project_actions_tests.rs
+
+rust/crates/cli/src/headless_daemon_tests.rs
+rust/crates/debug-server/src/tests.rs

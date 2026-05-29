@@ -20,11 +20,11 @@ mod agent_control_io;
 #[cfg(test)]
 mod agent_control_tests;
 mod agent_naming;
+mod append_only_message_log;
 #[cfg(test)]
 mod assembler_tests;
 mod assignment_queue;
 mod closure_runtime;
-mod append_only_message_log;
 mod context_assembly_plan;
 mod context_baseline;
 mod context_block_render;
@@ -106,6 +106,7 @@ pub use agent_naming::{
     create_named_local_worker, persist_assignment_summary, read_assignment_summary,
     resolve_agent_identity_by_worker_id, resolve_device_name,
 };
+pub use append_only_message_log::AppendOnlyMessageLog;
 pub use assignment_queue::{
     AssignmentRecord, append_assignment_record, read_assignment_queue,
     target_agent_name_from_worker_id, update_assignment_record,
@@ -114,8 +115,9 @@ pub use context_assembly_plan::{
     ContextAssemblyPlan, ContextAssemblyPlanner, ContextAssemblySection, ContextBudgetSnapshot,
     ContextStabilityClass,
 };
-pub use context_baseline::{ContextBaselineDiff, ContextBaselineManager, ContextBaselineRecord, PrefixDriftEvent};
-pub use append_only_message_log::AppendOnlyMessageLog;
+pub use context_baseline::{
+    ContextBaselineDiff, ContextBaselineManager, ContextBaselineRecord, PrefixDriftEvent,
+};
 pub use context_budget::{
     ContextBudgetDecision, ContextBudgetManager, ContextCompactionDecisionKind, FoldLevel,
 };
@@ -296,6 +298,6 @@ pub struct ClosureRun {
 pub use closure_runtime::M1Runtime;
 
 #[cfg(test)]
-mod tests;
-#[cfg(test)]
 mod cache_hit_tests;
+#[cfg(test)]
+mod tests;
