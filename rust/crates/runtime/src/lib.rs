@@ -295,3 +295,5 @@ pub use closure_runtime::M1Runtime;
 
 #[cfg(test)]
 mod tests;
+#[cfg(test)]
+mod cache_hit_tests;
