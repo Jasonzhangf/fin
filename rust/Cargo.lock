@@ -166,6 +166,7 @@ dependencies = [
  "fin-provider",
  "fin-runtime",
  "fin-shared",
+ "libc",
  "reqwest",
  "serde",
  "serde_json",

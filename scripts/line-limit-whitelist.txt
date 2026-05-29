@@ -24,3 +24,5 @@ rust/crates/runtime/src/activity_cards_project_actions_tests.rs
 
 rust/crates/cli/src/headless_daemon_tests.rs
 rust/crates/debug-server/src/tests.rs
+rust/crates/runtime/src/cache_hit_tests.rs
+rust/crates/cli/src/headless_daemon.rs

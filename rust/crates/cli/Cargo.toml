@@ -5,6 +5,7 @@ edition.workspace = true
 license.workspace = true
 
 [dependencies]
+libc = "0.2"
 fin-config = { path = "../config" }
 fin-debug-server = { path = "../debug-server" }
 fin-contracts = { path = "../contracts" }

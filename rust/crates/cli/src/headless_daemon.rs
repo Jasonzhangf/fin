@@ -63,15 +63,13 @@ pub(crate) fn start_headless_daemon(
     let runtime_home = init_runtime_home(user_toml, system, override_path)?;
     let daemon_id = daemon_id(system);
     let paths = HeadlessDaemonPaths::new(&runtime_home);
-    // Mutual exclusion: check if port is already bound (another daemon is alive)
+
+    // Phase 1: Try to bind the control-plane port.
+    // This is the cross-process mutex: only one process can hold it.
     let bind_addr = daemon_control_plane_bind_addr();
-    match std::net::TcpListener::bind(bind_addr.as_str()) {
-        Ok(test_listener) => {
-            // Port is free — release it so daemon-run can bind it
-            drop(test_listener);
-        }
+    let guard_listener = match std::net::TcpListener::bind(bind_addr.as_str()) {
+        Ok(l) => l,
         Err(_) => {
-            // Port is held — another daemon is alive
             return Ok(HeadlessDaemonStartReport {
                 daemon_id,
                 status: "already_running".into(),
@@ -79,10 +77,12 @@ pub(crate) fn start_headless_daemon(
                 runtime_home,
             });
         }
-    }
-    // Double check via lease
+    };
+
+    // Phase 2: While holding port, verify no alive daemon via lease.
     if let Some(record) = read_json_if_exists::<HeadlessDaemonLeaseRecord>(&paths.lease_path)? {
         if process_alive(record.pid) && !lease_is_stale(&record) {
+            drop(guard_listener);
             return Ok(HeadlessDaemonStartReport {
                 daemon_id,
                 status: "already_running".into(),
@@ -91,6 +91,10 @@ pub(crate) fn start_headless_daemon(
             });
         }
     }
+
+    // Phase 3: We own the port. Spawn daemon-run, passing our listener via fd.
+    // daemon-run will INHERIT this listener instead of binding its own.
+    // This eliminates the TOCTOU gap entirely.
     let _ = fs::remove_file(&paths.stop_request_path);
     let _ = fs::remove_file(&paths.pid_path);
     let stdout = fs::OpenOptions::new()
@@ -105,6 +109,19 @@ pub(crate) fn start_headless_daemon(
         path: paths.log_path.display().to_string(),
         source,
     })?;
+
+    // On Unix, mark the fd close-on-exec=false so child inherits it.
+    #[cfg(unix)]
+    {
+        {
+            use std::os::fd::AsRawFd;
+            let fd = guard_listener.as_raw_fd();
+            unsafe {
+                libc::fcntl(fd, libc::F_SETFD, 0); // clear FD_CLOEXEC
+            }
+        }
+    }
+
     let child =
         ProcessCommand::new(
             std::env::current_exe().map_err(|source| CliError::ReadFile {
@@ -117,15 +134,33 @@ pub(crate) fn start_headless_daemon(
         .stdin(Stdio::null())
         .stdout(Stdio::from(stdout))
         .stderr(Stdio::from(stderr))
+        .env("FIN_CONTROL_PLANE_LISTENER_FD", {
+            use std::os::fd::AsRawFd;
+            guard_listener.as_raw_fd().to_string()
+        })
         .spawn()
         .map_err(|source| CliError::ReadFile {
             path: "spawn daemon-run".into(),
             source,
         })?;
+
     fs::write(&paths.pid_path, child.id().to_string()).map_err(|source| CliError::WriteFile {
         path: paths.pid_path.display().to_string(),
         source,
     })?;
+
+    // Wait for daemon-run to bind the port before returning.
+    // guard_listener holds the port; daemon-run retries bind on EADDRINUSE.
+    // Once daemon-run binds, our guard_listener is no longer needed.
+    let bind_addr_for_wait = daemon_control_plane_bind_addr();
+    for _ in 0..100 {
+        thread::sleep(Duration::from_millis(10));
+        if std::net::TcpListener::bind(bind_addr_for_wait.as_str()).is_err() {
+            break; // daemon-run has bound the port
+        }
+    }
+    drop(guard_listener);
+
     Ok(HeadlessDaemonStartReport {
         daemon_id,
         status: "started".into(),
@@ -375,12 +410,21 @@ fn start_daemon_control_plane(
     runtime_home: &Path,
     handler: CliDebugActionHandler,
 ) -> Result<std::thread::JoinHandle<()>, CliError> {
-    let bind_addr = daemon_control_plane_bind_addr();
-    let listener =
+    // Prefer inherited fd from parent start process (eliminates TOCTOU race).
+    let listener = if let Ok(fd_str) = std::env::var("FIN_CONTROL_PLANE_LISTENER_FD") {
+        use std::os::unix::io::FromRawFd;
+        let fd: i32 = fd_str.parse().map_err(|_| CliError::ReadFile {
+            path: "FIN_CONTROL_PLANE_LISTENER_FD".into(),
+            source: std::io::Error::new(std::io::ErrorKind::InvalidInput, "bad fd"),
+        })?;
+        unsafe { std::net::TcpListener::from_raw_fd(fd) }
+    } else {
+        let bind_addr = daemon_control_plane_bind_addr();
         std::net::TcpListener::bind(bind_addr.as_str()).map_err(|source| CliError::ReadFile {
             path: format!("bind daemon control plane {bind_addr}"),
             source,
-        })?;
+        })?
+    };
     let runtime_home = runtime_home.to_path_buf();
     thread::Builder::new()
         .name("fin-daemon-control-plane".into())

@@ -121,7 +121,7 @@ fn temp_runtime_home(prefix: &str) -> PathBuf {
 
 #[test]
 fn headless_daemon_cycle_resumes_checkpoint_without_frontstage() {
-    let _guard = env_lock().lock().expect("env lock");
+    let _guard = env_lock().lock().unwrap_or_else(|e| e.into_inner());
     let previous = std::env::var("FIN_HEADLESS_DAEMON_MAX_CYCLES").ok();
     let previous_bind = std::env::var("FIN_DAEMON_CONTROL_PLANE_BIND").ok();
     unsafe {
@@ -281,7 +281,7 @@ fn headless_daemon_cycle_resumes_checkpoint_without_frontstage() {
 
 #[test]
 fn headless_daemon_cycle_autonomously_resumes_local_project_agent_without_frontstage() {
-    let _guard = env_lock().lock().expect("env lock");
+    let _guard = env_lock().lock().unwrap_or_else(|e| e.into_inner());
     let previous = std::env::var("FIN_HEADLESS_DAEMON_MAX_CYCLES").ok();
     let previous_bind = std::env::var("FIN_DAEMON_CONTROL_PLANE_BIND").ok();
     unsafe {
@@ -469,7 +469,7 @@ fn stop_headless_daemon_writes_stop_request() {
 fn start_daemon_rejects_when_port_already_bound() {
     use std::net::TcpListener;
 
-    let _guard = env_lock().lock().expect("env lock");
+    let _guard = env_lock().lock().unwrap_or_else(|e| e.into_inner());
     let previous_bind = std::env::var("FIN_DAEMON_CONTROL_PLANE_BIND").ok();
 
     // Bind a unique port to simulate an existing daemon
@@ -506,5 +506,235 @@ fn start_daemon_rejects_when_port_already_bound() {
         }
     }
     drop(listener);
+    let _ = std::fs::remove_dir_all(&home);
+}
+
+// === Daemon mutual-exclusion red tests (2026-05-29) ===
+
+#[test]
+fn concurrent_starts_only_one_succeeds() {
+    // RED BUG: Two concurrent start_headless_daemon calls on the same runtime_home
+    // must NOT both return status "started". Current code has a TOCTOU race:
+    // it drops the test listener, then spawns daemon-run — another start can slip in.
+    use std::net::TcpListener;
+    use std::thread;
+
+    let _guard = env_lock().lock().unwrap_or_else(|e| e.into_inner());
+    let previous_bind = std::env::var("FIN_DAEMON_CONTROL_PLANE_BIND").ok();
+
+    // Use a random high port to avoid conflicting with any real daemon
+    let listener = TcpListener::bind("127.0.0.1:0").expect("bind ephemeral");
+    let port = listener.local_addr().expect("addr").port();
+    drop(listener); // free port for test
+
+    unsafe {
+        std::env::set_var(
+            "FIN_DAEMON_CONTROL_PLANE_BIND",
+            format!("127.0.0.1:{}", port),
+        );
+    }
+
+    // Both threads share the SAME runtime_home — true contention over the same daemon.
+    let home = temp_runtime_home("concurrent-shared");
+    ensure_runtime_home_layout(&home).expect("runtime home");
+    let user_toml = sample_user_toml();
+    let system = map_system_config(&user_toml).expect("system config");
+
+    let user_toml_clone = user_toml.clone();
+    let system_clone = system.clone();
+    let home_clone = home.clone();
+
+    let handle = thread::spawn(move || {
+        crate::headless_daemon::start_headless_daemon(
+            &user_toml_clone,
+            &system_clone,
+            Some(home_clone.as_path()),
+        )
+        .expect("start a")
+    });
+
+    // Small delay so first start grabs the port; the race window exists
+    // because guard_listener is dropped before spawn completes.
+    std::thread::sleep(std::time::Duration::from_millis(5));
+
+    let report_b =
+        crate::headless_daemon::start_headless_daemon(&user_toml, &system, Some(home.as_path()))
+            .expect("start b");
+    let report_a = handle.join().expect("join a");
+
+    let both_started = report_a.status == "started" && report_b.status == "started";
+    // RED ASSERTION: currently FAILS — both can return "started" due to TOCTOU
+    assert!(
+        !both_started,
+        "EXACTLY ONE daemon must start; got a={} b={}",
+        report_a.status, report_b.status
+    );
+
+    // cleanup
+    let _ = crate::headless_daemon::stop_headless_daemon(&user_toml, &system, Some(home.as_path()));
+    if let Some(value) = previous_bind {
+        unsafe {
+            std::env::set_var("FIN_DAEMON_CONTROL_PLANE_BIND", value);
+        }
+    } else {
+        unsafe {
+            std::env::remove_var("FIN_DAEMON_CONTROL_PLANE_BIND");
+        }
+    }
+    let _ = std::fs::remove_dir_all(&home);
+}
+
+#[test]
+fn stale_lease_with_dead_pid_allows_restart() {
+    // A stale lease (heartbeat expired) + dead PID should NOT block start.
+    use std::net::TcpListener;
+
+    let _guard = env_lock().lock().unwrap_or_else(|e| e.into_inner());
+    let previous_bind = std::env::var("FIN_DAEMON_CONTROL_PLANE_BIND").ok();
+
+    let listener = TcpListener::bind("127.0.0.1:0").expect("bind");
+    let port = listener.local_addr().expect("addr").port();
+    drop(listener);
+
+    unsafe {
+        std::env::set_var(
+            "FIN_DAEMON_CONTROL_PLANE_BIND",
+            format!("127.0.0.1:{}", port),
+        );
+    }
+
+    let home = temp_runtime_home("stale-lease");
+    ensure_runtime_home_layout(&home).expect("runtime home");
+    fs::create_dir_all(home.join("runtime/leases")).expect("lease dir");
+    fs::create_dir_all(home.join("runtime/pids")).expect("pid dir");
+
+    // Write a stale lease with a dead PID
+    let stale_lease = serde_json::json!({
+        "daemon_id": "test.headless-daemon",
+        "pid": 99999999,
+        "heartbeat_interval_ms": 3000,
+        "lease_ttl_ms": 6000,
+        "started_at": "2020-01-01T00:00:00+00:00",
+        "updated_at": "2020-01-01T00:00:00+00:00",
+        "lifecycle_state": "running",
+        "active_session_ids": [],
+        "processed_sessions": 0,
+        "drove_count": 0
+    });
+    fs::write(
+        home.join("runtime/leases/headless-daemon.json"),
+        stale_lease.to_string(),
+    )
+    .expect("write stale lease");
+
+    let user_toml = sample_user_toml();
+    let system = map_system_config(&user_toml).expect("system config");
+
+    let report =
+        crate::headless_daemon::start_headless_daemon(&user_toml, &system, Some(home.as_path()))
+            .expect("start report");
+
+    // Should allow restart (stale lease + dead pid)
+    assert_eq!(
+        report.status, "started",
+        "stale lease with dead pid should allow start"
+    );
+
+    if let Some(value) = previous_bind {
+        unsafe {
+            std::env::set_var("FIN_DAEMON_CONTROL_PLANE_BIND", value);
+        }
+    } else {
+        unsafe {
+            std::env::remove_var("FIN_DAEMON_CONTROL_PLANE_BIND");
+        }
+    }
+    let _ = std::fs::remove_dir_all(&home);
+}
+
+#[test]
+fn stop_then_start_succeeds() {
+    // After stop, a new start must succeed even on the same port.
+    use std::net::TcpListener;
+
+    let _guard = env_lock().lock().unwrap_or_else(|e| e.into_inner());
+    let previous_bind = std::env::var("FIN_DAEMON_CONTROL_PLANE_BIND").ok();
+    let previous_cycles = std::env::var("FIN_HEADLESS_DAEMON_MAX_CYCLES").ok();
+
+    let listener = TcpListener::bind("127.0.0.1:0").expect("bind");
+    let port = listener.local_addr().expect("addr").port();
+    drop(listener);
+
+    unsafe {
+        std::env::set_var(
+            "FIN_DAEMON_CONTROL_PLANE_BIND",
+            format!("127.0.0.1:{}", port),
+        );
+        std::env::set_var("FIN_HEADLESS_DAEMON_MAX_CYCLES", "1");
+    }
+
+    let home = temp_runtime_home("stop-then-start");
+    ensure_runtime_home_layout(&home).expect("runtime home");
+    // minimal session files for daemon to not crash
+    let session_dir = home.join("sessions/2026/05/session-stop-start");
+    fs::create_dir_all(session_dir.join("conversation")).expect("dir");
+    fs::create_dir_all(session_dir.join("control")).expect("dir");
+    fs::create_dir_all(session_dir.join("events")).expect("dir");
+    fs::write(session_dir.join("conversation/messages.json"), b"[]").expect("messages");
+    fs::write(session_dir.join("events/stream.jsonl"), b"").expect("events");
+    fs::write(
+        session_dir.join("control/execution_state.json"),
+        br#"{"state_id":"s1","session_id":"session-stop-start","task_id":null,"status":"idle","active_turn_id":null,"active_step_id":null,"resume_from_step_id":null,"resume_checkpoint_ready":false,"resume_checkpoint_id":null,"pending_input_count":0,"accepts_user_input":true,"reason":null,"updated_at":"2026-05-29T00:00:00+08:00"}"#,
+    )
+    .expect("state");
+    fs::create_dir_all(home.join("runtime/pids")).expect("pids");
+    fs::create_dir_all(home.join("runtime/locks")).expect("locks");
+    fs::create_dir_all(home.join("runtime/leases")).expect("leases");
+
+    // Write a PID file for a dead process so stop has something to work with
+    fs::write(home.join("runtime/pids/headless-daemon.pid"), b"99999999").expect("pid");
+    // Write a stop marker so the daemon-run exits in 1 cycle
+    fs::write(home.join("runtime/locks/headless-daemon.stop"), b"").expect("stop marker");
+
+    let user_toml = sample_user_toml();
+    let system = map_system_config(&user_toml).expect("system config");
+
+    // Stop first (pid is dead so it writes stop marker but returns stop_requested)
+    let stop_report =
+        crate::headless_daemon::stop_headless_daemon(&user_toml, &system, Some(home.as_path()))
+            .expect("stop");
+    assert_eq!(stop_report.status, "stop_requested");
+
+    // Now start should succeed
+    let _ = fs::remove_file(home.join("runtime/locks/headless-daemon.stop"));
+    let _ = fs::remove_file(home.join("runtime/pids/headless-daemon.pid"));
+
+    let start_report =
+        crate::headless_daemon::start_headless_daemon(&user_toml, &system, Some(home.as_path()))
+            .expect("start after stop");
+
+    assert_eq!(
+        start_report.status, "started",
+        "start after stop must succeed"
+    );
+
+    if let Some(value) = previous_bind {
+        unsafe {
+            std::env::set_var("FIN_DAEMON_CONTROL_PLANE_BIND", value);
+        }
+    } else {
+        unsafe {
+            std::env::remove_var("FIN_DAEMON_CONTROL_PLANE_BIND");
+        }
+    }
+    if let Some(value) = previous_cycles {
+        unsafe {
+            std::env::set_var("FIN_HEADLESS_DAEMON_MAX_CYCLES", value);
+        }
+    } else {
+        unsafe {
+            std::env::remove_var("FIN_HEADLESS_DAEMON_MAX_CYCLES");
+        }
+    }
     let _ = std::fs::remove_dir_all(&home);
 }
