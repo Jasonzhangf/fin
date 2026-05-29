@@ -114,7 +114,7 @@ pub use context_assembly_plan::{
     ContextAssemblyPlan, ContextAssemblyPlanner, ContextAssemblySection, ContextBudgetSnapshot,
     ContextStabilityClass,
 };
-pub use context_baseline::{ContextBaselineDiff, ContextBaselineManager, ContextBaselineRecord};
+pub use context_baseline::{ContextBaselineDiff, ContextBaselineManager, ContextBaselineRecord, PrefixDriftEvent};
 pub use append_only_message_log::AppendOnlyMessageLog;
 pub use context_budget::{
     ContextBudgetDecision, ContextBudgetManager, ContextCompactionDecisionKind, FoldLevel,
