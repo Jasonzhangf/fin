@@ -4739,10 +4739,11 @@ Tool records in first turn: 16
   3) compaction_preserves_immutable_prefix 测试通过（现有引擎已天然保持）。
   4) 10/10 测试全绿，0 ignored。
   5) commits: 67057f0, 5b67def, f14aebc
-- 剩余 P1 工作：
-  - AppendOnlyMessageLog 结构化约束（当前只靠约定，无编译期保证）
-  - Cache probe 脚本（scripts/probe-cache-hit.sh）
-  - cached_ratio 连续低值 → 自动触发 verify_fingerprint 逻辑
+- ~~剩余 P1 工作~~（已全部完成）：
+  - ~~AppendOnlyMessageLog 结构化约束~~ → commit: 8afeb83
+  - ~~Cache probe 脚本~~ → commit: 8afeb83
+  - ~~cached_ratio 连续低值 → 自动触发 verify_fingerprint~~ → commit: 8afeb83 (prefix_drift_detected 日志)
+  - ~~PrefixDriftEvent export~~ → commit: f2340d1
 
 ## 2026-05-29 prompt cache optimization - P1 completion
 - AppendOnlyMessageLog 实现：append-only 结构化约束 + debug_assert 断言 compact 不增长。
