@@ -130,4 +130,22 @@ mod tests {
         assert_eq!(action.action_kind, "stay_idle_no_actionable_task");
         assert!(action.target_task_ids.is_empty());
     }
+
+    #[test]
+    fn owner_loop_waits_for_worker_when_working_not_empty() {
+        let mut snapshot = truth();
+        snapshot.submitted_task_ids.clear();
+        snapshot.ready_task_ids.clear();
+        snapshot.working_task_ids = vec!["task-c".into()];
+        snapshot.owner_loop_summary = "wait_worker_feedback count=1 [task-c]".into();
+        let action =
+            derive_owner_loop_action(&refs(), Some(&snapshot), "2026-06-01T00:00:00Z");
+        assert_eq!(action.action_kind, "wait_worker_feedback");
+    }
+
+    #[test]
+    fn owner_loop_no_managed_when_truth_is_none() {
+        let action = derive_owner_loop_action(&refs(), None, "2026-06-01T00:00:00Z");
+        assert_eq!(action.action_kind, "no_managed_tasks");
+    }
 }

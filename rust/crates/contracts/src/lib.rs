@@ -8,6 +8,8 @@ mod daemon;
 mod feedback;
 mod owner_loop;
 mod records;
+#[cfg(test)]
+mod records_tests;
 
 pub use activity_cards::{
     ActivityCardsSnapshot, ActivitySourceSummary, SourceActivityCardView, ToolSemanticView,

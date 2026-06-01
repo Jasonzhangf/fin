@@ -25,12 +25,16 @@ mod append_only_message_log;
 mod assembler_tests;
 mod assignment_queue;
 mod closure_runtime;
+#[cfg(test)]
+mod closure_runtime_tests;
 mod context_assembly_plan;
 mod context_baseline;
 mod context_block_render;
 mod context_blocks;
 mod context_budget;
 mod context_compaction;
+#[cfg(test)]
+mod context_compaction_tests;
 mod context_project_support;
 mod context_view;
 #[cfg(test)]
@@ -70,6 +74,8 @@ mod source_visibility;
 mod task_board_snapshot;
 mod task_handoff;
 mod task_store;
+#[cfg(test)]
+mod task_store_tests;
 mod tool_catalog;
 mod tool_catalog_dynamic;
 mod tool_catalog_task_tools;

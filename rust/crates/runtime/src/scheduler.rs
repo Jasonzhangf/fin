@@ -411,4 +411,90 @@ mod tests {
             Some("review_submitted_task")
         );
     }
+
+    #[test]
+    fn paused_with_parallel_inputs_runs_next() {
+        let decision = derive_scheduler_decision(
+            &refs(),
+            Some(&ExecutionStateRecord {
+                state_id: "exec-paused".into(),
+                refs: refs(),
+                status: "paused".into(),
+                pending_input_count: 1,
+                accepts_user_input: true,
+                updated_at: "2026-06-01T00:00:00Z".into(),
+                ..Default::default()
+            }),
+            &[PendingInputRecord {
+                pending_input_id: "p-1".into(),
+                refs: refs(),
+                input_kind: "parallel_chat".into(),
+                source: "cli.parallel_user".into(),
+                message: "parallel".into(),
+                status: "pending".into(),
+                enqueue_reason: "idle".into(),
+                enqueued_at: "2026-06-01T00:00:00Z".into(),
+                ..Default::default()
+            }],
+            None,
+            None,
+            "t",
+        );
+        assert_eq!(decision.action_kind, "run_next_parallel");
+    }
+
+    #[test]
+    fn paused_without_parallel_waits() {
+        let decision = derive_scheduler_decision(
+            &refs(),
+            Some(&ExecutionStateRecord {
+                state_id: "exec-paused".into(),
+                refs: refs(),
+                status: "paused".into(),
+                pending_input_count: 0,
+                accepts_user_input: true,
+                updated_at: "2026-06-01T00:00:00Z".into(),
+                ..Default::default()
+            }),
+            &[],
+            None,
+            None,
+            "t",
+        );
+        assert_eq!(decision.action_kind, "wait_paused");
+    }
+
+    #[test]
+    fn running_waits() {
+        let decision = derive_scheduler_decision(
+            &refs(),
+            Some(&ExecutionStateRecord {
+                state_id: "exec-running".into(),
+                refs: refs(),
+                status: "running".into(),
+                pending_input_count: 0,
+                accepts_user_input: false,
+                updated_at: "2026-06-01T00:00:00Z".into(),
+                ..Default::default()
+            }),
+            &[],
+            None,
+            None,
+            "t",
+        );
+        assert_eq!(decision.action_kind, "wait_running");
+    }
+
+    #[test]
+    fn no_state_yields_unavailable() {
+        let decision = derive_scheduler_decision(
+            &refs(),
+            None,
+            &[],
+            None,
+            None,
+            "t",
+        );
+        assert_eq!(decision.action_kind, "observe_only");
+    }
 }

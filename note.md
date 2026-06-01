@@ -4752,3 +4752,24 @@ Tool records in first turn: 16
 - 13 个 cache_hit 测试全绿（0 ignored）。
 - commit: 8afeb83
 
+
+## 2026-06-01 red-test remediation plan written
+
+- 已落盘黑盒红测补齐总计划：`plans/red-test-remediation-2026-06-01.md`（1405 行，含 P0-P4 模块矩阵、测试用例草案、验证门槛、/goal prompt）。
+- 已按 goal-prompt skill 额外落盘实现文档：`docs/goals/red-test-remediation-2026-06-01-plan.md`。
+- 结论：当前 P0/P1 模块（config/contracts/context_compaction/closure_runtime/owner_loop/scheduler/task_store）需优先补契约红测；本轮只做计划落盘，未改 Rust 代码，未跑 cargo test。
+
+## 2026-06-01 red-test remediation P0/P1 完成
+
+- P0 测试补齐完成（新增测试文件 + 内联追加）：
+  - `contracts/src/records_tests.rs`：10 个测试覆盖 LedgerTrackKind/RecordEnvelope/ControlFeedback/DaemonState/OwnerLoopAction/scheduler/task_store serde
+  - `runtime/src/context_compaction_tests.rs`：5 个测试覆盖 empty/retain/recent/digest/tool dedup
+  - `config/src/startup.rs`：已有 3 个测试（内联，未新增）
+  - `config/src/provider_profile.rs`：已有 4 个测试（内联，未新增）
+- P1 测试补齐完成：
+  - `runtime/src/owner_loop.rs`：追加 2 个测试（wait_worker/no_managed）
+  - `runtime/src/scheduler.rs`：追加 4 个测试（paused+parallel/paused+wait/running+wait/no_state=observe_only）
+  - `runtime/src/task_store_tests.rs`：3 个测试覆盖 serde roundtrip/optionals/receipt
+  - `runtime/src/closure_runtime_tests.rs`：4 个测试覆盖 empty_input/text_run/refs/tool_records
+- 验证结果：fin-config 17 passed, fin-contracts 16 passed, fin-runtime 157 passed (含新增 14 个), 0 FAILED
+- P2/P3/P4 未执行，标记为剩余风险

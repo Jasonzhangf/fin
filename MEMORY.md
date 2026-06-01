@@ -310,3 +310,5 @@
 
 ## 2026-05-23 Android live config contamination guard
 - 已验证教训：Android 真机验收禁止改写真实 `ws_profiles.json` / daemon endpoint 做 adb reverse 或 mock 测试；上轮把 endpoint 写成 `ws://127.0.0.1:4040/ws` 导致手机连自己，表现为 daemon 连接不稳。以后测试替身必须用独立测试 profile/临时 runtime，并在验收前确认真实 profile 仍指向 `ws://100.66.1.82:4040/ws` 或用户指定真实地址。
+
+- [2026-06-01] red-test remediation P0/P1 完成：新增 4 个测试文件（records_tests/context_compaction_tests/task_store_tests/closure_runtime_tests）+ 2 个内联追加（owner_loop/scheduler），共新增 14 个测试，全部通过。P2/P3/P4 待后续补齐。验证结果：fin-config 17, fin-contracts 16, fin-runtime 157 passed, 0 FAILED。
