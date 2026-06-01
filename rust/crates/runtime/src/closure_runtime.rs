@@ -212,12 +212,12 @@ impl M1Runtime {
             let current_round_tools = followup_round.dispatched_tools.clone();
             _latest_round_tool_records = current_round_tools.tool_records.clone();
             merge_dispatch_outcome(&mut dispatched_tools, &current_round_tools);
-            prepared_request = followup_round.prepared_request;
-            provider_response = followup_round.provider_response;
-            provider_debug = followup_round.provider_debug;
-            parsed_output = followup_round.parsed_output;
-            assistant_response_text = followup_round.assistant_response_text;
-            control_feedback = followup_round.control_feedback;
+            prepared_request = followup_round.prepared_request.clone();
+            provider_response = followup_round.provider_response.clone();
+            provider_debug = followup_round.provider_debug.clone();
+            parsed_output = followup_round.parsed_output.clone();
+            assistant_response_text = followup_round.assistant_response_text.clone();
+            control_feedback = followup_round.control_feedback.clone();
             round_count += 1;
         }
         record_auto_tool_round_limit(

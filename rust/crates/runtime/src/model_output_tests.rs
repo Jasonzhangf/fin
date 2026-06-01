@@ -12,7 +12,6 @@ use fin_contracts::{
 };
 use fin_provider::{
     InferenceProvider, PreparedRequest, ProviderDescriptor, ProviderRequest, ProviderResponse,
-    ProviderToolCall,
 };
 use std::collections::BTreeMap;
 
@@ -61,43 +60,29 @@ fn payload_with_task() -> InferenceOperationPayload {
     }
 }
 
-fn prepared_request(payload: &InferenceOperationPayload) -> PreparedRequest {
-    PreparedRequest {
+#[test]
+fn model_output_parser_extracts_response_and_control_feedback() {
+    let payload = payload_with_task();
+    let request = PreparedRequest {
         provider_name: "openai".into(),
         protocol: ProviderProtocol::OpenAiCompatible,
         endpoint: "https://api.example.com/v1/chat/completions".into(),
         model: "gpt-5".into(),
         input: payload.input.clone(),
         rendered_input: "compiled".into(),
+        prompt_cache_key: None,
         user_agent: None,
         sanitized_headers: BTreeMap::new(),
-        tools: Vec::new(),
-        prior_tool_calls: Vec::new(),
-        tool_results: Vec::new(),
-    }
-}
-
-fn provider_response(output_text: &str, response_id: &str, stop_reason: &str) -> ProviderResponse {
-    ProviderResponse {
+    };
+    let response = ProviderResponse {
         provider_name: "openai".into(),
         model: "gpt-5".into(),
-        output_text: output_text.into(),
-        response_id: Some(response_id.into()),
-        stop_reason: Some(stop_reason.into()),
+        output_text: "<fin_user_response>好的，我继续当前任务。</fin_user_response>\n<fin_control_feedback>{\"origin\":\"\",\"is_continuation\":true,\"is_simple_query\":false,\"candidate_task_id\":\"task-1\",\"candidate_topic_thread_id\":\"topic-1\",\"continuity_confidence\":97,\"topic_shift_confidence\":6,\"simple_query_confidence\":4,\"previous_topic_summary\":\"\",\"current_topic_summary\":\"继续当前任务\",\"note_candidate\":\"继续推进当前任务\",\"digest_candidate\":\"任务连续\",\"reason\":\"same task\"}</fin_control_feedback>".into(),
+        response_id: Some("resp-1".into()),
+        stop_reason: Some("end_turn".into()),
         status: 200,
-        tool_calls: Vec::new(),
-    }
-}
-
-#[test]
-fn model_output_parser_extracts_response_and_control_feedback() {
-    let payload = payload_with_task();
-    let request = prepared_request(&payload);
-    let response = provider_response(
-        "<fin_user_response>好的，我继续当前任务。</fin_user_response>\n<fin_control_feedback>{\"origin\":\"\",\"is_continuation\":true,\"is_simple_query\":false,\"candidate_task_id\":\"task-1\",\"candidate_topic_thread_id\":\"topic-1\",\"continuity_confidence\":97,\"topic_shift_confidence\":6,\"simple_query_confidence\":4,\"previous_topic_summary\":\"\",\"current_topic_summary\":\"继续当前任务\",\"note_candidate\":\"继续推进当前任务\",\"digest_candidate\":\"任务连续\",\"reason\":\"same task\"}</fin_control_feedback>",
-        "resp-1",
-        "end_turn",
-    );
+        usage: None,
+    };
 
     let parsed = ModelOutputParser::default().parse(&payload, &request, &response);
     assert_eq!(parsed.user_response, "好的，我继续当前任务。");
@@ -114,34 +99,64 @@ fn model_output_parser_extracts_response_and_control_feedback() {
 }
 
 #[test]
-fn control_feedback_builder_uses_runtime_observation_when_no_structured_output_exists() {
+fn control_feedback_builder_uses_runtime_defaults_when_no_structured_output_exists() {
     let payload = payload_with_task();
-    let request = prepared_request(&payload);
-    let response = provider_response("plain answer", "resp-2", "end_turn");
+    let request = PreparedRequest {
+        provider_name: "openai".into(),
+        protocol: ProviderProtocol::OpenAiCompatible,
+        endpoint: "https://api.example.com/v1/chat/completions".into(),
+        model: "gpt-5".into(),
+        input: payload.input.clone(),
+        rendered_input: "compiled".into(),
+        prompt_cache_key: None,
+        user_agent: None,
+        sanitized_headers: BTreeMap::new(),
+    };
+    let response = ProviderResponse {
+        provider_name: "openai".into(),
+        model: "gpt-5".into(),
+        output_text: "plain answer".into(),
+        response_id: Some("resp-2".into()),
+        stop_reason: Some("end_turn".into()),
+        status: 200,
+        usage: None,
+    };
 
     let parsed = ModelOutputParser::default().parse(&payload, &request, &response);
-    let runtime_observation = ControlFeedbackBuilder::default().build(&payload, &request, &response);
-    let merged = ControlFeedbackBuilder::default().merge_with_runtime_observation(
-        parsed.control_feedback.clone(),
-        runtime_observation.clone(),
-    );
+    let runtime_defaults = ControlFeedbackBuilder::default().build(&payload, &request, &response);
+    let merged = ControlFeedbackBuilder::default()
+        .merge_with_runtime_defaults(parsed.control_feedback.clone(), runtime_defaults.clone());
     assert_eq!(parsed.user_response, "plain answer");
     assert!(!parsed.control_feedback_salvaged);
     assert!(!parsed.tool_calls_block_present);
     assert_eq!(parsed.tool_calls_parse_status, "absent");
     assert!(parsed.tool_calls.is_empty());
-    assert_eq!(merged, runtime_observation);
+    assert_eq!(merged, runtime_defaults);
 }
 
 #[test]
 fn model_output_parser_rejects_unrecognized_control_feedback_shape() {
     let payload = payload_with_task();
-    let request = prepared_request(&payload);
-    let response = provider_response(
-        "<fin_user_response>OK</fin_user_response>\n<fin_control_feedback>{\"project_scope\":\"/tmp/fin\",\"next_verify_step\":\"none\"}</fin_control_feedback>",
-        "resp-3",
-        "end_turn",
-    );
+    let request = PreparedRequest {
+        provider_name: "openai".into(),
+        protocol: ProviderProtocol::OpenAiCompatible,
+        endpoint: "https://api.example.com/v1/chat/completions".into(),
+        model: "gpt-5".into(),
+        input: payload.input.clone(),
+        rendered_input: "compiled".into(),
+        prompt_cache_key: None,
+        user_agent: None,
+        sanitized_headers: BTreeMap::new(),
+    };
+    let response = ProviderResponse {
+        provider_name: "openai".into(),
+        model: "gpt-5".into(),
+        output_text: "<fin_user_response>OK</fin_user_response>\n<fin_control_feedback>{\"project_scope\":\"/tmp/fin\",\"next_verify_step\":\"none\"}</fin_control_feedback>".into(),
+        response_id: Some("resp-3".into()),
+        stop_reason: Some("end_turn".into()),
+        status: 200,
+        usage: None,
+    };
 
     let parsed = ModelOutputParser::default().parse(&payload, &request, &response);
     assert_eq!(parsed.user_response, "OK");
@@ -155,12 +170,26 @@ fn model_output_parser_rejects_unrecognized_control_feedback_shape() {
 #[test]
 fn model_output_parser_salvages_whitelisted_feedback_fields_with_mask() {
     let payload = payload_with_task();
-    let request = prepared_request(&payload);
-    let response = provider_response(
-        "<fin_user_response>OK</fin_user_response>\n<fin_control_feedback>{\"is_continuation\":true,\"is_simple_query\":\"false\",\"continuity_confidence\":1.0,\"topic_shift_confidence\":\"0.18\",\"simple_query_confidence\":\"24\",\"current_topic_summary\":\"masked summary\",\"note_candidate\":\"masked note\",\"digest_candidate\":\"masked digest\",\"reason\":\"masked reason\",\"project_scope\":\"/tmp/ignored\"}</fin_control_feedback>",
-        "resp-4",
-        "end_turn",
-    );
+    let request = PreparedRequest {
+        provider_name: "openai".into(),
+        protocol: ProviderProtocol::OpenAiCompatible,
+        endpoint: "https://api.example.com/v1/chat/completions".into(),
+        model: "gpt-5".into(),
+        input: payload.input.clone(),
+        rendered_input: "compiled".into(),
+        prompt_cache_key: None,
+        user_agent: None,
+        sanitized_headers: BTreeMap::new(),
+    };
+    let response = ProviderResponse {
+        provider_name: "openai".into(),
+        model: "gpt-5".into(),
+        output_text: "<fin_user_response>OK</fin_user_response>\n<fin_control_feedback>{\"is_continuation\":true,\"is_simple_query\":\"false\",\"continuity_confidence\":1.0,\"topic_shift_confidence\":\"0.18\",\"simple_query_confidence\":\"24\",\"current_topic_summary\":\"masked summary\",\"note_candidate\":\"masked note\",\"digest_candidate\":\"masked digest\",\"reason\":\"masked reason\",\"project_scope\":\"/tmp/ignored\"}</fin_control_feedback>".into(),
+        response_id: Some("resp-4".into()),
+        stop_reason: Some("end_turn".into()),
+        status: 200,
+        usage: None,
+    };
 
     let parsed = ModelOutputParser::default().parse(&payload, &request, &response);
     assert_eq!(parsed.user_response, "OK");
@@ -188,12 +217,26 @@ fn model_output_parser_salvages_whitelisted_feedback_fields_with_mask() {
 #[test]
 fn model_output_parser_extracts_tool_calls_block() {
     let payload = payload_with_task();
-    let request = prepared_request(&payload);
-    let response = provider_response(
-        "<fin_user_response>waiting for logs</fin_user_response>\n<fin_control_feedback>{\"origin\":\"model_output_contract_v1\",\"is_continuation\":true,\"is_simple_query\":false,\"candidate_task_id\":null,\"candidate_topic_thread_id\":null,\"continuity_confidence\":84,\"topic_shift_confidence\":16,\"simple_query_confidence\":9,\"previous_topic_summary\":\"logs\",\"current_topic_summary\":\"logs\",\"note_candidate\":\"need wait\",\"digest_candidate\":\"wait scheduled\",\"reason\":\"need async wait\"}</fin_control_feedback>\n<fin_tool_calls>[{\"tool_name\":\"wait.remind\",\"arguments\":{\"wait_minutes\":5,\"reminder\":\"check ci logs\"}}]</fin_tool_calls>",
-        "resp-tool-1",
-        "end_turn",
-    );
+    let request = PreparedRequest {
+        provider_name: "openai".into(),
+        protocol: ProviderProtocol::OpenAiCompatible,
+        endpoint: "https://api.example.com/v1/chat/completions".into(),
+        model: "gpt-5".into(),
+        input: payload.input.clone(),
+        rendered_input: "compiled".into(),
+        prompt_cache_key: None,
+        user_agent: None,
+        sanitized_headers: BTreeMap::new(),
+    };
+    let response = ProviderResponse {
+        provider_name: "openai".into(),
+        model: "gpt-5".into(),
+        output_text: "<fin_user_response>waiting for logs</fin_user_response>\n<fin_control_feedback>{\"origin\":\"model_output_contract_v1\",\"is_continuation\":true,\"is_simple_query\":false,\"candidate_task_id\":null,\"candidate_topic_thread_id\":null,\"continuity_confidence\":84,\"topic_shift_confidence\":16,\"simple_query_confidence\":9,\"previous_topic_summary\":\"logs\",\"current_topic_summary\":\"logs\",\"note_candidate\":\"need wait\",\"digest_candidate\":\"wait scheduled\",\"reason\":\"need async wait\"}</fin_control_feedback>\n<fin_tool_calls>[{\"tool_name\":\"wait.remind\",\"arguments\":{\"wait_minutes\":5,\"reminder\":\"check ci logs\"}}]</fin_tool_calls>".into(),
+        response_id: Some("resp-tool-1".into()),
+        stop_reason: Some("end_turn".into()),
+        status: 200,
+        usage: None,
+    };
 
     let parsed = ModelOutputParser::default().parse(&payload, &request, &response);
     assert_eq!(parsed.user_response, "waiting for logs");
@@ -215,12 +258,26 @@ fn model_output_parser_extracts_tool_calls_block() {
 #[test]
 fn model_output_parser_repairs_missing_user_response_closing_tag() {
     let payload = payload_with_task();
-    let request = prepared_request(&payload);
-    let response = provider_response(
-        "<fin_user_response>先继续当前任务。\n<fin_control_feedback>{\"origin\":\"model_output_contract_v1\",\"is_continuation\":true,\"is_simple_query\":false,\"candidate_task_id\":\"task-1\",\"candidate_topic_thread_id\":\"topic-1\",\"continuity_confidence\":90,\"topic_shift_confidence\":10,\"simple_query_confidence\":4,\"previous_topic_summary\":\"task\",\"current_topic_summary\":\"task\",\"note_candidate\":\"continue\",\"digest_candidate\":\"continue\",\"reason\":\"same task\"}</fin_control_feedback>",
-        "resp-repair-user-response",
-        "end_turn",
-    );
+    let request = PreparedRequest {
+        provider_name: "openai".into(),
+        protocol: ProviderProtocol::OpenAiCompatible,
+        endpoint: "https://api.example.com/v1/chat/completions".into(),
+        model: "gpt-5".into(),
+        input: payload.input.clone(),
+        rendered_input: "compiled".into(),
+        prompt_cache_key: None,
+        user_agent: None,
+        sanitized_headers: BTreeMap::new(),
+    };
+    let response = ProviderResponse {
+        provider_name: "openai".into(),
+        model: "gpt-5".into(),
+        output_text: "<fin_user_response>先继续当前任务。\n<fin_control_feedback>{\"origin\":\"model_output_contract_v1\",\"is_continuation\":true,\"is_simple_query\":false,\"candidate_task_id\":\"task-1\",\"candidate_topic_thread_id\":\"topic-1\",\"continuity_confidence\":90,\"topic_shift_confidence\":10,\"simple_query_confidence\":4,\"previous_topic_summary\":\"task\",\"current_topic_summary\":\"task\",\"note_candidate\":\"continue\",\"digest_candidate\":\"continue\",\"reason\":\"same task\"}</fin_control_feedback>".into(),
+        response_id: Some("resp-repair-user-response".into()),
+        stop_reason: Some("end_turn".into()),
+        status: 200,
+        usage: None,
+    };
 
     let parsed = ModelOutputParser::default().parse(&payload, &request, &response);
     assert_eq!(parsed.user_response, "先继续当前任务。");
@@ -230,12 +287,26 @@ fn model_output_parser_repairs_missing_user_response_closing_tag() {
 #[test]
 fn model_output_parser_repairs_deterministic_tool_call_shape() {
     let payload = payload_with_task();
-    let request = prepared_request(&payload);
-    let response = provider_response(
-        "<fin_user_response>done</fin_user_response>\n<fin_control_feedback>{\"origin\":\"model_output_contract_v1\",\"is_continuation\":false,\"is_simple_query\":true,\"candidate_task_id\":null,\"candidate_topic_thread_id\":null,\"continuity_confidence\":20,\"topic_shift_confidence\":80,\"simple_query_confidence\":95,\"previous_topic_summary\":\"short previous topic summary\",\"current_topic_summary\":\"short current topic summary\",\"note_candidate\":\"done\",\"digest_candidate\":\"done\",\"reason\":\"done\"}</fin_control_feedback>\n<fin_tool_calls>\n```json\n{\"name\":\"reasoning.stop\",\"args\":{\"summary\":\"done\"}}\n```",
-        "resp-repair-tool",
-        "end_turn",
-    );
+    let request = PreparedRequest {
+        provider_name: "openai".into(),
+        protocol: ProviderProtocol::OpenAiCompatible,
+        endpoint: "https://api.example.com/v1/chat/completions".into(),
+        model: "gpt-5".into(),
+        input: payload.input.clone(),
+        rendered_input: "compiled".into(),
+        prompt_cache_key: None,
+        user_agent: None,
+        sanitized_headers: BTreeMap::new(),
+    };
+    let response = ProviderResponse {
+        provider_name: "openai".into(),
+        model: "gpt-5".into(),
+        output_text: "<fin_user_response>done</fin_user_response>\n<fin_control_feedback>{\"origin\":\"model_output_contract_v1\",\"is_continuation\":false,\"is_simple_query\":true,\"candidate_task_id\":null,\"candidate_topic_thread_id\":null,\"continuity_confidence\":20,\"topic_shift_confidence\":80,\"simple_query_confidence\":95,\"previous_topic_summary\":\"short previous topic summary\",\"current_topic_summary\":\"short current topic summary\",\"note_candidate\":\"done\",\"digest_candidate\":\"done\",\"reason\":\"done\"}</fin_control_feedback>\n<fin_tool_calls>\n```json\n{\"name\":\"reasoning.stop\",\"args\":{\"summary\":\"done\"}}\n```".into(),
+        response_id: Some("resp-repair-tool".into()),
+        stop_reason: Some("end_turn".into()),
+        status: 200,
+        usage: None,
+    };
 
     let parsed = ModelOutputParser::default().parse(&payload, &request, &response);
     assert!(parsed.tool_calls_block_present);
@@ -253,14 +324,66 @@ fn model_output_parser_repairs_deterministic_tool_call_shape() {
 }
 
 #[test]
+fn model_output_parser_repairs_xmlish_tool_call_shape() {
+    let payload = payload_with_task();
+    let request = PreparedRequest {
+        provider_name: "openai".into(),
+        protocol: ProviderProtocol::OpenAiCompatible,
+        endpoint: "https://api.example.com/v1/chat/completions".into(),
+        model: "gpt-5".into(),
+        input: payload.input.clone(),
+        rendered_input: "compiled".into(),
+        prompt_cache_key: None,
+        user_agent: None,
+        sanitized_headers: BTreeMap::new(),
+    };
+    let response = ProviderResponse {
+        provider_name: "openai".into(),
+        model: "gpt-5".into(),
+        output_text: "<fin_user_response><tool_call>\n<function=exec_command>\n<parameter=cmd>nonexistent_command_abc123</parameter>\n</function>\n</tool_call></fin_user_response>\n<fin_tool_calls><tool_call>\n<function=exec_command>\n<parameter=cmd>nonexistent_command_abc123</parameter>\n</function>\n</tool_call></fin_tool_calls>".into(),
+        response_id: Some("resp-repair-xmlish-tool".into()),
+        stop_reason: Some("end_turn".into()),
+        status: 200,
+        usage: None,
+    };
+
+    let parsed = ModelOutputParser::default().parse(&payload, &request, &response);
+    assert!(parsed.tool_calls_block_present);
+    assert_eq!(parsed.tool_calls_parse_status, "repaired_deterministic");
+    assert_eq!(parsed.tool_calls.len(), 1);
+    assert_eq!(parsed.tool_calls[0].tool_name, "exec_command");
+    assert_eq!(
+        parsed.tool_calls[0]
+            .arguments
+            .get("cmd")
+            .and_then(serde_json::Value::as_str),
+        Some("nonexistent_command_abc123")
+    );
+}
+
+#[test]
 fn model_output_parser_does_not_salvage_truncated_tool_call_value() {
     let payload = payload_with_task();
-    let request = prepared_request(&payload);
-    let response = provider_response(
-        "<fin_user_response>done</fin_user_response>\n<fin_control_feedback>{\"origin\":\"model_output_contract_v1\",\"is_continuation\":true,\"is_simple_query\":true,\"candidate_task_id\":null,\"candidate_topic_thread_id\":null,\"continuity_confidence\":95,\"topic_shift_confidence\":85,\"simple_query_confidence\":95,\"previous_topic_summary\":\"prev\",\"current_topic_summary\":\"current\",\"note_candidate\":\"done\",\"digest_candidate\":\"done\",\"reason\":\"done\"}</fin_control_feedback>\n<fin_tool_calls>\n[{\"tool_name\":\"reasoning.stop\",\"arguments\":{\"summary\":\"Timeline validation complete. Max_tokens cutoff confirmed as cause for",
-        "resp-invalid-tool",
-        "max_tokens",
-    );
+    let request = PreparedRequest {
+        provider_name: "openai".into(),
+        protocol: ProviderProtocol::OpenAiCompatible,
+        endpoint: "https://api.example.com/v1/chat/completions".into(),
+        model: "gpt-5".into(),
+        input: payload.input.clone(),
+        rendered_input: "compiled".into(),
+        prompt_cache_key: None,
+        user_agent: None,
+        sanitized_headers: BTreeMap::new(),
+    };
+    let response = ProviderResponse {
+        provider_name: "openai".into(),
+        model: "gpt-5".into(),
+        output_text: "<fin_user_response>done</fin_user_response>\n<fin_control_feedback>{\"origin\":\"model_output_contract_v1\",\"is_continuation\":true,\"is_simple_query\":true,\"candidate_task_id\":null,\"candidate_topic_thread_id\":null,\"continuity_confidence\":95,\"topic_shift_confidence\":85,\"simple_query_confidence\":95,\"previous_topic_summary\":\"prev\",\"current_topic_summary\":\"current\",\"note_candidate\":\"done\",\"digest_candidate\":\"done\",\"reason\":\"done\"}</fin_control_feedback>\n<fin_tool_calls>\n[{\"tool_name\":\"reasoning.stop\",\"arguments\":{\"summary\":\"Timeline validation complete. Max_tokens cutoff confirmed as cause for".into(),
+        response_id: Some("resp-invalid-tool".into()),
+        stop_reason: Some("max_tokens".into()),
+        status: 200,
+        usage: None,
+    };
 
     let parsed = ModelOutputParser::default().parse(&payload, &request, &response);
     assert!(parsed.tool_calls_block_present);
@@ -270,40 +393,6 @@ fn model_output_parser_does_not_salvage_truncated_tool_call_value() {
         Some("unterminated_string_value")
     );
     assert!(parsed.tool_calls.is_empty());
-}
-
-#[test]
-fn model_output_parser_reads_native_tool_calls_from_provider_response() {
-    let payload = payload_with_task();
-    let request = prepared_request(&payload);
-    let response = ProviderResponse {
-        tool_calls: vec![ProviderToolCall {
-            tool_call_id: "toolu_1".into(),
-            name: "exec_command".into(),
-            arguments: serde_json::json!({ "cmd": "pwd" }),
-        }],
-        ..provider_response(
-            "继续检查。\n<fin_control_feedback>{\"origin\":\"model_output_contract_v1\",\"is_continuation\":true,\"is_simple_query\":false,\"candidate_task_id\":\"task-1\",\"candidate_topic_thread_id\":\"topic-1\",\"continuity_confidence\":88,\"topic_shift_confidence\":12,\"simple_query_confidence\":6,\"previous_topic_summary\":\"pwd\",\"current_topic_summary\":\"pwd\",\"note_candidate\":\"need pwd\",\"digest_candidate\":\"need pwd\",\"reason\":\"use tool\"}</fin_control_feedback>",
-            "resp-native-tool",
-            "tool_use",
-        )
-    };
-
-    let parsed = ModelOutputParser::default().parse(&payload, &request, &response);
-    assert_eq!(parsed.user_response, "继续检查。");
-    assert_eq!(parsed.tool_calls.len(), 1);
-    assert_eq!(
-        parsed.tool_calls[0].tool_call_id.as_deref(),
-        Some("toolu_1")
-    );
-    assert_eq!(parsed.tool_calls[0].tool_name, "exec_command");
-    assert_eq!(
-        parsed.tool_calls[0]
-            .arguments
-            .get("cmd")
-            .and_then(serde_json::Value::as_str),
-        Some("pwd")
-    );
 }
 
 #[path = "model_output_runtime_tests.rs"]

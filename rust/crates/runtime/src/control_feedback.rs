@@ -11,14 +11,33 @@ impl ControlFeedbackBuilder {
         request: &PreparedRequest,
         response: &ProviderResponse,
     ) -> ControlFeedback {
+        let trimmed_input = payload.input.trim();
+        let word_count = trimmed_input.split_whitespace().count();
+        let punctuation_count = trimmed_input
+            .chars()
+            .filter(|ch| matches!(ch, '?' | '？' | '!' | '！'))
+            .count();
+        let has_history = payload
+            .context
+            .history
+            .as_ref()
+            .map(|history| !history.recent_messages.is_empty())
+            .unwrap_or(false);
+        let has_task = payload
+            .context
+            .control
+            .as_ref()
+            .and_then(|control| control.task_id.as_ref())
+            .is_some();
+        let is_simple_query = word_count <= 12 && punctuation_count <= 1 && !has_history;
+        let continuity_confidence = if has_task { 92 } else { 58 };
+        let topic_shift_confidence = if has_history { 18 } else { 36 };
+        let simple_query_confidence = if is_simple_query { 88 } else { 24 };
+
         ControlFeedback {
-            origin: "runtime_observation_only_v1".into(),
-            is_continuation: false,
-            is_simple_query: false,
-            task_completed: false,
-            is_simple_chat: false,
-            blocked: false,
-            needs_user_involve: false,
+            origin: "runtime_heuristic".into(),
+            is_continuation: has_task,
+            is_simple_query,
             candidate_task_id: payload
                 .context
                 .control
@@ -29,15 +48,11 @@ impl ControlFeedbackBuilder {
                 .control
                 .as_ref()
                 .and_then(|control| control.topic_thread_id.clone()),
-            continuity_confidence: 0,
-            topic_shift_confidence: 0,
-            simple_query_confidence: 0,
+            continuity_confidence,
+            topic_shift_confidence,
+            simple_query_confidence,
             previous_topic_summary: payload.context.summary.clone(),
-            current_topic_summary: Some(short_topic_summary(payload.input.trim())),
-            completion_evidence: Vec::new(),
-            final_conclusions: Vec::new(),
-            blocked_reason: None,
-            what_needs_to_be_done_by_user: None,
+            current_topic_summary: Some(short_topic_summary(trimmed_input)),
             note_candidate: format!(
                 "provider {}:{} answered current turn with stop_reason={}",
                 request.provider_name,
@@ -45,86 +60,84 @@ impl ControlFeedbackBuilder {
                 response.stop_reason.as_deref().unwrap_or("unknown")
             ),
             digest_candidate: format!(
-                "closure on {}:{} produced answer {}",
-                request.provider_name, request.model, response.output_text
+                "closure on {}:{} kept task continuity={} and produced answer {}",
+                request.provider_name, request.model, has_task, response.output_text
             ),
-            reason: "model control feedback missing or invalid; runtime recorded observation-only control without semantic routing intent".into(),
+            reason: if is_simple_query {
+                "short single-turn request without prior history".into()
+            } else if has_task {
+                "existing task binding and recent context suggest continuity".into()
+            } else {
+                "no explicit task binding; keep observing continuity in later turns".into()
+            },
         }
     }
 
-    pub fn merge_with_runtime_observation(
+    pub fn merge_with_runtime_defaults(
         &self,
         parsed: Option<ControlFeedback>,
-        runtime_observation: ControlFeedback,
+        runtime_defaults: ControlFeedback,
     ) -> ControlFeedback {
         let Some(parsed) = parsed else {
-            return runtime_observation;
+            return runtime_defaults;
         };
         ControlFeedback {
             origin: parsed.origin,
             is_continuation: parsed.is_continuation,
             is_simple_query: parsed.is_simple_query,
-            task_completed: parsed.task_completed,
-            is_simple_chat: parsed.is_simple_chat,
-            blocked: parsed.blocked,
-            needs_user_involve: parsed.needs_user_involve,
             candidate_task_id: parsed
                 .candidate_task_id
-                .or(runtime_observation.candidate_task_id),
+                .or(runtime_defaults.candidate_task_id),
             candidate_topic_thread_id: parsed
                 .candidate_topic_thread_id
-                .or(runtime_observation.candidate_topic_thread_id),
-            continuity_confidence: parsed.continuity_confidence,
-            topic_shift_confidence: parsed.topic_shift_confidence,
-            simple_query_confidence: parsed.simple_query_confidence,
+                .or(runtime_defaults.candidate_topic_thread_id),
+            continuity_confidence: if parsed.continuity_confidence == 0 {
+                runtime_defaults.continuity_confidence
+            } else {
+                parsed.continuity_confidence
+            },
+            topic_shift_confidence: if parsed.topic_shift_confidence == 0 {
+                runtime_defaults.topic_shift_confidence
+            } else {
+                parsed.topic_shift_confidence
+            },
+            simple_query_confidence: if parsed.simple_query_confidence == 0 {
+                runtime_defaults.simple_query_confidence
+            } else {
+                parsed.simple_query_confidence
+            },
             previous_topic_summary: parsed
                 .previous_topic_summary
-                .or(runtime_observation.previous_topic_summary),
+                .or(runtime_defaults.previous_topic_summary),
             current_topic_summary: parsed
                 .current_topic_summary
-                .or(runtime_observation.current_topic_summary),
-            completion_evidence: if parsed.completion_evidence.is_empty() {
-                runtime_observation.completion_evidence
-            } else {
-                parsed.completion_evidence
-            },
-            final_conclusions: if parsed.final_conclusions.is_empty() {
-                runtime_observation.final_conclusions
-            } else {
-                parsed.final_conclusions
-            },
-            blocked_reason: parsed
-                .blocked_reason
-                .or(runtime_observation.blocked_reason),
-            what_needs_to_be_done_by_user: parsed
-                .what_needs_to_be_done_by_user
-                .or(runtime_observation.what_needs_to_be_done_by_user),
+                .or(runtime_defaults.current_topic_summary),
             note_candidate: if parsed.note_candidate.trim().is_empty() {
-                runtime_observation.note_candidate
+                runtime_defaults.note_candidate
             } else {
                 parsed.note_candidate
             },
             digest_candidate: if parsed.digest_candidate.trim().is_empty() {
-                runtime_observation.digest_candidate
+                runtime_defaults.digest_candidate
             } else {
                 parsed.digest_candidate
             },
             reason: if parsed.reason.trim().is_empty() {
-                runtime_observation.reason
+                runtime_defaults.reason
             } else {
                 parsed.reason
             },
         }
     }
 
-    pub fn rewrite_runtime_observation_candidates(
+    pub fn rewrite_runtime_heuristic_candidates(
         &self,
         feedback: &mut ControlFeedback,
         request: &PreparedRequest,
         response: &ProviderResponse,
         assistant_response_text: &str,
     ) {
-        if feedback.origin != "runtime_observation_only_v1" {
+        if feedback.origin != "runtime_heuristic" {
             return;
         }
         feedback.note_candidate = format!(
@@ -134,8 +147,8 @@ impl ControlFeedbackBuilder {
             response.stop_reason.as_deref().unwrap_or("unknown")
         );
         feedback.digest_candidate = format!(
-            "closure on {}:{} produced answer {}",
-            request.provider_name, request.model, assistant_response_text
+            "closure on {}:{} kept task continuity={} and produced answer {}",
+            request.provider_name, request.model, feedback.is_continuation, assistant_response_text
         );
     }
 }

@@ -1,7 +1,11 @@
 use super::*;
-use crate::model_output::ModelToolCall;
-use serde_json::json;
-use std::{fs, path::PathBuf};
+use crate::reason_pipeline::{
+    ReasonReq01Seed, ReasonReq02ContextPlanBuilder, ReasonReq03BudgetedContextBuilder,
+    ReasonReq04RenderedInputBuilder, ReasonReq05ProviderCallBuilder, ReasonResp06ModelOutputParser,
+    ReasonResp07ParsedContractParser, ReasonResp08RuntimeDecisionBuilder, ReasonResp09Closure,
+    ReasonResp09ClosureBuilder,
+};
+use crate::tool_history_render::render_current_tool_execution_history;
 
 pub(super) struct StepAllocation {
     pub(super) step_id: String,
@@ -9,14 +13,20 @@ pub(super) struct StepAllocation {
 }
 
 #[derive(Debug, Clone)]
-pub(super) struct RoundExecution {
-    pub(super) prepared_request: PreparedRequest,
-    pub(super) provider_response: ProviderResponse,
-    pub(super) provider_debug: SanitizedProviderDebug,
-    pub(super) parsed_output: ParsedModelOutput,
-    pub(super) dispatched_tools: tool_dispatch::ToolDispatchOutcome,
-    pub(super) assistant_response_text: String,
-    pub(super) control_feedback: ControlFeedback,
+pub(super) struct ReasonRoundExecution(pub(super) ReasonResp09Closure);
+
+impl std::ops::Deref for ReasonRoundExecution {
+    type Target = ReasonResp09Closure;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl std::ops::DerefMut for ReasonRoundExecution {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.0
+    }
 }
 
 pub(super) fn execute_round(
@@ -26,70 +36,24 @@ pub(super) fn execute_round(
     round_context: &MinimalContextView,
     round_index: u32,
     input: String,
-    prior_tool_calls: &[ModelToolCall],
-    tool_results: &[ToolExecutionRecord],
-) -> Result<RoundExecution, RuntimeError> {
-    let rendered_input = ModelInputAssembler::default().assemble(&input, round_context);
-    let prepared_request = provider.prepare_request(&ProviderRequest {
-        input,
-        rendered_input: Some(rendered_input),
-        override_model: Some(
-            operation
-                .payload
-                .provider_path
-                .primary_target()
-                .model
-                .clone(),
-        ),
-        tools: build_provider_tool_specs(round_context),
-        prior_tool_calls: prior_tool_calls
-            .iter()
-            .map(model_tool_call_to_provider_tool_call)
-            .collect(),
-        tool_results: build_provider_tool_results(round_context, tool_results),
-    });
-    let provider_response = provider.execute_prepared(&prepared_request)?;
-    let provider_debug = SanitizedProviderDebug {
-        user_agent: prepared_request.user_agent.clone(),
-        request_headers: prepared_request.sanitized_headers.clone(),
-    };
-    let parsed_output = ModelOutputParser::default().parse(
-        &operation.payload,
-        &prepared_request,
-        &provider_response,
-    );
-    let dispatched_tools = tool_dispatch::execute_model_tools(
-        &operation.operation_id,
-        &operation.trace_id,
-        refs,
-        &operation.submitted_at,
-        round_context,
+) -> Result<ReasonRoundExecution, RuntimeError> {
+    let seed = ReasonReq01Seed {
+        operation: operation.clone(),
+        refs: refs.clone(),
         round_index,
-        &parsed_output.tool_calls,
-    );
-    let assistant_response_text = parsed_output.user_response.clone();
-    let runtime_observation_feedback =
-        ControlFeedbackBuilder.build(&operation.payload, &prepared_request, &provider_response);
-    let mut control_feedback = ControlFeedbackBuilder::default()
-        .merge_with_runtime_observation(
-            parsed_output.control_feedback.clone(),
-            runtime_observation_feedback,
-        );
-    ControlFeedbackBuilder::default().rewrite_runtime_observation_candidates(
-        &mut control_feedback,
-        &prepared_request,
-        &provider_response,
-        assistant_response_text.as_str(),
-    );
-    Ok(RoundExecution {
-        prepared_request,
-        provider_response,
-        provider_debug,
-        parsed_output,
-        dispatched_tools,
-        assistant_response_text,
-        control_feedback,
-    })
+        input,
+        context: round_context.clone(),
+    };
+    let context_plan = ReasonReq02ContextPlanBuilder.build(seed);
+    let budgeted_context = ReasonReq03BudgetedContextBuilder.build(context_plan);
+    let rendered_input = ReasonReq04RenderedInputBuilder.build(budgeted_context);
+    let provider_call = ReasonReq05ProviderCallBuilder.build(rendered_input);
+    let model_output = ReasonResp06ModelOutputParser.parse(provider_call, provider)?;
+    let parsed_contract = ReasonResp07ParsedContractParser.parse(model_output);
+    let runtime_decision = ReasonResp08RuntimeDecisionBuilder.build(parsed_contract);
+    Ok(ReasonRoundExecution(
+        ReasonResp09ClosureBuilder.build(runtime_decision),
+    ))
 }
 
 pub(super) fn build_context_snapshot(
@@ -367,19 +331,20 @@ pub(super) fn record_round(
 }
 
 pub(super) fn build_followup_input(
+    context: &MinimalContextView,
     original_input: &str,
     assistant_response: &str,
-    no_tool_calls: bool,
+    tool_records: &[ToolExecutionRecord],
 ) -> String {
-    if no_tool_calls {
-        format!(
-            "Continue the same turn.\nOriginal request: {original_input}\nLast assistant response: {assistant_response}\nYour last response had no tool calls and no reasoning.stop signal. You must explicitly declare whether the turn should end.\nIf the task is now complete, call reasoning.stop and emit control feedback that proves completion (task_completed=true plus non-empty completion_evidence and final_conclusions). If this is just a simple chat closure, set is_simple_chat=true. If you are blocked and need the user to do something, set blocked=true, needs_user_involve=true, and fill blocked_reason plus what_needs_to_be_done_by_user.\nIf you need to do more work instead, call the appropriate tools.\nOnly request reasoning.stop when the current reasoning cycle should really stop and the control feedback already contains one of those valid closure channels.\nIf you produce no visible user response (empty fin_user_response), you must still output a default acknowledgement like 'Processing, please wait.' inside fin_user_response."
-        )
-    } else {
-        format!(
-            "Continue the same turn.\nOriginal request: {original_input}\nLast assistant response: {assistant_response}\nThe previous round's native tool results are attached in this request; inspect them directly before deciding whether another tool is needed.\nIf the task is now complete, answer directly and emit control feedback that proves completion (task_completed=true plus non-empty completion_evidence and final_conclusions). If this is just a simple chat closure, set is_simple_chat=true. If you are blocked and need the user to do something, set blocked=true, needs_user_involve=true, and fill blocked_reason plus what_needs_to_be_done_by_user.\nOnly request reasoning.stop when the current reasoning cycle should really stop and the control feedback already contains one of those valid closure channels. Otherwise continue reasoning and do not stop yet."
-        )
-    }
+    let tool_lines = render_current_tool_execution_history(context, tool_records);
+    format!(
+        "Continue the same turn with the latest tool results.\nOriginal request: {original_input}\nLast assistant response: {assistant_response}\nExecuted tool results (authoritative client facts, full current history):\n- {}\nInspect these tool results before deciding whether another tool is needed. If the task is complete, answer directly and emit reasoning.stop.",
+        if tool_lines.is_empty() {
+            "none".to_string()
+        } else {
+            tool_lines.join("\n- ")
+        }
+    )
 }
 
 pub(super) fn allocate_step(
@@ -399,9 +364,3 @@ pub(super) fn append_step_event_id(step_records: &mut [StepRecord], step_id: &st
         step.event_ids.push(event_id.to_string());
     }
 }
-
-#[path = "closure_runtime_rounds_tools.rs"]
-mod closure_runtime_rounds_tools;
-use self::closure_runtime_rounds_tools::{
-    build_provider_tool_results, build_provider_tool_specs, model_tool_call_to_provider_tool_call,
-};
