@@ -98,6 +98,26 @@ description: Standard build, regression, install, promote, rollback, and version
 7. 只有全部通过才 promote 到 current
 8. 保留 previous 供 rollback
 
+### 5.1 Android upgrade artifact default
+
+代码改动进入交付验证时，默认必须同时处理 Android 升级路径，不再询问：
+
+1. 构建 / 安装 daemon 后，必须构建 Android debug APK。
+2. APK 与 manifest 必须通过 `android-client/scripts/build-and-publish.sh` 生成：
+   - `android-client/update-dist/fin-latest-debug.apk`
+   - `android-client/update-dist/latest.json`
+   - `android-client/update-dist/fin-<version>.apk`
+3. daemon runtime upgrade dist 必须可解析到同一份产物：
+   - 默认 `~/.fin/update-dist`
+   - 必须是实体目录，不使用 symlink 作为 daemon 服务目录。
+   - 必须复制 `latest.json`、`fin-latest-debug.apk`、以及 manifest `apkUrl` 指向的 versioned APK。
+4. daemon 必须服务并验证：
+   - `GET /updates/latest.json` 返回 200
+   - `GET /updates/<apkUrl>` 返回 200
+   - `GET /updates/fin-latest-debug.apk` 返回 200
+   - 兼容旧客户端缓存：`GET /upgrade/manifest.json` 返回同一 manifest 200
+5. 安装后必须确认实际 daemon 进程已换到新 `current`，不能只看 symlink；若旧 pid 仍占用端口，只能用明确 PID 终止，禁止 broad kill。
+
 ## 6) Minimal automatic regression set
 
 正式 build 默认至少自动覆盖：
@@ -156,6 +176,10 @@ description: Standard build, regression, install, promote, rollback, and version
 - 在裸 `cargo build` 上塞自动改版本逻辑
 - 全局安装脚本手动复制二进制、绕过 `fin-cli install-dev` 正式 flow
 - 安装/重启 daemon 时使用 `killall` / `pkill` / broad kill；必须走 `fin stop` / `fin start`
+- 只复制 `fin-latest-debug.apk`，不生成 `latest.json` 与 versioned APK
+- `~/.fin/update-dist` 指向 repo 目录 symlink，导致 daemon 服务目录不稳定
+- daemon 只服务 `/updates/latest.json`，但旧 App/localStorage 仍请求 `/upgrade/manifest.json` 导致 404
+- 只切 `install/current` symlink，不确认端口上的 daemon 进程实际已重启
 - 声称 macOS TCC 权限已自动授予；首次安装只能触发授权入口、打开 System Settings pane 并记录 marker
 - build 成功就直接 promote，不跑自动回归
 - 回归不隔离 runtime home / session namespace

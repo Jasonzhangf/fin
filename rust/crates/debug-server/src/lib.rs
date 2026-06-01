@@ -76,6 +76,7 @@ pub(crate) const API_WATCH_PATH: &str = "/api/watch";
 pub(crate) const API_LOG_INGEST_PATH: &str = "/api/log/ingest";
 pub(crate) const API_LOG_LATEST_PATH: &str = "/api/log/latest";
 pub(crate) const API_UPDATE_LATEST_PATH: &str = "/updates/latest.json";
+pub(crate) const API_UPGRADE_MANIFEST_PATH: &str = "/upgrade/manifest.json";
 pub(crate) const API_UPDATE_DIR: &str = "update-dist";
 
 #[derive(Debug, Error)]

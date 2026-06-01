@@ -9,10 +9,11 @@ use crate::{
     API_RECENT_REASONING_VIEWS_PATH, API_RECENT_TOOL_RECORDS_PATH, API_RECENT_TURNS_PATH,
     API_SESSION_EVENT_ARCHIVE_INDEX_PATH, API_SESSION_EVENTS_PATH, API_SESSION_EVENTS_SEGMENT_PATH,
     API_SESSION_MESSAGES_PATH, API_SNAPSHOT_PATH, API_UPDATE_DIR, API_UPDATE_LATEST_PATH,
-    API_WATCH_PATH, ChatSendRequest, DebugActionHandler, DebugDataError, HttpRequest, HttpResponse,
-    INDEX_HTML_PATH, STYLES_CSS_PATH, bad_request_response, css_response, file_response,
-    head_response, html_response, internal_error_response, javascript_response, json_response,
-    not_found_response, session_view, web_app, web_assets, web_styles, write_http_response,
+    API_UPGRADE_MANIFEST_PATH, API_WATCH_PATH, ChatSendRequest, DebugActionHandler, DebugDataError,
+    HttpRequest, HttpResponse, INDEX_HTML_PATH, STYLES_CSS_PATH, bad_request_response,
+    css_response, file_response, head_response, html_response, internal_error_response,
+    javascript_response, json_response, not_found_response, session_view, web_app, web_assets,
+    web_styles, write_http_response,
 };
 use std::{net::TcpStream, path::Path};
 
@@ -30,7 +31,7 @@ fn update_dist_dir(runtime_home: &Path) -> std::path::PathBuf {
 
 fn update_file_response(runtime_home: &Path, route_path: &str) -> HttpResponse {
     let updates_dir = update_dist_dir(runtime_home);
-    if route_path == API_UPDATE_LATEST_PATH {
+    if route_path == API_UPDATE_LATEST_PATH || route_path == API_UPGRADE_MANIFEST_PATH {
         return file_response(
             &updates_dir.join("latest.json"),
             "application/json; charset=utf-8",
@@ -69,7 +70,8 @@ pub(crate) fn response_for_request(
     handler: &(impl DebugActionHandler + Sync),
 ) -> HttpResponse {
     let route_path = session_view::request_path(&request.path);
-    if (request.method == "GET" || request.method == "HEAD") && route_path.starts_with("/updates/")
+    if (request.method == "GET" || request.method == "HEAD")
+        && (route_path.starts_with("/updates/") || route_path == API_UPGRADE_MANIFEST_PATH)
     {
         let response = update_file_response(runtime_home, route_path);
         return if request.method == "HEAD" {
@@ -85,6 +87,7 @@ pub(crate) fn response_for_request(
         }
         ("GET", STYLES_CSS_PATH) => css_response(web_styles::STYLES_CSS),
         ("GET", API_UPDATE_LATEST_PATH) => update_file_response(runtime_home, route_path),
+        ("GET", API_UPGRADE_MANIFEST_PATH) => update_file_response(runtime_home, route_path),
         ("GET", path) if path.starts_with("/updates/") => {
             update_file_response(runtime_home, route_path)
         }

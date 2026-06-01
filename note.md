@@ -4773,3 +4773,8 @@ Tool records in first turn: 16
   - `runtime/src/closure_runtime_tests.rs`：4 个测试覆盖 empty_input/text_run/refs/tool_records
 - 验证结果：fin-config 17 passed, fin-contracts 16 passed, fin-runtime 157 passed (含新增 14 个), 0 FAILED
 - P2/P3/P4 未执行，标记为剩余风险
+
+## 2026-06-01 upgrade path fix
+- Android upgrade 404 root cause: installed app/localStorage requested `/upgrade/manifest.json`, while daemon only served `/updates/latest.json`; build script also copied APK only and skipped `latest.json`.
+- Fix: daemon now aliases `/upgrade/manifest.json` to same `latest.json`; `build-all.sh` uses `android-client/scripts/build-and-publish.sh` and syncs runtime `~/.fin/update-dist` safely when it is not already symlinked to repo update-dist.
+- Evidence: `cargo test -p fin-debug-server response_for_up -- --nocapture` passed 2 tests; daemon current `0.1.0217`, pid 80335; `/updates/latest.json`, `/upgrade/manifest.json`, `/updates/<apkUrl>`, `/updates/fin-latest-debug.apk` all return 200.

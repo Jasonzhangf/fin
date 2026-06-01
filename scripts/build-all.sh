@@ -22,13 +22,21 @@ echo ""
 echo "=== Step 3: Build Android APK ==="
 cd "$ROOT_DIR/android-client"
 node scripts/smoke/ws-event-contract-smoke.mjs
-./gradlew :app:assembleDebug
-mkdir -p update-dist
-cp app/build/outputs/apk/debug/app-debug.apk update-dist/fin-latest-debug.apk
+scripts/build-and-publish.sh
+RUNTIME_UPDATE_DIST="${FIN_HOME:-$HOME/.fin}/update-dist"
+if [[ -L "$RUNTIME_UPDATE_DIST" ]]; then
+  rm "$RUNTIME_UPDATE_DIST"
+fi
+mkdir -p "$RUNTIME_UPDATE_DIST"
+cp update-dist/latest.json update-dist/*.apk "$RUNTIME_UPDATE_DIST/"
 echo "APK built: $ROOT_DIR/android-client/update-dist/fin-latest-debug.apk"
+echo "Manifest built: $ROOT_DIR/android-client/update-dist/latest.json"
+echo "Runtime update dist: $RUNTIME_UPDATE_DIST"
 
 echo ""
 echo "=== Build complete! ==="
 echo "Daemon: ~/.fin/bin/fin (global)"
 echo "Global CLI: ${FIN_GLOBAL_BIN_DIR:-$HOME/.local/bin}/fin"
 echo "APK: $ROOT_DIR/android-client/update-dist/fin-latest-debug.apk"
+echo "Manifest: $ROOT_DIR/android-client/update-dist/latest.json"
+echo "Runtime update dist: ${FIN_HOME:-$HOME/.fin}/update-dist"

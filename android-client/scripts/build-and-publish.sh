@@ -22,6 +22,7 @@ if [ ! -f "$APK_OUT" ]; then
 fi
 
 APK_NAME="fin-${VERSION_NAME}.apk"
+mkdir -p update-dist
 cp "$APK_OUT" "update-dist/$APK_NAME"
 cp "$APK_OUT" "update-dist/fin-latest-debug.apk"
 

@@ -333,6 +333,44 @@ fn response_for_sidebar_js_serves_compiled_module() {
 }
 
 #[test]
+fn response_for_updates_latest_serves_runtime_update_manifest() {
+    let runtime_home = unique_runtime_home("fin-debug-updates-latest");
+    let update_dir = runtime_home.join(API_UPDATE_DIR);
+    std::fs::create_dir_all(&update_dir).expect("update dir");
+    std::fs::write(
+        update_dir.join("latest.json"),
+        br#"{"versionName":"test","apkUrl":"fin-latest-debug.apk"}"#,
+    )
+    .expect("latest manifest");
+
+    let response = response_for_path(API_UPDATE_LATEST_PATH, &runtime_home);
+
+    assert_eq!(response.status_code, 200);
+    assert_eq!(response.content_type, "application/json; charset=utf-8");
+    let body = String::from_utf8(response.body).expect("manifest utf8");
+    assert!(body.contains("fin-latest-debug.apk"));
+}
+
+#[test]
+fn response_for_upgrade_manifest_alias_serves_same_manifest() {
+    let runtime_home = unique_runtime_home("fin-debug-upgrade-manifest");
+    let update_dir = runtime_home.join(API_UPDATE_DIR);
+    std::fs::create_dir_all(&update_dir).expect("update dir");
+    std::fs::write(
+        update_dir.join("latest.json"),
+        br#"{"versionName":"alias","apkUrl":"fin-latest-debug.apk"}"#,
+    )
+    .expect("latest manifest");
+
+    let response = response_for_path(API_UPGRADE_MANIFEST_PATH, &runtime_home);
+
+    assert_eq!(response.status_code, 200);
+    assert_eq!(response.content_type, "application/json; charset=utf-8");
+    let body = String::from_utf8(response.body).expect("manifest utf8");
+    assert!(body.contains("alias"));
+}
+
+#[test]
 fn response_for_binding_uses_handler() {
     let handler = TestHandler;
     let runtime_home = Path::new("/tmp/fin-binding");
@@ -349,6 +387,17 @@ fn response_for_binding_uses_handler() {
     let body = String::from_utf8(response.body).unwrap();
     assert!(body.contains("fin-test"));
     assert!(body.contains("session-1"));
+}
+
+fn unique_runtime_home(prefix: &str) -> std::path::PathBuf {
+    std::env::temp_dir().join(format!(
+        "{}-{}",
+        prefix,
+        SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("time should work")
+            .as_nanos()
+    ))
 }
 
 #[test]
