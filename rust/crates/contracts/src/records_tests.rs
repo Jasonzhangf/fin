@@ -3,8 +3,16 @@ use super::*;
 #[test]
 fn ledger_track_kind_as_str_and_file_name() {
     let cases = [
-        (LedgerTrackKind::SessionDetail, "session.detail", "session.detail.jsonl"),
-        (LedgerTrackKind::SessionSnapshot, "session.snapshot", "session.snapshot.jsonl"),
+        (
+            LedgerTrackKind::SessionDetail,
+            "session.detail",
+            "session.detail.jsonl",
+        ),
+        (
+            LedgerTrackKind::SessionSnapshot,
+            "session.snapshot",
+            "session.snapshot.jsonl",
+        ),
         (LedgerTrackKind::Events, "events", "events.jsonl"),
         (LedgerTrackKind::Turns, "turns", "turns.jsonl"),
         (LedgerTrackKind::Steps, "steps", "steps.jsonl"),
@@ -28,7 +36,10 @@ fn ledger_record_envelope_json_roundtrip() {
         track: LedgerTrackKind::Turns,
         record_id: "rid-1".into(),
         record_kind: "turn".into(),
-        refs: LedgerRefs { entity: EntityRefs::default(), ..Default::default() },
+        refs: LedgerRefs {
+            entity: EntityRefs::default(),
+            ..Default::default()
+        },
         payload: serde_json::json!({"turn": 1}),
         caused_by: None,
         supersedes: None,
@@ -49,7 +60,10 @@ fn ledger_timeline_index_record_roundtrip() {
         track: LedgerTrackKind::Tools,
         record_id: "rid-2".into(),
         record_kind: "tool".into(),
-        refs: LedgerRefs { entity: EntityRefs::default(), ..Default::default() },
+        refs: LedgerRefs {
+            entity: EntityRefs::default(),
+            ..Default::default()
+        },
     };
     let json = serde_json::to_string(&record).unwrap();
     let parsed: LedgerTimelineIndexRecord = serde_json::from_str(&json).unwrap();

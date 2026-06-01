@@ -529,16 +529,16 @@ fn openai_parse_rejects_invalid_json() {
 #[test]
 fn openai_parse_rejects_error_payload() {
     let body = r#"{"error":{"message":"rate limited"}}"#;
-    let err = parse_openai_response(&openai_prepared(), 429, body)
-        .expect_err("error payload must fail");
+    let err =
+        parse_openai_response(&openai_prepared(), 429, body).expect_err("error payload must fail");
     assert!(matches!(err, ProviderError::HttpStatus { status: 429, .. }));
 }
 
 #[test]
 fn openai_parse_rejects_empty_choices() {
     let body = r#"{"id":"r-1","choices":[]}"#;
-    let err = parse_openai_response(&openai_prepared(), 200, body)
-        .expect_err("empty choices must fail");
+    let err =
+        parse_openai_response(&openai_prepared(), 200, body).expect_err("empty choices must fail");
     assert!(matches!(err, ProviderError::ParseResponse { .. }));
 }
 
@@ -552,7 +552,8 @@ fn openai_parse_rejects_missing_choices() {
 
 #[test]
 fn openai_parse_extracts_base_resp_error() {
-    let body = r#"{"choices":[],"base_resp":{"status_code":503,"status_msg":"service unavailable"}}"#;
+    let body =
+        r#"{"choices":[],"base_resp":{"status_code":503,"status_msg":"service unavailable"}}"#;
     let err = parse_openai_response(&openai_prepared(), 200, body)
         .expect_err("base_resp error must fail");
     match err {
@@ -614,19 +615,28 @@ fn anthropic_parse_handles_missing_usage() {
 
 #[test]
 fn endpoint_for_protocol_openai() {
-    let ep = endpoint_for_protocol("https://api.openai.com/v1", ProviderProtocol::OpenAiCompatible);
+    let ep = endpoint_for_protocol(
+        "https://api.openai.com/v1",
+        ProviderProtocol::OpenAiCompatible,
+    );
     assert_eq!(ep, "https://api.openai.com/v1/chat/completions");
 }
 
 #[test]
 fn endpoint_for_protocol_anthropic() {
-    let ep = endpoint_for_protocol("https://api.anthropic.com/v1", ProviderProtocol::AnthropicWire);
+    let ep = endpoint_for_protocol(
+        "https://api.anthropic.com/v1",
+        ProviderProtocol::AnthropicWire,
+    );
     assert_eq!(ep, "https://api.anthropic.com/v1/messages");
 }
 
 #[test]
 fn endpoint_for_protocol_strips_trailing_slash() {
-    let ep = endpoint_for_protocol("https://api.test.com/v1/", ProviderProtocol::OpenAiCompatible);
+    let ep = endpoint_for_protocol(
+        "https://api.test.com/v1/",
+        ProviderProtocol::OpenAiCompatible,
+    );
     assert_eq!(ep, "https://api.test.com/v1/chat/completions");
 }
 
@@ -638,7 +648,9 @@ fn registry_rejects_empty_name() {
         protocol: ProviderProtocol::OpenAiCompatible,
         base_url: "http://x".into(),
         model: "m".into(),
-        credential: ProviderCredential::ApiKeyEnv { env_var: "K".into() },
+        credential: ProviderCredential::ApiKeyEnv {
+            env_var: "K".into(),
+        },
         user_agent: None,
         headers: BTreeMap::new(),
     };
@@ -660,7 +672,10 @@ fn provider_capabilities_for_openai_supports_tools() {
 #[test]
 fn provider_capabilities_for_anthropic_no_tool_calls() {
     let caps = ProviderCapabilities::for_protocol(ProviderProtocol::AnthropicWire);
-    assert!(!caps.supports_tool_calls, "anthropic wire does not support native tool calls");
+    assert!(
+        !caps.supports_tool_calls,
+        "anthropic wire does not support native tool calls"
+    );
 }
 
 #[test]

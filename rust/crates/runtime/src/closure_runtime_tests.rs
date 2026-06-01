@@ -1,6 +1,6 @@
 use super::*;
-use fin_provider::{ProviderResponse, ProviderError, ProviderDescriptor, ProviderCapabilities};
 use fin_config::ProviderProtocol;
+use fin_provider::{ProviderCapabilities, ProviderDescriptor, ProviderError, ProviderResponse};
 
 struct MockProvider;
 
@@ -38,13 +38,21 @@ fn make_op(input: &str) -> OperationEnvelope<InferenceOperationPayload> {
         role: RoleProfileRef::new("system").unwrap(),
         provider_path: ProviderPath::new(vec![
             fin_contracts::ProviderTarget::new("mock", "mock-model").unwrap(),
-        ]).unwrap(),
+        ])
+        .unwrap(),
         provider_strategy: ProviderStrategy::Priority,
         protocol_version: "1.0".into(),
         stream: false,
         context: ctx,
     };
-    OperationEnvelope::new("op-1", "test", "2026-06-01T00:00:00Z", "test", "trace-1", payload)
+    OperationEnvelope::new(
+        "op-1",
+        "test",
+        "2026-06-01T00:00:00Z",
+        "test",
+        "trace-1",
+        payload,
+    )
 }
 
 #[test]
@@ -63,7 +71,10 @@ fn run_closure_produces_closure_run_with_text() {
     assert!(result.is_ok(), "run_closure failed: {:?}", result);
     let run = result.unwrap();
     assert_eq!(run.assistant_response_text, "I will help you with that.");
-    assert_eq!(run.provider_response.stop_reason.as_deref(), Some("end_turn"));
+    assert_eq!(
+        run.provider_response.stop_reason.as_deref(),
+        Some("end_turn")
+    );
 }
 
 #[test]

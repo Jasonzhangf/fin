@@ -26,3 +26,4 @@ rust/crates/cli/src/headless_daemon_tests.rs
 rust/crates/debug-server/src/tests.rs
 rust/crates/runtime/src/cache_hit_tests.rs
 rust/crates/cli/src/headless_daemon.rs
+rust/crates/provider/src/tests.rs

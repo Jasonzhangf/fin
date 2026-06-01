@@ -41,7 +41,10 @@ fn task_mutation_receipt_construction() {
         updated_at: "t".into(),
         ..Default::default()
     };
-    let receipt = TaskMutationReceipt { task: task.clone(), artifact_refs: vec!["a.rs".into()] };
+    let receipt = TaskMutationReceipt {
+        task: task.clone(),
+        artifact_refs: vec!["a.rs".into()],
+    };
     assert_eq!(receipt.task.task_id, "t-1");
     assert_eq!(receipt.artifact_refs.len(), 1);
 }

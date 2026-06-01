@@ -487,14 +487,7 @@ mod tests {
 
     #[test]
     fn no_state_yields_unavailable() {
-        let decision = derive_scheduler_decision(
-            &refs(),
-            None,
-            &[],
-            None,
-            None,
-            "t",
-        );
+        let decision = derive_scheduler_decision(&refs(), None, &[], None, None, "t");
         assert_eq!(decision.action_kind, "observe_only");
     }
 }

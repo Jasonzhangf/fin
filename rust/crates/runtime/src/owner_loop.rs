@@ -138,8 +138,7 @@ mod tests {
         snapshot.ready_task_ids.clear();
         snapshot.working_task_ids = vec!["task-c".into()];
         snapshot.owner_loop_summary = "wait_worker_feedback count=1 [task-c]".into();
-        let action =
-            derive_owner_loop_action(&refs(), Some(&snapshot), "2026-06-01T00:00:00Z");
+        let action = derive_owner_loop_action(&refs(), Some(&snapshot), "2026-06-01T00:00:00Z");
         assert_eq!(action.action_kind, "wait_worker_feedback");
     }
 

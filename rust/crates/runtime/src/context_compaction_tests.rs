@@ -68,7 +68,7 @@ fn compact_extracts_digest_summary_and_continuity() {
 
 #[test]
 fn compact_deduplicates_tool_artifact_refs() {
-    use fin_contracts::{ToolExecutionRecord, EntityRefs};
+    use fin_contracts::{EntityRefs, ToolExecutionRecord};
     let engine = ContextCompactionEngine;
     let tool = ToolExecutionRecord {
         tool_call_id: "tc-1".into(),
