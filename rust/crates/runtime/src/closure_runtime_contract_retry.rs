@@ -1,16 +1,16 @@
-use super::closure_runtime_rounds::{RoundExecution, execute_round};
+use super::closure_runtime_rounds::{ReasonRoundExecution, execute_round};
 use super::*;
 
 pub(super) const MAX_OUTPUT_CONTRACT_RETRIES: usize = 3;
 
 pub(super) struct RoundAttemptExecution {
     pub(super) attempt_index: u32,
-    pub(super) round: RoundExecution,
+    pub(super) round: ReasonRoundExecution,
     pub(super) validation_errors: Vec<String>,
 }
 
 pub(super) struct ContractRetriedRound {
-    pub(super) final_round: RoundExecution,
+    pub(super) final_round: ReasonRoundExecution,
     pub(super) attempts: Vec<RoundAttemptExecution>,
     pub(super) summary: ContractRetrySummary,
 }

@@ -73,55 +73,57 @@ impl ControlFeedbackBuilder {
         }
     }
 
-    pub fn merge_with_fallback(
+    pub fn merge_with_runtime_defaults(
         &self,
         parsed: Option<ControlFeedback>,
-        fallback: ControlFeedback,
+        runtime_defaults: ControlFeedback,
     ) -> ControlFeedback {
         let Some(parsed) = parsed else {
-            return fallback;
+            return runtime_defaults;
         };
         ControlFeedback {
             origin: parsed.origin,
             is_continuation: parsed.is_continuation,
             is_simple_query: parsed.is_simple_query,
-            candidate_task_id: parsed.candidate_task_id.or(fallback.candidate_task_id),
+            candidate_task_id: parsed
+                .candidate_task_id
+                .or(runtime_defaults.candidate_task_id),
             candidate_topic_thread_id: parsed
                 .candidate_topic_thread_id
-                .or(fallback.candidate_topic_thread_id),
+                .or(runtime_defaults.candidate_topic_thread_id),
             continuity_confidence: if parsed.continuity_confidence == 0 {
-                fallback.continuity_confidence
+                runtime_defaults.continuity_confidence
             } else {
                 parsed.continuity_confidence
             },
             topic_shift_confidence: if parsed.topic_shift_confidence == 0 {
-                fallback.topic_shift_confidence
+                runtime_defaults.topic_shift_confidence
             } else {
                 parsed.topic_shift_confidence
             },
             simple_query_confidence: if parsed.simple_query_confidence == 0 {
-                fallback.simple_query_confidence
+                runtime_defaults.simple_query_confidence
             } else {
                 parsed.simple_query_confidence
             },
             previous_topic_summary: parsed
                 .previous_topic_summary
-                .or(fallback.previous_topic_summary),
+                .or(runtime_defaults.previous_topic_summary),
             current_topic_summary: parsed
                 .current_topic_summary
-                .or(fallback.current_topic_summary),
+                .or(runtime_defaults.current_topic_summary),
             note_candidate: if parsed.note_candidate.trim().is_empty() {
-                fallback.note_candidate
+                runtime_defaults.note_candidate
             } else {
                 parsed.note_candidate
             },
             digest_candidate: if parsed.digest_candidate.trim().is_empty() {
-                fallback.digest_candidate
+                runtime_defaults.digest_candidate
             } else {
                 parsed.digest_candidate
             },
             reason: if parsed.reason.trim().is_empty() {
-                fallback.reason
+                runtime_defaults.reason
             } else {
                 parsed.reason
             },

@@ -58,6 +58,9 @@ mod owner_loop;
 mod prompt_assembly;
 #[cfg(test)]
 mod prompt_tests;
+pub(crate) mod reason_pipeline;
+#[cfg(test)]
+mod reason_pipeline_static_tests;
 mod round_context;
 #[cfg(test)]
 mod round_loop_runtime_tests;

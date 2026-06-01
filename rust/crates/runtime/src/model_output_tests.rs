@@ -99,7 +99,7 @@ fn model_output_parser_extracts_response_and_control_feedback() {
 }
 
 #[test]
-fn control_feedback_builder_falls_back_when_no_structured_output_exists() {
+fn control_feedback_builder_uses_runtime_defaults_when_no_structured_output_exists() {
     let payload = payload_with_task();
     let request = PreparedRequest {
         provider_name: "openai".into(),
@@ -123,15 +123,15 @@ fn control_feedback_builder_falls_back_when_no_structured_output_exists() {
     };
 
     let parsed = ModelOutputParser::default().parse(&payload, &request, &response);
-    let fallback = ControlFeedbackBuilder::default().build(&payload, &request, &response);
+    let runtime_defaults = ControlFeedbackBuilder::default().build(&payload, &request, &response);
     let merged = ControlFeedbackBuilder::default()
-        .merge_with_fallback(parsed.control_feedback.clone(), fallback.clone());
+        .merge_with_runtime_defaults(parsed.control_feedback.clone(), runtime_defaults.clone());
     assert_eq!(parsed.user_response, "plain answer");
     assert!(!parsed.control_feedback_salvaged);
     assert!(!parsed.tool_calls_block_present);
     assert_eq!(parsed.tool_calls_parse_status, "absent");
     assert!(parsed.tool_calls.is_empty());
-    assert_eq!(merged, fallback);
+    assert_eq!(merged, runtime_defaults);
 }
 
 #[test]

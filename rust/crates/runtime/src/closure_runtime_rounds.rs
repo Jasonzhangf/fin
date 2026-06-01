@@ -1,4 +1,10 @@
 use super::*;
+use crate::reason_pipeline::{
+    ReasonReq01Seed, ReasonReq02ContextPlanBuilder, ReasonReq03BudgetedContextBuilder,
+    ReasonReq04RenderedInputBuilder, ReasonReq05ProviderCallBuilder, ReasonResp06ModelOutputParser,
+    ReasonResp07ParsedContractParser, ReasonResp08RuntimeDecisionBuilder, ReasonResp09Closure,
+    ReasonResp09ClosureBuilder,
+};
 use crate::tool_history_render::render_current_tool_execution_history;
 
 pub(super) struct StepAllocation {
@@ -7,15 +13,20 @@ pub(super) struct StepAllocation {
 }
 
 #[derive(Debug, Clone)]
-pub(super) struct RoundExecution {
-    pub(super) prepared_request: PreparedRequest,
-    pub(super) provider_response: ProviderResponse,
-    pub(super) provider_debug: SanitizedProviderDebug,
-    pub(super) parsed_output: ParsedModelOutput,
-    pub(super) dispatched_tools: tool_dispatch::ToolDispatchOutcome,
-    pub(super) assistant_response_text: String,
-    pub(super) control_feedback: ControlFeedback,
-    pub(super) compacted_history: Option<CompactedHistoryRecord>,
+pub(super) struct ReasonRoundExecution(pub(super) ReasonResp09Closure);
+
+impl std::ops::Deref for ReasonRoundExecution {
+    type Target = ReasonResp09Closure;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl std::ops::DerefMut for ReasonRoundExecution {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.0
+    }
 }
 
 pub(super) fn execute_round(
@@ -25,163 +36,24 @@ pub(super) fn execute_round(
     round_context: &MinimalContextView,
     round_index: u32,
     input: String,
-) -> Result<RoundExecution, RuntimeError> {
-    let assembler = ModelInputAssembler::default();
-    let assembly_plan = assembler.assembly_plan(&input, round_context);
-    let budget_decision = ContextBudgetManager::default().decide(&assembly_plan, None);
-    // Prefix drift detection: if cached_ratio < 0.3 on a warm turn (round_index > 0),
-    // the provider prefix may have drifted. Log a warning event.
-    if round_index > 0 && budget_decision.cached_ratio < 0.3 && budget_decision.cached_ratio > 0.0 {
-        eprintln!(
-            "prefix_drift_detected: cached_ratio={:.2} round={}",
-            budget_decision.cached_ratio, round_index
-        );
-    }
-    let compacted_history =
-        if budget_decision.decision == ContextCompactionDecisionKind::PreTurnCompact {
-            Some(compact_round_history(
-                operation,
-                refs,
-                round_context,
-                &budget_decision,
-            ))
-        } else {
-            None
-        };
-    let rendered_input =
-        render_input_for_budget_decision(&assembly_plan, compacted_history.as_ref());
-    let prepared_request = provider.prepare_request(&ProviderRequest {
-        input,
-        rendered_input: Some(rendered_input),
-        override_model: Some(
-            operation
-                .payload
-                .provider_path
-                .primary_target()
-                .model
-                .clone(),
-        ),
-        prompt_cache_key: operation.refs.session_id.clone(),
-    });
-    let provider_response = provider.execute_prepared(&prepared_request)?;
-    let provider_debug = SanitizedProviderDebug {
-        user_agent: prepared_request.user_agent.clone(),
-        request_headers: prepared_request.sanitized_headers.clone(),
-    };
-    let parsed_output = ModelOutputParser::default().parse(
-        &operation.payload,
-        &prepared_request,
-        &provider_response,
-    );
-    let dispatched_tools = tool_dispatch::execute_model_tools(
-        &operation.operation_id,
-        &operation.trace_id,
-        refs,
-        &operation.submitted_at,
-        round_context,
+) -> Result<ReasonRoundExecution, RuntimeError> {
+    let seed = ReasonReq01Seed {
+        operation: operation.clone(),
+        refs: refs.clone(),
         round_index,
-        &parsed_output.tool_calls,
-    );
-    let assistant_response_text = parsed_output.user_response.clone();
-    let fallback_feedback =
-        ControlFeedbackBuilder.build(&operation.payload, &prepared_request, &provider_response);
-    let mut control_feedback = ControlFeedbackBuilder::default()
-        .merge_with_fallback(parsed_output.control_feedback.clone(), fallback_feedback);
-    ControlFeedbackBuilder::default().rewrite_runtime_heuristic_candidates(
-        &mut control_feedback,
-        &prepared_request,
-        &provider_response,
-        assistant_response_text.as_str(),
-    );
-    Ok(RoundExecution {
-        prepared_request,
-        provider_response,
-        provider_debug,
-        parsed_output,
-        dispatched_tools,
-        assistant_response_text,
-        control_feedback,
-        compacted_history,
-    })
-}
-
-fn render_input_for_budget_decision(
-    plan: &ContextAssemblyPlan,
-    compacted_history: Option<&CompactedHistoryRecord>,
-) -> String {
-    let sections = plan
-        .sections
-        .iter()
-        .map(|section| {
-            let body = if section.section_id == "history.current_interaction_ledger" {
-                compacted_history
-                    .map(render_compacted_history_body)
-                    .unwrap_or_else(|| section.body.clone())
-            } else {
-                section.body.clone()
-            };
-            format!("{}:\n{}", section.title, body)
-        })
-        .collect::<Vec<_>>();
-    sections.join("\n\n")
-}
-
-fn render_compacted_history_body(record: &CompactedHistoryRecord) -> String {
-    let mut lines = Vec::new();
-    if !record.summary.trim().is_empty() {
-        lines.push(format!("Compacted summary:\n{}", record.summary));
-    }
-    if !record.retained_messages.is_empty() {
-        lines.push(format!(
-            "Retained recent messages:\n- {}",
-            record.retained_messages.join("\n- ")
-        ));
-    }
-    if !record.retained_artifact_refs.is_empty() {
-        lines.push(format!(
-            "Retained artifact refs:\n- {}",
-            record.retained_artifact_refs.join("\n- ")
-        ));
-    }
-    lines.join("\n")
-}
-
-fn compact_round_history(
-    operation: &OperationEnvelope<InferenceOperationPayload>,
-    refs: &EntityRefs,
-    round_context: &MinimalContextView,
-    decision: &ContextBudgetDecision,
-) -> CompactedHistoryRecord {
-    let history = round_context.history.clone().unwrap_or_default();
-    let digest_records = round_context
-        .knowledge
-        .as_ref()
-        .map(|knowledge| fin_contracts::DigestRecord {
-            digest_id: format!("digest-context-{}", operation.operation_id),
-            closure_id: format!("closure-{}", operation.operation_id),
-            refs: refs.clone(),
-            summary: round_context.summary.clone().unwrap_or_default(),
-            continuity_tail: round_context.continuity_tail.clone(),
-            note_refs: Vec::new(),
-            artifact_candidates: knowledge.artifact_candidates.clone(),
-            control_feedback: None,
-            created_at: operation.submitted_at.clone(),
-        })
-        .into_iter()
-        .collect();
-    ContextCompactionEngine.compact(CompactionInput {
-        session_id: refs
-            .session_id
-            .clone()
-            .unwrap_or_else(|| "session-m1".into()),
-        task_id: refs.task_id.clone(),
-        trigger_reason: decision.reason.clone(),
-        recent_messages: history.recent_messages,
-        digest_records,
-        tool_records: Vec::new(),
-        retain_recent_count: 8,
-        compacted_at: operation.submitted_at.clone(),
-    })
+        input,
+        context: round_context.clone(),
+    };
+    let context_plan = ReasonReq02ContextPlanBuilder.build(seed);
+    let budgeted_context = ReasonReq03BudgetedContextBuilder.build(context_plan);
+    let rendered_input = ReasonReq04RenderedInputBuilder.build(budgeted_context);
+    let provider_call = ReasonReq05ProviderCallBuilder.build(rendered_input);
+    let model_output = ReasonResp06ModelOutputParser.parse(provider_call, provider)?;
+    let parsed_contract = ReasonResp07ParsedContractParser.parse(model_output);
+    let runtime_decision = ReasonResp08RuntimeDecisionBuilder.build(parsed_contract);
+    Ok(ReasonRoundExecution(
+        ReasonResp09ClosureBuilder.build(runtime_decision),
+    ))
 }
 
 pub(super) fn build_context_snapshot(

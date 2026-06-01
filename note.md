@@ -4778,3 +4778,16 @@ Tool records in first turn: 16
 - Android upgrade 404 root cause: installed app/localStorage requested `/upgrade/manifest.json`, while daemon only served `/updates/latest.json`; build script also copied APK only and skipped `latest.json`.
 - Fix: daemon now aliases `/upgrade/manifest.json` to same `latest.json`; `build-all.sh` uses `android-client/scripts/build-and-publish.sh` and syncs runtime `~/.fin/update-dist` safely when it is not already symlinked to repo update-dist.
 - Evidence: `cargo test -p fin-debug-server response_for_up -- --nocapture` passed 2 tests; daemon current `0.1.0217`, pid 80335; `/updates/latest.json`, `/upgrade/manifest.json`, `/updates/<apkUrl>`, `/updates/fin-latest-debug.apk` all return 200.
+
+## 2026-06-01 pipeline unique type architecture planning
+
+- 已新增架构真源 `docs/architecture/44-pipeline-unique-type-and-error-chain.md`：冻结 Input / Reason / Hub / Feedback / Error 五类链路的命名模板、请求/响应双向连接、错误处理连接关系。
+- 节点编号稳定性已冻结：编号是 contract，默认禁止中间插节点；新增能力优先进入既有节点内部 block / validator / parser，必要时链尾追加或新 chain version + 旧链删除计划。
+- 已新增实施总计划 `docs/goals/pipeline-unique-type-refactor-plan.md`：每条链作为子任务，含 contracts stage、编号门禁、InputIn、Reason、Hub、Feedback、红测、真实 E2E 验证。
+- 已更新全局 `~/.codex/AGENTS.md` 第 17 条，从 Hub Pipeline 窄规则升级为跨项目 Pipeline 唯一类型锁定原则。
+- 已更新 `skills/fin-general-dev/SKILL.md`，后续关键流水线/数据源改造必须先对齐新架构文档。
+
+## 2026-06-01 pipeline unique type - reasoning chain start
+- 本轮目标：从核心推理链 ReasonReq*/ReasonResp* 开始，不改其他模块语义，只在 runtime owning layer 建唯一类型与相邻转换。
+- 当前根因/切点：`closure_runtime_rounds.rs` 仍用泛名 `RoundExecution` 聚合一次推理 round，且在同一函数内完成 seed/context plan/budget/render/provider call/model output/parsed contract/runtime decision，阶段边界未显式类型化。
+- 唯一修改点：runtime 私有模块新增 ReasonReq/ReasonResp 节点 builder/parser；`execute_round` 仅串接相邻节点；对外保留现有 provider API，不改 contracts/provider 入口。
