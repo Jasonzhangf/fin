@@ -1,3 +1,9 @@
+use crate::feedback_pipeline::{
+    FeedbackResp01ModelRaw, FeedbackResp02TaggedBlocksParser,
+    FeedbackResp03UserVisibleBuilder, FeedbackResp04ControlFeedbackParser,
+    FeedbackResp05ToolIntentParser, FeedbackResp06SessionMaterializedBuilder,
+    FeedbackResp07ChannelRenderBuilder,
+};
 use crate::model_output_shapes::{
     classify_invalid_tool_calls, extract_tag, partial_tool_signal_present, repair_json_shape,
     strip_json_code_fence, strip_structured_blocks,
@@ -59,6 +65,24 @@ impl ModelOutputParser {
         response: &ProviderResponse,
     ) -> ParsedModelOutput {
         let raw = response.output_text.trim();
+        let model_raw = FeedbackResp01ModelRaw {
+            raw_text: raw.to_string(),
+            contract_detected: raw.contains("<fin_user_response>")
+                || raw.contains("<fin_control_feedback>")
+                || raw.contains("<fin_tool_calls>"),
+        };
+        let tagged = FeedbackResp02TaggedBlocksParser.parse(model_raw);
+        let user_visible = FeedbackResp03UserVisibleBuilder.build(tagged.clone());
+        let control_node = FeedbackResp04ControlFeedbackParser.parse(tagged.clone());
+        let tool_intent = FeedbackResp05ToolIntentParser.parse(tagged);
+        let material = FeedbackResp06SessionMaterializedBuilder.build(
+            user_visible,
+            control_node,
+            tool_intent,
+        );
+        let channel_render = FeedbackResp07ChannelRenderBuilder.build(material);
+        let material = channel_render.material;
+        let user_response = material.user_visible.user_response_text.clone();
         let user_response = extract_tag(raw, USER_RESPONSE_TAG, KNOWN_STRUCTURED_TAGS)
             .map(|value| value.content.trim().to_string())
             .filter(|value| !value.is_empty())
@@ -87,9 +111,7 @@ impl ModelOutputParser {
                     )
                 })
                 .unwrap_or((None, false));
-        let parsed_tool_calls = extract_tag(raw, TOOL_CALLS_TAG, KNOWN_STRUCTURED_TAGS)
-            .map(|block| parse_tool_calls(&block.content, block.repaired))
-            .unwrap_or_else(ParsedToolCalls::absent);
+        // ParsedToolCalls / tool intent are sourced from the Feedback chain above.
 
         // When the text output has no <fin_tool_calls> block, check native
         // provider tool_calls (provider-native function calling protocol).
@@ -118,27 +140,25 @@ impl ModelOutputParser {
             },
             control_feedback,
             control_feedback_salvaged,
-            contract_detected: raw.contains("<fin_user_response>")
-                || raw.contains("<fin_control_feedback>")
-                || raw.contains("<fin_tool_calls>"),
-            tool_calls_block_present: parsed_tool_calls.block_present,
-            tool_calls_parse_status: parsed_tool_calls.parse_status,
-            tool_calls_invalid_reason: parsed_tool_calls.invalid_reason,
-            tool_calls: parsed_tool_calls.calls,
+            contract_detected: material.user_visible.tagged.raw.contract_detected,
+            tool_calls_block_present: material.tool_intent.tool_calls_block_present,
+            tool_calls_parse_status: material.tool_intent.tool_calls_parse_status,
+            tool_calls_invalid_reason: material.tool_intent.tool_calls_invalid_reason,
+            tool_calls: material.tool_intent.tool_calls,
         }
     }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-struct ParsedToolCalls {
-    block_present: bool,
-    parse_status: String,
-    invalid_reason: Option<String>,
-    calls: Vec<ModelToolCall>,
+pub(crate) struct ParsedToolCalls {
+    pub(crate) block_present: bool,
+    pub(crate) parse_status: String,
+    pub(crate) invalid_reason: Option<String>,
+    pub(crate) calls: Vec<ModelToolCall>,
 }
 
 impl ParsedToolCalls {
-    fn absent() -> Self {
+    pub(crate) fn absent() -> Self {
         Self {
             block_present: false,
             parse_status: "absent".into(),
@@ -157,7 +177,7 @@ impl ParsedToolCalls {
     }
 }
 
-fn parse_tool_calls(raw: &str, extraction_repaired: bool) -> ParsedToolCalls {
+pub(crate) fn parse_tool_calls(raw: &str, extraction_repaired: bool) -> ParsedToolCalls {
     let mut repaired = extraction_repaired;
     let mut working = raw.trim().to_string();
     let (without_fence, fence_repaired) = strip_json_code_fence(&working);
@@ -264,12 +284,12 @@ fn normalize_tool_call(value: Value) -> Result<NormalizedToolCall, &'static str>
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-struct ParsedControlFeedback {
-    feedback: ControlFeedback,
-    salvaged: bool,
+pub(crate) struct ParsedControlFeedback {
+    pub(crate) feedback: ControlFeedback,
+    pub(crate) salvaged: bool,
 }
 
-fn parse_control_feedback(raw: &str) -> Option<ParsedControlFeedback> {
+pub(crate) fn parse_control_feedback(raw: &str) -> Option<ParsedControlFeedback> {
     let value = serde_json::from_str::<Value>(raw.trim()).ok()?;
     let object = value.as_object()?;
     if !object
