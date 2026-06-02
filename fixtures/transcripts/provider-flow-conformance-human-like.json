@@ -1,0 +1,12 @@
+{
+  "session_id": "session-__RUN_ID__-provider-flow-conformance-human-like",
+  "task_id": "task-__RUN_ID__-provider-flow-conformance-human-like",
+  "turns": [
+    {
+      "input": "请基于当前工作区里与 live E2E 约束最相关的可验证资料，整理一份简短检查说明到 `.tmp/live-e2e/__RUN_ID__/flow-conformance-human-like.md`。要求：1) 只基于你实际核验到的信息，不要猜测；2) 至少写出 3 条当前测试约束；3) 给出 2 条下一步真实测试建议；4) 结果文件必须真实存在且非空。"
+    },
+    {
+      "input": "继续同一任务。如果你已经完成，请只基于刚才这轮真实执行过程告诉我三件事：流程是否闭环、输出文件路径是什么、这次更应该关注结果内容还是执行 timeline。"
+    }
+  ]
+}

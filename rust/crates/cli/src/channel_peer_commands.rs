@@ -12,6 +12,7 @@ use std::path::Path;
 
 pub(crate) fn try_handle_channel_peer_command(
     runtime_home: &Path,
+    user_toml_path: Option<&Path>,
     request: &ChatSendRequest,
     binding: &DebugBinding,
 ) -> Result<Option<ChatSendResponse>, CliError> {
@@ -23,7 +24,7 @@ pub(crate) fn try_handle_channel_peer_command(
     let subcommand = parts.get(1).copied().unwrap_or("status");
     let response = match subcommand {
         "status" => handle_status(runtime_home, binding)?,
-        "connect" => handle_connect(runtime_home, binding)?,
+        "connect" => handle_connect(runtime_home, user_toml_path, binding)?,
         "pair" => handle_pair(runtime_home, binding, &parts[2..])?,
         "heartbeat" => handle_heartbeat(runtime_home, binding)?,
         "expire" => handle_expire(runtime_home, binding, &parts[2..])?,
@@ -58,9 +59,10 @@ fn handle_status(
 
 fn handle_connect(
     runtime_home: &Path,
+    user_toml_path: Option<&Path>,
     binding: &DebugBinding,
 ) -> Result<ChatSendResponse, CliError> {
-    let state = probe_builtin_qqbot_connectivity(runtime_home)?;
+    let state = probe_builtin_qqbot_connectivity(runtime_home, user_toml_path)?;
     let answer = if state.connectivity_state == "connected" {
         format!(
             "qqbot upstream connected: credential_source={} expires_at={}",
@@ -90,7 +92,7 @@ fn handle_pair(
     let Some(session_id) = session_id else {
         return Ok(build_response(
             binding,
-            "usage: /qqbot pair [session_id] [ttl_minutes]".into(),
+            "usage: /qqbot pair [session_id] [ttl_minutes(optional)]".into(),
             "usage",
         ));
     };
@@ -99,19 +101,25 @@ fn handle_pair(
     maybe_append_binding_notice(
         binding,
         "/qqbot pair",
-        &format!(
-            "qqbot paired with session {} (ttl={}m)",
-            session_id,
-            state.session_ttl_minutes.unwrap_or(30)
-        ),
+        &match state.session_ttl_minutes {
+            Some(ttl) => format!("qqbot paired with session {} (ttl={}m)", session_id, ttl),
+            None => format!("qqbot paired with session {} (persistent)", session_id),
+        },
     )?;
     Ok(build_response(
         binding,
-        format!(
-            "qqbot paired: session_id={} expires_at={}",
-            session_id,
-            state.session_expires_at.unwrap_or_else(|| "-".into())
-        ),
+        match state.session_expires_at {
+            Some(expires_at) => {
+                format!(
+                    "qqbot paired: session_id={} expires_at={}",
+                    session_id, expires_at
+                )
+            }
+            None => format!(
+                "qqbot paired: session_id={} expires_at=persistent",
+                session_id
+            ),
+        },
         "pair",
     ))
 }
@@ -210,8 +218,8 @@ fn build_response(binding: &DebugBinding, answer: String, suffix: &str) -> ChatS
 mod tests {
     use super::*;
     use std::{
-        sync::atomic::{AtomicU64, Ordering},
         fs,
+        sync::atomic::{AtomicU64, Ordering},
         time::{SystemTime, UNIX_EPOCH},
     };
 
@@ -253,46 +261,55 @@ mod tests {
         fs::create_dir_all(&home).expect("home");
         let result = try_handle_channel_peer_command(
             &home,
+            None,
             &ChatSendRequest {
                 message: "/qqbot pair".into(),
                 input_kind: None,
+                attachments: Vec::new(),
             },
             &binding(&home),
         )
         .expect("command ok")
         .expect("handled");
         assert!(result.answer.contains("qqbot paired"));
+        assert!(result.answer.contains("persistent"));
         let messages =
             fs::read_to_string(home.join("sessions/2026/04/session-qq/conversation/messages.json"))
                 .expect("messages");
         assert!(messages.contains("/qqbot pair"));
         assert!(messages.contains("qqbot paired with session session-qq"));
+        assert!(messages.contains("persistent"));
     }
 
     #[test]
-    fn qqbot_expire_command_marks_pairing_required() {
+    fn qqbot_expire_command_releases_binding_without_pairing_required() {
         let home = temp_runtime_home();
         fs::create_dir_all(&home).expect("home");
         let bind = binding(&home);
         let _ = try_handle_channel_peer_command(
             &home,
+            None,
             &ChatSendRequest {
                 message: "/qqbot pair".into(),
                 input_kind: None,
+                attachments: Vec::new(),
             },
             &bind,
         )
         .expect("pair ok");
         let result = try_handle_channel_peer_command(
             &home,
+            None,
             &ChatSendRequest {
                 message: "/qqbot expire test-reason".into(),
                 input_kind: None,
+                attachments: Vec::new(),
             },
             &bind,
         )
         .expect("expire ok")
         .expect("handled");
-        assert!(result.answer.contains("pairing_required=true"));
+        assert!(result.answer.contains("binding=unbound"));
+        assert!(result.answer.contains("pairing_required=false"));
     }
 }

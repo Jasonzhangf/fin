@@ -113,7 +113,7 @@ description: Standard build, regression, install, promote, rollback, and version
 若改动影响 provider / runtime / debug：
 - 必须包含真实或半真实 provider regression
 - 必须验证 `current_context.json` / `current_projection.json` / `latest_events.jsonl`
-- 网络型 provider smoke 允许显式、有日志的 bounded retry（当前 install flow 默认 3 次），但不得静默 fallback
+- 网络型 provider smoke 允许显式、有日志的 bounded retry（当前 install flow 默认 3 次），但不得静默吞错或私自改走别的路径
 
 ## 7) Evidence sinks
 

@@ -1,6 +1,7 @@
 use crate::{
     CliError,
     fs_utils::{read_file, write_file},
+    startup_wakeup::refresh_startup_control_plane,
 };
 use fin_config::{SystemConfig, system_to_toml};
 use fin_contracts::{DigestRecord, ReasoningViewRecord, ToolExecutionRecord};
@@ -42,14 +43,42 @@ pub(crate) fn init_runtime_home(
 
     let config_dir = runtime_home.join("config");
     let system_toml = system_to_toml(system)?;
+    let system_template_toml = render_system_template_toml(system_toml.as_str());
     write_file(&config_dir.join("user.toml"), user_toml.as_bytes())?;
     write_file(&config_dir.join("system.toml"), system_toml.as_bytes())?;
     write_file(
         &config_dir.join("system.template.toml"),
-        system_toml.as_bytes(),
+        system_template_toml.as_bytes(),
     )?;
+    let _ =
+        refresh_startup_control_plane(&runtime_home, system, &crate::time::local_timestamp_now())?;
 
     Ok(runtime_home)
+}
+
+fn render_system_template_toml(system_toml: &str) -> String {
+    format!(
+        concat!(
+            "# fin system template (framework-owned)\n",
+            "#\n",
+            "# Startup identity truth:\n",
+            "# - policy.entry_role  = user-facing entry agent startup role\n",
+            "# - policy.default_role = project/runtime/worker default role\n",
+            "#\n",
+            "# Recommended baseline:\n",
+            "#   entry_role = \"system\"\n",
+            "#   default_role = \"project\"\n",
+            "#   runtime.startup.system_agent.local_worker_budget = 4\n",
+            "#   runtime.startup.project_agents[*].worker_budget = 4\n",
+            "#\n",
+            "# Do not treat entry_role as display-only; it changes runtime startup identity.\n",
+            "# user.toml stays minimal; framework/runtime startup role + worker budgets belong here.\n",
+            "# Restart/startup updates must read framework-owned startup control summary rather than infer\n",
+            "# who started or who is busy from UI-local state.\n\n",
+            "{}"
+        ),
+        system_toml
+    )
 }
 
 pub(crate) fn ensure_runtime_home_layout(runtime_home: &Path) -> Result<(), CliError> {
@@ -66,7 +95,12 @@ pub(crate) fn ensure_runtime_home_layout(runtime_home: &Path) -> Result<(), CliE
         "runtime/leases",
         "runtime/heartbeats",
         "runtime/reminders",
+        "runtime/agents",
+        "runtime/agents/state",
         "runtime/peers",
+        "runtime/channels",
+        "runtime/projects",
+        "runtime/projects/state",
         "runtime/projections",
         "runtime/current",
         "logs/cli",
@@ -87,6 +121,7 @@ pub(crate) fn ensure_runtime_home_layout(runtime_home: &Path) -> Result<(), CliE
         "harness/baselines",
         "harness/reports",
         "workdirs",
+        "sessions",
         "archive/sessions",
         "archive/logs",
         "archive/diagnostics",

@@ -57,58 +57,67 @@ impl InferenceProvider for MainlineReceiptProvider {
         &self,
         request: &PreparedRequest,
     ) -> Result<ProviderResponse, fin_provider::ProviderError> {
-        let output_text = if request
-            .input
-            .starts_with("Continue the same turn with the latest tool results.")
-        {
-            stop_output(
-                "工具结果已确认，现在收口。",
-                "task-mainline-demo",
-                "topic-mainline-demo",
-                90,
-                10,
-                "tool followup done",
-                "tool followup done",
-                "tool result inspected",
-                "tool-backed followup finished",
+        let (output_text, stop_reason) = if request.input.starts_with("Continue the same turn.") {
+            (
+                stop_output(
+                    "工具结果已确认，现在收口。",
+                    "task-mainline-demo",
+                    "topic-mainline-demo",
+                    90,
+                    10,
+                    "tool followup done",
+                    "tool followup done",
+                    "tool result inspected",
+                    "tool-backed followup finished",
+                ),
+                "end_turn",
             )
         } else if request.input.contains("BANANA-42") {
-            stop_output(
-                "记住了",
-                "task-mainline-demo",
-                "topic-mainline-demo",
-                95,
-                5,
-                "remembered banana code",
-                "remembered banana code",
-                "acknowledged memory request",
-                "memory captured",
+            (
+                stop_output(
+                    "记住了",
+                    "task-mainline-demo",
+                    "topic-mainline-demo",
+                    95,
+                    5,
+                    "remembered banana code",
+                    "remembered banana code",
+                    "acknowledged memory request",
+                    "memory captured",
+                ),
+                "end_turn",
             )
         } else if request.input.contains("只回复 继续") {
-            stop_output(
-                "继续",
-                "task-mainline-demo",
-                "topic-mainline-demo",
-                94,
-                6,
-                "short followup acknowledged",
-                "short followup acknowledged",
-                "continued same task",
-                "followup acknowledged",
+            (
+                stop_output(
+                    "继续",
+                    "task-mainline-demo",
+                    "topic-mainline-demo",
+                    94,
+                    6,
+                    "short followup acknowledged",
+                    "short followup acknowledged",
+                    "continued same task",
+                    "followup acknowledged",
+                ),
+                "end_turn",
             )
         } else if request.input.contains("先检查 peer 再结束") {
-            peer_round_output()
+            (peer_round_output(), "tool_use")
         } else {
-            stop_output(
-                "mainline demo completed",
-                "task-mainline-demo",
-                "topic-mainline-demo",
-                60,
-                40,
-                "fallback path",
-                "fallback path",
-                "fallback scenario output",
-                "fallback stop",
+            (
+                stop_output(
+                    "mainline demo completed",
+                    "task-mainline-demo",
+                    "topic-mainline-demo",
+                    60,
+                    40,
+                    "default path",
+                    "default path",
+                    "default scenario output",
+                    "default stop",
+                ),
+                "end_turn",
             )
         };
         Ok(ProviderResponse {
@@ -116,8 +125,9 @@ impl InferenceProvider for MainlineReceiptProvider {
             model: request.model.clone(),
             output_text,
             response_id: Some("mainline-demo-response".into()),
-            stop_reason: Some("end_turn".into()),
+            stop_reason: Some(stop_reason.to_string()),
             status: 200,
+            tool_calls: Vec::new(),
         })
     }
 }
@@ -142,8 +152,12 @@ pub(crate) fn run_mainline_demo(system: &SystemConfig) -> Result<MainlineDemoRun
             operation_id: format!("op-{}-{:04}", ids.scope, index + 1),
             trace_id: format!("trace-{}-{:04}", ids.scope, index + 1),
             session_id: ids.session_id.clone(),
-            task_id: ids.task_id.clone(),
+            task_id: Some(ids.task_id.clone()),
+            topic_thread_id: None,
+            agent_name: Some("cli-demo".into()),
+            role_id: None,
             input: (*input).to_string(),
+            source: "cli.user".into(),
             recent_messages: history_messages(&runs),
             recent_digests: digests,
             recent_reasoning_views: runs.iter().map(|run| run.reasoning_view.clone()).collect(),
@@ -157,6 +171,7 @@ pub(crate) fn run_mainline_demo(system: &SystemConfig) -> Result<MainlineDemoRun
                 .ok()
                 .map(|path| path.display().to_string()),
             selected_paths: Vec::new(),
+            attachment_summaries: Vec::new(),
             submitted_at: local_timestamp_for_turn(time_base, index),
         };
         runs.push(run_demo_request(system, &provider, request)?);
@@ -211,12 +226,12 @@ fn stop_output(
     stop_summary: &str,
 ) -> String {
     format!(
-        "<fin_user_response>{user_response}</fin_user_response>\n<fin_control_feedback>{{\"origin\":\"model_output_contract_v1\",\"is_continuation\":true,\"is_simple_query\":false,\"candidate_task_id\":\"{task_id}\",\"candidate_topic_thread_id\":\"{topic_id}\",\"continuity_confidence\":{continuity_confidence},\"topic_shift_confidence\":{topic_shift_confidence},\"simple_query_confidence\":5,\"previous_topic_summary\":\"mainline receipt demo\",\"current_topic_summary\":\"mainline receipt demo\",\"note_candidate\":\"{note_candidate}\",\"digest_candidate\":\"{digest_candidate}\",\"reason\":\"{reason}\"}}</fin_control_feedback>\n<fin_tool_calls>[{{\"tool_name\":\"reasoning.stop\",\"arguments\":{{\"summary\":\"{stop_summary}\"}}}}]</fin_tool_calls>"
+        "<fin_user_response>{user_response}</fin_user_response>\n<fin_control_feedback>{{\"origin\":\"model_output_contract_v1\",\"is_continuation\":true,\"is_simple_query\":false,\"task_completed\":true,\"is_simple_chat\":false,\"blocked\":false,\"needs_user_involve\":false,\"candidate_task_id\":\"{task_id}\",\"candidate_topic_thread_id\":\"{topic_id}\",\"continuity_confidence\":{continuity_confidence},\"topic_shift_confidence\":{topic_shift_confidence},\"simple_query_confidence\":5,\"previous_topic_summary\":\"mainline receipt demo\",\"current_topic_summary\":\"mainline receipt demo\",\"completion_evidence\":[\"mainline demo fixture completed this closure\",\"receipt chain persisted for the demo turn\"],\"final_conclusions\":[\"current mainline demo closure is complete\",\"turn may stop\"],\"blocked_reason\":null,\"what_needs_to_be_done_by_user\":null,\"note_candidate\":\"{note_candidate}\",\"digest_candidate\":\"{digest_candidate}\",\"reason\":\"{reason}\"}}</fin_control_feedback>\n<fin_tool_calls>[{{\"tool_name\":\"reasoning.stop\",\"arguments\":{{\"summary\":\"{stop_summary}\"}}}}]</fin_tool_calls>"
     )
 }
 
 fn peer_round_output() -> String {
-    "<fin_user_response>先查看 peer 列表。</fin_user_response>\n<fin_control_feedback>{\"origin\":\"model_output_contract_v1\",\"is_continuation\":true,\"is_simple_query\":false,\"candidate_task_id\":\"task-mainline-demo\",\"candidate_topic_thread_id\":\"topic-mainline-demo\",\"continuity_confidence\":88,\"topic_shift_confidence\":12,\"simple_query_confidence\":6,\"previous_topic_summary\":\"mainline receipt demo\",\"current_topic_summary\":\"mainline receipt demo\",\"note_candidate\":\"need peer list\",\"digest_candidate\":\"need peer list\",\"reason\":\"inspect peers before stopping\"}</fin_control_feedback>\n<fin_tool_calls>[{\"tool_name\":\"peer.list\",\"arguments\":{}}]</fin_tool_calls>".into()
+    "<fin_user_response>先查看 peer 列表。</fin_user_response>\n<fin_control_feedback>{\"origin\":\"model_output_contract_v1\",\"is_continuation\":true,\"is_simple_query\":false,\"task_completed\":false,\"is_simple_chat\":false,\"blocked\":false,\"needs_user_involve\":false,\"candidate_task_id\":\"task-mainline-demo\",\"candidate_topic_thread_id\":\"topic-mainline-demo\",\"continuity_confidence\":88,\"topic_shift_confidence\":12,\"simple_query_confidence\":6,\"previous_topic_summary\":\"mainline receipt demo\",\"current_topic_summary\":\"mainline receipt demo\",\"completion_evidence\":[],\"final_conclusions\":[],\"blocked_reason\":null,\"what_needs_to_be_done_by_user\":null,\"note_candidate\":\"need peer list\",\"digest_candidate\":\"need peer list\",\"reason\":\"inspect peers before stopping\"}</fin_control_feedback>\n<fin_tool_calls>[{\"tool_name\":\"peer.list\",\"arguments\":{}}]</fin_tool_calls>".into()
 }
 
 #[cfg(test)]

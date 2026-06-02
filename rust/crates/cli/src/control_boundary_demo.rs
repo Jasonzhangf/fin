@@ -76,6 +76,7 @@ impl InferenceProvider for ControlBoundaryProvider {
             response_id: Some("control-boundary-demo-response".into()),
             stop_reason: Some("end_turn".into()),
             status: 200,
+            tool_calls: Vec::new(),
         })
     }
 }
@@ -149,6 +150,7 @@ fn chat(message: &str) -> ChatSendRequest {
     ChatSendRequest {
         message: message.into(),
         input_kind: None,
+        attachments: Vec::new(),
     }
 }
 
@@ -156,6 +158,7 @@ fn status(message: &str) -> ChatSendRequest {
     ChatSendRequest {
         message: message.into(),
         input_kind: Some("status_probe".into()),
+        attachments: Vec::new(),
     }
 }
 
@@ -355,6 +358,6 @@ api_key_env = "OPENAI_API_KEY"
             fs::read_to_string(session_dir.join("control/supervisor/recent_heartbeats.json"))
                 .expect("heartbeats");
         assert!(heartbeats.contains("\"due_for_tick\": true"));
-        assert!(heartbeats.contains("\"stale_lease\": true"));
+        assert!(heartbeats.contains("\"stale_lease\": false"));
     }
 }

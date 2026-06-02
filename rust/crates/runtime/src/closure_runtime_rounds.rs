@@ -1,80 +1,119 @@
 use super::*;
+use crate::model_output::ModelToolCall;
+use serde_json::json;
+use std::{fs, path::PathBuf};
+use crate::reason_pipeline::{
+    ReasonReq01Seed, ReasonReq02ContextPlanBuilder, ReasonReq03BudgetedContextBuilder,
+    ReasonReq04RenderedInputBuilder, ReasonReq05ProviderCallBuilder, ReasonResp06ModelOutputParser,
+    ReasonResp07ParsedContractParser, ReasonResp08RuntimeDecisionBuilder, ReasonResp09Closure,
+    ReasonResp09ClosureBuilder,
+};
+use crate::tool_history_render::render_current_tool_execution_history;
 
 pub(super) struct StepAllocation {
     pub(super) step_id: String,
     pub(super) step_index: u32,
 }
 
-pub(super) struct RoundExecution {
-    pub(super) prepared_request: PreparedRequest,
-    pub(super) provider_response: ProviderResponse,
-    pub(super) provider_debug: SanitizedProviderDebug,
-    pub(super) parsed_output: ParsedModelOutput,
-    pub(super) dispatched_tools: tool_dispatch::ToolDispatchOutcome,
-    pub(super) assistant_response_text: String,
-    pub(super) control_feedback: ControlFeedback,
+#[derive(Debug, Clone)]
+pub(super) struct ReasonRoundExecution(pub(super) ReasonResp09Closure);
+
+impl std::ops::Deref for ReasonRoundExecution {
+    type Target = ReasonResp09Closure;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl std::ops::DerefMut for ReasonRoundExecution {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.0
+    }
 }
 
 pub(super) fn execute_round(
     operation: &OperationEnvelope<InferenceOperationPayload>,
     provider: &impl InferenceProvider,
     refs: &EntityRefs,
+    round_context: &MinimalContextView,
     round_index: u32,
     input: String,
-) -> Result<RoundExecution, RuntimeError> {
-    let rendered_input =
-        ModelInputAssembler::default().assemble(&input, &operation.payload.context);
-    let prepared_request = provider.prepare_request(&ProviderRequest {
+    prior_tool_calls: &[ModelToolCall],
+    tool_results: &[ToolExecutionRecord],
+) -> Result<ReasonRoundExecution, RuntimeError> {
+    let seed = ReasonReq01Seed {
+        operation: operation.clone(),
+        refs: refs.clone(),
+        round_index,
         input,
-        rendered_input: Some(rendered_input),
-        override_model: Some(
-            operation
-                .payload
-                .provider_path
-                .primary_target()
-                .model
-                .clone(),
-        ),
-    });
-    let provider_response = provider.execute_prepared(&prepared_request)?;
-    let provider_debug = SanitizedProviderDebug {
-        user_agent: prepared_request.user_agent.clone(),
-        request_headers: prepared_request.sanitized_headers.clone(),
+        context: round_context.clone(),
+        prior_tool_calls: prior_tool_calls.to_vec(),
+        tool_results: tool_results.to_vec(),
     };
-    let parsed_output = ModelOutputParser::default().parse(
-        &operation.payload,
-        &prepared_request,
-        &provider_response,
-    );
-    let dispatched_tools = tool_dispatch::execute_model_tools(
+    let context_plan = ReasonReq02ContextPlanBuilder.build(seed);
+    let budgeted_context = ReasonReq03BudgetedContextBuilder.build(context_plan);
+    let rendered_input = ReasonReq04RenderedInputBuilder.build(budgeted_context);
+    let provider_call = ReasonReq05ProviderCallBuilder.build(rendered_input);
+    let model_output = ReasonResp06ModelOutputParser.parse(provider_call, provider)?;
+    let parsed_contract = ReasonResp07ParsedContractParser.parse(model_output);
+    let runtime_decision = ReasonResp08RuntimeDecisionBuilder.build(parsed_contract);
+    Ok(ReasonRoundExecution(
+        ReasonResp09ClosureBuilder.build(runtime_decision),
+    ))
+}
+
+pub(super) fn build_context_snapshot(
+    operation: &OperationEnvelope<InferenceOperationPayload>,
+    refs: &EntityRefs,
+) -> ContextSnapshotRecord {
+    ContextSnapshotRecord {
+        operation_id: operation.operation_id.clone(),
+        trace_id: operation.trace_id.clone(),
+        refs: refs.clone(),
+        input: operation.payload.input.clone(),
+        context: operation.payload.context.clone(),
+        role: operation.payload.role.clone(),
+        provider_path: operation.payload.provider_path.clone(),
+        provider_strategy: operation.payload.provider_strategy,
+        protocol_version: operation.payload.protocol_version.clone(),
+        stream: operation.payload.stream,
+        captured_at: operation.submitted_at.clone(),
+    }
+}
+
+pub(super) fn build_context_build_step_record(
+    step_id: String,
+    step_index: u32,
+    operation: &OperationEnvelope<InferenceOperationPayload>,
+    refs: &EntityRefs,
+    turn_id: &str,
+) -> StepRecord {
+    turn_records::step_record(
+        step_id,
+        turn_id,
         &operation.operation_id,
         &operation.trace_id,
         refs,
+        step_index,
+        "context_build",
+        "completed",
         &operation.submitted_at,
-        &operation.payload.context,
-        round_index,
-        &parsed_output.tool_calls,
-    );
-    let assistant_response_text = parsed_output.user_response.clone();
-    let fallback_feedback =
-        ControlFeedbackBuilder.build(&operation.payload, &prepared_request, &provider_response);
-    let mut control_feedback = ControlFeedbackBuilder::default()
-        .merge_with_fallback(parsed_output.control_feedback.clone(), fallback_feedback);
-    ControlFeedbackBuilder::default().rewrite_runtime_heuristic_candidates(
-        &mut control_feedback,
-        &prepared_request,
-        &provider_response,
-        assistant_response_text.as_str(),
-    );
-    Ok(RoundExecution {
-        prepared_request,
-        provider_response,
-        provider_debug,
-        parsed_output,
-        dispatched_tools,
-        assistant_response_text,
-        control_feedback,
-    })
+        format!(
+            "assembled context for role={} with continuity_tail={} messages",
+            operation.payload.role.role_id.as_str(),
+            operation.payload.context.continuity_tail.len()
+        ),
+        Some(format!(
+            "context/recent_contexts.json#operation_id={}",
+            operation.operation_id
+        )),
+        Some(format!(
+            "provider/recent_provider_requests.json#operation_id={}",
+            operation.operation_id
+        )),
+        Some("provider_request".into()),
+    )
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -84,12 +123,15 @@ pub(super) fn record_round(
     refs: &EntityRefs,
     turn_id: &str,
     round_index: u32,
+    attempt_index: u32,
+    accepted_attempt: bool,
     prepared: &PreparedRequest,
     response: &ProviderResponse,
     parsed: &ParsedModelOutput,
     feedback: &ControlFeedback,
     dispatched: &tool_dispatch::ToolDispatchOutcome,
     assistant_text: &str,
+    validation_errors: &[String],
     provider_request_records: &mut Vec<ProviderRequestRecord>,
     provider_response_records: &mut Vec<ProviderResponseRecord>,
     round_records: &mut Vec<RoundRecord>,
@@ -103,6 +145,7 @@ pub(super) fn record_round(
         turn_id,
         &provider_step.step_id,
         round_index,
+        attempt_index,
         prepared,
         &operation.submitted_at,
     );
@@ -113,6 +156,7 @@ pub(super) fn record_round(
         turn_id,
         &provider_step.step_id,
         round_index,
+        attempt_index,
         &request_record.request_id,
         response,
         &operation.submitted_at,
@@ -139,7 +183,7 @@ pub(super) fn record_round(
         },
         &operation.submitted_at,
         format!(
-            "round {round_index} provider {}:{} -> status={} stop_reason={}",
+            "round {round_index} attempt {attempt_index} provider {}:{} -> status={} stop_reason={}",
             prepared.provider_name,
             prepared.model,
             response.status,
@@ -166,9 +210,20 @@ pub(super) fn record_round(
         "completed",
         &operation.submitted_at,
         format!(
-            "round {round_index} parsed provider output: contract_detected={} tool_calls={} assistant={}",
+            "round {round_index} attempt {attempt_index} parsed provider output: contract_detected={} tool_calls={} tool_calls_status={} tool_calls_invalid_reason={} accepted={} validation_errors={} assistant={}",
             parsed.contract_detected,
             parsed.tool_calls.len(),
+            parsed.tool_calls_parse_status,
+            parsed
+                .tool_calls_invalid_reason
+                .as_deref()
+                .unwrap_or("none"),
+            accepted_attempt,
+            if validation_errors.is_empty() {
+                "none".to_string()
+            } else {
+                validation_errors.join(" | ")
+            },
             assistant_text.trim()
         ),
         Some(format!(
@@ -192,7 +247,7 @@ pub(super) fn record_round(
         "completed",
         &operation.submitted_at,
         format!(
-            "round {round_index} control feedback: continuation={} shift={} simple={} reason={}",
+            "round {round_index} attempt {attempt_index} control feedback: continuation={} shift={} simple={} reason={}",
             feedback.is_continuation,
             feedback.topic_shift_confidence,
             feedback.simple_query_confidence,
@@ -216,18 +271,30 @@ pub(super) fn record_round(
         refs,
         tool_dispatch_step.step_index,
         "tool_dispatch",
-        if parsed.tool_calls.is_empty() {
+        if parsed.tool_calls.is_empty() && parsed.tool_calls_block_present {
+            "failed"
+        } else if parsed.tool_calls.is_empty() {
             "skipped"
         } else {
             "completed"
         },
         &operation.submitted_at,
-        if parsed.tool_calls.is_empty() {
-            format!("round {round_index} no model tools requested")
+        if parsed.tool_calls.is_empty() && parsed.tool_calls_block_present {
+            format!(
+                "round {round_index} attempt {attempt_index} detected non-executable tool block: status={} reason={}",
+                parsed.tool_calls_parse_status,
+                parsed
+                    .tool_calls_invalid_reason
+                    .as_deref()
+                    .unwrap_or("unknown")
+            )
+        } else if parsed.tool_calls.is_empty() {
+            format!("round {round_index} attempt {attempt_index} no model tools requested")
         } else {
             format!(
-                "round {round_index} executed {} tool calls, stop_requested={}, reminder_scheduled={}",
+                "round {round_index} attempt {attempt_index} executed {} tool calls, parse_status={}, stop_requested={}, reminder_scheduled={}",
                 parsed.tool_calls.len(),
+                parsed.tool_calls_parse_status,
                 dispatched.stop_requested,
                 dispatched.reminder_scheduled
             )
@@ -242,55 +309,43 @@ pub(super) fn record_round(
         )),
         Some("finalize".into()),
     ));
-    round_records.push(RoundRecord {
-        round_id: format!("round-{}-{round_index:02}", operation.operation_id),
-        turn_id: turn_id.to_string(),
-        operation_id: operation.operation_id.clone(),
-        trace_id: operation.trace_id.clone(),
-        round_index,
-        created_at: operation.submitted_at.clone(),
-        refs: refs.clone(),
-        provider_step_id: provider_step.step_id,
-        model_parse_step_id: model_parse_step.step_id,
-        control_feedback_step_id: control_feedback_step.step_id,
-        tool_dispatch_step_id: tool_dispatch_step.step_id,
-        request_id: request_record.request_id,
-        response_record_id: response_record.response_record_id,
-        contract_detected: parsed.contract_detected,
-        control_feedback_parsed: parsed.control_feedback.is_some(),
-        control_feedback_salvaged: parsed.control_feedback_salvaged,
-        tool_calls_count: parsed.tool_calls.len(),
-        assistant_response_summary: assistant_text.to_string(),
-        control_feedback_origin: feedback.origin.clone(),
-        stop_requested: dispatched.stop_requested,
-        yield_requested: dispatched.yield_requested,
-        reminder_scheduled: dispatched.reminder_scheduled,
-    });
+    if accepted_attempt {
+        round_records.push(RoundRecord {
+            round_id: format!("round-{}-{round_index:02}", operation.operation_id),
+            turn_id: turn_id.to_string(),
+            operation_id: operation.operation_id.clone(),
+            trace_id: operation.trace_id.clone(),
+            round_index,
+            created_at: operation.submitted_at.clone(),
+            refs: refs.clone(),
+            provider_step_id: provider_step.step_id,
+            model_parse_step_id: model_parse_step.step_id,
+            control_feedback_step_id: control_feedback_step.step_id,
+            tool_dispatch_step_id: tool_dispatch_step.step_id,
+            request_id: request_record.request_id,
+            response_record_id: response_record.response_record_id,
+            contract_detected: parsed.contract_detected,
+            control_feedback_parsed: parsed.control_feedback.is_some(),
+            control_feedback_salvaged: parsed.control_feedback_salvaged,
+            tool_calls_count: parsed.tool_calls.len(),
+            assistant_response_summary: assistant_text.to_string(),
+            control_feedback_origin: feedback.origin.clone(),
+            stop_requested: dispatched.stop_requested,
+            yield_requested: dispatched.yield_requested,
+            reminder_scheduled: dispatched.reminder_scheduled,
+        });
+    }
 }
 
 pub(super) fn build_followup_input(
+    context: &MinimalContextView,
     original_input: &str,
     assistant_response: &str,
     tool_records: &[ToolExecutionRecord],
 ) -> String {
-    let tool_lines = tool_records
-        .iter()
-        .rev()
-        .take(4)
-        .map(|record| {
-            format!(
-                "{} => {}",
-                record.tool_name,
-                record
-                    .output_summary
-                    .clone()
-                    .or_else(|| record.error_summary.clone())
-                    .unwrap_or_else(|| record.status.clone())
-            )
-        })
-        .collect::<Vec<_>>();
+    let tool_lines = render_current_tool_execution_history(context, tool_records);
     format!(
-        "Continue the same turn with the latest tool results.\nOriginal request: {original_input}\nLast assistant response: {assistant_response}\nRecent tool results:\n- {}",
+        "Continue the same turn. Latest tool results are available.\nOriginal request: {original_input}\nLast assistant response: {assistant_response}\nExecuted tool results (authoritative client facts, full current history):\n- {}\nInspect these tool results before deciding whether another tool is needed. If the task is complete, answer directly and emit reasoning.stop.",
         if tool_lines.is_empty() {
             "none".to_string()
         } else {

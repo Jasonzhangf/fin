@@ -6,6 +6,45 @@
 - 当前 M1 优先级：最小可闭合推理 + 最小可观测 Web debug，而不是复杂自治。
 
 ## Key Decisions
+- [2026-04-24] Jason 已再次冻结 fin 的协作边界：**framework = truth + event + trigger + sync；model = decide + act + report**。startup 只 materialize 资源/unfinished-work/recovery truth 并启动 canonical system agent；是否恢复 worker/task 必须由 system/owner agent 决定，worker 启动后先 self-check 再 report。对应总纲：`docs/architecture/42-event-driven-collaboration-and-trigger-model.md`。
+- [2026-04-24] heartbeat / checkpoint-resume / assignment-resume 这类 framework-owned hidden turn 已进一步冻结为 **ephemeral control-plane turn**：可以更新 current/control/checkpoint truth，但**不得**写入正常 session 的 `conversation/messages.json`、recent digests/reasoning/tools/turn/provider history，也不得偷改 frontstage `last_run` 绑定；否则就是 heartbeat/session pollution。
+- [2026-04-24] hidden turn 禁写 `last_run` 后，entry success path 也不能再无脑 `read_binding_internal()` 回读 frontstage binding；否则 `finalize_after_run()`、checkpoint consume、execution_state 会错误写回 `session-system-entry`。当前规则是：**hidden control turn success path 必须继续使用原 target session binding 收尾**。
+- [2026-04-24] progress / heartbeat 统一再收紧为：**no work -> no touch；no delta -> no delivery**。heartbeat 只允许检查结构化 due work；没有待推进任务时不得打扰 agent。用户侧 progress 若 snapshot 无语义变化则必须完全静默，不能借 heartbeat 周期重发旧等待/旧失败摘要。
+- [2026-04-25] Jason 已继续收紧 framework event 持久化边界：**framework-owned control-plane events 默认不进 session `events/stream.jsonl` / archive**；scheduler tick / supervisor cycle / heartbeat / daemon / routing formalize 只保留必要 current/latest control truth（如 `current_scheduler_tick.json`、`control/.../latest.json`、daemon state/recovery files），不再把 observation history 持久化成海量小 segment。
+- [2026-04-23] 工具反馈闭环规则继续收紧：**所有 authoritative receipt（包括自定义 `exec_receipts` / `write_stdin_receipts` / patch receipts），失败时都必须带 `failure_kind / retryable / retry_hint / correction_summary`，成功时尽量补 `next_action_hint`**。不能只让默认 `tool_receipts` 有纠错语义，否则模型在 follow-up round 看见的是半残真相，仍会空转或误判下一步。
+- [2026-04-23] “receipt 字段存在”还不够，必须继续看 **follow-up rendered input**：若 `next_action_hint / failure_kind / retry_hint` 没真正进入 `Current tool execution history -> authoritative_receipt`，那对模型来说仍等于没有闭环。后续工具反馈改动默认补一条“第二轮 provider request 可见这些字段”的渲染测试。
+- [2026-04-23] 工具反馈不只服务于模型 follow-up，**前台语义层也必须消费结构化失败信息**。如果 `tool_semantics` 继续优先显示 raw `error_summary`，用户看到的仍是模糊报错；当前规则应优先展示 `output_summary` 里的结构化 `correction/retry_hint`，success receipt 也要逐步统一 `next_action_hint`，避免“receipt 很丰富但前台摘要还是像没修一样”。
+- [2026-04-24] frontstage/status card 的 `recent_items` 也不能只塞 generic summary。对 failed action，必须优先抽取结构化 detail 里的 **retry 部分**（如“重试：inspect stdout/stderr...”），否则虽然底层 receipt/semantic 已经变清楚，卡片仍会把关键信息截断成“失败了”这种低信息量摘要。
+- [2026-04-24] QQ/channel 最终文本渲染也必须验证一遍，不能假设 activity/frontstage 修好了就自动传递到用户可见文本。当前规则是：`channel_peer_activity_delivery_render` 对 failed recent action 也要能输出 retry guidance，并且要有 fin-cli 层的文本渲染测试作为证据。
+- [2026-04-23] “强制派发/managed execution” 的常规硬控制方式已再次冻结：当用户刚性命令或模型已落盘 control block 明确要求进入 managed path 时，framework 的正确动作不是自己替模型判断/执行 dispatch，而是**切换或缩减模型可见工具集**（只保留 owner/dispatcher 工具，隐藏或禁用 direct repo-write / heavy execution 工具），再让模型在受限工具集下自主选择派发；若 framework 从自然语言直接判断并替模型 dispatch，属于边界违规。
+- [2026-04-22] framework passive-executor 边界已再次冻结：框架**没有自然语言理解与判断权**。除用户显式发送受支持的刚性命令外，framework 只能解析模型返回的标准化 `control block / schema code` 并刚性执行对应程序；不得从自然输入、置信度阈值、wrapper 快捷逻辑或可见文案中自行推断“这是任务/该 formalize/该切 topic/该触发调度”。一切 framework action 都必须可追溯到 **rigid command** 或 **parsed control signal**，否则就是边界违规。
+- [2026-04-22] startup/headless/project-resume 链路已继续收紧为 observe-only：`startup_wakeup -> project_execution_handoff` 不得再调用真实 `handoff_project_task()` 把 `ready` task 偷改成 `claimed`。当前只允许 `preview_project_task_handoff()` 生成 `prepared` 观察记录；pickup 状态也已从 `claimed_idle` 更正为 `prepared_idle`，表示“可恢复但必须等显式 trigger”，而不是“framework 已经接手执行”。
+- [2026-04-22] live provider 真实测试的主验收口径已进一步收紧为 **framework conformance first**：user turn 只能给人类目标/约束/验收条件，不能指定工具名、顺序或 `reasoning.stop`；live receipt 的主 oracle 必须是 persisted timeline（round / step / tool receipt / provider request/response / closure），不是结果内容。异常归因默认先判：timeline/receipt 缺失、hidden control 泄漏、步骤顺序断裂 => framework gap；truth 完整但模型仍异常 => model/prompt gap；证据不足 => insufficient truth。
+- [2026-04-22] 真实 flow-conformance transcript 若要求模型产出文件，输出路径必须按 `run_id` 隔离；固定路径会让第二次 run 读到上一次残留文件，污染“是否真的执行过工具/是否真的写入过产物”的归因，必须在 wrapper 阶段做 placeholder -> run_id 渲染。
+- [2026-04-21] 协议边界最终规则已冻结：`control block` 是 fin 允许新增的唯一自定义结构层，用于承载 fin 自己的控制反馈语义；除此之外，工具列表声明、工具调用、工具结果、模型响应封装都必须先做语义映射，再按目标 provider/channel 的标准协议发送与接收。换言之：`custom control block allowed; tooling and response transport must stay native-protocol`.
+- [2026-04-21] framework control invisibility 规则已冻结：框架控制面（停止条件、重试、调度、checkpoint、materialize、event append、control block、internal routing 等）必须对用户与 agent persona 都保持不可感知；它只能存在于 runtime/control plane 内部实现与协议适配边界，不能以显式框架语义注入 user turn，也不能以“你正在被 framework 控制/记录/调度”这类内部自述暴露给 agent prompt。
+- [2026-04-21] tool usage guidance 与 E2E user simulation 的边界已冻结：工具的使用说明、适用条件、避免条件、输入输出示例，必须放在 tool catalog / tool prompt spec 中提供给模型；端到端测试只模拟真实用户输入，不得把工具选择、停止条件、控制块、框架指令混入 user turn。
+- [2026-04-21] user-turn purity 规则已纠偏：真实用户输入必须只包含用户会说的自然语言目标/约束/上下文/验收期望，不能混入 `reasoning.stop`、tool call、closure、control block、framework 指令等内部控制语义。停止条件、工具策略、输出协议、重试规则都只能存在于隐藏的 system/framework prompt 与 runtime control plane，不能伪装成用户请求。
+- [2026-04-21] protocol boundary 规则已再次收紧：fin 内部可以保留统一语义层 / normalized IR，但任何对外发送链路都必须使用目标 provider/channel 的原生标准协议，禁止把内部 IR 或 fin 自定义标签直接作为外发 wire。内部可统一，外发必须标准。
+- [2026-04-21] live E2E 的测试边界已纠偏：真实 provider / tool E2E 只能给任务目标、上下文、工具列表与验收条件，不能在 prompt/transcript 里强制模型“必须先用哪个工具、再用哪个工具”。固定工具序列只属于 contract/replay 测试；live E2E 的验收重点应是闭环是否完成、证据是否落盘、工具结果是否正确回注，而不是命中预设工具脚本。
+- [2026-04-21] 真实 provider/tool E2E 的验收口径进一步收紧：只读工具链（真实 `exec_command` + tool-result reinjection + `reasoning.stop`）已在真 provider 下闭环；但 repo/scratch 写入型 `apply_patch` 场景与复杂多 turn 读写混合场景仍未收口。当前首要缺口不是“模型完全不会调工具”，而是“写工具链不稳定 + 失败时 partial truth 不足以诊断”。
+- [2026-04-21] tool calling 协议认知已纠偏：当前 `<fin_tool_calls>` 只是 fin 过渡期 structured output contract，不是长期标准 function/tool calling wire。长期方向必须是 `provider-native standard tool/function call -> fin internal IR`，不能把自定义 tag wire 固化成长期真源。
+- [2026-04-21] live provider timeout 规则已纠偏：180s/240s 这类短 wall-clock harness timeout 没意义，且会把 wrapper 杀进程误判为 runtime/tool/provider 问题。正确边界应是分阶段 timeout：短 connect timeout、长 provider waiting timeout（>=15 分钟）、独立 tool timeout、以及 supervisor 级 stale/no-progress 检测；timeout 只应绑定等待阶段，不应绑定整条推理链墙钟。
+- [2026-04-21] prompt 压缩不作为当前真实闭环问题的解决方向。fin 的默认前提是正常业务会塞满上下文；后续只允许做 context assembly / rebuild / selection 的正常工程优化，不允许通过削减业务上下文冒充稳定性改进。
+- [2026-04-21] output contract retry loop 已冻结为 runtime-owned 反馈闭环：当模型输出不满足 fin structured contract 时，framework 只返回结构错误并要求保持原语义重发；默认最多重试 3 次，超限即停止当前 contract retry 并把失败原因写入 event/note/debug truth，避免死循环。
+- [2026-04-21] output contract retry 的 durable truth 边界已补齐：`RoundRecord` 仍只表示 logical round 的最终 accepted attempt；但 `ProviderRequestRecord/ProviderResponseRecord` 现在必须为每个 retry attempt 分别落盘，并带 `attempt_index`，`StepRecord.summary` 也必须显示 attempt 与 accepted/validation_errors，避免 session/provider timeline 丢失 retry 真相。
+- [2026-04-21] model output repair 边界已冻结为：只允许“确定性、语义保持”的形状修复，禁止语义推断修补；`control_feedback` 可做 whitelist salvage，`tool_calls` 仅在工具名/参数值已完整存在时才允许 repair 后执行，任何截断值或意图猜测都必须落为 invalid/partial truth，不能执行。
+- [2026-04-21] tentative -> formal task 的设计已冻结为：`/formalize` 只负责 framework-owned task/topic bind，随后自动 enqueue hidden `framework.task_kickoff.plan`；direct vs managed path 必须由首个 planning turn 决定，不能把 bind 与 decomposition 混成一步。
+- [2026-04-20] prompt system 真源已纠偏为 Agent-first：用户面对的永远是 agent，模型只接收 framework 赋予的 role/request/context/tools；provider/model family 只能留在 backend/runtime adapter/debug truth，不能进入 agent 身份层或 system/project role baseline。
+- [2026-04-20] system agent 的角色已进一步冻结为 backlog-first 的 leader/orchestrator：先看当前任务盘，再判断新输入；高优先级任务先做最小分析并尽快 dispatch；completion 到来后必须做 unblock analysis，而不是只记 done。
+- [2026-04-20] 复杂执行已冻结为统一 project task system 路径：借鉴 BD，采用 `epic -> task` 最小模型；worker 先 claim 再执行再提交 review；system/project agent 都是 owner/dispatcher/reviewer；简单任务不建 epic，只走 `update_plan` 轻量路径。
+- [2026-04-20] 启动面分层已冻结：Launcher 只负责读配置与起入口；`daemon/supervisor` 是生命周期真源；`system entry agent` 是用户入口真源；`project worker` 只能被派生/恢复，不能冒充入口。对应文档：`docs/architecture/36-daemon-supervisor-startup-contract.md`。
+- [2026-04-20] runtime 启动身份已冻结为双字段：`default_role=project` 仅用于 project/runtime/worker 默认执行体，`entry_role=system` 专门用于 Web/QQ/CLI chat 这类用户入口启动；验收真相看 `current_context.role_prompt.role_id`，不是看 UI 文案。
+- [2026-04-20] QQ 文字通道前台状态卡的用户视角已纠偏：frontstage 默认必须锚定 `system agent`，不能让 `channel peer` 抢焦点；纯 peer 重连/连通性抖动不再向用户主动推送卡片；activity delivery 在发送前必须二次校验当前 snapshot signature，避免把上一轮 `Stopped current_turn` 之类的旧状态在新 inbound 刚到时错误发给用户。
+- [2026-04-20] qqbot peer 状态语义已纠偏：`上游登录/鉴权` 与 `session 绑定` 必须拆开。`connectivity_state + upstream_authenticated_at` 表示 bot 已登录服务器；`binding_state + session_valid` 只表示当前是否绑定到某个 session。session mismatch/expire 现在只会把 peer 释放到 `binding_state=unbound`，不再错误打回 `pairing_required`；后续真实 inbound 可基于 conversations 自动恢复绑定，无需用户反复 `/qqbot pair`。
+- [2026-04-19] 纯文字 channel 的前台协议已冻结为 `source card + user activity card` 双层体系：每个 source（system/project/peer）各自维护一张当前进度卡，用户前台由 `system agent` 维护一张总卡；更新策略为‘有变化才更新、无变化静默、最长 1 分钟一次最小心跳’，不支持编辑的渠道走‘紧凑重绘’，并且文字 channel 与 WebUI 必须共用同一套 tool semantic render truth。
+- [2026-04-19] finger / openclaw 旧 qqbot 链已正式退役：已显式停掉 live `fin+finger bridge` 进程，并把 `com.finger.*` 与 `ai.openclaw.gateway` 的 LaunchAgents 移到 `~/Library/LaunchAgents.disabled/`；`fin` 当前 qqbot 启动链已改为 fin-owned built-in peer runner（`~/.fin/runtime/peers/qqbot/bin/qqbot-peer-runner.mjs`），不再 spawn `~/code/finger/dist/cli/index.js gateway-bridge`，qqbot 凭据真源已迁到 `~/.fin/config/user.toml [channels.qqbot]`，probe/source 均显示 `user_toml:/Users/fanzhang/.fin/config/user.toml`。
+- [2026-04-19] M1 验收口径已修正：只有 Web/CLI 调试入口不算完成；`qqbot` 必须作为真实 `channel gateway` 连入，并完成 `message.ingest -> session truth -> runtime inference -> session truth -> message.emit` 的实际对话闭环，M1 才能算收口。当前已有的 `peer state / pairing / upstream connectivity probe / debug projection` 只算 qqbot 骨架，不算完整通道能力。
 - [2026-04-18] runtime 已接入最小自动 tool roundtrip：同一 turn 第一轮若产出 `fin_tool_calls` 且未 `reasoning.stop`，框架会自动基于“原始问题 + 上轮回答 + 最新工具结果”触发第二轮推理，并记录 `reasoning.auto_tool_roundtrip_completed`；闭环停止语义仍只认 `reasoning.stop`。
 - [2026-04-18] web chat path 已接入 slash command router：`/new`（新建并绑定）、`/resume <session_id>`（恢复绑定）、`/compact`（framework rebuild，不走 provider）；命令会写 session conversation 的 `local_command + system notice`。
 - [2026-04-18] QQBot 已进入内置 gateway peer 启动骨架：`web-debug` 启动时自动保证 `runtime/peers/qqbot/state.json` 与 `runtime/peers/registry.json`，默认 `idle_unpaired + pairing_required=true`，作为后续配对/失效重配/生命周期管理的真源起点。
@@ -34,7 +73,7 @@
 - [2026-04-17] 产品 build version 与 Cargo crate semver 分层；未来预留 core version + module version map 的模块化升级路径。
 
 - [2026-04-17] install-dev 已实现自动 build version：隔离验证中已确认 `0.1.0001 -> 0.1.0002` 自动递增，并维护 `current/previous`。
-- [2026-04-17] 网络型 provider 回归允许显式 bounded retry（当前 3 次），但 retry 过程必须写日志，不能静默 fallback。
+- [2026-04-17] 网络型 provider 回归允许显式 bounded retry（当前 3 次），但 retry 过程必须写日志，不能静默吞错或私自改走别的路径。
 - [2026-04-18] provider 请求路径现在固定为显式 reqwest blocking client builder（带 connect/total timeout）；若发送失败，错误信息必须至少带 `stage + attempt + endpoint + timeout/connect/request/body/decode flags + source chain`，避免 live 问题只剩模糊的 `error sending request`。
 - [2026-04-18] 在真正 peer plane 接入前，本地推理层必须先变成 peer-aware：当前已冻结 `MinimalContextView.peer`、`local-only M1 mode` placeholder、`Peer topology` prompt section，以及 `system_agent / project_agent / peer_router / channel_gateway` role baseline；这样后续接 peer registry / binding / daemon 时，不需要推翻已有 context schema。
 - [2026-04-18] peer-aware 之后，routing 也必须成为 framework truth：当前已新增 `PeerRoutingFeedback`，并落到 runtime/session artifacts、event、note、digest、projection；即使仍在 local-only placeholder，也必须显式输出 `placeholder=true` 与 `missing_facts`，不能把路由判断继续藏在 note 文本里。
@@ -47,13 +86,13 @@
 - [2026-04-17] Prompt System Block 第一版已落地：`role_prompt.prompt_modules / output_contract` 已进入 session artifacts 和 Web debug。
 - [2026-04-17] Tool Prompt Spec 第一版已落地：`tools.tool_selection_policy` 与 richer framework tool spec（`purpose / when_to_use / when_not_to_use / input_schema_summary / output_schema_summary / side_effects / example_uses`）已进入 session artifacts 和 Web debug。
 - [2026-04-17] schema 演进需要兼容旧 session artifacts；新增字段默认必须 `serde(default)`，重命名字段需保留 alias（例如 `current_prompt_summary <- prompt_summary`），否则真实 web-debug 会在旧数据上炸掉。
-- [2026-04-17] Prompt System 设计真源已冻结为四层：`Stable Core Prompt + Role Prompt Modules + Session/Task Overlay + Turn Context Envelope`；role 内容与 model overlays 的真源写入 `docs/architecture/26-role-prompt-family-and-model-overlays.md`，本地执行适配写入 `skills/fin-prompt-system/SKILL.md`。
+- [2026-04-17] Prompt System 设计真源已冻结为四层：`Stable Core Prompt + Role Prompt Modules + Session/Task Overlay + Turn Context Envelope`；当前 role 内容真源写入 `docs/architecture/26-role-prompt-family-and-model-overlays.md`，后续 backend model 差异如需处理只能下沉到 runtime adapter truth，不再进入 agent prompt 身份层；本地执行适配写入 `skills/fin-prompt-system/SKILL.md`。
 - [2026-04-17] Stable Core Prompt 第一轮设计已冻结：结构参考 Hermes，文本写法参考 Codex，但真相语义完全服从 fin 的 session artifact / event / framework ownership 架构；对应文档为 `docs/architecture/27-stable-core-prompt.md` 与 `docs/prompts/01-stable-core-prompt-v1.md`。
-- [2026-04-17] Role Prompt 文本第一轮已冻结：system / project / worker / reviewer baseline 文本在 `docs/prompts/02-role-baselines-v1.md`，GPT/Codex overlay 文本在 `docs/prompts/03-gpt-codex-overlay-v1.md`；当前 prompt 真源已覆盖 stable core、role baselines、GPT/Codex overlay 三层。
+- [2026-04-17] Role Prompt 真源已纠偏并冻结为两类：`system / project` baseline 文本在 `docs/prompts/02-role-baselines-v1.md`；`worker/reviewer` 不再是独立 prompt role，只能作为 project role 内部 workflow emphasis。后续 provider/model 差异若需要处理，只能留在 backend/runtime adapter truth，不能回流成 agent prompt identity。
 
 - [2026-04-17] `~/.fin/skills` 现在是全局 skills 运行时真源目录；runtime 会扫描 `~/.fin/skills/*/SKILL.md`，并把已加载 skills 注入 role prompt 结构化投影，而不是只靠文件存在但不被系统消费。
 - [2026-04-18] 最小推理闭环新增 `ControlFeedback`：runtime 在 closure 结束后发 `control.feedback_recorded` 事件，并将同一份 feedback 写入 `runtime/current/current_control_feedback.json`、`sessions/.../control/latest.json`、`ExecutionNote.control_feedback`、`DigestRecord.control_feedback`；Web inspector 只消费这些真源，不再自己猜 continuity/topic/simple-query。
-- [2026-04-18] `ControlFeedback` 解析器已升级为“模型输出优先 + runtime fallback”：支持从 `<fin_user_response>` 与 `<fin_control_feedback>` 解析；若 control block JSON 不含 fin 认可字段，则必须拒绝并回退到 `runtime_heuristic`，不能把错 shape 的 JSON 误判为有效 control feedback。
+- [2026-04-18] `ControlFeedback` 解析器已升级为“模型输出优先 + runtime observation-only”：支持从 `<fin_user_response>` 与 `<fin_control_feedback>` 解析；若 control block JSON 不含 fin 认可字段，则必须拒绝，并明确标记为 `runtime_heuristic` 观察态，不能把错 shape 的 JSON 误判为有效 control feedback。
 - [2026-04-18] `ControlFeedback` 解析失败路径已升级为 mask 白名单提取：若真实 provider 输出包含 fin 认可 key 但 value type 不合法（例如 `1.0` / `"0.18"` / `"true"`），runtime 会只提取白名单字段并做受控 coercion，产出 `origin=model_output_contract_masked`；未知字段必须丢弃，不能污染真源。
 - [2026-04-18] 若真实 provider 在 structured output 上持续“语义正确但 schema 不精确”，prompt 侧优先采用“双重暴露”：既在 `role_prompt.output_contract` 放规则，也在 `ModelInputAssembler` 末尾重复注入 mandatory final answer format + exact example + forbidden shapes（`0.98/1.0`、字符串布尔值、extra keys）；不要先放宽 runtime truth 判定。
 - [2026-04-18] conversation 前台与 debug 后台的关系已再次冻结：它们共享同一份 session render truth，只是 richness level 不同；后续 UI 应分为 Minimal / Rich / Full Trace，Rich mode 不是 debug 特例，而是正常会话增强层。
@@ -65,11 +104,11 @@
 - [2026-04-18] 若 live `web-debug` 出现“源码测试全绿但 4040 真实行为仍像旧逻辑”的现象，先判定 stale process / stale binary，而不是先继续猜 HTTP 层：本次 `POST /api/chat/send` 超时就是如此。判据是非法 body 仍能即时返回 400，说明 HTTP 解析活着；随后重编译并精确重启当前 `4040` 进程后，`/status` 立即恢复正常。
 - [2026-04-18] `status_probe` 的真实 hand-check 验收标准已冻结：`POST /api/chat/send {"message":"/status"}` 必须返回 `response_kind=status_probe`、`events_count=0`，且 session `messages.json` 与 `recent_digests.json` hash 不变，证明没有走 provider / closure / digest 写入路径。
 - [2026-04-18] 推理历史的“完整 turn 真源”不能只靠 `messages + digests + progress` 拼出来；最少还必须有：1) assembled prompt / rendered_input，2) provider raw output，3) 独立工具执行记录，4) 独立 reasoning 摘要记录。当前已新增 `ToolExecutionRecord`、`ReasoningViewRecord`、`ClosureTraceRecord` 并落盘到 session artifacts。
-- [2026-04-18] `ControlFeedback` 当前的自动 hook 范围已冻结为：解析/掩码提取 -> fallback 合并 -> 写 `control/latest.json` + `control.feedback_recorded` event + 注入 note/digest/status_probe。它还没有升级到“自动 session 切换 / task creation / interrupt / pending input queue”这类真正控制面动作。
+- [2026-04-18] `ControlFeedback` 当前的自动 hook 范围已冻结为：解析/掩码提取 -> observation merge -> 写 `control/latest.json` + `control.feedback_recorded` event + 注入 note/digest/status_probe。它还没有升级到“自动 session 切换 / task creation / interrupt / pending input queue”这类真正控制面动作。
 - [2026-04-18] `web-debug` turn id 不能基于 bounded recent digest 数量推导，否则窗口滚动后会重复旧 `operation_id`；单调 turn counter 现在以 `last_run.turn_index` / `operation_id` suffix 作为真源并写回 `last_run.json`。
 - [2026-04-18] 真实 `4040` provider 普通消息已再次验证：返回 `LIVE-4040-RETRY-CHECK`，并确认当前 session 从 `op-cli-demo-0001` 单调推进到 `op-cli-demo-0002` / `turn_index=2`；对应 reasoning/tool/closure artifacts 与 `rendered_input` 均已落盘。
 - [2026-04-18] Web trace 当前的真源接法已冻结：右侧 detail/modal 不直接拼 runtime current 快照，而是按 `operation_id` 从 session artifacts 绑定 `context + digest + reasoning view + tool records + closure trace`；若 UI 改了但 `app.js` 未出现新字段消费路径，先判主 binary / bundle 未刷新。
-- [2026-04-18] Web trace 的可读性规则继续冻结：对 `Tool Activity`、`Closure Trace`、`Provider Raw Output` 优先做语义化分区渲染（purpose/target/input/output/side effects、rendered prompt、provider structured blocks），而不是直接丢裸 JSON 树；树形展开只作为保底通用 fallback。
+- [2026-04-18] Web trace 的可读性规则继续冻结：对 `Tool Activity`、`Closure Trace`、`Provider Raw Output` 优先做语义化分区渲染（purpose/target/input/output/side effects、rendered prompt、provider structured blocks），而不是直接丢裸 JSON 树；树形展开只作为最后的通用查看形式。
 - [2026-04-18] normal conversation 与 debug 共用 session render truth 的规则继续落地：聊天主界面可以有 `Minimal / Rich / Full Trace` 三档 richness，但它只改变显示丰富度，不引入第二套数据链；reasoning/control/tool/provider trace 仍必须从 `FocusTurn(operation_id -> session artifacts)` 派生。
 - [2026-04-18] debug-server 新增前端模块文件时，除了让 TS 编译产出，还必须同步在 `rust/crates/debug-server/src/web_app.rs` 暴露对应 `/*.js` 路由；否则浏览器会因模块 404 直接停在初始 loading 画面，看起来像“页面没显示”，但真因是前端模块链断裂。
 - [2026-04-18] conversation Rich 模式的显示原则继续收敛：优先用紧凑的 control meters + tool semantic snippets 展示关键状态，把 reasoning/control/tool 压成可扫读块；详细 provider/control/rendered prompt 仍留给 `Full Trace` 展开。
@@ -139,6 +178,8 @@
 - [2026-04-19] archive viewer 第四阶段已补“live/materialized 关联索引”，但它只允许读取当前 session recent windows（focusTurns / recent_digests / recent_reasoning / recent_closures / recent_tool_records）做 availability 与摘要展示；若窗口中没有，就必须明确显示 `recent window miss`，不能暗示 archive operation 拥有完整 materialized 恢复能力。
 - [2026-04-19] review 收口后的 durable truth 规则已冻结：`segment_id` 必须对每次 pause 唯一；`step_index` 必须与 `step_id` 同步单调递增；自动 tool loop 的 `tool_call_id` 必须带 round 维度；RoundRecord/step summary 只能基于“当轮 dispatch 结果”，不能复用累计状态。
 - [2026-04-19] archive operation summary 在多轮场景下必须按 `latest-per-type` 事件聚合，不能读取第一个匹配事件；否则 archive inspector 会把第一轮 provider/control/tool 旧状态误显示成最终结果。
+- [2026-04-22] runtime finalize 的合法退出条件已收紧为 control-exit gate，而不是 `reasoning.stop` 本身：只有 `completed_with_evidence`、`simple_chat_done`、`blocked_requires_user_action` 三类 control channel 才能把 closure 标成完成；`reasoning.stop` 但 control block 不合法时，必须落 `control.exit_gate_rejected`，并把 operation/turn 状态记为 `continued`。
+- [2026-04-22] live smoke timeline classifier 必须优先读 durable `step_kind` 真值，不能继续从 `step_id/summary` 猜；否则 `tool_dispatch:skipped` 会被误报成 `other`，把已经闭环的 finalize 错判为 `framework_gap`。
 - [2026-04-19] `ExecutionState / PendingInput / PauseCheckpoint / InterruptedSegment / SegmentMerge` 的状态转移语义已下沉到 `fin-runtime::control_plane`；`fin-cli` 只应保留路径解析、落盘、last_run path 更新与命令 glue，避免 control plane 语义继续散落在 CLI wrapper。
 - [2026-04-19] runtime-owned control plane 的第一条边界已冻结：先下沉“纯状态推进 + merge 语义”，暂不把 session 文件 IO、scheduler、daemon supervisor 一起混进 runtime；ownership 先收拢，再逐层扩展自治。
 - [2026-04-19] `RoutingDecisionRecord` 不能停留在“可观察结论”；runtime 现在必须继续派生 canonical `RoutingActionRecord`，让 CLI/Web 只消费 action，不再自行从 confidence/disposition 二次猜测控制动作。
@@ -168,3 +209,159 @@
 - [2026-04-19] closeout 阶段新的讨论/执行入口已固定到 `docs/closeout/m1-current-state-summary.md`：它把当前项目状态收束为“单 agent runtime 内核已可运行、可观察、可安装、可回归”，并明确下一阶段不做新框架扩张，而做 `M1.1 stability pass`（receipt 标准化 + 推理主链 review 固化 + truth consistency 修复）。
 - [2026-04-19] M1.1 的第一份固定真源已落到 `docs/closeout/m1-inference-mainline-review.md`：当前单 agent 主链的 owning layer 已冻结为 `entry/orchestration -> runtime truth -> materialized/session truth -> web/debug observe`。后续若修改推理链，必须先判断改动属于哪一层；禁止在 Web/CLI wrapper 层补 runtime 业务语义。
 - [2026-04-19] M1.1 receipt 标准化第一步已落地：新增 `scripts/build-receipt-index.py` 与 `docs/closeout/m1-receipt-standardization.md`，并已实际生成 `harness/reports/<build>/receipt-index.json`。当前固定做法是“先统一 receipt 目录页，再逐步统一原始 receipt schema”，不要一开始就重做整套 harness。
+- [2026-04-19] text channel 活动卡实现第一步已落地：`fin-contracts` 新增 `ActivityCardsSnapshot / ToolSemanticView / SourceActivityCardView / UserActivityCardView`，`fin-debug-server` 新增 `build_activity_cards(runtime_home)` 与 `/api/activity_cards.json`，从 `last_run + session artifacts + current_execution_state + runtime/peers/registry.json` 聚合 `system-agent + peer registry` 的 source/user cards；Web 状态层只接入读取，不允许在前端重算第二套卡语义。
+- [2026-04-19] 工具语义统一层当前固定在后端：`fin-debug-server::tool_semantics::semantic_views` 会把 `ToolExecutionRecord` 归一化为 `category / verb / object / summary / detail`；文字 channel 与 WebUI 后续都必须消费这层真源，不得继续在 adapter / chat.ts 里按工具名各自猜一套用户语义。
+- [2026-04-19] qqbot 文字 channel delivery policy 第一版已落地：`fin-cli::channel_peer_activity_delivery` 维护 `~/.fin/runtime/peers/qqbot/activity_delivery_state.json`，记录当前 target/session 与最近一次已投递的 activity-card signature；qqbot bridge 正常回复会嵌入 compact activity card，后台 loop 每 5s 检查，但只有“card diff 非空”或“active 且距离上次投递 >= 60s”才会再次发送 compact redraw。
+- [2026-04-19] 非编辑文字渠道当前固定策略是“compact redraw + signature diff”，不是逐行 delta patch。真正的 delta 判定真源是 `previous delivered card view vs current card view`；若文本发错，先查 activity delivery state 与 `/api/activity_cards.json`，不要先怪模型/renderer。
+- [2026-04-19] qqbot 当前真正 blocker 已从“activity card 发不发”收束为三件事：`target -> session` conversation restore、session-truth outbound auto reply、bridge crash-restart keepalive。当前最小真源已落到 `~/.fin/runtime/channels/qqbot/conversations.json`，qqbot 回复路径也已改成从 session `conversation/messages.json` 读取新增 assistant/system 消息发送，而不是直接消费 handler 返回文本。
+- [2026-04-19] built-in qqbot bridge 当前已具备 attached supervisor：runner 进程退出会产出 `channel.peer.bridge_process_exited / bridge_restart_scheduled / bridge_supervisor_error` 并自动重启；这解决了 attached 模式下的最小保活，但仍不是最终的 detached dual-daemon/24x7 常驻方案。
+- [2026-04-19] qqbot/channel gateway 的默认 session pairing 不应自动过期；默认 TTL 只会制造假故障。当前已改为 `/qqbot pair` 默认 persistent（`session_expires_at=null`），仅在显式传 TTL 或显式 `/qqbot expire` 时才失效。
+- [2026-04-20] `apply_patch` 已从 disabled/planned 提升为 fin runtime 的真实 model tool：当前遵循 Hermes 风格，支持 `replace`（`path + old_string + new_string + replace_all?`）与 `patch`（V4A patch 文本）两种模式；成功后必须同时产出 `ToolExecutionRecord + tool.apply_patch_completed + patch_receipt`，并把写入 scope 限制在 `project.cwd/project_root` 内，防止模型越界改文件。
+- [2026-04-20] prompt/tool 真源已进一步收口：`ModelInputAssembler` 不能只把工具名+一句 summary 丢给模型，必须把 `when_to_use / when_not_to_use / input / output / example` 暴露出来；同时 `apply_patch` 已被固定为“默认 replace，复杂多文件才 patch”的首选编辑工具。
+- [2026-04-20] `view_image / context_history.rebuild / project.task.status / project.task.list` 已接成真实 model tools；其中 `view_image` 当前只暴露图片引用元数据，不冒充完整 vision，`context_history.rebuild` 只刷新 rebuild-index 与 recent_contexts bookkeeping，任务类工具只读 session truth 不做猜测。
+- [2026-04-20] prompt contract 不能只在 Web/debug 结构里富集，必须真的进入模型最终输入：tool catalog 至少要展开 `use / avoid / input / output / example` 五类子行，并用测试固定 `apply_patch` 的 replace-vs-patch 调用规则，防止后续又缩成“工具名 + 摘要”的弱 catalog。
+- [2026-04-20] 单次推理 closure 的多轮 tool loop 现已修成“每轮 round context rebuild + 动态 tool catalog + 已执行工具结果回注”的完整链路；follow-up request 不再只是拼接字符串续问，而会把 `recent_tool_activity / knowledge artifacts / current_input / tool policies` 一起重建后再送 provider。
+- [2026-04-20] 同一 closure 的 tool result 注入边界已冻结：只把真正执行过的 model tools 当作 authoritative client facts 注入下一轮，不把 `provider.call` 冒充成工具结果；同时 RoundRecord / tool_dispatch step 只能记录当轮 dispatch truth，closure 级 stop/yield/reminder 再做累计聚合。
+- [2026-04-21] 真实 provider 的更强 3-turn E2E（读 `~/code/codex` / `~/github/hermes-agent` -> `apply_patch` 写 repo 文件 -> `exec_command` 验证）已闭环，receipt 在 `~/.fin/harness/runs/test-live-provider-codex-hermes-write-20260421/`；这证明当前单 agent 真 provider + 真工具 + repo 内写文件主链可用。
+- [2026-04-21] 若 live E2E“工具确实调用了，但综合内容仍很泛”，先查 `recent_provider_requests.json` 的 rendered input：当前 follow-up context 主要注入 coarse `Recent tool activity`，对 `exec_command` 这类证据型工具还缺少足够丰富的 stdout/artifact snippets。此时结论应判为 **context evidence richness gap**，不是 provider/tool chain 未闭环。
+- [2026-04-21] current inference history 的真源规则已被 Jason 明确收紧：**当前推理链里的 tool execution history 必须全量进入下一轮请求**，不能在 runtime follow-up / assembler / tool dispatcher 层把真实工具结果先压成 summary/recent activity 再喂模型；digest/summary 只允许做长期沉淀，不可替代 current history。
+- [2026-04-21] `exec_command / write_stdin / apply_patch` 现在必须落 authoritative receipt，并由 round-context/follow-up 直接读取 receipt 真值装配 `Current tool execution history`；若 live E2E 结果泛化，下一步先检查 receipt 是否进入 rendered input，而不是先怪 provider。
+- [2026-04-24] 工具反馈闭环回归不能只盯 `exec_command`；至少要补三类 representative rendered-input 断言：`missing_runtime_target`（task/query）、`missing_context_capability`（peer/capability）、`missing_argument`（coordination/tool-call 参数），否则无法证明模型真的看到了可纠正的失败语义。
+- [2026-04-24] QQ 文字通道在 `debug/dev` 模式下不能只显示单个 frontstage 结果；必须额外渲染 **每个 execution agent 的状态/忙碌度/当前 task or activity**，并输出 **去重后的工具摘要列表**（保留 raw `tool_name` + 抽象后的用途/目标/结果），这样才能人工判断并行执行路径与 startup/resume 细节。
+- [2026-04-24] dev/debug agent 报告展示名必须优先使用现有名字池真源，而不是长 title：系统固定显示 `system`；其他 execution agent 从 `agent_id=device.agent_name` 取简短 `agent_name` 后缀。这样 QQ/finger 风格报告才够简洁，且不引入第二套 naming 语义。
+- [2026-04-24] 名字显示规则又收紧了一步：**单 device 只显示 `agent_name`，多 device 才显示 `device.agent_name`；外部 peer 显示 `peer.alias/label`**。不要在 QQ/debug/report 里继续暴露长 title 或 generic peer kind。
+- [2026-04-24] 仅在 renderer 层替换名字还不够；关键协作工具（至少 `agent.assign / mailbox.send / mailbox.poll / daemon.ensure_peer`）的 `target_ref/input_summary/output_summary` 也要优先落简短 agent 名称，否则 QQ dev 工具路径仍会充满 `local-worker-* / worker-* / peer_id=*` 这类内部 id。
+- [2026-04-24] QQ dev/debug 的工具摘要不能直接把结构化 detail 原样塞给用户；当前应先在人机可读层压一层，把 `agent.assign / mailbox.send / mailbox.poll / daemon.ensure_peer / update_plan` 渲染成短句动作摘要（用途 + 目标 + 结果），同时保留 raw `tool_name` 供路径判断。
+- [2026-04-24] 若本轮改动涉及 QQ dev 工具摘要压缩，标准回归要分两段：先用 renderer/unit 固定人类可读摘要，再跑隔离 `qqbot_inbound_e2e_produces_passing_live_receipt` 并人工翻 `outbound*.jsonl / events.jsonl / conversation/messages.json / qqbot-live-receipt.json`；不要只报 `cargo test passed`。
+- [2026-04-24] 真实 QQ debug activity card E2E 又暴露了一个细节：`mailbox.send` 这类结构化消息若在 `ToolSemanticView.detail` 上游已被截断，renderer 绝不能把残缺 JSON 原样打到前台；必须优先抽 `text`，其次抽 `kind`，再退化成仅显示目标名，保证 dev 卡片仍可读。
+- [2026-04-24] 对“工具摘要压缩已真实进入 outbound”的验收，不能只看 `prepare_periodic_delivery()` 返回文本；至少还要补一条 `spawn_activity_delivery_loop -> outbound-debug-card.jsonl` 的隔离 QQ E2E，确认真实桥接发出的文本里确实含并行 agent 行和压缩后的 `🛠 [tool] ...`。
+- [2026-04-24] 判断 live E2E 是否“空转”不能只看 round/tool 次数；若多轮之间持续产出**不同目标的真实读取、新证据、最终文件/补丁产物、以及后续验证命令**，则应判为正常业务推进。只有“重复同一操作且内容无变化”才算空转。
+- [2026-04-24] `scripts/run-real-provider-smoke.sh` 会在退出时自动清理 `session-test-*`；因此真实 provider 测后若要做深度 postmortem，不要指望结束后再读 `runtime-home/sessions/...`，应优先在运行中/刚结束前抓 `runtime/current/*`、`provider-live-smoke-report.json`、产物文件与 tool receipts。
+- [2026-04-21] 真实 provider E2E 通过不代表 build gate 已恢复；正式收口前仍要保持 `check-code-line-limit.py` 绿色。当前新增修改已再次把 `provider/src/lib.rs`、`closure_runtime.rs`、`round_loop_runtime_tests.rs` 顶过 500 行门禁。
+- [2026-04-20] system/project agent 的边界已固定为“同一 runtime 基础设施，不同 role overlay”：不要为 system/project 分叉第二套 runtime；应通过 `role prompt + role-aware dynamic tool policy + workflow emphasis` 区分。当前默认 system config 只保留 `system/project` 两类 role profile；历史 `default` 仅作为向后兼容 alias 映射到 `project`。
+- [2026-04-20] role-aware tool policy 也必须是 runtime 真源的一部分，而不只是 prompt 文本：`system` 偏 orchestration/peer/coordination，`project` 偏 project-scoped closure，并在同一 role 内承担 execution/review/handoff 模式；后续 agent tests 应直接验证 system vs project 的行为差异，而不是再扩成 worker/reviewer 独立角色。
+- [2026-04-20] 角色与执行体的边界再次冻结：`system/project` 是唯一两类 agent role；`worker` 不是 role，而是 `project agent` 按任务需要 spawn/reuse 的 runtime 执行体。后续若 project 需要多人并行干活，应扩的是 worker runtime / supervision / mailbox / assign，不是再增加 prompt role。- [2026-04-20] 本地单机的 project→worker skeleton 已再前进一步：`agent.assign / mailbox.send / mailbox.poll` 现支持 `target_worker_id/worker_id`，框架会把 worker alias 映射到 `local-<worker_id>` peer id。当前最小闭环已能形成 `daemon.ensure_peer(local-worker) -> agent.assign(target_worker_id) -> mailbox.send(target_worker_id) -> mailbox.poll(worker_id)` 的 durable artifacts + events。- [2026-04-20] `context.peer` 现在会读取 `runtime/peers/state/*.json` 的 ensured local peers；因此 `daemon.ensure_peer(local-worker-*)` 之后，后续 ContextView/Web/debug 可直接看到这些 worker peer，而不是只在底层 artifacts 里静默存在。
+- [2026-04-20] agent naming 当前最小真源已建立：所有 agent 采用 `agent_id = <device_name>.<agent_name>`；`device_name` 优先读 `user.toml -> runtime.device_name`，否则退回系统默认主机名；本地自动命名从 `~/.fin/runtime/agents/name_pool.json` 分配，并持久化到 `runtime/agents/registry.json + runtime/current/current_agent_registry.json`。当前 `create_named_local_worker(...)` 已接入 CLI demo 与 `/compact`。
+- [2026-04-20] status probe 现在直接消费 agent registry truth：优先读 `runtime/current/current_agent_registry.json`，缺失时读取 `runtime/agents/registry.json`，输出统一的 `device_name.agent_name` 摘要，避免调试面继续只显示匿名 worker_id。
+- [2026-04-20] startup topology 当前已正式进入 system-only config：`runtime.startup.system_agent + runtime.startup.project_agents[]` 是 framework-owned 启动真源；CLI 现会在读取 user.toml baseline 后回读 `~/.fin/config/system.toml`，让 startup topology 等 system-only 字段真正生效，而不是只生成模板。
+- [2026-04-20] project registry / wake queue skeleton 已落地到 `~/.fin/runtime/projects/{registry.json,state/<project_id>.json,wake_queue.json}`：`always_on=true` 会直接生成 `always_on_startup` wake intent；存在 unfinished work 且 project agent 不在线时，会生成 `unfinished_work_detected`，遵循 Jason 已确认的 recovery-first 原则。
+- [2026-04-20] agent presence 第一版已落地到 `~/.fin/runtime/agents/state/<agent_id>.json`：system entry agent 在 web/debug 启动时先 seed，再按每次真实请求切换 `busy -> idle/error`；startup config 中声明的 project agent 当前先以 `offline + await_startup_wake` 占位，后续 daemon/supervisor 必须在同一 truth 上接管，不得再造第二套忙闲状态。
+- [2026-04-20] startup wake execution 已从“只写 wake queue”推进为 framework 可执行骨架：`refresh_startup_control_plane` 现在会 `materialize -> execute wake queue -> rematerialize`；local project agent 会被推进到 `idle/project_ready`，remote project agent 则进入 `waiting/await_remote_connect`，并同步写入 managed project peer truth（`runtime/peers/state/*.json + runtime/peers/registry.json`）。这仍不是独立进程 daemon，但已经不是纯占位配置。
+
+- [2026-04-20] agent presence truth 已从“单条 latest presence”升级为 registry 视图：framework 现在同时维护 `runtime/agents/presence_registry.json + runtime/current/current_agent_presence_registry.json`，status probe 优先读它来展示所有 agent 的 busy/idle/waiting，而不是只靠 agent naming registry 知道有哪些 agent。
+
+- [2026-04-20] daemon recovery 已从纯 observation 再推进一步：attached daemon 若派生 `recover_project_agents`，现在会走最小可执行骨架（materialize startup topology -> filter recoverable offline projects -> execute wake queue -> rematerialize），并把结果落到 `runtime/projects/recovery_reports.json + runtime/current/current_project_recovery.json`；当前仍不是 detached supervisor，只是 framework-owned recovery skeleton。
+
+- [2026-04-20] wake queue 现在会携带 `resume_task_id`；local project wake 若带 unfinished task，会把 project presence 推到 `idle + resume_ready + current_task_id=<task>`，remote wake 则是 `waiting + await_remote_connect + current_task_id=<task>`。
+
+- [2026-04-20] framework 新增 `project supervision snapshot`（`runtime/projects/supervision.json + runtime/current/current_project_supervision.json`），它不替代 presence，而是把每个 project agent 的下一步控制意图显式化为 `ready / resume_ready / busy / waiting / recover_needed` 与对应 `observe_ready / resume_project_task / monitor_running_task / await_remote_connect / recover_project_agent`。
+- [2026-04-20] `resume_project_task` 不再只是 supervision 文本：对 local `resume_ready` project，framework 现在会继续 materialize `runtime/projects/execution_handoffs*.json`；但截至 2026-04-22，这里已经从真实 `handoff_project_task(...)` 改为只读 `preview_project_task_handoff(...)`，只能产出 `prepared / noop / missing_task` 观察结果，不得再偷偷改 task-store truth。
+- [2026-04-20] execution handoff 之后，framework 现在还会 materialize `runtime/projects/runtime_pickups*.json`：它读取 handoff + session `execution_state` + pending queue，把 local project runtime 明确分类为 `running / waiting_external / paused / ready_to_resume / prepared_idle / missing_binding`，并同步把 project agent presence 从单纯 `resume_ready` 推进到更接近运行事实的 busy/waiting/idle。当前仍未跨到 detached/background provider 真执行。
+
+- [2026-04-24] hidden checkpoint consume 的 `consumed_by_operation_id` 不能继续只读 `last_run.operation_id`；正确归因真源必须优先是 `runtime/current/current_turn.json.operation_id`，否则 hidden resume 会把 checkpoint consumed 错记到 stale frontstage run。
+- [2026-04-24] 验 assignment-resume / hidden worker turn 不能只看 task 已 `submitted/completed`；还必须同时断言 worker session `conversation/digests/reasoning/tools` 仍为空，并且 frontstage `runtime/current/last_run.json` 完全不变，才能证明 hidden-turn 边界真闭合。
+- [2026-04-24] QQ dev/debug 的工具摘要顺序不能依赖输入数组天然有序；必须按 `started_at + tool_call_id` 做“最新优先”排序后再截断/去重，否则多 agent 合并时用户会在 QQ 里看到旧工具排在前面，误判为没有新进展。
+- [2026-04-24] Jason 新冻结的启动/恢复边界：**framework 只能提供真相与 trigger，不能替 agent 做业务判断**。启动时只允许 materialize startup snapshot / wake trigger truth，由 system agent 决定是否恢复 worker；推理中也只能依据用户刚性命令或模型显式 control block 触发框架动作，禁止 startup/daemon 自行把 project/worker 从 offline 推进到 idle/resume_ready 当作“已恢复”。
+- [2026-04-25] framework event 持久化闭环又收紧了一层：仅把 `append_framework_events(...)` 变成 no-op 还不够；若 hidden/control-plane turn 仍通过 `SessionMaterializer.persist()` 无条件走 `persist_event_stream(...)`，旧 framework 事件仍会被普通 session materializer 挤进 `stream/archive`。当前修复点已冻结为两步：**(1) ephemeral persistence 禁止调用 `persist_event_stream`；(2) `daemon_headless / daemon_headless_* / project.resume / framework.assignment_runtime` 必须归类为 ephemeral source**。
+- [2026-04-25] macOS TCC 侧的新真相：若 daemon 直接从 `~/Documents/.../rust/target/debug/fin-cli` 拉起，会反复弹“访问文稿文件夹”授权框。当前 live 启动路径必须先 promote 到 `~/.fin/install/current/bin/fin`，再由该安装路径启动 daemon；否则即使功能对了，用户体验也会持续被授权框打断。
+- [2026-04-25] `.fin` 资源收口当前冻结成三层：**latest/current truth 保留；recent/debug 文件只保留 bounded window；framework hidden/control-plane turn 不进普通 session history**。不要把 `runtime/current/current_provider_requests.json` 这类 current truth 和 `recent_provider_requests.json` / `qqbot/events.jsonl` / `headless-daemon.log` 这类 bounded recent/debug 混成一类处理。
+- [2026-04-25] 仅修改 `RuntimeRetentionConfig::default()` 不会自动影响 live，因为 `load_effective_system_config(...)` 会优先保留已有 `~/.fin/config/system.toml` 的 retention 覆盖；若要真实收口现网，必须同步更新 live `system.toml` 或迁移逻辑。
+- [2026-04-25] headless daemon 文本日志的真实增长面不只来自主动 heartbeat 日志；macOS launchd `StandardOutPath/StandardErrorPath` 也指向同一 `logs/runtime/headless-daemon.log`。因此正确的 bounded 修法是让同一路径在下一次 `append_log(...)` 时统一做 tail trim，而不是只在某个写日志调用点局部截断。
+
+## 2026-05-23 Durable Primary Agent + Subagent Control Plane
+
+- Verified: fin multi-agent identity must be modeled in runtime as durable `system_agent` / `project_agent` primary identities plus parent-owned `subagent` runs; `project_agent` is not a `system_agent` child/subagent.
+- Implementation truth: `rust/crates/runtime/src/agent_control.rs` owns `AgentIdentity`, `AgentRunRecord`, durable agent mailbox seq, `register_primary_agent`, `spawn_subagent`, `send_agent_input`, `wait_agent`, `close_agent`, and `resume_agent` semantics.
+- Validation: `cargo test -p fin-runtime` passed on 2026-05-23 with 112 runtime unit tests, including primary registration, system/project subagent spawn paths, context policy guards, mailbox seq, and wait/close/resume lifecycle.
+
+## 2026-05-23 Global Install + Permission Bootstrap
+
+- Verified: global install must use `scripts/install-fin-global.sh`, which builds release `fin-cli` and then invokes canonical `fin-cli install-dev`; direct binary copy is not a valid install truth.
+- Verified: daemon restart in install scripts must use `fin stop` / `fin start`; broad process kill commands are forbidden and were removed from the global install script.
+- Verified: macOS first-install permissions cannot be silently granted; `scripts/bootstrap-macos-permissions.sh` opens the required privacy panes once and records `~/.fin/install/macos-permissions-bootstrap.json` as an offered-bootstrap marker.
+
+## 2026-05-23 Agent RPC Network Collaboration
+
+- Verified: cross-machine agent collaboration uses dedicated Agent RPC, not WebUI/QQBot/mobile debug channels.
+- Implementation truth: `runtime.agent_network.enabled` gates the listener; Bearer Lease token source must be `token_env` or `token_file`.
+- Agent RPC v1 endpoints: `/agent/v1/handshake`, `/agent/v1/heartbeat`, `/agent/v1/agents`, `/agent/v1/mailbox/send`; successful requests write runtime agent identity, network leases, presence/peer registries, and durable mailbox truth.
+
+## 2026-05-23 Agent RPC Lifecycle Harness
+
+- Verified: Agent RPC test harness now covers full v1 lifecycle: register primary agents, heartbeat refresh, online discovery, mailbox delivery, seq increment, and artifact writes.
+- Verified error coverage: auth failures, malformed route/body, identity mismatch, subagent rejection, project missing `project_id`, duplicate online register, unknown/expired lease, bad mailbox sender/target/lease.
+- Validation: `cargo test -p fin-debug-server` passed with 43 tests; `cargo test -p fin-config agent_network` and `cargo test -p fin-runtime agent_control_tests` also passed.
+
+## 2026-05-23 Agent RPC Failure/Recovery Coverage
+
+- Verified: Agent RPC harness covers network unavailable, mid-request dropped connection, lost heartbeat -> offline, recovery heartbeat -> online, and execution failure report -> failed run truth.
+- Implementation truth: `/agent/v1/run/status` records remote execution outcomes through `AgentControlStore::update_run_status`; heartbeat recovery refreshes presence/peer registry to `network_heartbeat`.
+- Validation: `cargo test -p fin-debug-server` passed with 46 tests, plus config agent_network and runtime agent_control targeted tests passed.
+
+## 2026-05-24 External quota / provider transient failure policy
+
+- Jason 明确冻结：外部 provider 配额类问题（如 `weekly quota`）不得因单次或偶发失败就判定为系统阻断；必须按**同类错误连续出现 3 次**才算真实阻断。
+- 适用范围：`provider smoke`、live LLM E2E 中的外部 quota / provider-side policy / transient upstream refusal。
+- 判定要求：
+  - 需要是**同类错误**，不能把不同错误混算；
+  - 需要是**连续 3 次**，中间若成功或错误类型变化则重新计数；
+  - 在未达到 3 次前，只能记录为 observation/warning，不得拿来否定已通过的本地主链或多 agent live 闭环。
+- 这条规则只影响“外部依赖故障是否升级为阻断”的判定，不影响本地 runtime / mailbox / lifecycle / render 真源问题的严格阻断标准。
+
+## 2026-05-24 Code retry policy
+
+- Jason 明确冻结：代码侧遇到可重试错误时，必须采用**指数回退并最多重试 5 次**，不能只做 1-3 次线性重试。
+- 适用范围：本地多 agent RPC、provider HTTP 发送/读 body、其他已判定为 retryable 的网络/瞬时链路故障。
+- 判定要求：
+  - 只对 retryable/transient 错误生效，逻辑错误、鉴权错误、schema 错误、明确 4xx 业务错误不得盲重试；
+  - 每次 retry 必须保留 attempt 事实，不能静默吞掉；
+  - backoff 必须为指数型，而不是固定或线性等待；
+  - Jason 进一步收紧：**从 1s 起步**，标准序列为 `1s/2s/4s/8s/16s`，毫秒级快速重试视为错误实现。
+- owning layer 已冻结：跨 crate 的重试/backoff/错误链摘要统一收敛到 `fin-shared`，调用方（如 `fin-cli`、`fin-provider`）只消费共享策略，不再各自维护一套 retry helper。
+- 脚本/前端侧的真实重连与 E2E retry 也必须对齐同一节奏：允许语言实现不同，但语义必须等价为 `1s/2s/4s/8s/16s`；不得再保留毫秒级或线性等待的第二套重试语义。
+
+## 2026-05-23 Simplified Agent Startup Model
+
+- Verified: startup model now defaults to local system primary agent registration at the standard `system:<id>` AgentControl path.
+- Verified: project agents can be dynamically configured via `runtime/agents/project_agents.json`; startup topology merges static config plus dynamic config and materializes project availability from the merged list.
+- Verified: subagents remain parent-local execution units and are not included in cross-agent network discovery.
+
+## 2026-05-23 simplified agent startup closeout
+- Dynamic project agent config is a formal CLI control plane: `fin project-agent add|remove|list <user.toml> ...` reads/writes `runtime/agents/project_agents.json`. Local project agent add allocates an endpoint port once and preserves it on subsequent updates, keeping startup topology deterministic.
+- QQBot restored-target inbound turns must keep explicit session binding authoritative for the whole turn; do not re-read `last_run` after attached control-plane refresh when `send_chat_message_on_binding` was called with an explicit binding, or restored target messages can execute in the wrong active session.
+
+## 2026-05-23 channel default listener boundary
+- WebUI / Android / QQBot channel adapters default to the `system_agent` listener. `project_agent` listeners may exist and can be explicitly connected or used by Agent RPC, but they are not default UI/channel targets.
+- Regression truth: channel ingress must keep `source=channel.qqbot`, `role_id=system`, and `worker_id=worker-system` even when a project agent endpoint is configured; project agent presence may be observable but must not become the channel execution target by default.
+
+## 2026-05-23 Canonical fin Repository Path
+- Canonical fin development path is `~/code/fin`, not `~/Documents/github/fin`; Android client and build-all live under `~/code/fin/android-client` and `~/code/fin/scripts/build-all.sh`. Future fin implementation and verification must start from `~/code/fin`.
+
+## 2026-05-23 Unified config entry for headed/headless/provider
+- Verified: `user.toml` is the provider/profile/model truth; `system.toml` only keeps runtime/startup overlays and must merge user provider+policy from `ConfigMapper::merge_user_layer`.
+- RCC provider import is now a CLI/config-layer operation (`config-import-rcc`) and build install imports `~/.rcc/provider/ali-coding-plan/config.v2.json` before install; Android stores only a `runtime_config_snapshot`, not an editable provider truth.
+- Install/build smoke must not depend on expiring external provider tokens; use offline `mainline-scenario` for install artifact truth and keep real provider validation in explicit live smoke.
+
+## 2026-05-23 — Local multi-agent E2E completion bar
+
+- 无头 local multi-agent harness 只有在 project agent 子进程真实调用当前 provider/LLM、返回非空模型输出并把 provider/model/status/output_chars/result refs 写入 receipt 与 ledger 后，才算 E2E 闭环；仅目录观察、静态文件通信或 synthetic receipt 不算完成。
+- MiniMax-M2.7 在 OpenAI-compatible `/v1/chat/completions` 下可能把 2048 completion budget 全部消耗在 reasoning tokens，导致 HTTP 200 但 content 为空；provider 请求预算需保留足够 completion 空间，当前 OpenAI-compatible 默认 `max_tokens=8192`。
+
+## 2026-05-23 — Agent-to-agent communication baseline
+
+- Local multi-agent harness 的 agent 间通信必须走 Agent RPC + AgentControl durable mailbox：system 通过 `/agent/v1/handshake`、`/agent/v1/agents`、`/agent/v1/mailbox/send` 发现和派发，project agent 从 `AgentControlStore::consume_next_mailbox_message` 消费；禁止再把 `runtime/mailbox/<agent>/inbox.json` 作为通信协议。
+- 文件仍可作为 runtime 持久化事实（control mailbox、result/progress artifacts、ledger），但不能作为 system/project agent 之间的临时协议通道；E2E receipt 必须证明 `agent_rpc_transport="agent_rpc"`、project 通过 RPC 枚举在线、control mailbox 已 consumed。
+
+## 2026-05-23 Android live config contamination guard
+- 已验证教训：Android 真机验收禁止改写真实 `ws_profiles.json` / daemon endpoint 做 adb reverse 或 mock 测试；上轮把 endpoint 写成 `ws://127.0.0.1:4040/ws` 导致手机连自己，表现为 daemon 连接不稳。以后测试替身必须用独立测试 profile/临时 runtime，并在验收前确认真实 profile 仍指向 `ws://100.66.1.82:4040/ws` 或用户指定真实地址。
+
+- [2026-06-01] red-test remediation P0/P1 完成：新增 4 个测试文件（records_tests/context_compaction_tests/task_store_tests/closure_runtime_tests）+ 2 个内联追加（owner_loop/scheduler），共新增 14 个测试，全部通过。P2/P3/P4 待后续补齐。验证结果：fin-config 17, fin-contracts 16, fin-runtime 157 passed, 0 FAILED。
+
+## 2026-06-02 Pipeline Unique Type architecture landed (Input/Reason/Hub/Feedback/Error)
+
+- 5 链按 `<Domain><Direction><NN><Node>` 全部落地，commit：99d95d4 (Reason) / 5ae5c7a (Input) / c93dd7c (Hub) / 7c6d98f (Feedback) / f1f353e (Error)。
+- 唯一真源切点：Reason `reason_pipeline.rs`、Input `input_pipeline.rs`、Hub `hub_pipeline.rs`、Feedback `feedback_pipeline.rs`、Error `error_pipeline.rs`；`ModelOutputParser` / `InferenceOperationBuilder` / `ProviderDescriptor::prepare_request` / `ProviderFacade::execute_json_request` 已改为仅串联相邻节点。
+- 已物理删除/改名：`RoundExecution` → `ReasonRoundExecution`；`merge_with_fallback` → `merge_with_runtime_defaults`；`model_output.rs` 中重复 `parsed_tool_calls` 中间变量删除；feedback tag 常量从 `model_output.rs` 迁出。
+- 错误归一：`map_runtime_error_through_error_pipeline` 把 `RuntimeError` 显式串入 ErrorErr01..05，禁止吞异常 / fallback 成成功 truth。
+- 静态门禁 10 项（命名 + 编号 + 禁止 `From` / `*_V2` / `*.` / `*a` / `*_1`）+ 业务回归 9 项全过；`cargo build -p fin-cli` 持续通过；未触碰 cli/debug-server 公开 API。
+- 教训：`apply_patch` 用 `rust/...` 路径曾误写到 `rust/crates/runtime/src/...`；后续 git 提交前必须 `git status --short` 检查 staged 路径前缀。

@@ -186,7 +186,7 @@
 - `versions/`：已归档的可运行版本
 - `staged/`：待回归验证的候选安装物
 - `current/`：当前提升为全局默认版本的软链接
-- `previous/`：最近一个可快速回退版本
+- `previous/`：最近一个可快速切换的上一版本
 - `receipts/`：安装与提升回执
 - `packages/`：打包文件（如后续需要 tarball / zip / pkg）
 
@@ -218,6 +218,8 @@
 - `runtime/` 偏活跃态、可重建态
 - 丢失后不应破坏长期知识真源
 - 长期沉淀应进入 `sessions/`、`workdirs/`、`harness/`、`diagnostics/`
+- `runtime/current/` 只允许保存 **latest/current truth**；不得把控制面心跳、轮询、调试快照做成无界累积
+- `runtime/peers/*/events.jsonl` 与 `logs/runtime/*.log` 只作为调试辅助，必须是 **bounded recent window**，不能冒充长期历史真源
 
 ## 6. `sessions/`：按时间分桶的会话目录
 
@@ -258,6 +260,12 @@
           topic-<topic-thread-id>.json
         artifacts/
           candidates/
+
+补充冻结规则：
+
+- session 下的 `recent_*` 文件是 **bounded recent working set**，由 retention 控制；它们不是长期全量归档
+- `latest.json` / `current_*.json` 保留当前 closure / 当前 runtime 的 authoritative snapshot，可大但必须是 **latest overwrite**，不是无界 append
+- framework-owned hidden/control-plane turn（例如 startup/heartbeat/project-resume/assignment-resume）只允许更新 current/control truth；**不得污染普通会话 `conversation/messages.json`、recent history、events stream/archive`**
 ```
 
 测试 session 的同构目录则进入：

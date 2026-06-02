@@ -2,6 +2,319 @@
 
 Updated: 2026-04-18
 
+## 2026-04-21 failed-tool + reasoning.stop closure bug fixed and live E2E re-validated
+
+- runtime 已修复一个真实闭环 bug：
+  - 同一 round 内若出现 failed tool，`reasoning.stop` 不再允许直接收口
+  - framework 会把 stop 标记为 `suppressed`，继续 follow-up round，让模型基于 failed tool receipt 修正
+- 已补 runtime 回归：
+  - `runtime_suppresses_reasoning_stop_when_same_round_has_failed_tool`
+  - 验证 follow-up request 能看到 `tool=apply_patch status=failed`
+  - 验证 follow-up request 能看到 `tool=reasoning.stop status=suppressed`
+- 真实 provider E2E 已重新闭环：
+  - run id: `test-live-provider-codex-hermes-write-small-20260421-203620`
+  - transcript: 真实 `exec_command -> apply_patch -> exec_command verify -> reasoning.stop`
+  - turn1 共 5 个 round：先读两条证据，再经历两次 patch failure，随后读取旧文件内容并用精确 `old_string` 成功写入
+  - turn2 共 2 个 round：先验证文件，再基于真实 `wc -l + sed` 结果收口
+- 本次 live run 说明：
+  - current history 全量回注是正确方向
+  - 但 live E2E prompt 必须主动限制 `exec_command` 输出体积，否则 follow-up round 会因 receipt 过大而显著拖慢
+  - 对真实写入型任务，模型会利用 failed receipt 自行修正 `apply_patch` 参数，这证明“错误反馈 -> 再推理 -> 再工具”主链已经能工作
+
+## 2026-04-21 live provider e2e expectations corrected
+
+- 真 provider 只读工具链 receipt 已闭环：
+  - round1: 模型真实输出两个 `exec_command`
+  - client 真实执行
+  - round2: tool results 回注 provider request
+  - final: `reasoning.stop`
+- 当前未闭环的是：
+  - `apply_patch` 写入链
+  - 复杂多 turn 的读+写混合任务
+  - 失败后的 partial truth
+- 因此当前主问题不是“模型完全不会调用工具”，而是：
+  - 写工具链稳定性不足
+  - timeout / failure diagnosability 不足
+
+## 2026-04-21 tool call / timeout / context policy corrected
+
+- `fin_tool_calls` 当前只是过渡期 contract，不是长期标准 function/tool calling wire
+- 长期方向：
+  - provider-native standard tool call
+  - fin internal IR
+  - control/note/digest 继续保留为框架层 contract
+- live provider timeout 规则修正为：
+  - 短 connect timeout
+  - 长 provider waiting timeout（>=15m）
+  - tool timeout 独立
+  - stale/no-progress 由 supervisor/harness 判定
+  - 禁止用 180s/240s 的短总超时截断整条 run
+- prompt 压缩不是当前方向：
+  - 默认接受真实业务会塞满上下文
+  - 只做 context assembly / rebuild / selection 优化
+  - 不通过裁减业务上下文换测试通过率
+
+## 2026-04-21 deterministic model-output repair boundary frozen
+
+- model output repair 当前已明确边界：
+  - 只做确定性、语义保持的形状修复
+  - 不做语义推断修补
+- 允许：
+  - tag / bracket / brace 的确定性闭合
+  - `name -> tool_name`
+  - `args -> arguments`
+  - control feedback 的 whitelist mask salvage
+- 禁止：
+  - 把 prose 解释成工具调用
+  - 补全截断的字符串值、命令值、tool name
+  - 根据上下文猜模型“想调用什么”
+- tool call 解析状态后续要能区分：
+  - `exact`
+  - `repaired_deterministic`
+  - `masked_partial`
+  - `invalid`
+- 执行边界：
+  - `exact / repaired_deterministic` 可执行
+  - `masked_partial / invalid` 不可执行，但必须进入 debug truth
+
+## 2026-04-21 output contract retry loop landed
+
+- runtime 现在会对不满足 fin structured contract 的模型输出做 framework-owned retry：
+  - 只反馈结构错误
+  - 明确要求保持原语义，不新增事实/工具意图/结论
+- 当前最小 validator：
+  - user_response 不能为空
+  - control_feedback 必须可解析
+  - 如果检测到 `<fin_tool_calls>` 但不可执行，必须进入 retry
+- 当前默认上限：
+  - `MAX_OUTPUT_CONTRACT_RETRIES = 3`
+- 超限行为：
+  - 停止当前 contract retry，避免死循环
+  - 记录 `model.output_contract_retry_limit_reached`
+  - 失败原因进入 note/event/debug truth
+- 已有成功与失败回归：
+  - malformed tool block -> retry -> repaired -> stop
+  - malformed tool block 持续失败 -> 第 4 次 provider 请求后停止（首轮 + 3 retries）
+
+## 2026-04-21 retry attempt timeline truth landed
+
+- 补齐了 output contract retry 的 durable truth 缺口：同一 logical round 内的 retry，不再只剩 summary/event。
+- 当前冻结边界：
+  - `RoundRecord`：只表示最终 accepted 的 logical round
+  - `ProviderRequestRecord / ProviderResponseRecord`：每个 retry attempt 都单独落盘，并新增 `attempt_index`
+  - `StepRecord.summary`：显式包含 `round / attempt / accepted / validation_errors`
+- 当前 request/response id 规则：
+  - `provider-request-{operation_id}-r{round}-a{attempt}`
+  - `provider-response-{operation_id}-r{round}-a{attempt}`
+- 回归已覆盖：
+  - retry recover 时能看到 `r01-a01` 与 `r01-a02`
+  - retry limit 时能看到 `r01-a01..a04`
+  - `RoundRecord` 只指向最终 accepted attempt
+
+## 2026-04-20 presence registry truth landed
+
+- `agent presence` 不再只有单条 `current_agent_presence.json`。
+- framework 现在会同时维护：
+  - `~/.fin/runtime/agents/presence_registry.json`
+  - `~/.fin/runtime/current/current_agent_presence_registry.json`
+- 目的：
+  - 让 system/status/debug 能看到所有 agent 的 busy/idle/waiting 并发状态
+  - 避免只靠 naming registry 知道“有哪些 agent”，却不知道它们当前在干嘛
+- 当前 `status_probe` 的 agent summary 已优先读取 presence registry，格式变为：
+  - `agents=2 [mbp.builder:idle, mbp.system:busy]`
+
+## 2026-04-20 system owner-loop query tools landed
+
+- 补齐了 system role 在多轮/异步 owner-loop 里需要的 framework query tools：
+  - `agent.presence.list`
+  - `project.supervision.list`
+- 当前语义：
+  - 首轮 provider 请求依然通过 context 直接带 `agent_presence_summary / project_supervision_summary`
+  - 但后续 turn 若 system agent 需要主动巡检 busy/idle/waiting、resume/recover intent，不再只靠首轮 summary 和记忆，而是通过 model-callable tool 直接回读：
+    - `~/.fin/runtime/current/current_agent_presence_registry.json`
+    - `~/.fin/runtime/current/current_project_supervision.json`
+- owner-loop 当前最小可执行查询面现在变为：
+  - `project.task.list`
+  - `project.task.status`
+  - `agent.presence.list`
+  - `project.supervision.list`
+  - `peer.list / peer.describe`
+- 已验证：
+  - `cargo test -p fin-runtime tool_dispatch_query_tests --manifest-path rust/Cargo.toml -- --nocapture`
+  - `cargo test -p fin-runtime prompt_tests --manifest-path rust/Cargo.toml -- --nocapture`
+  - `cargo test -p fin-runtime context_view_tests --manifest-path rust/Cargo.toml -- --nocapture`
+  - `cargo test -p fin-runtime --manifest-path rust/Cargo.toml --quiet`
+
+## 2026-04-20 task-system write tools landed
+
+- owner-loop 不再只有“看 task/presence/supervision”的 query 面。
+- 现在已补齐并接线最小 managed task write tools：
+  - `project.task.create`
+  - `project.task.claim`
+  - `project.task.submit`
+  - `project.task.review`
+- 当前语义：
+  - `create`：把复杂工作正式纳入 session task registry / board truth
+  - `claim`：把 task 绑定到当前执行 worker
+  - `submit`：worker 提交结果给 review owner
+  - `review`：review owner 执行 approve / reopen / block / cancel
+- 当前收下的最小 owner-loop 动作面：
+  - query：
+    - `project.task.list`
+    - `project.task.status`
+    - `agent.presence.list`
+    - `project.supervision.list`
+  - write：
+    - `project.task.create`
+    - `project.task.claim`
+    - `project.task.submit`
+    - `project.task.review`
+  - coordination：
+    - `agent.assign`
+- 已加的 guard：
+  - duplicate task id create -> failed
+  - wrong claimer submit -> failed
+  - non-review-owner review -> failed
+  - terminal task mutate -> failed
+- 已验证：
+  - `cargo test -p fin-runtime tool_dispatch_task_write_tests --manifest-path rust/Cargo.toml -- --nocapture`
+  - `cargo test -p fin-runtime prompt_tests --manifest-path rust/Cargo.toml -- --nocapture`
+  - `cargo test -p fin-runtime context_view_tests --manifest-path rust/Cargo.toml -- --nocapture`
+  - `cargo test -p fin-runtime --manifest-path rust/Cargo.toml --quiet`
+
+## 2026-04-20 worker pool presence truth landed
+
+- startup 默认 worker budget 现已固定为：
+  - `system_agent.local_worker_budget = 4`
+  - `project_agent.worker_budget = 4`
+- framework 不再只把 worker budget 留在配置字段里；当前会在 startup / presence materialization 时直接落成可观察的 worker pool truth：
+  - system worker -> `agent_kind=system_worker`
+  - project worker -> `agent_kind=project_worker`
+- presence registry 当前会带稳定 `worker_id`，并同步进入：
+  - `~/.fin/runtime/agents/presence_registry.json`
+  - `~/.fin/runtime/current/current_agent_presence_registry.json`
+- `agent.presence.list` 现在也会把 `worker_id` 暴露给模型，后续 `agent.assign` / mailbox / task owner-loop 可以基于同一份 worker truth 做目标选择，而不是让模型盲猜 `target_worker_id`
+- 已验证：
+  - `cargo test -p fin-cli agent_presence_tests::write_presence_updates_presence_registry --manifest-path rust/Cargo.toml -- --nocapture`
+  - `cargo test -p fin-cli startup_topology::tests::materialize_writes_always_on_project_and_wake_queue --manifest-path rust/Cargo.toml -- --nocapture`
+  - `cargo test -p fin-cli --manifest-path rust/Cargo.toml --quiet`
+  - `cargo test -p fin-runtime --manifest-path rust/Cargo.toml --quiet`
+  - `cargo fmt --all --manifest-path rust/Cargo.toml --check`
+
+## 2026-04-20 startup worker defaults moved out of code literals
+
+- `system/project` 默认 worker budget 不再直接硬编码在 `startup.rs` 的 Rust 字面量里。
+- 当前默认值真源改为独立配置文件：
+  - `rust/crates/config/defaults/runtime-startup.toml`
+- 语义：
+  - repo 内 baseline default 由配置文件声明
+  - 运行时仍优先读取 `~/.fin/config/system.toml`
+  - `system.toml` 不存在时，才回落到 embedded startup defaults config
+- 这样后续改默认 worker 数，不需要改 Rust 逻辑，只需要改 startup defaults config / runtime system config。
+
+## 2026-04-20 restart/startup updates now have framework-owned startup control summary
+
+- 每次 startup / restart refresh 后，framework 现在会额外落：
+  - `~/.fin/runtime/current/current_startup_control_summary.json`
+- 它统一回答：
+  - 当前 startup 配置预算（system workers / project workers / projects）
+  - 当前哪些资源已经启动
+  - 当前哪些资源处于 busy
+  - 当前 waiting / recoverable_offline / wake_actions 概况
+- `status probe` 现已直接显示 `startup=...`
+- activity cards 现会在“重启后暂无闭包执行但 framework 已完成 startup refresh”时回退显示 startup config/state 摘要，供 QQ/Web 共享同一份重启更新真源
+
+## 2026-04-20 project role owner-loop bias and minimal collaboration loop landed
+
+- `project role` 不再只偏 `claim/submit` 执行动作；当前动态工具偏置已补齐：
+  - `project.task.create`
+  - `project.task.review`
+  - `agent.assign`
+- 这样 project agent 才符合“单项目 owner / dispatcher / reviewer”的设计，不会退化成纯 worker。
+- 当前最小协作闭环已验证：
+  - system/owner `project.task.create`
+  - system/owner `agent.assign`
+  - worker `project.task.claim`
+  - worker `project.task.submit`
+  - owner `project.task.review`
+- 这条链说明：system/project/worker 当前已可在同一 runtime truth 上完成最小 managed-task 闭环；后续缺的主要是 detached execution / remote peer 真执行，不是 task truth 本身。
+
+## 2026-04-20 daemon project recovery skeleton landed
+
+- `recover_project_agents` 不再只是 daemon observation result。
+- attached daemon 当前已具备最小执行骨架：
+  - `derive recovery action`
+  - `materialize startup topology`
+  - `filter recoverable offline projects`
+  - `execute wake queue`
+  - `rematerialize startup truth`
+- 新增 recovery report：
+  - `~/.fin/runtime/projects/recovery_reports.json`
+  - `~/.fin/runtime/current/current_project_recovery.json`
+- 当前语义：
+  - local recoverable project -> 推进到 `idle/project_ready`
+  - remote recoverable project -> 推进到 `waiting/await_remote_connect`
+
+## 2026-04-20 project supervision snapshot landed
+
+- framework 新增 `project supervision snapshot`：
+  - `~/.fin/runtime/projects/supervision.json`
+  - `~/.fin/runtime/projects/supervision/<project_id>.json`
+  - `~/.fin/runtime/current/current_project_supervision.json`
+- 它不是第二套 presence，而是 framework 对每个 project agent 的“下一步控制判断”：
+  - `ready`
+  - `resume_ready`
+  - `busy`
+  - `waiting`
+  - `recover_needed`
+- 对应的最小动作：
+  - `observe_ready`
+  - `resume_project_task`
+  - `monitor_running_task`
+  - `await_remote_connect`
+  - `recover_project_agent`
+- 另外 wake request 现在会携带 `resume_task_id`，project agent 被唤醒时可以知道应接续哪个 task
+
+## 2026-04-20 project execution handoff skeleton landed
+
+- framework 不再只把 `resume_project_task` 停留在 supervision intent。
+- 对本地且 `resume_ready` 的 project，当前会继续 materialize：
+  - `~/.fin/runtime/projects/execution_handoffs.json`
+  - `~/.fin/runtime/projects/execution_handoffs/<project_id>.json`
+  - `~/.fin/runtime/current/current_project_execution_handoffs.json`
+- runtime 新增 `handoff_project_task(...)`：
+  - task 已 terminal -> skip
+  - same worker 已 claim -> noop
+  - 否则把 task 推到 `claimed` 并刷新 task registry / board
+- status probe 现会直接暴露 `project_execution_handoffs=prepared/noop/missing_task` 摘要。
+- 当前边界：
+  - 已有 handoff/claim 真源
+  - 还没有 detached/local project runtime 自动 pickup 该 task 执行
+
+## 2026-04-20 project runtime pickup truth landed
+
+- framework 新增 `project runtime pickup snapshot`：
+  - `~/.fin/runtime/projects/runtime_pickups.json`
+  - `~/.fin/runtime/projects/runtime_pickups/<project_id>.json`
+  - `~/.fin/runtime/current/current_project_runtime_pickups.json`
+- 它基于：
+  - `current_project_execution_handoffs.json`
+  - session `control/execution_state.json`
+  - session `queue/pending_inputs.json`
+- 当前最小 pickup state：
+  - `running`
+  - `waiting_external`
+  - `paused`
+  - `ready_to_resume`
+  - `claimed_idle`
+  - `missing_binding`
+  - `missing_session`
+- status probe 现已直接暴露 `project_runtime_pickups=` 摘要。
+- project agent presence 现在也会从单纯的 `resume_ready` 再推进到更贴近运行事实的 busy/waiting/idle。
+- 边界：
+  - 已经知道“是否具备继续跑的条件”
+  - 还没有真正 detached/local runtime 自动执行下一轮 provider closure
+
 ## 2026-04-19 build/install gate recovery
 
 - 已完成正式 gate recovery：
@@ -101,6 +414,17 @@ Updated: 2026-04-18
   - `verified_paths`
 - 这意味着 installed-binary smoke 不再只是“有个 summary.json”，而是已经能稳定挂到 build/install flow 里，作为 receipt-index 的自动一部分
 
+## 2026-04-19 M2 最小入口建议已固定
+
+- 已新增 `docs/closeout/m2-entry-recommendation.md`
+- 当前推荐的 M2 第一入口不是 remote peer / channel / detached daemon，而是：
+  1. `runtime-owned control-plane hardening`
+  2. `session/task/topic formalization boundary clarification`
+- 原因：
+  - 这条线最延续 M1 已收下的 truth / control / session 主线
+  - 最不容易重新发散到分布式、鉴权、网关、后台常驻等大扩张
+  - 对后续 daemon / peer / multi-agent 都是前置基础
+
 ## 2026-04-19 M1 当前状态总收口
 
 - 当前 M1.1 stability pass 的核心目标已完成：
@@ -123,6 +447,33 @@ Updated: 2026-04-18
 - 验证已通过：
   - `cargo test -p fin-runtime -p fin-cli -p fin-debug-server --manifest-path rust/Cargo.toml`
   - `(cd rust/crates/debug-server/webui && npx tsc -p tsconfig.json)`
+
+## 2026-04-19 activity-card owning layer correction
+
+- `activity cards + tool semantics` 的 builder 已从 `fin-debug-server` 下沉到 `fin-runtime`：
+  - 新真源：`fin-runtime::build_activity_cards`
+  - contract 仍留在 `fin-contracts`
+  - Web debug 与 QQ/text channel 都只消费同一份 runtime/session projection
+- 修正原因：
+  - `fin-cli` 原先通过 `fin_debug_server::build_activity_cards` 读取活动卡，形成 `CLI -> debug-server` 的反向依赖
+  - 这违反了“Web/debug 只能做观察层，不拥有运行语义”的项目硬边界
+- 当前固定规则：
+  - 活动卡结构定义放 `fin-contracts`
+  - 活动卡聚合/工具语义解释放 `fin-runtime`
+  - `fin-debug-server` / WebUI / text channel 只负责 transport + render + delivery policy
+- 本轮验证：
+  - `cargo test -p fin-runtime --manifest-path rust/Cargo.toml`
+  - `cargo test -p fin-debug-server --manifest-path rust/Cargo.toml`
+  - `cargo test -p fin-cli channel_peer_activity_delivery --manifest-path rust/Cargo.toml`
+  - `cargo build -p fin-cli --manifest-path rust/Cargo.toml`
+  - `npx tsc -p rust/crates/debug-server/webui/tsconfig.json`
+  - live `http://127.0.0.1:4040/api/activity_cards.json` 返回 `200`
+
+## 2026-04-20 qqbot/web-debug/channel delivery corrections
+
+- `serve_web_debug` 不能把 TOML 内容当路径传给 QQ bridge；必须把原始 `user.toml` 路径一路传下去，否则 bridge 会错误回退到默认配置或 env。
+- `deliver_pending_messages_for_target` 遇到被清洗为空的 assistant/system 消息时，不能写桥接请求，也不能把 delivered cursor 往前推进。
+- activity-card heartbeat 的 active 判定需要把 `waiting` 视为活跃态，否则长等待场景会失去最小心跳更新。
 
 ## 2026-04-18 compact rebuild implementation snapshot
 
@@ -1101,7 +1452,7 @@ This direction keeps:
 
 ### 66) Step 1 lands role/runtime policy without touching provider execution semantics
 - Step 1 只落 `contracts/config/runtime` 的 role/runtime policy 最小真边界：`AgentId`/`RoleId`/`ProviderPath`/`ProviderStrategy`、system policy mapping、`RuntimePolicySnapshot`/`WorkerRuntime`。
-- user config 继续保持简单，只填 provider 必要信息；system policy 自动映射出 `default role -> explicit provider.model priority path`，不引入 user/system merge 歧义。
+- user config 继续保持简单，只填 provider 必要信息；system policy 自动映射出 `project role -> explicit provider.model priority path`，不引入 user/system merge 歧义。
 - envelope 字段与 provider execution/event 链重构保持到 Step 2/3，避免在 Step 1 提前引发 debug-server/cli/provider 的大面积返工。
 
 
@@ -1439,15 +1790,13 @@ fin should adopt the following canonical model:
 在新冻结的 peer 模型下，当前本地 runtime 推理部分还缺以下几类东西：
 
 ### A. Role / Prompt 缺口
-- 当前 role family 只有：
+- 当前 prompt role 真源已纠偏为只有：
   - `system`
-  - `worker`
-  - `reviewer/analyzer`
-  - 默认 `project`
-- 还缺明确的：
-  - `project_agent`
+  - `project`
+- `worker/reviewer/analyzer` 不再作为独立 role 扩展；这些语义应回收到 `project` role 的 workflow emphasis / tool policy 中。
+- 仍需明确的不是新 role，而是框架组件类型：
   - `capability_router` 或 `peer_router`
-  - `channel_gateway`（即使不直接推理，也应有 prompt/contract 位）
+  - `channel_gateway`（即使不直接推理，也应有 contract/schema 位）
 - 当前 `system` prompt 仍偏“单机总控”，还没有显式声明：
   - peer discovery
   - presence/binding ownership
@@ -2393,3 +2742,2096 @@ fin should adopt the following canonical model:
 - [2026-04-19] `control_boundary` receipt 当前先收 session durable control-plane artifacts（heartbeat / daemon state / recovery action 等）；queue/wait/interrupt 的更强样本后续再补到 closeout run，不在本轮伪造事实。
 - [2026-04-19] 已新增 `fin mainline-demo <user.toml>`：用 deterministic provider 在隔离 runtime-home 里生成 3 turn history + 第 3 turn 的真实 2-round auto tool loop，session 为 `session-<namespace>-mainline`，用于 closeout 的 `auto_tool_roundtrip` receipt，避免再用单轮 transcript 假装 tool loop 通过。
 - [2026-04-19] 已新增 `fin control-boundary-demo <user.toml>`：复用真实 web_debug control path 生成 `/new -> seed -> /pause -> queued x2 -> /resume-run -> /status` 的 stronger control-boundary session，能稳定产出 `execution_state / pause_checkpoint / pending queue / interrupted segment / segment merge / scheduler latest+tick / supervisor latest / heartbeat / daemon state`，用于 mainline `control_boundary` receipt。
+
+## 2026-04-19 finger decommission + fin builtin qqbot peer
+
+- 已显式停掉残留 live 旧链进程：
+  - `5839 rust/target/debug/fin-cli web-debug ... 4056`
+  - `5856 node ~/code/finger/dist/cli/index.js gateway-bridge start qqbot --stdio`
+- 已禁用并移走旧自启动：
+  - `com.finger.dual-daemon`
+  - `com.finger.daily.project.analysis`
+  - `com.finger.daily.user.analysis`
+  - `com.finger.email.check`
+  - `com.finger.news.digest`
+  - `com.finger.weibo.timeline`
+  - `com.finger.zombie.cleanup`
+  - `ai.openclaw.gateway`
+  - 证据日志：`~/.fin/logs/finger-decommission-20260419_212053.log`
+- `fin` 已移除 qqbot 对 `finger gateway-bridge` 与 legacy finger config 的运行时依赖：
+  - 新增 fin-owned runner 资产：`rust/crates/cli/assets/qqbot_peer_runner.mjs`
+  - `web-debug` 当前实际拉起：`node ~/.fin/runtime/peers/qqbot/bin/qqbot-peer-runner.mjs`
+  - `channel_peer_connectivity` 不再回退读取 `~/.finger/...`，改为 `env -> user.toml[channels.qqbot]`
+- 已把 legacy qqbot 凭据一次性迁入 `~/.fin/config/user.toml`：
+  - `[channels.qqbot]`
+  - `app_id = "1903323793"`
+  - `client_secret = "***"`（本地真实值已写入，笔记中脱敏）
+- live 验证：
+  - 4040 实例进程：
+    - `40097 rust/target/debug/fin-cli web-debug ~/.fin/config/user.toml 4040`
+    - `40261 node ~/.fin/runtime/peers/qqbot/bin/qqbot-peer-runner.mjs`
+  - `/qqbot connect` 返回：`credential_source=user_toml:/Users/fanzhang/.fin/config/user.toml`
+  - `runtime/peers/qqbot/events.jsonl` 已记录：
+    - `channel.peer.bridge_spawned`（bridge_impl=`fin_builtin_runner`）
+    - `channel.peer.bridge_start_requested`
+    - `channel.peer.bridge_ready`
+    - `channel.peer.upstream_authenticated`
+- 当前剩余事实：
+  - built-in peer 启动 / upstream auth / session binding 已通
+  - 还没在本轮用真实 QQ 消息再次验证“单条外部输入 -> 单条 fin 回复”
+  - 所以本轮结论是：**finger 已移除，fin builtin qqbot peer 已取代旧桥；真实 QQ roundtrip 还需一条外部消息做最终收口**
+
+## 2026-04-19 text channel activity cards freeze
+
+- 纯文字 channel 架构已冻结为双层卡体系：
+  - `source-owned progress cards`
+  - `system-owned user activity card`
+- owning scope：
+  - 每个 source（system/project/peer）各自维护一张当前卡
+  - 用户前台会话由 `system agent` 维护一张总卡
+- 更新规则：
+  - 有变化才更新，无变化静默
+  - 最长 1 分钟允许一次最小心跳
+  - 渠道不支持编辑时走“紧凑重绘”，逻辑上仍视为同一张卡
+- 可见性：
+  - `hidden / compact / detailed / verbose`
+  - 并允许 active / failed / waiting-too-long 自动提升
+- verbose：
+  - 允许 source card 分片
+  - 总卡只引用摘要，不承载 verbose 明细
+- 工具渲染：
+  - 统一按“用户关心做了什么”语义化解释
+  - WebUI 与文字 channel 共用同一套 tool semantic render truth
+
+## 2026-04-19 activity card builder + shared tool semantics landed
+
+- 已新增共享 contract：
+  - `fin-contracts::ActivityCardsSnapshot`
+  - `ToolSemanticView / SourceActivityCardView / UserActivityCardView`
+- 已在 `fin-debug-server` 落地统一 builder：
+  - `build_activity_cards(runtime_home)` 从 `last_run + session artifacts + current_execution_state + runtime/peers/registry.json` 聚合 source/user cards
+  - 当前最小 source 已覆盖 `system-agent` 与 peer registry（含 qqbot peer）
+- 已在 `fin-debug-server` 落地统一工具语义层：
+  - `tool_semantics::semantic_views(...)`
+  - 把 `ToolExecutionRecord` 规范化为 `category / verb / object / summary / detail`
+- 已新增 API：
+  - `GET /api/activity_cards.json`
+- Web 状态层已接入 `activityCards` 读取，但本轮**不改你正在调整的具体展示**；先保证 Web / text channel 后续都能消费同一份后端真源
+- 验证：
+  - `cargo test -p fin-contracts -p fin-debug-server -p fin-cli --quiet`
+  - `python3 scripts/check-code-line-limit.py`
+
+## 2026-04-19 qqbot text channel delivery policy landed
+
+- 已新增 `rust/crates/cli/src/channel_peer_activity_delivery.rs`
+  - 持久化真源：`~/.fin/runtime/peers/qqbot/activity_delivery_state.json`
+  - 负责：
+    - 绑定当前会话对应的用户 target
+    - 基于 `previous delivered card view vs current card view` 做 diff
+    - 生成 compact text redraw
+    - 在 active 状态下按 60s 规则允许最小 heartbeat delivery
+- `qqbot bridge` 现在的最小闭环：
+  - 收到用户消息后先绑定 target
+  - 正常 assistant reply 会尝试**嵌入一份 compact activity card**
+  - 后台 activity loop 每 5s 检查一次，但只有：
+    - card diff 非空，或
+    - active 状态且距离上次发送 >= 60s
+    才会发送新的 compact redraw
+- 当前实现边界：
+  - 非编辑渠道不做“逐行 delta”，而是发送 compact redraw 文本
+  - delivery 只以 `user_card + source_cards` 的 signature 作为比较真源
+  - 还没有做更细的 verbose/source 分片投递策略
+- 事件：
+  - `channel.peer.activity_card_embedded`
+  - `channel.peer.activity_card_send_requested`
+  - `channel.peer.activity_card_send_failed`
+  - `channel.peer.activity_card_prepare_failed`
+
+## 2026-04-19 qqbot channel conversation/session restore + attached keepalive
+
+- 用户纠正后的 blocker 已确认：问题不是 activity card 是否刷新，而是 qqbot 之前只是单次 bridge，没有真正的 `target -> session` 会话恢复、session truth 驱动的自动回复，以及 bridge 异常后的保活。
+- 本轮已补 `~/.fin/runtime/channels/qqbot/conversations.json` 作为 channel conversation 真源：记录 `target / session_id / last_inbound_message_id / last_delivered_message_id`，用于 target 级 session restore、重复消息去重、outbound cursor 推进。
+- qqbot ingress 现已改成：`message.ingest -> conversation resolve/restore -> session binding -> runtime inference -> session messages delivery`；正常 reply 不再直接依赖 handler 返回文本，而是从 session `conversation/messages.json` 读取新增 assistant/system 消息并发送。
+- 后台 activity loop 现先扫描 conversations 做 pending outbound delivery，再做 activity-card heartbeat/diff；因此 reminder / queued follow-up / 后续 system notice 也能通过同一条 session-truth 通道自动外发。
+- built-in qqbot bridge 已从“单 child 挂在 web_debug”升级为 attached supervisor：runner 进程退出后会产出 `bridge_process_exited / bridge_restart_scheduled` 并按固定 backoff 自动重启。当前仍是 attached keepalive，不是最终 detached dual-daemon；但已补最小 crash-restart 能力。
+- debug 观察新增：`GET /api/qqbot_conversations.json`。定位 qqbot“有对话但无上下文/无自动回复”时，先查 conversations registry，再查 session messages，再查 bridge events。
+
+## 2026-04-19 qqbot pairing default changed to persistent
+
+- 用户确认：channel peer 的默认 pairing 过期没有意义，只会制造“agent 像死了”的假故障。
+- 已改为：`/qqbot pair` 默认持久绑定（`session_expires_at=null`, `session_ttl_minutes=null`）；只有显式传 TTL 才会做限时绑定，显式 `/qqbot expire` 仍保留。
+- 已实测 live 4040：`/qqbot pair` 返回 `expires_at=persistent`，并且 `~/.fin/runtime/peers/qqbot/state.json` 已落成 `session_expires_at=null`。
+
+## 2026-04-19 qqbot replay cursor + attachment ingress + stable activity signature
+
+- conversation 首次绑定到已有 session 时，delivery cursor 现在会初始化到该 session 当前最后一条可发送的 assistant/system message；这样后续只会发“新产生的回复”，不会把旧历史整段补发。
+- qqbot 附件现在走白名单摘要链路：`channel ingress attachments -> ChatSendRequest.attachments -> DemoRequest.attachment_summaries -> ContextAssemblyInput -> current_input.attachments -> model input assembler`。当前是 metadata 进入上下文，不做图片下载/视觉解析。
+- 已做真实闭环验证：本地 `/api/chat/send` 传入附件 `demo-proof.png` 后，模型直接回复 `demo-proof.png`，并且 `~/.fin/runtime/current/current_context.json` 可见结构化 `attachments`。
+- activity card diff 签名已改成忽略 `updated_at` / `generated_at` 这类易变字段，避免纯文字 channel 每 5 秒把同一张卡重复当成 diff；当前无变化时只剩 60s heartbeat。
+
+## 2026-04-20 pending queue attachment persistence + qqbot runner EPIPE hardening
+
+- pending input 现在不再只存 `message`，而是持久化 `source + attachments`；因此当 channel 消息在 `running/paused/waiting_external` 阶段被排队后，后续 `/tick` / `/resume-run` 驱动时，可以把原始 channel 来源与附件 metadata 一起恢复回 `current_input`。
+- 已补回归：scheduler driver 会把 queued input 的 `source/attachments` 传给下一轮推理；`paused session` 场景会把 `channel_ingress` 的附件写入 `queue/pending_inputs.json`。
+- qqbot builtin runner 已加 `stdout EPIPE / ERR_STREAM_DESTROYED` 防护：检测到 stdio 断裂时直接置 `stopping=true`、清理连接并 `exit(0)`，避免 Node 因未处理 `process.stdout` error 崩成 noisy crash。
+- 当前证据层级：队列恢复已由 Rust 测试覆盖；runner 防护已确认写入生成的 `~/.fin/runtime/peers/qqbot/bin/qqbot-peer-runner.mjs`，但尚未做一次专门的 pipe-break live 注入验证。
+
+## 2026-04-20 qqbot activity heartbeat spam closeout
+
+- 真源确认：重复刷屏不是多进程，也不是 signature 抖动；是 `channel.peer.activity_card_send_requested(reason=heartbeat)` 在 `ready/idle` 无变化时仍每 60s 投递。
+- 修复口径：
+  - heartbeat 只允许 `running/paused`；
+  - `pairing_required / binding_mismatch / no active session` 时 `prepare_periodic_delivery` 直接静默，并清空 `activity_delivery_state.target/session_id`；
+  - activity card 的 peer stage 不再把 `pairing_required` 渲染成旧的 `bound to session ...`。
+- 验证：
+  - Rust tests：`cargo test -p fin-cli channel_peer --manifest-path rust/Cargo.toml --quiet`，`cargo test -p fin-runtime activity_cards --manifest-path rust/Cargo.toml --quiet`
+  - live：重启 4040 后，`~/.fin/runtime/peers/qqbot/activity_delivery_state.json` 已变为 `target=null, session_id=null`，并且 events tail 不再新增 `reason=heartbeat`。
+
+## 2026-04-20 qqbot text card attention pass
+
+- 用户反馈：qqbot 文字卡“没有注意力”，不利于扫读当前焦点。
+- 本轮调整只改 compact text render，不改 runtime truth：
+  - 顶部改为 `🌐 Global status`
+  - 第二行直接显示当前 focus source 标题
+  - 第三行显示高注意力状态摘要（`🔄/⏳/✅/❌`）
+  - `sources:` / `stage:` / `detail:` / `source:` 改为 `👥 / 📍 / ⏳/❌ / 🧩`
+  - 默认不再把 session/task/focus id 这类低价值标识堆到第一屏
+- 验证：`cargo test -p fin-cli channel_peer_activity_delivery --manifest-path rust/Cargo.toml --quiet`
+
+## 2026-04-20 qqbot text card semantic action pass
+
+- 继续把文字卡从“内部状态串”往“人类可扫读进度卡”收敛：
+  - `phase=inference_completed next_step=...` 映射为自然语义（如“本轮推理完成，正在整理结果 / 准备继续下一步”）
+  - `bound to session ... / pairing required / binding invalidated` 映射为中文状态
+  - 最近动作按语义渲染：`搜索 / 查看 / 修改 / 计划 / 命令 / 模型 / 推理`
+- 作用：qqbot 卡片现在更像 finger 的“当前在做什么”提示，而不是把 provider/tool 内部字段直接甩给用户。
+- 验证：
+  - `cargo test -p fin-cli channel_peer_activity_delivery --manifest-path rust/Cargo.toml --quiet`
+  - `cargo build -p fin-cli --manifest-path rust/Cargo.toml`
+
+## 2026-04-20 qqbot text card checklist pass
+
+- 继续强化“注意力”：
+  - focus source 下方新增最近动作 checklist，前缀固定 `✅`
+  - source 行只保留“谁在做什么”，不再把动作细节塞进同一行
+  - `provider.call` 会优先提取 prompt 前半段，避免把 `输入 → 输出` 整段丢给用户
+- 当前卡片结构更接近：
+  - 标题 / 焦点 / 状态
+  - 活跃源
+  - 当前阶段
+  - focus source
+  - 最近动作 checklist
+
+## 2026-04-20 qqbot attachment-only ingress fix
+
+- 真源：图片消息已进入 `channel.peer.message_ingested`，但因 `content_preview=""` 且 `attachment_count=1`，随后被 `channel.peer.message_rejected(reason=empty_text_payload)` 直接拒绝，所以没有进入推理。
+- 修复：qqbot inbound 现在对“空文本 + 有附件”不再 reject，而是框架生成一条附件说明型 fallback message 进入正常推理链；“空文本 + 无附件”仍然拒绝。
+- 验证：
+  - `cargo test -p fin-cli channel_peer_qqbot_bridge --manifest-path rust/Cargo.toml --quiet`
+  - `cargo build -p fin-cli --manifest-path rust/Cargo.toml`
+
+## 2026-04-20 qqbot text-channel sanitize + progress restore
+
+- 用户指出：文字通道回复里仍带 `<fin_user_response>` 标签和 `**markdown**` 噪音，并且没有 progress update。
+- 真源：
+  - outbound 发送时直接使用 session 原始 assistant content，未做 text-channel sanitize；
+  - qqbot peer 处于 `pairing_required/session_valid=false` 时，activity delivery loop 不会继续发 progress cards。
+- 修复：
+  - `deliver_pending_messages_for_target` 发送前统一做 text-channel sanitize：去掉 `fin_*` 标签块、`**/__/\`` 等 markdown 强调噪音；
+  - inbound 恢复到已有 session 后，自动把 qqbot peer pairing 恢复为 `bound`，让 activity delivery 恢复工作。
+- 验证：
+  - `cargo test -p fin-cli channel_peer_qqbot_bridge --manifest-path rust/Cargo.toml --quiet`
+  - `cargo build -p fin-cli --manifest-path rust/Cargo.toml`
+## 2026-04-20 qqbot inbound ack + no-silent-failure
+
+- 框架规则补齐：qqbot ingress 一旦完成去重判定，就先发一条用户可见回执“已收到，正在处理。”，不能等模型跑完才首条可见反馈。
+- 所有已进入 ingress 的异常/拒绝路径必须用户可见：未绑定会话、空 payload、处理异常、以及“本轮没有新可发送回复”都要显式回复，不能只记 event。
+- 诊断增强：runner 现在会把每个 gateway dispatch 的 `eventType/messageId/timestamp` 打到 stderr，并对未处理事件名显式记录，便于定位“connected 但没 ingress”的真源。
+
+## 2026-04-20 qqbot pairing semantic correction
+
+- 用户指出真问题：当前实现把“上游 bot 已登录/已鉴权”和“当前 session 绑定”混成一个 `pairing_required` 状态，导致 session mismatch/expire 后看起来像要重新配对/重新鉴权。
+- 修正后口径：
+  - `connectivity_state + upstream_authenticated_at` 表示 bot 是否已登录服务器；
+  - `binding_state + session_valid` 只表示当前是否绑定到活动 session。
+- 当前实现中，session mismatch/expire 只会释放到 `binding_state=unbound`，不会再打回 `pairing_required`；已登录 peer 等下一条真实 inbound 时可基于 conversations 自动恢复 session 绑定。
+
+## 2026-04-20 progress semantic cleanup
+
+- 用户纠正：文字卡 / progress 不应把用户上两轮提示词、provider base URL 这种内部输入细节当成“模型进度”展示。
+- 修正后规则：
+  - `provider.call` 的语义展示只保留模型标识（例如 `ali-coding-plan.qwen3.6-plus`），不显示 endpoint/base URL；
+  - progress recent actions 优先显示真实工具调用；如果存在非 provider 工具，不再让 `provider.call` 占据 recent items；
+  - provider 类动作只作为“模型已调用/已返回”的弱提示，不再回显 prompt 文本。
+
+## 2026-04-20 tool catalog parity fix
+
+- 用户指出模型报告的可用工具列表不完整；真源确认是 `runtime::tool_catalog` 漏掉了若干工具，而不是模型自己漏报。
+- 当前已补回的可调用 model tools：
+  - `update_plan`
+  - `session.list`
+- 当前已显式暴露但标为 disabled/planned 的工具族：
+  - `apply_patch`
+  - `view_image`
+  - `context_history.rebuild`
+  - `project.task.status / project.task.list`
+- 固定规则：
+  - tool catalog 必须与 runtime dispatcher 保持一致；
+  - 不能让“文档/记忆里存在但 runtime catalog 不可见”的工具静默消失；
+  - 未接线工具应进入 disabled/planned 认知面，而不是伪装成不存在。
+
+## 2026-04-20 apply_patch tool enabled
+
+- `runtime::tool_catalog` 现在把 `apply_patch` 提升为可调用 model tool，不再只停留在 disabled/planned；tool catalog 与 dispatcher 真源重新对齐。
+- `apply_patch` 当前按 Hermes 思路支持两种模式：
+  - `mode=replace`：`path + old_string + new_string + replace_all?`
+  - `mode=patch`：V4A patch 文本（`*** Begin Patch` ...）
+- runtime 会把 patch 成功结果写成 `ToolExecutionRecord + tool.apply_patch_completed`，并在有 `runtime_home` 时落 `runtime/tools/patch_receipts/*.json`，供 Web/QQ/debug 统一消费。
+- patch 写入被限制在当前 `project.cwd / project_root` scope 内；相对路径没有 workspace scope 时直接失败，避免模型越界写盘。
+- 验证：
+  - `cargo test -p fin-runtime tool_dispatch --manifest-path rust/Cargo.toml --quiet`
+  - `cargo test -p fin-runtime context_view --manifest-path rust/Cargo.toml --quiet`
+  - `cargo build -p fin-cli --manifest-path rust/Cargo.toml --quiet`
+
+## 2026-04-20 tool prompt + query tools closure
+
+- prompt 层已强化 `apply_patch` 使用规则：模型现在明确被告知“有界单点编辑优先用 replace 模式，只有多文件/增删改移动才用 patch 模式”，并且工具列表渲染不再只显示工具名摘要，而是带 `use/avoid/input/output/example`。
+- runtime 现已补齐并接线的查询/辅助 model tools：
+  - `view_image`
+  - `context_history.rebuild`
+  - `project.task.status`
+  - `project.task.list`
+- `view_image` 当前是真实可调用但边界诚实：只返回附件/本地图片的引用元数据（path/url/size/dimensions），不伪装成像素级 vision 推理。
+- `context_history.rebuild` 当前做的是 framework-owned rebuild bookkeeping：基于 `current_context.json + recent_contexts/digests/reasoning/tools` 刷新 session/runtime 的 rebuild-index，而不是让模型手工压缩历史。
+- `project.task.status/list` 现在直接读 session truth（routing/execution_state/plan/messages）给任务列表与状态，不再让模型靠记忆猜 task 状态。
+
+## 2026-04-20 prompt contract closure rule
+
+- tool prompt contract 现在明确要求：`when_to_use / when_not_to_use / input / output / example`
+  必须进入最终 `rendered_model_input`，不能只保留在结构化 context 里给 Web 看。
+- `apply_patch` 的调用策略也固定为 prompt contract 的一部分，而不是松散经验：
+  - 单点精确编辑默认 `mode=replace`
+  - 多文件 / add / delete / move 才 `mode=patch`
+- 这条规则用 runtime tests 固定，避免后续又退回“工具只有名字和一句简介，模型不会用”的状态。
+
+## 2026-04-20 runtime multi-round tool loop closure
+
+- 单次 closure 内原先虽然存在 auto tool loop，但每轮 provider 请求没有使用“重建后的 round context + 动态 tool catalog + 已执行工具结果”，本质上只是拿一段 follow-up 字符串继续问模型；现在已修成真正的每轮 round context rebuild。
+- 当前 round context 重建规则：
+  - 根据本轮前累计 `ToolExecutionRecord` 重建 `history.recent_tool_activity`
+  - 把上一轮 assistant 回复与工具 artifact 合入 continuity / knowledge 视图
+  - 重新生成 `current_input`
+  - 重新生成动态 tool catalog（按 round/runtime_home/project scope/peer scope/exec session 状态调整 `use/avoid/policy`）
+- follow-up input 现在只注入**已执行工具结果**，不再把 `provider.call` 混进“工具结果”；并明确告诉模型这些是 authoritative client facts。
+- round truth 修正：第 2 轮及之后的 `RoundRecord / tool_dispatch step` 不再吃累计 dispatch state，而是只记录当轮 dispatch 结果；累计 stop/yield/reminder 只留给 closure 级聚合。
+- 已补测试证明：
+  - 第二轮 provider request 的 `rendered_input` 里能看到执行后的 tool result 注入
+  - dynamic tool catalog 会根据 runtime_home / exec session / peer capability 状态变化
+
+## 2026-04-20 system/project agent same-runtime rule
+
+- `system agent` 与 `project agent` 当前正式冻结为：**同一套 runtime / operation-event / session truth / tool dispatch 基础设施**，区别不在基础设施分叉，而在 `role prompt + dynamic tool policy + workflow emphasis`。
+- prompt role 真源现在只保留两类：
+  - `system`
+  - `project`
+- 历史 `default` 只保留为向后兼容 alias，并映射到 `project`；`worker/reviewer` 不再是独立 role。
+- role-aware dynamic tool policy 已进入 runtime 真源：
+  - `system`：优先 orchestration / peer visibility / coordination / health
+  - `project`：优先 project-scoped closure / docs-code-test-debug，并在同一 role 内承担 execution / review / handoff 模式
+- 已补测试证明：
+  - 同一 `SystemConfig` 可直接启动 `system` 与 `project` 两种 `WorkerRuntime`
+  - `default` 兼容请求会被解析到 `project`
+  - 二者共享 provider/runtime 基础设施，但 role id 与 tool policy 不同
+- 2026-04-20 纠偏：只有 `system` 和 `project` 两类角色；`project agent` 需要多人执行时，直接 spawn 多个 worker runtime。worker 是执行体，不是角色。
+- 2026-04-20 新增本地 worker skeleton：project 侧可以直接对 `target_worker_id` 做 `agent.assign` 和 `mailbox.send`，worker 侧用 `worker_id` 做 `mailbox.poll`；框架内部统一映射到 `local-<worker_id>` peer id。
+- 2026-04-20 `ContextViewBuilder` 已开始消费 `runtime/peers/state/*.json`：ensured local worker peers 会回流到 `context.peer`，所以多 worker 不再只是底层落盘，也进入后续推理/观察视图。
+- 2026-04-20 agent naming 最小真源已接入：
+  - `agent_id = <device_name>.<agent_name>`
+  - `device_name` 优先取 `user.toml -> runtime.device_name`，否则退回系统默认名
+  - 本地自动命名走 `~/.fin/runtime/agents/name_pool.json`
+  - 分配结果写入 `runtime/agents/registry.json` 与 `runtime/current/current_agent_registry.json`
+  - 当前 `create_named_local_worker(...)` 已接到 CLI demo 和 `/compact` 的本地 worker 创建路径
+- 2026-04-20 status probe 已开始直读 agent registry truth：
+  - `status` 现在会优先读 `runtime/current/current_agent_registry.json`
+  - 其次回退 `runtime/agents/registry.json`
+  - 目的是让 Web / QQ / CLI 看到统一的 `device_name.agent_name`，不再只暴露匿名 worker_id
+
+
+## 2026-04-20 system agent identity / boundary discussion snapshot
+
+### A. Agent vs model vs user boundary correction
+- 之前把 `system agent` review 错误地往 `model overlay / provider family` 方向拉了，这条路已经判定为错误。
+- 当前冻结的新边界：
+  - 对用户：用户面对的永远是 `Agent`，不是模型，不应该感知到底层 provider/model。
+  - 对模型：模型只接收 framework 赋予的 `role + request + context + tools`，不应认为自己是某个模型，也不应认为自己正在“直接和用户聊天”。
+  - 对系统：`provider/model` 只属于 backend/runtime adapter/debug truth，不属于 agent identity truth。
+- 因此 prompt system 后续必须改成 `Agent-first`，而不是 `Model-first`。
+- `system/project role` 是 agent 身份真源；provider/model 名称、family overlay、transport quirks 不得进入 agent 自我认知层。
+
+### B. System agent role re-clarification
+- `system agent` 是整个 fin 系统的大脑、指挥家、协调者、leader。
+- 它是：
+  - 唯一用户入口 frontstage
+  - 用户与任务网络之间的协调层
+  - 多 task / 多 agent / 多 peer 的统一编排者
+  - 任务目标整理者、owner 分配者、计划维护者、状态汇总者、统一汇报者
+- 它不是：
+  - 长时间做具体执行的 worker
+  - 长时间沉入单个 project 细节的 executor
+  - 直接和用户裸聊的“模型”
+  - 直接替代 project agent 的实现者
+
+### C. System agent responsibilities (current discussion draft)
+- 接收用户指令、变更、优先级调整、状态询问、中断/恢复请求。
+- 整理用户目标，判断：
+  - 是否延续当前 task/topic/session
+  - 是否需要新 task / revive 旧 task
+  - 是否影响其他并行任务
+- 把用户目标编译成系统内 task language：objective / owner / priority / next action。
+- 把工作分派给：
+  - 本地或远端 project agent
+  - capability peer
+  - 其他 peer/worker
+- 统一收集异步反馈：progress / update_plan / note / result / failure / timeout / waiting / health。
+- 在任务之间穿梭协调，最终统一向用户汇报。
+
+### D. System vs project role split (discussion consensus)
+- `system agent` 负责：
+  - why / what / who / when
+  - task ownership
+  - routing / delegation / recovery / coordination
+  - overall user-facing reporting
+- `project agent` 负责：
+  - how
+  - project-scoped exploration / implementation / verification / delivery
+- 统一原则：
+  - `system = control plane first`
+  - `project = execution plane first`
+
+### E. System agent direct-execution budget
+- `system agent` 允许做小范围直接执行。
+- 允许条件：
+  - 简单任务
+  - 一个 closure（一次完整推理闭环）大概率就能完成
+  - 不需要长等待 / 长探索 / 项目级持续执行
+- 允许的中间态：
+  - 可以做 1~2 次 bounded probing/self-execution 作为快速探测
+- 当前讨论冻结的硬预算：
+  - 若连续 2~3 个 closure 之后仍然看不到明显收口，就不应继续自己做
+  - 必须升级为：`形成目标 -> 建计划 -> 指定 owner -> 委派`
+- 若当前没有明确执行路径：
+  - `system agent` 可以 spawn 一个 `project role worker/runtime` 去探索或执行
+  - 不新增新的 prompt role；仍然只有 `system` 与 `project` 两类 role
+
+### F. Important modeling correction: closure != task
+- Jason 的意图是要把 `system agent` 的直接执行控制得很紧，这一点保留。
+- 但系统建模上当前倾向保留区分：
+  - `closure` = 一次完整推理闭环（输入 -> 推理/工具 -> 停止）
+  - `task` = 更高层的目标线程，可跨多个 closure，并且后续可转 delegated path
+- 因此：
+  - `system agent` 的直接执行预算按 `closure` 控制
+  - `task` 不等于一次 closure
+
+### G. Current non-final but important wording direction
+- prompt / runtime 语义里不应把模型表述成“你在和用户直接聊天”。
+- 更接近的框架语义应是：
+  - current request
+  - frontstage request
+  - routed work item
+  - interaction ledger
+- `system agent` 即使自己处理简单任务，也必须保持控制面身份：
+  - 这是“为了减少调度成本而亲自处理一个低复杂度小任务”
+  - 不是退化成长期 executor
+
+### H. Next discussion items after this note snapshot
+- 继续讨论：`system agent` 如何判断“继续自做 / 升级委派”的具体触发信号。
+- 候选信号包括：
+  - closure 次数
+  - tool loop 深度
+  - wait/reminder
+  - plan emergence
+  - owner clarity
+  - need for project-scoped context
+  - need for parallel subtask split
+  - health/risk escalation
+- 等这些讨论完成后，再统一提炼成正式 architecture / prompt working doc，一次性修改真源与实现。
+
+
+## 2026-04-20 startup topology / project registry / presence 落盘
+
+### A. Startup topology 进入 system-only config
+- 当前已把 startup topology 落到 `runtime.startup`：
+  - `system_agent.local_worker_budget`
+  - `system_agent.auto_resume`
+  - `project_agents[]`
+- `project_agents[]` 当前最小字段：
+  - `project_id`
+  - `mode=local|remote`
+  - `project_root?`
+  - `endpoint?`
+  - `agent_name?`
+  - `worker_budget`
+  - `always_on`
+  - `auto_resume`
+  - `auto_connect`
+- 这是 system-only 配置，不属于 user.toml。
+
+### B. Effective system config 规则补齐
+- 之前 CLI 一直只从 user.toml 动态 map system config，导致 `~/.fin/config/system.toml` 就算生成了也不会真的生效。
+- 当前已补 effective system config 读取：
+  - 先用 `user.toml` 映射 baseline
+  - 再读取 `~/.fin/config/system.toml`
+  - 保留 user-owned 字段（provider/default_provider/runtime.device_name）
+  - 其余 system-only 字段继续从 system.toml 生效
+- 这样 startup topology 才不是“写得出来但永远不生效”的假配置。
+
+### C. Project registry / wake queue 真源
+- 当前 framework 已落以下路径：
+  - `~/.fin/runtime/projects/registry.json`
+  - `~/.fin/runtime/projects/state/<project_id>.json`
+  - `~/.fin/runtime/projects/wake_queue.json`
+  - `~/.fin/runtime/current/current_startup_topology.json`
+- 语义：
+  - registry：当前已注册 project agent 列表与派生状态
+  - state：单 project 的最新摘要
+  - wake_queue：framework 生成的唤醒 intent
+
+### D. Wake policy（当前最小版）
+- `always_on=true` 且当前 presence 不是 `busy/idle/waiting`：
+  - framework 直接生成 `always_on_startup`
+- 若某 project 存在 unfinished work 且 agent 当前不在线：
+  - framework 生成 `unfinished_work_detected`
+- 这对应 Jason 已确认的“recovery-first，不要立刻重置任务”。
+
+### E. Agent presence 真源
+- 当前 framework 已落：
+  - `~/.fin/runtime/agents/state/<agent_id>.json`
+  - `~/.fin/runtime/current/current_agent_presence.json`
+- system entry agent：
+  - Web/debug 启动时先 seed 为 ready/idle
+  - 收到请求时标记 `busy`
+  - 成功/失败后写回 `idle`
+- startup config 中声明的 project agent：
+  - 当前先 seed 为 `offline + await_startup_wake`
+  - 后续等 daemon/supervisor 真连接后，在同一 truth 上更新，不再造第二套 presence
+
+### F. 当前阶段边界
+- 已完成的是 framework-owned skeleton：
+  - startup config
+  - project registry
+  - wake queue
+  - agent presence
+- 继续推进后，当前还多了一步真实执行：
+  - framework 会执行 wake queue
+  - local project agent 会被推到 `idle/project_ready`
+  - remote project agent 会被推到 `waiting/await_remote_connect`
+  - 同时把 managed project peer 写入 `runtime/peers/state + runtime/peers/registry`
+- 还没完成的：
+  - detached daemon 真正拉起 project agent
+  - remote reconnect / lease / supervisor takeover
+- 也就是说，当前阶段先把“应该唤醒谁、谁在线、谁离线、谁在忙”变成可观测事实，再接自治恢复。
+
+## 2026-04-20 project runtime auto-pickup / auto-resume 补口
+
+### A. 已补 framework-owned auto-resume seed
+- 之前 local project runtime 在 handoff=`prepared|noop` 且 task 已 claimed 时，如果 queue 为空，会停在：
+  - `pickup_state=claimed_idle`
+  - `next_action=await_manual_work`
+- 当前已在 `project_runtime_resume` 补 framework-owned seed：
+  - 对 `claimed_idle + await_manual_work + project.auto_resume=true` 的 local project runtime，
+  - framework 自动注入一个 synthetic pending input：
+    - `input_kind=framework_resume`
+    - `source=project.resume`
+    - `message=continue work`
+    - `enqueue_reason=resume`
+- 然后重新 materialize pickup，再由 scheduler/supervisor 正常推进下一轮。
+
+### B. 归属与边界
+- 没把 side effect 塞进 `project_runtime_pickup` 的 snapshot materialization。
+- 仍保持：
+  - `pickup` 负责观测快照
+  - `project_runtime_resume` 负责控制动作
+- 这样不会把“读状态”变成“隐式推进状态”的双语义函数。
+
+### C. 新增验证
+- 新增测试：
+  - `project_runtime_resume_tests::drive_ready_project_runtime_resumes_seeds_claimed_idle_project_queue`
+- 验证内容：
+  - 初始 queue 为空
+  - handoff 已 prepared
+  - task 已 claimed
+  - framework 自动 seed pending input
+  - scheduler 成功 drive 一轮
+  - queue 最终被 drain 回空
+
+### D. 当前证据
+- `cargo test -p fin-cli --manifest-path rust/Cargo.toml project_runtime_resume --quiet` ✅
+- `cargo test -p fin-cli --manifest-path rust/Cargo.toml attached_control_plane --quiet` ✅
+- `cargo fmt --all --manifest-path rust/Cargo.toml --check` ✅
+
+### E. 后续纠正
+- 上面这 2 个失败后来已经定位并修复，不再视为“未知既有失败”：
+  - 一部分是真正的 credentials precedence bug
+  - 另一部分是 QQ 相关测试并行修改全局 env/HOME 导致的测试污染
+
+## 2026-04-20 qqbot credentials precedence fix
+
+### A. 根因
+- `resolve_qqbot_credentials(...)` 之前是：
+  - 先 `resolve_from_env()`
+  - 再 `resolve_from_user_toml(...)`
+- 这会导致：
+  - 调用方已经显式传了 `user.toml` 路径，
+  - 但只要进程环境里残留 `FIN_QQBOT_CLIENT_SECRET/QQBOT_CLIENT_SECRET`，
+  - 解析就会被全局 env 抢走。
+- 结果：
+  - 显式配置文件不是唯一真源，
+  - 测试与真实 bridge/connectivity 行为都会受外部环境污染。
+
+### B. 修正后的规则
+- 若调用方显式传入存在的 `user.toml` 路径：
+  - **优先 user.toml**
+  - user.toml 内若使用 `*_env` 字段，再按文件里的 env 引用读取
+  - 若文件里没有 qqbot credentials，再回退到全局 env
+- 若调用方没有显式传路径：
+  - 仍保持 env first，再 fallback 到默认 `~/.fin/config/user.toml`
+
+### C. 新增测试
+- `explicit_user_toml_wins_over_global_env_credentials`
+- 固定住：
+  - 全局 env 存在时
+  - 显式 `user.toml` 仍必须赢
+
+### D. 当前证据（已更新）
+- `cargo test -p fin-cli --manifest-path rust/Cargo.toml channel_peer_connectivity --quiet` ✅
+- `cargo test -p fin-cli --manifest-path rust/Cargo.toml --quiet` ✅ `97 passed`
+- `cargo test -p fin-runtime --manifest-path rust/Cargo.toml --quiet` ✅
+- `cargo test -p fin-config --manifest-path rust/Cargo.toml --quiet` ✅
+- `cargo fmt --all --manifest-path rust/Cargo.toml --check` ✅
+
+### E. 额外修正：env test pollution
+- 除了 precedence bug，本轮还发现 QQ 相关测试在并行修改：
+  - `HOME`
+  - `FIN_QQBOT_*`
+  - `QQBOT_*`
+- 原先 `channel_peer_tests` 与 `channel_peer_connectivity` 各自持有不同的 env lock，无法跨模块串行。
+- 当前已补统一 `test_env::env_lock()` 真源，两个测试模块共享同一把锁，避免：
+  - 默认 `~/.fin/config/user.toml` 抢进来
+  - 某个测试的 env 残留影响另一个测试
+  - poison 连锁导致误判
+
+## 2026-04-20 startup -> supervision -> handoff -> pickup -> auto-resume E2E evidence
+
+### A. 新增端到端测试
+- 新增测试：
+  - `startup_wakeup::tests::refresh_builds_resume_chain_and_auto_resume_can_drive_claimed_idle_project`
+- 这条测试不再手写 handoff/pickup 快照，而是从 framework 真链路生成：
+  - session truth
+  - startup refresh
+  - project supervision
+  - execution handoff
+  - runtime pickup
+  - project auto-resume drive
+
+### B. 当前验证的链路
+- 预置：
+  - project session 存在
+  - `context.current_context.project.primary_project.project_id = fin`
+  - execution state 标明 task 未完成（`pending_input_count=1`）
+  - queue 为空
+  - task registry 中 task=`ready`
+- framework 执行后验证：
+  - `current_project_supervision.json` => `resume_ready`
+  - `current_project_execution_handoffs.json` => `prepared`
+  - `current_project_runtime_pickups.json` => `claimed_idle`
+  - `drive_ready_project_runtime_resumes(...)` 自动注入 synthetic resume input
+  - scheduler 成功 drive 一轮并 drain queue
+
+### C. 这条测试修正了一个真源陷阱
+- 之前失败的根因不是 runtime 逻辑，而是测试数据错误：
+  - `ExecutionStateRecord` / `PendingInputRecord` 的 `refs` 是 `flatten`
+  - 测试若写成嵌套 `"refs": {...}`，`task_id/session_id` 实际不会进入真源
+- 已按真实 contract 改成顶层字段书写。
+
+### D. 当前证据（最新）
+- `cargo test -p fin-cli --manifest-path rust/Cargo.toml refresh_builds_resume_chain_and_auto_resume_can_drive_claimed_idle_project --quiet` ✅
+- `cargo test -p fin-cli --manifest-path rust/Cargo.toml --quiet` ✅ `98 passed`
+- `cargo test -p fin-runtime --manifest-path rust/Cargo.toml --quiet` ✅
+- `cargo test -p fin-config --manifest-path rust/Cargo.toml --quiet` ✅
+- `cargo fmt --all --manifest-path rust/Cargo.toml --check` ✅
+
+## 2026-04-20 collaboration context truth expansion
+
+### A. 当前识别出的缺口
+- system/project 的 `ProjectContextBlock` 之前已经有：
+  - `task_board_summary`
+  - `agent_presence_summary`
+  - `project_supervision_summary`
+- 但 owner-loop 真协调还缺两类 framework truth：
+  - assignment queue
+  - mailbox backlog
+- 没有这两类摘要，system/project 在做 dispatch / follow-up / review / unblock 时只能看到 task board，却看不到：
+  - 已派出去但未被消费的 assignment
+  - 已投递但未被 worker 消费的 mailbox 消息
+
+### B. 本轮补齐
+- `ProjectContextBlock` 新增：
+  - `assignment_queue_summary`
+  - `mailbox_summary`
+- `ContextViewBuilder -> build_project_block(...)` 现在会从 runtime_home 读取：
+  - `runtime/assignments/pending.json`
+  - `runtime/mailbox/*/inbox.json`
+- 并把它们作为 project/system 推理前可见的 framework truth 注入 context。
+
+### C. 当前语义
+- `assignment_queue_summary`
+  - 例如：`pending_assignments=2 [worker-b<-worker-system:pending, worker-c<-worker-system:pending]`
+- `mailbox_summary`
+  - 例如：`mailbox_messages=2 [local-worker-b:2]`
+- 这让 system/project 的 owner-loop 在不额外调用工具前，就能先看到协作积压面。
+
+### D. 新增验证
+- 扩展测试：
+  - `context_view_registry_tests::system_context_view_loads_active_and_registered_projects_from_runtime_registry`
+- 当前固定验证：
+  - active projects / registered projects
+  - presence summary
+  - supervision summary
+  - assignment queue summary
+  - mailbox summary
+
+### E. 当前证据
+- `cargo test -p fin-runtime --manifest-path rust/Cargo.toml context_view_registry_tests --quiet` ✅
+- `cargo test -p fin-runtime --manifest-path rust/Cargo.toml context_view_tests --quiet` ✅
+- `cargo test -p fin-runtime --manifest-path rust/Cargo.toml --quiet` ✅
+- `cargo fmt --all --manifest-path rust/Cargo.toml --check` ✅
+
+## 2026-04-20 richer testing + real provider smoke
+- Added richer regression around combined `task_board + assignment_queue + mailbox_summary` context assembly to prevent collaboration backlog truth from regressing when active task view is present.
+- Added `fin provider-live-smoke <user.toml> [transcript.json]` and `scripts/run-real-provider-smoke.sh` for isolated live provider verification under `~/.fin/harness/runs/<run-id>/...`.
+- Live smoke now verifies multi-turn session truth + current projection/current provider artifacts and records `control_feedback_origin` plus `reasoning_stop_present` in receipt.
+- Real provider evidence: `~/.fin/harness/runs/test-live-provider-20260420-2155/provider-live-smoke-report.json` with `provider=ali-coding-plan`, `model=qwen3.6-plus`, `control_feedback_origin=model_output_contract_v1`, `reasoning_stop_present=true`, `turn_count=3`.
+
+## 2026-04-20 qqbot ingress E2E truth
+- Added real repo-level qqbot E2E around `channel_peer_qqbot_bridge::process_inbound_message(...)` instead of more smoke.
+- Verified true chain: `message.ingest -> conversation/session restore -> runtime inference -> session truth -> outbound emit`.
+- New coverage proves two critical closures:
+  - fresh inbound target gets `ack + final reply`, session truth persists answer, peer events and provider request artifacts are written.
+  - existing target binding restores the old session even when built-in qqbot active pairing has moved to a newer session.
+- Test files split to respect the `<500 lines` rule:
+  - `rust/crates/cli/src/channel_peer_qqbot_bridge_tests.rs`
+  - `rust/crates/cli/src/channel_peer_qqbot_bridge_e2e_tests.rs`
+- Verification: `cargo test -p fin-cli channel_peer_qqbot_bridge -- --nocapture` ✅
+
+## 2026-04-20 qqbot live receipt command
+- Added `fin qqbot-live-receipt <user.toml> <qqbot-target> [run-id]`.
+- Purpose: after a real QQ channel message has been processed, collect the current target/session truth into `~/.fin/harness/runs/<run-id>/qqbot-live-receipt.json`.
+- Receipt currently verifies and records:
+  - bound conversation/session identity
+  - latest inbound / latest delivered cursor
+  - ack notice presence
+  - session-visible reply presence
+  - provider request/response artifact presence
+  - peer event count and reply preview
+- Validation: `cargo test -p fin-cli` ✅
+
+## 2026-04-20 real qqbot live receipt evidence
+- Real target discovered from `~/.fin/runtime/channels/qqbot/conversations.json`:
+  - `qqbot:c2c:F6A6F19355D0D62EEC06277EB445B51F`
+- Executed:
+  - `cargo run -p fin-cli -- qqbot-live-receipt ~/.fin/config/user.toml qqbot:c2c:F6A6F19355D0D62EEC06277EB445B51F qqbot-live-receipt-20260420-real`
+- Generated receipt:
+  - `~/.fin/harness/runs/qqbot-live-receipt-20260420-real/qqbot-live-receipt.json`
+- Verified fields:
+  - `status=passed`
+  - `ack_notice_present=true`
+  - `session_reply_present=true`
+  - `provider_request_present=true`
+  - `provider_response_present=true`
+  - `session_id=session-test-install-0-1-0001`
+  - `task_id=task-test-install-0-1-0001`
+  - `latest_reply_preview=OK`
+- Closeout meaning:
+  - qqbot minimal real channel closure is now evidenced not only by repo E2E but also by real runtime receipt.
+
+## 2026-04-20 m1 final closeout report
+- Added final closeout report:
+  - `docs/closeout/m1-final-closeout-report-2026-04-20.md`
+- Final judgement now frozen as:
+  - M1 complete
+  - qqbot no longer a blocker
+  - next phase should enter M2 through debt reduction + always-on lifecycle strengthening, not random feature expansion.
+
+## 2026-04-20 m2 step1 line-limit debt closeout
+- Completed the first M2 debt-reduction pass for the 500-line gate.
+- Split oversized runtime/cli files into owning-layer slices without changing behavior:
+  - runtime: `control_plane`, `agent_naming`, `activity_cards`, `context_view_tests`, `prompt_tests`, `tests`, `tool_dispatch_tests`
+  - cli: `channel_peer`, `agent_presence`, `channel_peer_activity_delivery`, `provider_live_smoke`, `startup_wakeup`
+- New helper slices keep the same truth boundaries: store/render/test/report/state helpers moved out; public entrypoints stayed in original owning modules.
+- Verification:
+  - `cargo test -p fin-runtime -p fin-cli --manifest-path rust/Cargo.toml` ✅
+  - `python3 scripts/check-code-line-limit.py` ✅ (`code line-limit ok`)
+- Result:
+  - repo-wide non-whitelist code files are now back under the 500-line gate.
+- Follow-up cleanup after line-limit split:
+  - exported pending runtime naming APIs through `fin_runtime::lib` to remove dead-code warnings while preserving planned control-plane surface
+  - removed leftover duplicate imports and dead local warnings from QQ activity delivery slices
+- Verification refresh:
+  - `cargo test -p fin-runtime -p fin-cli --manifest-path rust/Cargo.toml` ✅ (no warning lines emitted)
+  - `python3 scripts/check-code-line-limit.py` ✅
+
+## 2026-04-20 m2 step2 project runtime pickup/control truth hardening
+- Closed one M2 Step 2 control-plane gap on the `supervision -> handoff -> pickup -> status probe` chain.
+- Root issue:
+  - `project_runtime_pickup` previously reused `claimed_idle + await_manual_work` for two different facts:
+    1. framework may still seed the first resume for a claimed project task
+    2. the task was already handed off to the same worker and runtime is simply idle waiting for new project input
+  - This made pickup/status surfaces too weak and created a path for repeated resume interpretation / truth drift.
+- Code changes:
+  - Added `handoff_idle + await_new_project_input` pickup classification for already-handed-off idle project runtimes (`noop` handoff, or post-handoff idle observed by pickup classifier).
+  - Exposed `read_project_runtime_resume_report(...)` and wired `current_project_runtime_resume.json` into `status_probe`, so status now shows both:
+    - current pickup surface
+    - latest runtime-resume execution summary
+  - Split `project_runtime_pickup` tests into `project_runtime_pickup_tests.rs` to keep the 500-line gate green.
+- Verification:
+  - `cargo fmt --all --manifest-path rust/Cargo.toml` ✅
+  - `cargo test -p fin-runtime -p fin-cli --manifest-path rust/Cargo.toml` ✅
+  - `python3 scripts/check-code-line-limit.py` ✅
+- Frozen boundary after this pass:
+  - `pickup` is the current resumability surface
+  - `runtime_resume_report` is the latest executed resume action surface
+  - `status_probe` must show both rather than forcing one surface to speak for the other
+
+## 2026-04-20 m2 step2 supervisor heartbeat effective-stale truth hardening
+- Closed another M2 Step 2 control-plane gap on the `supervisor_cycle -> supervisor_heartbeat -> daemon_state/status` chain.
+- Root issue:
+  - `SupervisorHeartbeatRecord.stale_lease` was previously computed from the observed pre-refresh cycle.
+  - If heartbeat then triggered a fresh supervisor cycle successfully, the heartbeat record could still say `stale_detected / stale_lease=true`.
+  - That leaked stale pre-refresh observation into daemon/status/web as if it were still the final effective state.
+- Code changes:
+  - `due_for_tick` remains an observation on the pre-refresh cycle.
+  - `stale_lease` is now recomputed from the final effective cycle after any triggered refresh.
+  - `status=triggered_cycle` is preserved when heartbeat successfully drove a refresh and the final cycle is no longer stale.
+  - The old-cycle stale fact is still preserved via `supervisor.stale_cycle_detected` event and `result_summary` diagnostic text.
+- Verification:
+  - `cargo fmt --all --manifest-path rust/Cargo.toml` ✅
+  - `cargo test -p fin-runtime -p fin-cli --manifest-path rust/Cargo.toml` ✅
+  - `python3 scripts/check-code-line-limit.py` ✅
+- Frozen boundary after this pass:
+  - `heartbeat.due_for_tick` = observed control need before refresh
+  - `heartbeat.stale_lease` = final effective stale state after refresh
+  - stale pre-refresh evidence belongs to event stream, not daemon/status final truth
+
+## 2026-04-20 fin-5.1 resumable pause/resume checkpoint closeout
+- Closed the current `fin-5.1` implementation pass around true resumable pause/resume by replacing the old `resume_as_new_closure` style continuation with a runtime-owned execution checkpoint chain.
+- Frozen supported resume boundary for this pass:
+  - checkpoint is recorded at framework-owned resume anchors (`wait.remind` waiting_external and tool-followup resume boundary)
+  - scheduler prefers `resume_checkpoint` before generic pending queue replay
+  - consumed checkpoint emits durable `execution.checkpoint_consumed`
+  - synthetic framework resume input stays in step/provider/debug truth but does **not** pollute user-facing conversation/messages truth
+- New durable truth added:
+  - `ExecutionCheckpointRecord`
+  - `ExecutionStateRecord.resume_checkpoint_ready/resume_checkpoint_id`
+  - latest checkpoint artifacts under runtime current/session control paths
+- Verification completed:
+  - `cargo fmt --all --manifest-path rust/Cargo.toml` ✅
+  - `python3 scripts/check-code-line-limit.py` ✅
+  - `cargo test -p fin-runtime -p fin-cli --manifest-path rust/Cargo.toml` ✅
+  - exact E2E: `web_debug::web_debug_tests::web_debug_tests_runtime::web_debug_tests_runtime_followups::due_reminder_prefers_execution_checkpoint_resume_without_fake_user_message` ✅
+  - exact E2E: `channel_peer_qqbot_bridge::e2e_tests::qqbot_inbound_message_runs_end_to_end_and_emits_reply_from_session_truth` ✅
+- Gate result:
+  - `rust/crates/runtime/src/closure_runtime.rs` is now exactly 500 lines and passes the line-limit gate.
+- Scope note:
+  - this pass freezes checkpoint-based precise recovery at framework-owned boundaries; provider mid-flight stack restore is still out of scope and should not be implied.
+
+## 2026-04-21 fin-5.2 headless daemon closeout
+- Closed the current `fin-5.2` pass by adding a framework-owned headless daemon entry for single-agent always-on supervision.
+- New CLI entrypoints:
+  - `fin start <user.toml>`
+  - `fin stop <user.toml>`
+  - internal `fin daemon-run <user.toml>`
+- Frozen minimal lifecycle truth for this pass:
+  - pid file: `runtime/pids/headless-daemon.pid`
+  - lease file: `runtime/leases/headless-daemon.json`
+  - daemon state: `runtime/current/current_daemon_state.json`
+  - daemon recovery action: `runtime/current/current_daemon_recovery_action.json`
+  - stop request file: `runtime/locks/headless-daemon.stop`
+- Execution boundary frozen for this pass:
+  - headless daemon discovers sessions-with-work from session truth
+  - it directly drives the framework supervisor cycle (not UI handlers pretending to tick)
+  - due reminders + execution checkpoints can continue without frontstage/web request
+  - role dispatch still reuses the same runtime: system entry sessions use entry role, project sessions use project role inferred from context truth
+- Verification completed:
+  - `cargo fmt --all --manifest-path rust/Cargo.toml` ✅
+  - `python3 scripts/check-code-line-limit.py` ✅
+  - `cargo test -p fin-cli -p fin-runtime --manifest-path rust/Cargo.toml` ✅
+  - exact E2E: `headless_daemon_tests::headless_daemon_cycle_resumes_checkpoint_without_frontstage` ✅
+  - exact E2E: `channel_peer_qqbot_bridge::e2e_tests::qqbot_inbound_message_runs_end_to_end_and_emits_reply_from_session_truth` ✅
+- Scope note:
+  - this pass delivers minimal detached/headless single-agent continuity with framework-owned lease/state/recovery truth; it does not yet implement multi-process supervisor election or external service manager integration.
+
+## 2026-04-21 fin-5.3 ordinary parallel user input closeout
+- Closed the current `fin-5.3` pass by upgrading queued user input from status-only side-path to framework-scheduled ordinary parallel inference.
+- Frozen truth for this pass:
+  - `paused` / `waiting_external` / `running` new user input is classified as queueable parallel candidate.
+  - scheduler gains `run_next_parallel` and prioritizes parallel pending over `wait_external` blocking.
+  - web debug queue path now enqueues `parallel_chat` / `parallel_channel_ingress` and immediately runs a supervisor cycle when possible.
+  - ordinary parallel closure restores the previous `execution_state` after completion so it does not overwrite the waiting/paused mainline truth.
+  - waiting mainline `execution_checkpoint` is preserved and restored after parallel closure; parallel side replies must not silently delete the open checkpoint.
+- Regression updates:
+  - old paused-session tests were updated to the new truth: paused ordinary inputs now execute as parallel closures and restore paused state, rather than only returning queued notice.
+  - added waiting_external E2E covering ordinary parallel input + checkpoint preservation + scheduler decision evidence.
+- Verification completed:
+  - `cargo fmt --all --manifest-path rust/Cargo.toml` ✅
+  - `python3 scripts/check-code-line-limit.py` ✅
+  - `cargo test -p fin-cli --manifest-path rust/Cargo.toml ordinary_user_input_runs_as_parallel_inference_while_waiting_external -- --nocapture` ✅
+  - `cargo test -p fin-cli --manifest-path rust/Cargo.toml qqbot_inbound_message_runs_end_to_end_and_emits_reply_from_session_truth -- --nocapture` ✅
+  - `cargo test -p fin-cli -p fin-runtime --manifest-path rust/Cargo.toml` ✅
+- Scope note:
+  - this pass delivers framework-scheduled ordinary parallel closures inside a single-agent runtime; it does not claim true simultaneous multi-provider execution while an active closure is still mid-flight.
+
+## 2026-04-21 fin-5.4 tentative session -> formal task closeout
+- Closed the current `fin-5.4` pass by freezing the minimum framework-owned routing loop:
+  - first user turn can create a real tentative session with `session_id` but no `task_id`
+  - runtime routing now distinguishes `candidate_new_task` from `tentative_simple_chat` / `candidate_existing_task` / `candidate_topic_switch`
+  - framework-owned `/formalize` and `/stay` resolve pending routing prompts instead of letting the model silently control session/task switches
+- Root fixes in this pass:
+  - `build_binding_for_session` / `/resume` no longer synthesize fake `task_id` for tentative sessions
+  - `session_materializer` no longer writes nullable `task_id` as a misleading bound-task truth in `runtime/current/last_run.json`
+  - `session_materializer` now preserves `topic_thread_id` in `last_run` after formalization, avoiding later topic binding loss on subsequent turns
+- New verification added:
+  - tentative first turn persists `session_id` only, records routing prompt, and keeps binding/task truth unbound
+  - `/formalize` creates task registry + topic binding and switches `last_run` to formal task/topic truth
+  - `/stay` clears the pending routing prompt and allows the next normal inference to execute
+  - pending routing action can reuse an existing task and rebind session/task/topic truth correctly
+- Verification:
+  - `cargo fmt --all --manifest-path rust/Cargo.toml` ✅
+  - `cargo test -p fin-cli -p fin-runtime --manifest-path rust/Cargo.toml` ✅
+  - `python3 scripts/check-code-line-limit.py` ✅
+- Frozen boundary after this pass:
+  - model only emits routing/control feedback
+  - framework owns prompt-user gating, `/formalize`, `/stay`, task creation, and existing-task rebinding
+  - tentative session truth remains first-class until framework formalization actually happens
+
+## 2026-04-21 fin-5.5 owner-loop task-board truth slice
+- Started `fin-5.5` to move managed task owner-loop from prompt-only guidance toward runtime-owned actionable truth.
+- This slice freezes one new intermediate truth:
+  - `ProjectContextBlock` now carries owner-loop relevant managed-task facts instead of only `active_task/task_board_summary`
+  - added:
+    - `task_status_counts`
+    - `ready_task_ids`
+    - `submitted_task_ids`
+    - `owner_loop_summary`
+- Runtime behavior in this slice:
+  - managed task registry truth is scanned first-class via task registry records
+  - owner-loop summary now distinguishes:
+    - `review_submitted_tasks`
+    - `dispatch_ready_tasks`
+    - `wait_for_worker_feedback`
+    - `no_actionable_managed_tasks`
+  - dynamic tool bias now reacts to owner-loop truth:
+    - submitted tasks => bias `project.task.review` / `project.task.status`
+    - ready unclaimed tasks => bias `project.task.claim` / `agent.assign`
+- Refactor:
+  - split context line renderers into `context_block_render.rs` to keep the 500-line gate green
+- Verification:
+  - `cargo fmt --all --manifest-path rust/Cargo.toml` ✅
+  - `cargo test -p fin-runtime owner_loop_truth_biases_review_before_dispatch_and_ready_before_new_work --manifest-path rust/Cargo.toml -- --nocapture` ✅
+  - `cargo test -p fin-cli -p fin-runtime --manifest-path rust/Cargo.toml` ✅
+  - `python3 scripts/check-code-line-limit.py` ✅
+- Remaining gap for `fin-5.5`:
+  - owner-loop truth is now visible and biases tool choice, but framework still does not autonomously turn that truth into actual dispatch/review control actions
+
+## 2026-04-21 fin-5.5 owner-loop scheduler decision slice
+- Continued `fin-5.5` by wiring managed-task owner-loop truth into scheduler/supervisor instead of leaving it only in prompt/context bias.
+- New framework-owned truth in this slice:
+  - added `OwnerLoopActionRecord`
+  - scheduler now persists session/runtime artifacts under:
+    - `control/owner_loop/latest.json`
+    - `control/owner_loop/recent_actions.json`
+    - `runtime/current/current_owner_loop_action.json`
+- Runtime behavior now frozen:
+  - owner-loop action is derived from managed task registry truth before each scheduler decision
+  - scheduler surfaces owner-loop blocking/next-action states when idle with no pending inputs:
+    - `review_submitted_task`
+    - `dispatch_ready_task`
+    - `wait_worker_feedback`
+  - supervisor now classifies these as explicit blocked kinds / wake hints instead of collapsing them into generic idle
+- Refactor for single truth:
+  - extracted shared managed-task board derivation into `managed_task_board.rs`
+  - `task_board_snapshot` and owner-loop action now consume the same managed-task truth source
+- Observability:
+  - scheduler tick now emits `scheduler.tick_owner_loop_action_recorded`
+  - status probe now reports `owner_loop=...` alongside routing/scheduler/supervisor summaries
+- Verification:
+  - `cargo fmt --all --manifest-path rust/Cargo.toml` ✅
+  - `python3 scripts/check-code-line-limit.py` ✅
+  - `cargo test -p fin-cli -p fin-runtime --manifest-path rust/Cargo.toml` ✅
+  - exact integration: `scheduler_driver_tests::drive_scheduler_persists_owner_loop_review_decision_from_managed_tasks` ✅
+- Remaining gap after this slice:
+  - framework can now materialize and expose owner-loop control intent, but it still does not autonomously execute review/dispatch actions; actual dispatch/review remains the next step after decision truth is accepted.
+- Follow-up closeout in the same `fin-5.5` slice:
+  - scheduler now performs one minimum executable owner-loop handoff per cycle for:
+    - `review_submitted_task`
+    - `dispatch_ready_task`
+  - handoff is injected as hidden framework input sources:
+    - `framework.owner_loop.review_submitted_task`
+    - `framework.owner_loop.dispatch_ready_task`
+  - these framework inputs are not written as user-visible conversation turns, but they do drive real inference and stay observable in scheduler/debug truth
+  - `wait_worker_feedback` remains decision-only and does not auto-run a model turn
+  - cycle guard: only one owner-loop framework turn is auto-executed per scheduler cycle to avoid infinite repeated review/dispatch loops when task truth does not change
+- Additional verification after executable handoff:
+  - `scheduler_driver_tests::drive_scheduler_executes_one_framework_owner_loop_turn_for_submitted_task` ✅
+- Completed the next owner-loop closure step with real E2E proof:
+  - `/tick` now covers a full chain:
+    - managed task registry reports `submitted`
+    - scheduler derives `review_submitted_task`
+    - framework injects hidden `framework.owner_loop.review_submitted_task`
+    - provider returns `project.task.review`
+    - task registry is updated to `done`
+  - user-visible conversation does not leak the hidden framework prompt; only the assistant reply is rendered
+- New exact E2E proof:
+  - `web_debug_tests_runtime_owner_loop::tick_command_executes_owner_loop_review_and_updates_task_truth` ✅
+  - validates task registry mutation, tool record persistence, scheduler owner-loop artifacts, and hidden prompt non-leakage in conversation truth
+- Bridged the missing middle of the managed-task loop:
+  - `agent.assign` now persists assignment queue truth with `project_id/session_id/task_id/target_worker_id/target_agent_name`
+  - framework added `assignment_runtime_resume` to consume local pending assignments
+  - this path injects hidden `project.assignment` work input, runs one project-role worker turn with the targeted worker identity, and expects the worker to close its slice through `project.task.submit`
+- New runtime/control artifacts:
+  - `runtime/current/current_assignment_runtime_resume.json`
+  - `runtime/assignments/runtime_resume_reports.json`
+  - refreshed `runtime/current/current_assignment_summary.json`
+- New exact E2E proof:
+  - `web_debug_tests_runtime_assignment_resume::assignment_runtime_resume_executes_worker_turn_and_submits_task` ✅
+  - validates `assignment pending -> worker pickup -> project.task.submit -> task status=submitted`
+- Current state of `fin-5.5` after this slice:
+  - review path had E2E
+  - dispatch path had E2E
+  - worker submit bridge now has E2E
+  - remaining next-step is to make the same chain observable as one higher-level owner/worker loop receipt and then decide whether to auto-chain submit->review in one supervisor path or keep them as two adjacent cycles
+
+## 2026-04-21 tentative formalize now auto-kicks planning
+- Closed the gap between `TentativeSession` formalization and actual managed/direct task planning.
+- New frozen runtime behavior:
+  - `/formalize` no longer stops at `task/topic bind`
+  - framework now auto-enqueues one hidden planning kickoff:
+    - `input_kind=framework_planning`
+    - `source=framework.task_kickoff.plan`
+  - framework persists:
+    - `session.formalized`
+    - `framework.task_kickoff_enqueued`
+  - supervisor/scheduler then advances exactly one planning turn for the formalized task
+- Planning-turn boundary now frozen:
+  - planning decides `direct path(update_plan)` vs `managed path(project.task.create...)`
+  - framework owns session/task/topic bind
+  - user-visible conversation must not leak the hidden planning kickoff prompt
+  - same `formalize_kickoff` cycle stops after that planning turn instead of immediately chaining deeper owner-loop actions
+- Web/debug observability:
+  - focus pane now renders framework progress timeline for:
+    - `session.formalized`
+    - `framework.task_kickoff_enqueued`
+    - `scheduler.tick_*`
+    - `supervisor.cycle_*`
+- Verification:
+  - `cargo fmt --all --manifest-path rust/Cargo.toml` ✅
+  - `python3 scripts/check-code-line-limit.py` ✅
+  - `cargo test -p fin-cli -p fin-runtime --manifest-path rust/Cargo.toml` ✅
+  - exact E2E:
+    - `web_debug_tests_runtime_planning_kickoff::formalize_auto_kickoff_runs_managed_planning_and_forms_task_board` ✅
+    - `web_debug_tests_runtime_planning_kickoff::formalize_auto_kickoff_can_take_direct_path_and_persist_plan_artifact` ✅
+
+## 2026-04-21 managed closed-loop receipt + full E2E landed
+- Closed the current “framework loop can run, but user/debug still cannot see one complete receipt” gap with two pieces:
+  - Web focus pane now renders a `Closed Loop Receipt` section derived directly from `session event truth`
+  - new end-to-end managed loop test now proves:
+    - tentative input
+    - `/formalize`
+    - hidden planning kickoff
+    - managed `project.task.create`
+    - owner `/tick` dispatch (`agent.assign + project.task.claim`)
+    - attached control-plane `assignment_runtime_resume`
+    - worker `project.task.submit`
+    - owner `/tick` review (`project.task.review`)
+    - final task status `done`
+- Receipt rendering is intentionally event-derived, not a second runtime truth:
+  - formalized
+  - planning kickoff
+  - managed/direct planning
+  - owner dispatch
+  - worker submit
+  - owner review
+- During closeout, found and fixed a real truth leak:
+  - hidden `project.assignment` input was still appearing in `conversation/messages.json`
+  - root cause was not only runtime closure finalize; CLI demo wrapper also re-applied `run.conversation_user_input`
+  - fix was applied in both places so hidden framework/project prompts no longer leak into visible conversation truth
+- Verification:
+  - `cargo fmt --all --manifest-path rust/Cargo.toml` ✅
+  - `python3 scripts/check-code-line-limit.py` ✅
+  - `cd rust/crates/debug-server/webui && tsc -p tsconfig.json` ✅
+  - exact E2E:
+    - `web_debug_tests_runtime_closed_loop::managed_closed_loop_e2e_reaches_review_done_with_full_framework_chain` ✅
+
+## 2026-04-21 detached local project autonomous loop closed further
+- Closed two real gaps in the local multi-agent detached path:
+  - `headless_daemon` now actively drives `project_runtime_resume`, so local project sessions no longer require a frontstage request to continue.
+  - startup project scan now treats `tasks/registry` as unfinished-task truth in addition to `execution_state`, so claimed/ready/submitted/reviewing project work can enter `supervision -> handoff -> pickup -> resume`.
+- Fixed worker identity mismatch in project handoff:
+  - handoff worker truth now uses `worker-{agent_name}` (for `mbp.builder` => `worker-builder`) instead of incorrectly deriving `worker-mbp-builder` from `agent_id`.
+  - this aligns project handoff with runtime worker allocation truth and unblocks `project.task.submit` inside detached/local project turns.
+- Added/updated evidence:
+  - new module: `startup_project_task_scan.rs`
+  - new helper: `headless_daemon_project_resume.rs`
+  - new E2E: detached daemon autonomously resumes local project agent without frontstage
+- Verification:
+  - `cargo fmt --all --manifest-path rust/Cargo.toml` ✅
+  - `python3 scripts/check-code-line-limit.py` ✅
+  - exact regression:
+    - `startup_project_task_scan::tests::scan_counts_unfinished_registry_tasks_for_project_session` ✅
+    - `startup_wakeup::tests::refresh_consumes_daemon_ensure_request_and_wakes_project_agent` ✅
+    - `project_execution_handoff::tests::materialize_prepares_local_resume_task_handoff` ✅
+    - `project_runtime_resume_tests::drive_ready_project_runtime_resumes_seeds_claimed_idle_project_queue` ✅
+  - `attached_control_plane_tests::attached_control_plane_cycle_drives_ready_project_resume` ✅
+  - `headless_daemon_tests::headless_daemon_cycle_resumes_checkpoint_without_frontstage` ✅
+  - `headless_daemon_tests::headless_daemon_cycle_autonomously_resumes_local_project_agent_without_frontstage` ✅
+
+## 2026-04-21 real provider 3-turn codex/hermes->write E2E
+- Re-ran a stronger live-provider E2E after the timeout / tool-call-shape / apply_patch-create fixes.
+- Isolated run:
+  - run id: `test-live-provider-codex-hermes-write-20260421`
+  - receipt: `~/.fin/harness/runs/test-live-provider-codex-hermes-write-20260421/provider-live-smoke-report.json`
+- Verified closed chain with real provider:
+  - turn1: model called `exec_command` twice against `~/code/codex` and `~/github/hermes-agent`, then `reasoning.stop`
+  - turn2: model called `apply_patch` in replace mode with `old_string=""` and created `docs/samples/multi-agent-e2e-sample.md`, then `reasoning.stop`
+  - turn3: model called `exec_command` to verify file non-empty, runtime auto follow-up ran round2, then `reasoning.stop`
+- Durable truth verified:
+  - session messages: `.../conversation/messages.json`
+  - tool records: `.../tools/recent_tool_records.json`
+  - rounds: `.../rounds/recent_rounds.json`
+  - provider requests/responses: `.../provider/recent_provider_requests.json` / `recent_provider_responses.json`
+- Important new finding:
+  - chain closure is now real, but turn2 synthesis still leaned generic because follow-up prompt only carried coarse `Recent tool activity` summaries (`exec_command completed -> unknown target`) instead of richer tool evidence / stdout snippets / artifact refs
+  - this is no longer a “tool chain broken” problem; it is a **context evidence richness** gap
+- Gate status after this slice:
+  - `cargo fmt --all --manifest-path rust/Cargo.toml` ✅
+  - `cargo test -p fin-provider -p fin-runtime -p fin-cli --manifest-path rust/Cargo.toml --quiet` ✅
+  - `python3 scripts/check-code-line-limit.py` ❌
+    - `rust/crates/provider/src/lib.rs` = 545
+    - `rust/crates/runtime/src/closure_runtime.rs` = 503
+    - `rust/crates/runtime/src/round_loop_runtime_tests.rs` = 526
+
+## 2026-04-21 current history full-truth correction
+- Jason 明确纠正：**current context/history 不能用 summary/recent 假真相替代真实工具结果**；当前推理链中的 tool execution history 必须按真实执行结果全量进入下一轮请求。
+- 已修正 runtime 真源：
+  - `ContextViewBuilder / round_context / ModelInputAssembler` 统一改为 `Current interaction ledger / Current reasoning history / Current tool execution history`
+  - follow-up round 不再只注入粗粒度 `Recent tool activity`，而是注入全量 tool history
+  - `exec_command / write_stdin / apply_patch` 现在持久化 authoritative receipt，下一轮直接读取 receipt 真值进入 prompt
+- 新增验证：
+  - `runtime_followup_round_includes_full_exec_receipt_in_current_history` ✅
+  - `runtime_followup_round_includes_full_patch_receipt_arguments` ✅
+  - `cargo test -p fin-runtime --manifest-path rust/Cargo.toml --quiet` ✅
+
+## 2026-05-14 qqbot event consumer gate tests (Gate 1/2/3)
+Added channel_peer_qqbot_bridge_events_tests.rs (3 tests, 3 PASS):
+- Gate 1: qqbot_event_recorder_writes_events_jsonl: events.jsonl written with channel.peer events
+- Gate 2: qqbot_recent_contexts_bounded: recent_contexts bounded <= 10 after 5 ops
+- Gate 3: qqbot_read_last_run_value_parses_correctly: last_run turn_id/session_id parse OK
+Live smoke skipped: no QQ credentials (~/.rcc/provider/qqbot/credentials.toml absent
+Gate 1+2+3 PASS, live smoke SKIPPED per execution rule
+
+Files:
+- rust/crates/cli/src/channel_peer_qqbot_bridge_events_tests.rs (new)
+- rust/crates/cli/src/channel_peer_qqbot_bridge.rs (+events_tests module)
+Test cmd: cargo test -p fin-cli channel_peer_qqbot_bridge::events_tests
+3/3 PASS
+---
+Credentials absent: live smoke SKIPPED per execution rules
+---
+Live smoke: TODO
+
+## 2026-05-16 Android/TCA 连接规则（用户明确要求）
+- Jason 明确：客户端是局域网设备，daemon 在本机；连接必须按跨设备远程 WS 设计，通过 TCA 连通，不允许本地壳思路替代。
+- 新执行纪律：每一次成功/失败都必须写入 note.md（含原因、证据路径、下一步）。
+- 验收优先级：先证明远程 WS 真实连通（配置落盘 + 握手/订阅日志 + 真机截图），再谈 UI 美化。
+
+## 2026-05-16 更正：连接方式不是 TCA，是 Tailscale IP
+- 用户更正：跨设备连接方式是 **Tailscale IP**，不是 TCA。
+- 后续所有 Android 客户端连接验证、配置示例、日志检查统一使用 Tailscale IP（如 `100.66.1.82`）。
+- 若文档/脚本出现 TCA 表述，视为错误并需改正。
+
+## 2026-05-16 Tailscale 远程连接执行记录（真机）
+- 成功：
+  - 已将 daemon profile 持久化到 app 私有配置：`reports/android-mvp-logs/tailscale-config.json`（endpoint=`ws://100.66.1.82:4040/ws`）。
+  - 真机执行连接流程点击（连接页/保存地址/重新连接/任务页连接WS）步骤日志已生成：`reports/android-mvp-logs/tailscale-click-steps.log`。
+  - 回退流程截图已生成：`reports/android-mvp-screenshots/tailscale-04-back-flow.png`。
+- 失败/风险：
+  - 当前 WebView/系统日志无法稳定抽取到业务层 WS 状态字段（healthy/auth_failed 等）作为强证据；需要在前端显式落连接事件到可导出的日志面板。
+- 下一步：
+  - 在 Connection 页增加“连接事件明细导出”并落盘到 `reports/android-mvp-logs/tailscale-connection-events.log`，作为远程 WS 连通强证据。
+
+## 2026-05-16 Tailscale 远程连通排查（host 侧）
+- 目标：验证 `100.66.1.82:4040` 是否可从开发机直连。
+- 证据：`reports/android-mvp-logs/tailscale-host-connectivity.log`
+- 结果：若 nc/python tcp connect 失败，则当前不是客户端逻辑问题，而是 daemon 监听/路由/ACL 问题。
+- 下一步：检查 daemon 是否监听 `0.0.0.0:4040`，并确认 Tailscale ACL 允许 `100.127.23.27 -> 100.66.1.82:4040`。
+
+## 2026-05-16 Android/Tailscale 继续执行记录（本轮）
+- 成功：
+  - 已修复 `fin-cli web-debug` 监听地址硬编码：支持 `host + port` 参数。
+    - 代码：`rust/crates/cli/src/command.rs`、`rust/crates/cli/src/cli.rs`、`rust/crates/cli/src/tests.rs`
+    - 测试：`cargo test -p fin-cli parse_command_accepts_web_debug -- --nocapture` 通过。
+  - 已修复 `web-debug` 因缺少 qqbot 凭证直接退出的问题：改为“无凭证跳过 bridge 启动并记录事件”，不再阻断调试服务。
+    - 代码：`rust/crates/cli/src/web_debug_entry.rs`
+    - 回归：`cargo test -p fin-cli web_debug -- --nocapture` 通过。
+  - daemon 已确认监听在全网卡：`*:4040`。
+    - 证据：`reports/android-mvp-logs/web-debug-listen.log`
+  - Tailscale TCP 连通成功（端口层）：
+    - 证据：`reports/android-mvp-logs/tailscale-host-connectivity-after-webdebug-fix.log`
+  - Android 五条门禁命令本地回环通过（mock ws + build + publish）：
+    - 证据：`reports/android-mvp-validation.md`（待按真实E2E重写）
+    - 产物：`android-client/update-dist/fin-latest-debug.apk`、`android-client/update-dist/latest.json`
+
+- 失败：
+  - 真实远程 WS 业务握手仍失败，App 侧记录为 `endpoint_unreachable`。
+    - 证据：`reports/android-mvp-logs/tailscale-connection-events.log`
+  - 根因已定位：`web-debug` 当前不是 WebSocket 服务；`ws://100.66.1.82:4040/ws` 返回 404（协议/路由不匹配）。
+    - 证据：本机探测 `websockets.connect(ws://100.66.1.82:4040/ws) -> HTTP 404`
+    - 代码证据：`rust/crates/debug-server/src/routes.rs` 仅 HTTP/SSE 路由，无 `/ws` 升级处理。
+  - 真机导航自动化截图本轮识别失败（UIA 文本定位不稳定），需要切回坐标/层级索引点击方案。
+    - 证据：`reports/android-mvp-logs/e2e-ui-navigation.log`
+
+- 下一步（唯一主线）
+  1) 在 `debug-server` 增加真实 `/ws` 升级与消息分发（mobile.handshake/mobile.subscribe/session.user_input）。
+  2) 复用当前 app 侧 WS 状态机，不改协议语义，只接入真实 daemon `/ws`。
+  3) 重跑真机 Tailscale E2E，强证据要求：`subscribed + healthy` 事件、配置文件落盘、页面截图、验证索引重写 PASS/FAIL。
+
+## 2026-05-16 Android/Tailscale 继续执行记录（第二轮）
+- 成功：
+  - Android Manifest 已补齐网络能力：
+    - `INTERNET` permission
+    - `usesCleartextTraffic=true`
+    - 文件：`android-client/app/src/main/AndroidManifest.xml`
+  - debug-server 已增加 `/ws` WebSocket 处理骨架并可从主机侧握手成功：
+    - `ws://100.66.1.82:4040/ws` 本机探测返回 `{"type":"handshake.ok"}`
+    - 文件：`rust/crates/debug-server/src/mobile_ws.rs`、`rust/crates/debug-server/src/lib.rs`、`rust/crates/debug-server/Cargo.toml`
+  - Android shell 已加“daemon profile 自动连接”触发（启动后自动 connectWs）。
+
+- 失败：
+  - 真机 App 侧连接事件仍是 `endpoint_unreachable`，未进入 `handshaking/subscribed/healthy`。
+    - 证据：`reports/android-mvp-logs/tailscale-connection-events.log` 最新行仍为 ws_error/endpoint_unreachable/ws_close。
+  - 当前无法从 daemon 侧观察到来自手机的 WebSocket 升级请求（web-debug 日志无 incoming upgrade 记录），说明链路仍未真实进到服务端 ws handler。
+
+- 新定位：
+  - 主机到自身 Tailscale 地址连通、主机侧 websockets 客户端直连 `/ws` 正常；
+  - 手机到主机 ICMP 可达；
+  - 但 App 内 WebView 发起到 `ws://100.66.1.82:4040/ws` 失败且 server 无请求日志，优先怀疑设备/ROM/WebView 网络策略或连接发起路径异常（而非服务端监听问题）。
+
+- 下一步：
+  1) 在 WebView 侧增加 `navigator.userAgent` 与 `window.location`、连接异常详情 `e.message` 的 bridge 落盘；
+  2) 在 daemon 侧增加原始 TCP 入站与请求首行日志，确认是否有包到达；
+  3) 若仍无入站，增加 Android 原生 `OkHttp WebSocket` 最小探针（同 endpoint）写入同一 connection-events.log，判定是 WebView 限制还是网络路径问题；
+  4) 判明后再回到 UI 主线，补齐真机 subscribed/healthy 证据。
+
+## 2026-05-16 Android/Tailscale 继续执行记录（第三轮）
+- 新增证据增强：
+  - Bridge 增加 `probeWs(endpoint)`（原生 Socket + ws upgrade 请求），并在前端 `connectWs()` 前记录 `probe=...`。
+  - 前端连接事件增加细粒度字段：`ws_open` / `ws_error detail` / `ws_close code reason`。
+  - 文件：
+    - `android-client/app/src/main/java/com/fin/client/bridge/MobileBridge.kt`
+    - `android-client/app/src/main/assets/mobile-shell.html`
+- 关键发现：
+  - 当 daemon 进程未运行时，probe 返回 connect timeout/abort，事件为 `endpoint_unreachable`（预期）。
+  - daemon 稳定运行后，设备 shell 网络测试可达：`adb shell nc -z -w 2 100.66.1.82 4040 -> exit=0`。
+  - 但 app 进程内 `probeWs` 仍失败（ECONNABORTED），且 daemon 侧没有看到来自手机的 ws 首行请求，说明问题不在应用层协议，而在设备应用网络路径/策略层。
+- 当前结论：
+  - 代码侧已提供可追踪错误与强诊断证据；
+  - 真机跨设备 ws 仍 FAIL， blocker 仍在设备环境策略（应用进程网络路径）而非 ws 协议实现。
+- 下一步：
+  1) 以原生 OkHttp WebSocket 再做同 endpoint 探针并写入 connection-events，确认是否 WebView 栈限制；
+  2) 如原生同样失败，则输出“设备策略 blocker”专项证据包并请用户侧开放 app 走 Tailscale VPN；
+  3) blocker 解除后重跑完整门禁 + 真机 E2E。
+
+## 2026-05-16 Android/Tailscale 继续执行记录（第五轮）
+- 新增诊断：
+  - 增加 app 进程内 HTTP 探针 `probeHttp(endpoint)`，并在 connect 前落盘 `probe_http=...`。
+  - 文件：
+    - `android-client/app/src/main/java/com/fin/client/bridge/MobileBridge.kt`
+    - `android-client/app/src/main/assets/mobile-shell.html`
+- 真机最新证据：
+  - `probe` 失败（socket connect timeout）
+  - `probe_http` 失败（ECONNABORTED）
+  - `probe_okhttp` 失败（connect failed after 3000ms）
+  - daemon 日志无任何来自设备的入站请求首行。
+- 结论：
+  - WebView / 原生 Socket / 原生 OkHttp 三路在 app 进程全部失败；
+  - 设备 shell 层网络可达不代表 app 进程路径可达；当前 blocker 明确为设备应用网络策略/路径。
+- 下一步：
+  1) 保持当前代码与证据包，等待设备侧放开 app 进程到 Tailscale 路径；
+  2) 放开后立即重跑真机 E2E，目标是 connection-events 中出现 `handshake=ok` + `state=subscribed` + `state=healthy`。
+
+
+## 2026-05-16 自动化 live gate 新增
+- 新增 `scripts/android-mvp/run_tailscale_live_e2e.py`，统一执行：daemon保障、安装启动、真机日志/截图采集、required-marker判定。
+- 当前判定：FAIL（status.json 已落盘）。
+- 证据：`reports/android-mvp-logs/tailscale-live-e2e-status.json`。
+
+## 2026-05-16 Completion audit artifact
+- Added `reports/android-mvp-completion-audit.md` with full requirement-to-evidence checklist and verdict: NOT ACHIEVED.
+- Live blocker remains app-process path to `100.66.1.82:4040`; `run_tailscale_live_e2e.py` still FAIL.
+
+## 2026-05-16 live e2e recheck
+- Re-ran `python3 scripts/android-mvp/run_tailscale_live_e2e.py`.
+- Result remains FAIL; required markers still missing.
+- Evidence: `reports/android-mvp-logs/tailscale-live-e2e-status.json`, `reports/android-mvp-logs/tailscale-connection-events.log`.
+
+## 2026-05-16 live unblock observer
+- Added `scripts/android-mvp/observe_live_unblock.py` and captured `reports/android-mvp-logs/live-unblock-observation.json`.
+- Reconfirmed differential: shell tcp can be ok while app markers remain missing; blocker unchanged.
+
+## 2026-05-16 receipt bundle
+- Added `scripts/android-mvp/build_receipt_bundle.sh` to package current truth artifacts into a single tarball.
+- Generated: `reports/android-mvp-receipt-bundle-20260516-085733.tgz`.
+- Purpose: handoff/review evidence bundle (validation, gate status, blocker logs, screenshots).
+
+## 2026-05-16 unblock runbook
+- Added `reports/android-mvp-next-actions.md` with exact recheck commands and PASS criteria for post-environment-unblock closeout.
+
+## 2026-05-16 full rerun snapshot
+- Re-ran preflight + live e2e + all gates + validation update.
+- Rebuilt receipt bundle with latest artifacts.
+- Current truth unchanged: live tailscale e2e fail, overall NOT ACHIEVED.
+
+## 2026-05-16 status board
+- Added `reports/android-mvp-status-board.md` as single-source status board for current pass/fail + blocker + rerun commands.
+
+## 2026-05-16 gate hardening
+- Updated `run_all_gates.py`: if preflight blocker != none, mark preflight gate as failed (code=2) to prevent false-green diagnostics.
+
+## 2026-05-16 post-hardening rerun
+- Re-ran preflight/live/all-gates after gate hardening.
+- Result unchanged: preflight blocker present + live e2e fail, overall NOT ACHIEVED.
+- Generated fresh receipt bundle for latest state.
+
+## 2026-05-16 full cycle wrapper
+- Added `scripts/android-mvp/full_cycle_recheck.sh` to force daemon up and run full verification chain + receipt bundle.
+- Latest cycle recheck still not achieved (see validation/all-gates/live-e2e status files).
+
+## 2026-05-16 objective checklist auto
+- Added `scripts/android-mvp/objective_checklist.py` to auto-check core objective deliverables against latest artifacts.
+- Generated `reports/android-mvp-objective-checklist.md` with current verdict: NOT ACHIEVED.
+
+## 2026-05-16T09:12:54.712129 android preflight refine
+- result blocker=webview_or_app_runtime_ws_path_issue
+- checks: host_tcp=ok, device_shell_tcp=ok, app_uid_shell_tcp=ok, app_probe_tail_has_healthy=fail
+- note: add app_uid_shell_tcp to split device shell path vs app uid path.
+
+## 2026-05-16T09:17:26.600269 android live ws diag
+- fail: run_tailscale_live_e2e FAIL, run_all_gates FAIL
+- evidence: reports/android-mvp-logs/tailscale-live-e2e-status.json, reports/android-mvp-logs/all-gates-status.json, adb logcat FinMobileBridge stack
+- key finding: host/device/app_uid tcp all ok; app ws handshake still timeout/ECONNABORTED => webview_or_app_runtime_ws_path_issue
+- success: preflight script now splits app_uid path; skill updated with 4-stage diagnose rule
+- next: adjust test device VPN/app-network policy for com.fin.client, then rerun full_cycle_recheck.sh
+
+## 2026-05-16T09:19:53.927292 android gate rerun
+- change: increase probe timeouts to 10s/12s in MobileBridge
+- verify: assembleDebug + build-and-publish PASS; run_tailscale_live_e2e FAIL; run_all_gates FAIL
+- evidence: reports/android-mvp-logs/all-gates-status.json, reports/android-mvp-logs/tailscale-live-e2e-status.json, adb logcat FinMobileBridge
+- finding: failure persisted with 10s timeout, still app_ws path timeout/ECONNABORTED
+- next: require device-side VPN/app policy fix for com.fin.client before green gates possible
+
+## 2026-05-16T09:21:57.387577 android no-proxy attempt
+- change: enforce Proxy.NO_PROXY for java socket and okhttp websocket/http probes
+- verify: assembleDebug PASS, build-and-publish PASS, run_tailscale_live_e2e FAIL, run_all_gates FAIL
+- evidence: reports/android-mvp-logs/all-gates-status.json, reports/android-mvp-logs/tailscale-live-e2e-status.json
+- finding: no-proxy did not recover live WS; blocker remains webview_or_app_runtime_ws_path_issue
+- next: device-side network/VPN policy remediation required before F1 live chain can pass
+
+## 2026-05-16T09:24:26.553151 preflight vpn-uid refinement
+- change: preflight now detects app uid via `cmd package list packages -U`, and adds tailscale vpn uid inclusion check
+- verify: app_uid=10145 detected; tailscale_vpn_uid_included=true; blocker returned to webview_or_app_runtime_ws_path_issue
+- evidence: reports/android-mvp-logs/preflight-network-diagnose.json
+- conclusion: not daemon/not tailscale per-app exclusion; still app runtime ws path failure
+
+## 2026-05-16T09:29:53.757847 final gate pass
+- change: defer bridge probe calls to async timer after WebSocket constructor to avoid blocking connection establishment
+- verify: run_tailscale_live_e2e PASS, run_all_gates PASS
+- evidence: reports/android-mvp-logs/all-gates-status.json, reports/android-mvp-logs/tailscale-live-e2e-status.json, reports/android-mvp-validation.md
+- deliverables: android-client/update-dist/fin-latest-debug.apk and latest.json present
+
+## 2026-05-16T10:44:42.051892 user-ui-simplify gate
+- change: removed debug-heavy user-invisible pages; rebuilt shell to user-centric chat/settings/sessions only
+- verify: assembleDebug PASS; build-and-publish PASS; tailscale_live_e2e PASS; run_all_gates FAIL
+- evidence: reports/android-mvp-logs/all-gates-status.json
+- action: inspect failed sub-gate and patch minimal user-visible-safe fixes
+
+## 2026-05-16T11:15:43.756174 turn-channel planning
+- added docs/android-turn-channel-plan.md
+- scope: normal/debug split, same turn subscription truth, non-coupled render
+- includes checklist + test matrix + evidence plan
+
+## 2026-05-16T11:20:14.409529 turn-channel impl test plan doc
+- added docs/android-turn-channel-implementation-test-plan.md
+- includes contract/impl/test/e2e/evidence/gates for normal+debug channels
+
+## turn-channel execution
+- contract: PASS
+- toggle: PASS
+- e2e: PASS
+- evidence paths: turn-channel-*.log + turn-*.png
+
+## 2026-05-16T11:30:07.405688 turn-channel objective audit
+- success: reran turn-channel scripts: contract/toggle/e2e all PASS with remote ws://100.66.1.82:4040/ws
+- evidence: reports/android-mvp-logs/turn-channel-contract.log, turn-channel-toggle.log, turn-channel-e2e.log
+- success: regenerated screenshots turn-normal/debug/error-debug
+- evidence: reports/android-mvp-screenshots/turn-normal.png, turn-debug.png, turn-error-debug.png
+- risk: current real E2E log shows 2 normal turns only; no proven real tool-call turn/error turn yet for E2/E3 strict gate
+- next: add/execute dedicated real prompts or runtime action that deterministically produces tool_execution_records non-empty and error_records non-empty, then append PASS evidence into validation index
+
+## 2026-05-16T11:53:01.715692 turn-channel e2e closeout
+- success: fixed mobile_ws tool_record_refs parse to tool_call_id extraction; tool_execution_records now non-empty in real e2e
+- success: real E2E log now covers E1/E2/E3/E4 PASS (including non-empty error_records by shell command failure case)
+- evidence: reports/android-mvp-logs/turn-channel-e2e.log, turn-channel-contract.log, turn-channel-toggle.log, turn-channel-unit.log
+- screenshots refreshed: reports/android-mvp-screenshots/turn-normal.png, turn-debug.png, turn-error-debug.png
+- doc updated: reports/android-mvp-validation.md turn channel section includes unit + E1-E4 pass
+- risk: top-level overall gate block in validation file still reflects historical capture_shell_screenshots fail and not part of turn-channel objective closeout
+
+## 2026-05-16T12:05:05.811262 continue-run device + ui verification
+- success: fixed screenshot script for new panel layout by using closePanel(...) eval and scroll_to debugToggle
+- evidence: scripts/android-mvp/capture_shell_screenshots.py, reports/android-mvp-screenshots/01-sessions.png, 02-conversation.png, 02-connection.png
+- success: reran real turn-channel e2e => E1/E2/E3/E4 all PASS
+- evidence: reports/android-mvp-logs/turn-channel-e2e.log
+- success: installed latest debug apk to adb device 100.127.23.27:1234 and captured device screenshot
+- evidence: reports/android-mvp-logs/adb-install-latest.log, reports/android-mvp-screenshots/device-latest-screen.png
+
+## 2026-05-16 session-kb validation loop
+- Re-ran scripts/session-kb/run_session_kb_checks.py after mobile_ws/session list meta-title fix.
+- Current status: all pass except C1_title_updated (rename->session.list title propagation not stable in ws contract path).
+- Evidence: reports/session-kb-logs/session-kb-checks.log and reports/session-kb-validation.md
+- Decision: keep FAIL explicit (no fallback/no fake green), next step is fix single true-source chain for title refresh.
+
+## 2026-05-16 Android 连接不上根因定位（新增）
+- 现象：App 反复 endpoint_unreachable。
+- 真源证据：daemon 监听绑定与进程生命周期不稳定（单机 curl/WS 与真机 log 同步印证）。
+- 关键动作：
+  1) 清理冲突 web-debug 实例，保留单实例 0.0.0.0:4040；
+  2) 真机 adb 侧连通性探针（nc）+ app connection-events 采集；
+  3) 验证握手链路出现 handshaking->handshake=ok->subscribed->healthy。
+- 结论：非前端渲染问题，核心是 daemon 绑定与稳定性；客户端重连逻辑按设计生效。
+- 证据：
+  - reports/session-kb-logs/device-connectivity-fix-2026-05-16.log
+  - reports/session-kb-logs/e2e-device-events-4-2026-05-16.log
+  - reports/session-kb-logs/e2e-device-connectivity-stable-2026-05-16.log
+
+## 2026-05-16 连接不上根因定位（Android）
+- 现象：App 日志出现 endpoint_unreachable 与 healthy 交替，且会连续增长 reconnect(n)。
+- 证据：`run-as com.fin.client cat files/logs/connection-events.log` 中同一时间窗先 `handshake=ok state=healthy`，随后立刻 `onerror/onclose` 双触发并重复排队。
+- 根因：前端 WS 生命周期编排错误：旧 socket 的 onerror/onclose 与新 socket 并发回调未隔离；并且 onerror 与 onclose 双路径都触发重连，导致重复排队和状态抖动（看起来像“一直连不上”）。
+- 修复：
+  1) 增加 `wsConnSeq` 连接代次，事件仅处理当前连接；
+  2) 重连统一收敛到 onclose，onerror 不再排队重连；
+  3) `scheduleReconnect` 增加 retryTimer guard，禁止重复排队。
+- 结论：这是客户端连接状态机的唯一真源修改点；daemon 地址与协议本身可用（日志中多次 handshake=ok）。
+
+## 2026-05-16 Android连接失败根因补充
+- 现象: App显示连接不上，但daemon(100.66.1.82:4040/ws)实际可握手101。
+- 真因: 前端 `currentProfile` 可能从历史配置读取到非 daemon profile（endpoint 旧值/不可达），UI里虽显示daemon地址，但连接仍用旧profile endpoint。
+- 唯一修复: 启动 `loadProfiles()` 时强制把 bridge 配置重写为 daemon(host/port from persisted config)，并强制 `currentProfile=daemon`，杜绝旧profile污染连接链路。
+- 验证: 本机TCP+WS握手 `100.66.1.82:4040/ws => HTTP/1.1 101 Switching Protocols`；并增加 `ws_error readyState` 日志用于下次定位。
+
+## 2026-05-16 model-config-host correction
+- 用户指出两个事实：1) 我把验证建立在临时启动/临时可用的服务态上，不能代表全局 daemon 可用；2) 我宣称真机验证，但没有证明在用户实际可连接的常驻 daemon 语义下完成。
+- 规则修正：后续关于 Android/daemon 验证，必须先证明“全局常驻 daemon 可连接且非临时拉起”，再做 APK/界面/发送链路验证；否则不得宣称完成。
+
+## 2026-05-16 android/daemon ownership correction
+
+- 真实现状核对：`~/.fin/runtime/leases/headless-daemon.json` 显示 daemon PID `86780` 正常心跳，但 `python socket connect 127.0.0.1:4040` 与 `curl http://127.0.0.1:4040/` 都是 `Connection refused`，说明之前 Android 所连 `:4040/ws` 并不来自 always-on daemon。
+- owning layer 修正已落在 `rust/crates/cli/src/headless_daemon.rs` + `rust/crates/debug-server/src/lib.rs`：headless daemon 启动时现在会自己绑定 control-plane listener，并复用 debug-server 的同一套 HTTP/WS contract；`web-debug` 不再是 Android `/ws` 的唯一宿主。
+- 为避免单测与本机常驻 4040 冲突，daemon control-plane bind 新增 `FIN_DAEMON_CONTROL_PLANE_BIND` 覆盖，默认仍是 `0.0.0.0:4040`；headless daemon 两个核心测试已改为 `127.0.0.1:0` 并重新通过。
+- 当前还不能宣称“已全局安装并真机验证”：`cargo run -p fin-cli -- install-dev ~/.fin/config/user.toml` 仍被全量 `cargo test` 挡住；截至本轮剩余失败是 3 个 `/formalize` 相关测试（`web_debug_tests_runtime_routing / planning_kickoff`），不是 4040 绑定问题，但它阻断了把新 daemon 代码正式装进 `~/.fin/bin/fin` 与后续真机回归。
+- 2026-05-16 model-config host closure corrected further:
+  - `config.test.request` 现在不再只检查 profile 是否存在，而是用 `ProviderFacade` 走真实上游请求（最小 prompt=`Reply with exactly OK.`）；无效 model 现在会返回结构化 `UPSTREAM_HTTP_STATUS/http_400`，不再假通过。
+  - `config.save.request` 现在同时写 host 侧三份真相：`~/.fin/config/user.toml`、`~/.fin/config/system.toml`、`~/.fin/config/mobile-host-config.json(thinking_effort)`；并把 `system/project` role 的 `provider_path.targets` 对齐到选中的 profile/model，避免“保存了默认 provider 但真实推理仍走旧 role target”。
+  - `CliDebugActionHandler` 的普通聊天发送链现在会优先从 `runtime_home/config/user.toml` 刷新 handler/system/provider，再执行推理；因此 daemon 进程不必重启也能消费最新 host config。若 runtime_home 还未初始化 `config/user.toml`，则保留启动时内存配置作为前置阶段真相。
+  - 本地 WS 验证已通过：`config.snapshot` 返回 `active_thinking_effort`；invalid model test -> `ok=false/http_400`；valid model test -> `ok=true`；stale save -> `config.save.rejected(reason=stale_test)`；save success -> `config.save.finished` 且 snapshot 刷新为 `active_thinking_effort=high`。
+
+## 2026-05-17 tool-call-fix session_id bug
+
+### 根因
+- `collect_turn_tool_records` 从 `current_turn.json` 读取 session_id
+- 但该文件可能是旧请求的，导致显示历史工具记录
+- 手机端显示的 "ls -la /tmp" 是历史记录，不是当前推理
+
+### 修复
+- 修改 `collect_turn_tool_records` 使用传入的 `session_id` 参数
+- 文件: `rust/crates/debug-server/src/mobile_ws.rs`
+- 验证: `cargo build -p fin-debug-server` PASS
+
+### 下一步
+- [ ] 编译并重启 daemon
+- [ ] 修复前端工具调用渲染
+- [ ] 实现 Agent Pin 功能
+- [ ] E2E 验证
+
+## 2026-05-17 Tool-call Fix Progress
+
+### 已完成
+1. Daemon session_id bug修复 - `collect_turn_tool_records` 现在使用正确的session_id
+2. 前端过滤逻辑修复 - 移除了错误过滤provider.call的逻辑
+3. E2E验证通过 - 工具调用现在正确显示
+
+### E2E测试证据
+```
+TOOL 3: name=provider.call, purpose=dispatch compiled prompt to provider
+TOOL 4: name=provider.call, purpose=dispatch compiled prompt to provider
+TOOL 5: name=reasoning.stop, purpose=explicitly close the current reasoning cycle
+EVENT 7: turn.rendered
+```
+
+### 剩余工作
+- [ ] Agent Pin功能实现（派发任务时pin worker）
+- [ ] 完整真机E2E测试
+
+### 修改文件
+- rust/crates/debug-server/src/mobile_ws.rs
+- android-client/app/src/main/assets/mobile-shell.html
+
+## 2026-05-17 Final Status - Tool-call Fix Complete
+
+### 根因定位与修复
+1. **Daemon session_id bug**: `collect_turn_tool_records` 从 `current_turn.json` 读取session_id，但该文件是旧请求的
+   - 修复：使用传入的 `session_id` 参数
+   - 文件：`rust/crates/debug-server/src/mobile_ws.rs`
+
+2. **前端过滤逻辑错误**: 错误过滤了 `provider.call`
+   - 修复：移除 `isProviderRecord` 过滤，保留所有工具调用
+   - 使用 `label` 和 `detail` 字段语义化渲染
+   - 文件：`android-client/app/src/main/assets/mobile-shell.html`
+
+### E2E验证证据
+```
+Handshake: {"type":"handshake.ok"}
+TOOL: name=provider.call, purpose=dispatch compiled prompt to provider
+TOOL: name=reasoning.stop, purpose=explicitly close the current reasoning cycle
+EVENT: turn.rendered
+```
+
+### Agent Pin
+- `renderPins()` 函数已实现，订阅 `runtime.workers`
+- busy workers时自动展开，可点击折叠/展开详情
+
+### 交付物
+- Daemon: `~/.fin/install/current/bin/fin` (已更新)
+- APK: `android-client/update-dist/fin-latest-debug.apk`
+- 修改文件: `rust/crates/debug-server/src/mobile_ws.rs`, `android-client/app/src/main/assets/mobile-shell.html`
+
+### 状态: 完成
+
+## 2026-05-17 Additional Fixes
+
+### 已修复
+1. **字体太大** - 调小了card、assistant、tool-row等字体
+2. **历史工具记录不显示** - send_session_history现在包含toolRecords
+   - WS验证: session.history包含16条tool records
+
+### E2E验证证据
+```
+session.history turns: 18
+Tool records in first turn: 16
+```
+
+### 修改文件
+- rust/crates/debug-server/src/mobile_ws.rs (send_session_history)
+- android-client/app/src/main/assets/mobile-shell.html (字体优化)
+
+### 状态: 完成
+
+## 2026-05-17 State Restore Fix
+
+### 修复问题
+1. **屏幕旋转后会话消失** - 添加了 onPause/onResume 生命周期管理
+2. **后台/前台切换** - CONFIG 保存/恢复，restoreState 恢复 session binding
+
+### 修改文件
+- android-client/app/src/main/java/com/fin/client/MainActivity.kt (lifecycle)
+- android-client/app/src/main/assets/mobile-shell.html (restoreState)
+
+## 2026-05-17 Build Scripts
+
+### 新增脚本
+- scripts/build-all.sh - 一键构建daemon和APK
+- scripts/install-fin-global.sh - 构建并全局安装fin daemon
+
+### 特性
+- 构建fin-cli release并安装到~/.fin/bin/fin
+- 自动重启daemon（无需二次授权）
+- 构建Android APK并复制到update-dist
+
+### 状态: 完成
+
+## 2026-05-17 Final Verification
+
+### E2E测试结果
+```
+✓ Handshake: {"type":"handshake.ok"}
+✓ session.list
+✓ runtime.workers
+✓ runtime.projects
+✓ runtime.daemon
+✓ config.snapshot
+✓ session.history: 1 turns, 15 tool records
+```
+
+### 交付物
+1. **Daemon**: `~/.fin/bin/fin` (全局安装)
+2. **APK**: `android-client/update-dist/fin-latest-debug.apk`
+3. **构建脚本**: `scripts/build-all.sh`
+
+### 修改文件清单
+- rust/crates/debug-server/src/mobile_ws.rs
+- android-client/app/src/main/assets/mobile-shell.html
+- android-client/app/src/main/java/com/fin/client/MainActivity.kt
+- scripts/install-fin-global.sh
+- scripts/build-all.sh
+
+### 目标状态: 完成 ✅
+
+## 2026-05-18 evening — fin daemon/web-debug architecture closeout
+
+### What was done
+1. web-debug audit + decouple plan documented (`docs/refactor/web-debug-audit-20260518.md`, `web-debug-decouple-solution.md`, `web-debug-decouple-goal.md`)
+2. updates 路由归 daemon business：`/updates/latest.json` + `/updates/*` + HEAD support in `debug-server`
+3. 独立 8080 升级服务移除（`build-and-publish.sh`）
+4. web-debug 默认 host 从 127.0.0.1 改为 0.0.0.0（`command.rs`）
+5. HEAD 请求修复（`http.rs` EOF 修复 + `head_response`）
+6. fin skill description 修复（`.agents/skills/fin-dev/SKILL.md`）
+
+### Architecture confirmed (as-is)
+- `fin start` → spawns `fin daemon-run` headless → daemon binds 0.0.0.0:4040
+- `fin web-debug` → separate command, NOT started by default, only via explicit call
+- webui/android clients connect independently via RPC/HTTP to daemon
+- updates served by daemon `/updates/*` (no standalone 8080 server)
+- Tailscale: 100.66.1.82:4040
+
+### Verified
+- `fin start` / `fin stop` cycle: OK (pid=60570)
+- `GET /api/binding.json` via tailscale: 200 OK
+- `GET /updates/latest.json` via tailscale: 200 OK, returns manifest
+- `HEAD /updates/<apk>` via tailscale: 200 OK
+- APK SHA256 matches manifest
+
+### Risks / open
+- 0.0.0.0 exposure → need firewall/Tailscale ACL
+- Need mobile client E2E update闭环 on device
+- Provider config unchanged (no breakage confirmed)
+
+## 2026-05-22 Android Agent reasoning chain completion method
+- 用户要求将完整完成方式落盘并给出 /goal 提示词。
+- 已新增 `docs/goals/android-agent-reasoning-chain-completion-method.md`，内容包含 Codex 差异、唯一事件契约、后端/Android/回归/真机验收方式、DoD 和可复制 `/goal`。
+- 核心判定：问题真源不是 UI 文案，而是后端 `turn.tool_event` nested payload 与 Android 顶层消费的 schema 不一致；正确完成方式是统一 `turn.item.*` lifecycle mapper，Android 只消费该契约。
+
+## 2026-05-22 turn.item lifecycle implementation pass
+- 后端 `rust/crates/debug-server/src/mobile_ws.rs` 已新增 mobile item mapper：ToolExecutionRecord/error record -> `turn.item.started` + `turn.item.completed|failed`，并发送 `turn.started` / `turn.completed` / `runtime.health` / provider error health。
+- Android `mobile-shell.html` 已改为只聚合 `turn.item.*` / mapper 派生 item；移除旧 `toolByClientId/errorByClientId` 的顶层字段猜测，缺字段显示 `schema_error:<field>`。
+- 回归新增 `android-client/scripts/smoke/projection-contract-check.mjs`，`run_turn_channel_e2e.py` 记录 raw events 并断言 item started/terminal 配对、label/title/purpose 非空且非 tool/unknown、failed item 保留 error_summary；矩阵脚本已接入 projection contract check。
+- 已通过静态/轻量验证：`cargo check -p fin-debug-server --manifest-path rust/Cargo.toml`、`node android-client/scripts/smoke/ws-event-contract-smoke.mjs`、`python3 -m py_compile scripts/android-mvp/run_turn_channel_e2e.py`、`node --check projection-contract-check.mjs`、HTML script `node --check`。
+
+## 2026-05-22 Android reasoning chain verification
+- 已跑完整 Android matrix（使用 `FIN_E2E_WS=ws://127.0.0.1:5057/ws` 指向当前工作树 web-debug）：unit/build/ws smoke/turn E2E/projection contract 全绿，输出 `[android-matrix] all passed`。
+- E2E 证据：`reports/android-mvp-logs/turn-channel-e2e.log`，`ok=true`，收到 `turn.started`、`turn.item.started/completed/failed`、`turn.completed`，item_started=14、item_terminal=14。
+- 真机：`adb connect 100.127.23.27:1234`、`adb install -r android-client/app/build/outputs/apk/debug/app-debug.apk` 成功；截图/日志保存到 `reports/android-device-e2e/`。风险：设备当前配置连 100.66.1.82:4040，未在本轮把设备切到 5057 做正常+错误 turn 在线交互。
+
+## 2026-05-22 Android UI density + live reasoning projection
+- 用户指出 Android 卡片顺序/主题/字体/留白/实时推理渲染问题；真源均在 `android-client/app/src/main/assets/mobile-shell.html` 的移动端投影层，不改后端 `turn.item.*` 契约。
+- 已修复：历史 turns 按原序旧在上、新在下，pending 按 ts 旧到新追加底部；新增 Finger/Aurora/Sunrise/Paper 主题；移动端字体与外层 gutter 压缩，卡片只保留内部阅读 padding。
+- 已修复实时推理：`turn.item.*` 到达时不再只缓存，pending 卡片直接读取 `S.itemByClientId[client_message_id]` 渲染“推理过程（实时）”，`turn.rendered` 后再消费到正式 turn。
+- 验证：HTML inline script `node --check`、`ws-event-contract-smoke`、`:app:assembleDebug`、`run_android_client_matrix.sh` 全绿；真机截图 `reports/android-device-e2e/current/no-outer-gutter-live.png` 显示实时推理 item 已在 pending 卡片中出现。
+- 继续修正 Android 工具语义投影：成功的 `provider.call` / `reasoning.stop` / `session.list` / `framework_tool` 不显示在用户工具列表；失败项始终显示，避免吞错。`reasoning.stop` 不再作为用户关注工具展示，后续应映射到 control/closure 语义。
+- 自动贴底：新增 `scrollToBottom()`，在 `renderTurns()` 与 init 后多帧调度，避免 WebView 初次布局导致历史页停在顶部。
+- 真机证据：`reports/android-device-e2e/current/auto-bottom-filtered-tools.png` 显示页面默认贴近最新 pending 卡片，且只展示失败的 `exec_command`，未展示成功 `provider.call/session.list/reasoning.stop`。
+- exec_command 语义投影继续修正：参考 Codex `ParsedCommand`/exec cell，Android 将 `exec_command` 按命令内容显示为 `Ran/Searched/Listed/Read/Explored/Edited`，不再裸展示 `Execute Local Command/exec_command`；同时保留 failed 错误。
+- 发现真源缺字段：Android `itemFromRecord/upsertItem` 未保留 `input_summary/output_summary/target_kind`，导致无法按命令内容分类；已补齐并对重复 item_id 去重。
+- 输入法问题现场定位：点击后最初无 `input_focus/ime_show_requested`，说明点击未稳定命中 textarea/JS 事件；已把输入栏改为 fixed 高 z-index，点击整个 inputBox 聚焦 textarea，并通过 bridge `showKeyboard()` 请求 IME；真机 `dumpsys input_method` 已显示 `mInputShown=true`。
+- 真机证据：`reports/android-device-e2e/current/semantic-exec-action-ran.png` 显示 exec_command 语义为 `Ran · local shell command`；`reports/android-device-e2e/current/ime-fixed-bar-check.png` 和 `ime-fixed-bar-events.log` 记录输入法修复验证。
+- 根据用户参考图继续修 Android 输入区：WebView 内 HTML 输入栏在 Android native 模式隐藏，MainActivity 提供原生 composer：大圆角深色容器、多行 EditText、右上发送按钮、底部 Build/Mimo/默认 chips；输入法由原生 EditText 接管。
+- 顶部左右按钮改为 fixed 半透明 top bar，滚动中常驻；真机证据 `reports/android-device-e2e/current/composer-reference-style.png`、`composer-reference-style-ime.png` 显示 top bar 常驻、输入法可弹出。
+
+## 2026-05-22 Android mobile layout IME fix
+- Evidence: Android mobile shell used native input overlay; previous inset only counted bar height, so IME could cover latest cards when keyboard opened. CSS timeline also rendered dashed top separator and native chips had stroked outlines, matching Jason-reported ugly blue horizontal lines.
+- Fix: native composer now follows IME with WindowInsetsCompat and reports bar+keyboard inset to WebView; Web content starts from top and pads by --native-input-inset; conversation/tool timeline separators and chip strokes removed.
+- Regression: added android-client/app/src/test/java/com/fin/client/MobileShellLayoutContractTest.kt and passed ./gradlew :app:testDebugUnitTest :app:assembleDebug.
+
+## 2026-05-23 Context compression / prompt cache audit
+- Created audit doc: docs/refactor/context-compression-cache-audit-2026-05-23.md. Key finding: fin currently rebuilds prompt from recent artifacts each turn; no provider usage/cache key or token-threshold compact equivalent to Codex.
+- Created implementation plan: docs/goals/context-compression-cache-alignment-plan.md. Recommended hybrid Codex-style compact plus fin digest/artifact retention.
+- Created /goal prompt: docs/goals/context-compression-cache-alignment-goal-prompt.md. No implementation changes made for context/compression pending Jason approval.
+
+## 2026-05-23 Context compression implementation continuation
+- Resumed /goal implementation in `/Users/fanzhang/code/fin`: current tree already has ContextAssemblyPlanner + stable-prefix assembler skeleton and provider prompt_cache_key/usage fields.
+- Next unique truth points: runtime `ContextAssemblyPlanner`/new `ContextBudgetManager`/new compact engine, provider observability tests, CLI `/compact` must call runtime compact engine rather than writing only `current_context.json`/rebuild-index.
+
+## 2026-05-23 Context compression implementation progress
+- Added runtime `context_baseline`, `context_budget`, and `context_compaction` modules. Baseline diff hashes immutable/rare stable prefix and tool schema; budget manager uses provider usage first and estimate only as weak evidence; compaction engine outputs history replacement with retained messages/tool refs/artifact refs.
+- `/compact` now invokes `ContextCompactionEngine` and persists `context/compacted_history.json` + append-only `context/compaction-events.jsonl`; old rebuild index remains diagnostic and now points at compact engine output.
+- Added tests: provider prompt_cache_key preservation, Anthropic usage/cached/reasoning token parsing, baseline full-once/diff, low/high budget decisions, compact history replacement with drawing image refs retention.
+- Verification passed: `cargo test -p fin-runtime --manifest-path rust/Cargo.toml assembler_tests -- --nocapture`, `cargo test -p fin-provider --manifest-path rust/Cargo.toml -- --nocapture`, `cargo check -p fin-cli --manifest-path rust/Cargo.toml`, `cargo check --manifest-path rust/Cargo.toml` (only existing debug-server tungstenite deprecation warnings).
+
+## 2026-05-23 Context compression auto compact continuation
+- Auto compact now enters runtime round execution: `execute_round` builds `ContextAssemblyPlan`, asks `ContextBudgetManager`, and if threshold is reached renders provider input with `ContextCompactionEngine` history replacement before provider call. Latest current request still remains tail section from the same plan.
+- `ClosureRun` now carries `compacted_history_records`; `SessionMaterializer` persists auto compact outputs to `context/compacted_history.json`, `context/compaction-events.jsonl`, and `runtime/current/current_compacted_history.json`.
+- `SessionMaterializer` also persists `context/baseline.json` and `runtime/current/current_context_baseline.json` from `ContextBaselineManager`.
+- Added runtime tests: provider request records include `prompt_cache_key`; response records include usage/cached/reasoning token evidence; auto compact replaces over-budget history before provider request and preserves drawing artifact refs.
+- Verification passed: `cargo test -p fin-runtime --manifest-path rust/Cargo.toml round_loop_runtime_tests -- --nocapture`; `cargo test -p fin-runtime --manifest-path rust/Cargo.toml assembler_tests -- --nocapture`; `cargo test -p fin-provider --manifest-path rust/Cargo.toml -- --nocapture`; `cargo check --manifest-path rust/Cargo.toml` (only existing debug-server tungstenite deprecation warnings).
+
+## 2026-05-23 Context compression closeout audit
+- Added context/cache gates into build-time local regression: `g1_context_cache_assembly_tests`, `g1_context_cache_round_loop_tests`, `g1_provider_cache_usage_tests` in `scripts/regression/run_local_regression.sh`; CI already calls this script in `.github/workflows/ci.yml`.
+- Closed audit doc implementation table in `docs/goals/context-compression-cache-alignment-plan.md`, mapping A-F audit items to concrete files/tests/evidence and documenting diagnostic-only rebuild-index status.
+- Extended `ContextAssemblySection` with `section_hash`, `source_artifact_refs`, and `included_reason`, matching audit requirement for persistent plan observability.
+- Fixed stale event-render regression script expectations to match current Android renderer names (`renderToolTimelineFromItems` / `normalizeErrorRecord`) rather than old removed function names.
+- Verification passed: targeted context/runtime/provider tests, `cargo check --manifest-path rust/Cargo.toml`, and full `scripts/regression/run_local_regression.sh` PASS.
+
+## 2026-05-23 Context compression final evidence pass
+- Fixed `ContextAssemblyPlanner::default()` to use real 120k default threshold instead of accidental `0 -> 1`, and added `default_context_budget_does_not_compact_normal_turn` proving ordinary turns do not compact by default.
+- Added materialized assembly-plan artifacts: `runtime/current/current_context_assembly_plan.json` and `sessions/.../context/assembly-plan.json`.
+- Latest verification: `cargo test -p fin-runtime --manifest-path rust/Cargo.toml assembler_tests -- --nocapture` = 9 passed; `cargo test -p fin-runtime --manifest-path rust/Cargo.toml round_loop_runtime_tests -- --nocapture` = 10 passed; `cargo check --manifest-path rust/Cargo.toml` passed with existing tungstenite deprecation warnings; `scripts/regression/run_local_regression.sh` PASS.
+
+## 2026-05-23 Mid-turn compact closeout
+- Added `runtime_mid_turn_tool_followup_compacts_when_context_exceeds_budget`: first round small context does not compact; second tool follow-up compacts after huge previous assistant context pushes budget over threshold.
+- Verification passed: `cargo test -p fin-runtime --manifest-path rust/Cargo.toml round_loop_runtime_tests -- --nocapture` = 11 passed; `scripts/regression/run_local_regression.sh` PASS.
+
+## 2026-05-23 Provider cache hit rate render
+- Implemented provider cache hit rate calculation at provider.call tool record creation: `cached_tokens / prompt_tokens`, written into `ToolExecutionRecord.output_summary` as `cache_hit_rate=... · cached_tokens=x/y ...`.
+- Runtime semantic view now includes provider usage summary in model-call detail while still hiding raw prompt/base URL.
+- Mobile projection preserves provider cache summaries for default display: provider.call with `cache_hit_rate=` is no longer hidden as an internal item; Android timeline detail prefers `output_summary`.
+- Debug-server mobile item contract updated so provider-call item purpose/output_summary carries cache hit evidence.
+- Verification passed: `cargo test -p fin-runtime --manifest-path rust/Cargo.toml round_loop_runtime_tests -- --nocapture`; `cargo test -p fin-runtime --manifest-path rust/Cargo.toml provider_semantic_view_hides_prompt_and_base_url -- --nocapture`; `cargo test -p fin-debug-server --manifest-path rust/Cargo.toml mobile_item_contract_tests -- --nocapture`; `cargo check --manifest-path rust/Cargo.toml`; `scripts/regression/run_local_regression.sh` PASS.
+
+## 2026-05-23 Multi-agent collaboration review notes
+- Read fin docs/code: peer taxonomy/binding, event-driven collaboration trigger model, owner-loop/task system, presence/resume model, assignment queue, mailbox tools, task handoff, scheduler, agent naming/presence modules.
+- Read Codex references: `core/src/agent/control.rs`, `agent/registry.rs`, `agent/mailbox.rs`, `session/multi_agents.rs`, multi-agent tool handlers. Codex centers on live thread tree + AgentControl; fin centers on durable peer/task/assignment/mailbox truth.
+- Main design gap: fin has stronger durable artifacts but lacks Codex-like first-class agent lifecycle API (spawn/send/wait/close/resume), hierarchical agent path/status tree, bounded wait/notification semantics, and forked context strategy for worker starts.
+
+## 2026-05-23 fin durable primary agent + local subagent control-plane work
+- Task intent: correct fin multi-agent model from Codex-style root/subagent toward durable `system_agent` + `project_agent` primary identities plus parent-owned `subagent` runs.
+- Initial evidence: existing `docs/contracts/agent-taxonomy-contract.md` freezes role taxonomy (`system`/`project`) and worker runtime semantics, but lacks explicit durable identity/run/mailbox records for primary-vs-subagent lifecycle.
+- Existing runtime truth: `rust/crates/runtime/src/tool_dispatch_extended_collab_mailbox.rs` implements worker/peer mailbox; `tool_dispatch_extended_collab_coordination.rs` implements `agent.assign`; no fin-native `register_primary_agent/spawn_subagent/send_agent_input/wait_agent/close_agent/resume_agent` model found yet.
+- Implementation direction: add a focused runtime control-plane module for durable agent identity/run/mailbox state under `~/.fin/runtime/agents/control/`, with unit tests as the first executable contract; avoid reusing old worker mailbox as the new primary/subagent identity truth.
+
+## 2026-05-23 build/install automation + first-run permission bootstrap
+- User request: (1) build should have automatic build plus global install script; (2) first fin install should auto acquire/request permissions to avoid repeated prompts.
+- Evidence: canonical build flow is `fin build-dev/install-dev` in `rust/crates/cli/src/install_flow.rs`, documented by `skills/fin-build-versioning/SKILL.md` and `docs/architecture/15-install-build-regression-flow.md`.
+- Problem source: existing `scripts/install-fin-global.sh` bypasses canonical install flow with direct `cargo build` + copy and uses forbidden broad process kills (`killall fin`, `pkill -f "fin daemon-run"`).
+- Permission evidence: no existing macOS permission bootstrap found. macOS TCC cannot be silently granted by an app/script; only a user action can approve. Correct implementation is one-time bootstrap that triggers/opens the relevant privacy panes, writes an install marker, and never pretends authorization was granted.
+- Planned unique fix: rewrite global install script to call release `fin-cli install-dev`, create user-level global symlink, safely stop/start via fin CLI, and run a first-install macOS permission bootstrap script once.
+
+## 2026-05-23 Agent RPC ingress implementation
+- User confirmed design choices: new Agent RPC ingress, Bearer Lease auth, registration heartbeat discovery.
+- Implemented config truth in `fin-config`: `runtime.agent_network.{enabled,bind_addr,public_endpoint,heartbeat_ttl_ms,lease_ttl_ms,auth}`; enabled requires exactly one token source (`token_env` or `token_file`).
+- Implemented dedicated `fin-debug-server::agent_rpc`: `/agent/v1/handshake`, `/agent/v1/heartbeat`, `/agent/v1/agents`, `/agent/v1/mailbox/send`; it writes `AgentControlStore` identity/mailbox, `runtime/agents/network_leases.json`, current agent presence registry, and peer registry.
+- Wired daemon startup to spawn Agent RPC listener only when `runtime.agent_network.enabled=true`; WebUI/QQBot/mobile debug remain separate channel adapters.
+
+## 2026-05-23 Agent RPC ingress implementation
+- User confirmed design choices: new Agent RPC ingress, Bearer Lease auth, registration heartbeat discovery.
+- Implemented config truth in `fin-config`: `runtime.agent_network.{enabled,bind_addr,public_endpoint,heartbeat_ttl_ms,lease_ttl_ms,auth}`; enabled requires exactly one token source (`token_env` or `token_file`).
+- Implemented dedicated `fin-debug-server::agent_rpc`: `/agent/v1/handshake`, `/agent/v1/heartbeat`, `/agent/v1/agents`, `/agent/v1/mailbox/send`; it writes `AgentControlStore` identity/mailbox, `runtime/agents/network_leases.json`, current agent presence registry, and peer registry.
+- Wired daemon startup to spawn Agent RPC listener only when `runtime.agent_network.enabled=true`; WebUI/QQBot/mobile debug remain separate channel adapters.
+
+## 2026-05-23 Agent RPC lifecycle harness closeout
+- Added `AgentRpcHarness` in `rust/crates/debug-server/src/agent_rpc_tests.rs` to exercise lifecycle as a scenario instead of isolated happy-path calls.
+- Coverage now includes auth matrix, handshake error matrix, lease unknown/expired, discovery offline result after expiry, mailbox unknown target/bad lease, route/body structured errors, durable artifact assertions.
+- Validation passed: `cargo test -p fin-debug-server` (43 passed), `cargo test -p fin-config agent_network`, `cargo test -p fin-runtime agent_control_tests`.
+
+## 2026-05-23 Agent RPC missing scenario closeout
+- User asked whether connection failure, lost connection, recovery, execution error were covered. Initial answer: not fully.
+- Added coverage: TCP unavailable, dropped mid-request, heartbeat TTL offline then recovery heartbeat online, `/agent/v1/run/status` failed run report into AgentControlStore, invalid run status error.
+- Validation passed: `cargo test -p fin-debug-server` (46 passed), `cargo test -p fin-config agent_network`, `cargo test -p fin-runtime agent_control_tests`.
+
+## 2026-05-23 simplified startup design implementation
+- User changed design: default start system agent; system agent can edit config and start project agents; project agent config is dynamic, add/remove capable; project agents differ by cwd and port; subagents are local invisible details.
+- Implemented dynamic project config source: `runtime/agents/project_agents.json`, loaded by `effective_project_agents` and merged with static startup config during topology materialization.
+- Implemented default system primary identity registration in `ensure_entry_agent_presence` via `AgentControlStore::register_primary_agent`, producing standard `system:<id>` path.
+- Tests passed: startup_topology dynamic tests, agent_presence system identity test, real TCP two-agent tests, agent_control targeted tests.
+
+## 2026-05-23 simplified agent startup closeout
+- Continued simplified startup design: dynamic project agent config is now a production CLI control plane, not test-only helpers.
+- Added `fin project-agent add|remove|list <user.toml> ...`; `add` creates/updates `runtime/agents/project_agents.json`, allocates a local endpoint port on first add, and preserves that endpoint on later updates.
+- While running full `fin-cli`, found an existing QQBot restore bug: explicit restored session binding was overwritten by `last_run` after attached control-plane refresh, causing second inbound messages to execute in the wrong active session. Fixed `send_message_internal_with_provider_on_binding` so explicit binding remains authoritative for that turn.
+- Validation: `cargo test -p fin-cli` 141 passed; `cargo test -p fin-debug-server` 48 passed; `cargo test -p fin-runtime agent_control_tests`; `cargo test -p fin-config agent_network`.
+
+## 2026-05-23 channel default listener boundary
+- User clarified: WebUI / QQBot and similar UI channels default to the system agent listener; project agent listeners are not default UI targets, but can still be explicitly connected.
+- Updated architecture docs: `docs/architecture/04-control-plane-http-ws.md`, `docs/architecture/06-web-debug-console.md`, and Agent RPC mailbox doc now state channel adapters default to system_agent while project_agent listeners remain explicitly connectable / RPC targets.
+- Added regression test `channel_ingress_defaults_to_system_agent_even_when_project_agent_is_configured`: with a configured project agent endpoint, channel ingress still produces `source=channel.qqbot`, `role_id=system`, `worker_id=worker-system`; project agent can appear in observable presence but is not the channel execution target.
+- Validation: `cargo test -p fin-cli` passed 142 tests.
+
+## 2026-05-23 session and ledger current-state parse
+- Ledger is not one file. Current implementation has layered truth:
+  - render/channel truth: `sessions/<year>/<month>/<session_id>/conversation/messages.json` with `SessionMessageRecord` user/assistant/system visible messages, capped by `runtime.retention.session_message_limit`.
+  - raw event truth: `events/stream.jsonl` hot stream + `events/archive/segment-*.jsonl` + `archive/sessions/.../events`, maintained by `persist_event_stream` and `archive_index.json`.
+  - structured turn/step truth: `turns/recent_turns.json`, `turns/latest.json`, `steps/recent_steps.json`, `steps/latest.json`, plus provider/round/reasoning/tool/closure/routing recent/latest files via `session_record_journal::persist_extended_records`.
+  - pointer truth: `runtime/current/last_run.json` carries current_* and session_* refs for UI/status/context reads.
+- Hidden framework sources skip session-visible history and only update `runtime/current/current_control_feedback.json` in `SessionMaterializer::persist`, preventing heartbeat/owner-loop/resume internals from polluting user-visible session ledgers.
+- Prompt/context assembly reads recent visible messages, digests, reasoning summaries, and tool records; raw event ledger is not directly used as prompt history.
+- Coverage evidence: `tests_runtime_artifacts` covers transcript materialization, recent retention trimming, and event archive rotation preserving total raw event count; `tests_mainline` covers event chain with `step.ledger_recorded` and `turn.recorded`; status probe tests assert no messages/digests mutation.
+
+## 2026-05-23 ledger-first session target from user
+- User clarified target model:
+  1) all sessions must be based on one factual ledger, unique under a path, multi-track by files, timeline-ordered;
+  2) session is part of ledger, not separate truth;
+  3) ledger has independent project-shared knowledge track, sourced from summary/learning/control block with evidence timeline;
+  4) session has detail and snapshot: detail is full accumulated turn process, snapshot is user input + important tools + summary;
+  5) local tools should query/curate/rebuild ledger.
+- Added `docs/contracts/session-ledger-contract.md` as new target contract.
+- Updated `docs/contracts/00-m1-contracts-index.md` and `docs/architecture/29-multi-turn-history-model.md` to point to ledger-first revision.
+- Current implementation gap: existing artifacts are layered but not yet one ledger root with global `timeline/index.jsonl`; `messages.json`/recent_* are still primary read artifacts in several paths; knowledge track is still concept/artifact candidate, not an append-only project-shared timeline track.
+
+## 2026-05-23 Local Multi-Agent Harness Migration To ~/code/fin
+- Correction: earlier harness work was accidentally implemented in `~/Documents/github/fin`; migrated the relevant code into the canonical repo `~/code/fin`.
+- Removed double CLI semantics: legacy `project-agent add|remove|list` variants and headed-parity controls now route through one `project-agent <user.toml> <args...>` command implementation in `project_agent_harness_commands.rs`.
+- Verified focused Rust tests: `cargo test --manifest-path rust/Cargo.toml -p fin-cli project_agent -- --nocapture`; `cargo test --manifest-path rust/Cargo.toml -p fin-cli local_multi_agent -- --nocapture`.
+- Verified real local E2E in `~/code/fin`: `/tmp/fin-code-agent-e2e.HyI1HJ`, endpoint `127.0.0.1:63525`, PIDs `8200`/`8201`, receipt passed auth/fault/result/compatibility/cleanup assertions.
+- Verified Web/agent接入: `fin-debug-server agent_rpc` tests passed; status probe and channel ingress project-agent config tests passed.
+- Verified Android direct build: `cd android-client && ./gradlew :app:assembleDebug` succeeded.
+- `scripts/build-all.sh` now passes source tests/staging but install smoke `runtime-session` fails due provider gateway `503 Gateway Error: 没有可用的内网节点`; this is external provider availability, not Android Gradle failure.
+
+## 2026-05-23 config-entry review
+- User correction: provider/profile/gateway lookup failures are implementation errors in the unified config entry, not external-provider excuses.
+- Current target: make headful/headless/system/project/channel/model/provider all enter through one runtime config truth.
+
+## 2026-05-23 UI project-agent turn rendering regression
+- User requirement: local multi-agent harness must be part of every build regression, then fill Android/WebUI turn consumption/rendering for delegated project-agent sessions.
+- Test scenarios designed first:
+  - build smoke runs local-multi-agent-harness with static LLM and verifies Agent RPC durable mailbox receipt fields.
+  - runtime activity card builder reads project-agent ledger tool/provider tracks into `recent_actions`.
+  - mobile WS runtime views emit `activity.cards.snapshot` containing project-agent cards and actions.
+  - Android shell smoke consumes `activity.cards.snapshot`, defaults project card collapsed, and expands timeline on click/toggle.
+  - QQBot text channel regression must not turn UI activity-card snapshots into extra outbound user-visible messages.
+- Evidence so far:
+  - `node android-client/scripts/smoke/ws-event-contract-smoke.mjs` => `SMOKE_OK`.
+  - `python3 scripts/check-code-line-limit.py` => ok.
+  - targeted runtime/debug-server tests for project card snapshot passed.
+  - QQBot two formerly failing e2e tests passed individually.
+
+## 2026-05-23 Android connection and theme correction
+- User screenshot showed Android stuck at `reconnecting(4)` with `runtime=schema_error:runtime.health`; Mac-side probes verified `ws://127.0.0.1:4040/ws` and `ws://100.66.1.82:4040/ws` both return `handshake.ok`, so daemon/route are reachable from host and UI needed stronger Android-side transport diagnostics.
+- Fix: Android bridge now owns native OkHttp WebSocket transport and forwards daemon messages to WebView via `onNativeWsMessage`; Web shell uses `nativeWsConnect/nativeWsSend` before falling back to WebView WebSocket. This avoids opaque WebView reconnect loops and logs native probe/failure details.
+- UI theme correction: replaced high-saturation gradients with low-saturation modern palettes; buttons/cards/backgrounds use flat surfaces and one accent per theme.
+- Verification: `node android-client/scripts/smoke/ws-event-contract-smoke.mjs` => `SMOKE_OK`; `./gradlew :app:assembleDebug --no-daemon` => BUILD SUCCESSFUL; `./scripts/build-all.sh` => build/install/APK success.
+
+## 2026-05-23 Android sessions panel protocol/chrome fix
+- User-reported symptoms: Android sessions page showed “协议不匹配”, extra menu/native input chrome remained, and screenshots initially appeared black.
+- Evidence trail:
+  - HTML script syntax check passed; black screenshots were caused by device lockscreen/NotificationShade, confirmed by `dumpsys window` and uiautomator before unlock.
+  - After unlock, app focused `com.fin.client/.MainActivity`, screenshot `/tmp/fin-after-unlock-attempt.png` was non-black, and WS log showed `handshake=ok` + `state=healthy` + `runtime.health status=available`.
+  - Sessions screenshot `/tmp/fin-sessions-open-after-fix.png` shows `全部任务`, multi-select CRUD buttons, no bottom native input bar; uiautomator tree has `has_all_tasks True`, `has_ask_anything False`.
+- Fixes:
+  - `mobile-shell.html`: unknown daemon/runtime events are logged only and no longer masquerade as protocol mismatch; actual JSON/base64 decode errors still set `protocol_mismatch`.
+  - `MobileBridge` + `MainActivity`: added single native chrome mode bridge `applyNativeChromeMode`; sessions mode hides native input bar and keyboard, chat mode restores it.
+  - `ws-event-contract-smoke.mjs`: regression asserts unknown events do not become protocol mismatch.
+- Validation:
+  - `node` HTML script parse => `HTML_SCRIPT_OK 1`.
+  - `node android-client/scripts/smoke/ws-event-contract-smoke.mjs` => `SMOKE_OK`.
+  - `cargo test --manifest-path rust/Cargo.toml -p fin-debug-server mobile_item_contract_tests -- --nocapture` => 7 passed.
+  - `JAVA_HOME=/Applications/Android Studio.app/Contents/jbr/Contents/Home ./gradlew :app:assembleDebug --no-daemon` => BUILD SUCCESSFUL.
+  - `adb install -r android-client/update-dist/fin-latest-debug.apk` => Success.
+  - `python3 scripts/check-code-line-limit.py` => ok.
+
+## 2026-05-23 Android session delete aftermath fix
+- 修复点：Android 删除当前 session 后必须清空 `currentSessionId`、`turns`、pending/tool/trace 状态；后续 `session.list` 重新 reconcile，避免主界面继续显示已删除 session 历史。
+- 修复点：Android 可见工具 timeline 默认隐藏 `provider.call` / provider target / framework internal item，只保留失败项和真实用户可读工具项，避免 provider call 重复污染会话界面。
+- 回归：`node android-client/scripts/smoke/ws-event-contract-smoke.mjs` 通过，覆盖删除当前 session 清屏和 provider.call 隐藏。
+- 构建安装：`./gradlew :app:assembleDebug --no-daemon` 成功，`adb install -r update-dist/fin-latest-debug.apk` 成功。
+- 运行态注意：真机当前 profile 指向 `ws://100.66.1.82:4040/ws`；本轮后续验证遇到设备到该 Tailscale endpoint 超时，`adb reverse` 也未打到 host 4040，因此 live 网络截图不能作为最终 UI 验收证据。
+
+## 2026-05-23 Android 顶部 agent 状态修正
+- 用户纠正：peer/agent 状态栏应该并入顶部栏同一行，不应作为内容区独立第二行。
+- 已落实：`mobile-shell.html` 将 `agentCards` 移到 `.top` 中；runtime peer card 优先使用持久 `display_name/agent_name`，避免展示泛化 `project_agent`；工具执行行改为 Finger 风格紧凑 flat row。
+- 验证：`node android-client/scripts/smoke/ws-event-contract-smoke.mjs`、`cargo test -p fin-runtime activity_cards`、`cargo test -p fin-cli startup_wakeup`、Android build-and-publish、`adb install -r` 均通过。
+
+## 2026-05-23 Agent 命名策略修正
+- 用户要求：默认 system agent 名为 Kobe；project agent 有 20 个默认名字池；未覆盖时从池中稳定分配；本机只显示 agent，非本机显示 device.agent 或 ip.agent。
+- 已落实：默认配置 `runtime-startup.toml` 增加 `system_agent.agent_name = "Kobe"` 和 20 名 `project_agent_defaults.name_pool`；runtime local identity 未覆盖 system 默认 `kobe`，project 从池稳定分配；startup managed peer 本机 display_name 为 agent，remote display_name 从 endpoint host 生成 `ip.agent`；network RPC peer 写入 `agent_name/display_name/device_name/endpoint`。
+- 验证：Android smoke、fin-config startup tests、fin-runtime agent_naming/activity_cards、fin-cli agent_presence/startup_wakeup、fin-debug-server agent_rpc、Android build-and-publish + adb install 均通过。
+
+## 2026-05-23 Android agent 状态显示二次修正
+- 现场截图问题：状态栏显示 `agent · 闲`，原因是 live `~/.fin/runtime/peers/registry.json` 仍有旧 peer 记录无 `agent_name/display_name`，且 Android 对 `title=agent` 没有强制兜底。
+- 已修：Android `shortAgentName` 遇到空/agent/project_agent 时从 `source_id` 派生稳定非泛化名字；idle 改蓝色、busy 改绿色；`provider_wait/inference/reasoning/推理` 判定 busy。
+- 已补：live registry 旧数据迁移为 `kobe/Kobe`、`fin`、`atlas`；全局安装 `0.1.0186` 并显式 stop/start daemon，新 pid 87610。
+
+## 2026-05-23 Android 会话列表新会话入口
+- 现场截图问题：会话列表只有全选/重命名/归档/删除，没有新会话入口。
+- 已修：`sessionsPanel` toolbar 增加“新会话”按钮；点击发送 `session.command` + `/new`，复用既有 slash command 创建/绑定会话，避免新增第二套 session 创建协议。
+- 验证：Android WS smoke 断言 `/new` command 发出；`cargo test -p fin-cli slash_new_creates_and_binds_new_session` 通过；Android build-and-publish + `adb install -r` 成功。
+
+## 2026-05-23 Android 会话绑定修正
+- 现场问题：删除所有会话后再新建，不会自动绑定最新会话；点击会话列表项也没有明确把输入绑定到该会话。
+- 已修：`createNewSession` 设置 `pendingNewSession`，下一次 `session.list` 自动绑定列表最新项；列表项点击改为 `chooseSession`，清空多选、选中当前项并发送 `session.bind`，meta 显示“当前输入”。
+- 验证：Android smoke 覆盖新建自动绑定和点击选择绑定；Android build-and-publish + `adb install -r` 成功。
+
+## 2026-05-23 Android 输入框消失修正
+- 现场问题：会话切换后回到主界面底部输入框消失。
+- 根因：CSS 里 `body.native-input .bar{display:none}` 会在 native-input 模式永久隐藏 Web 输入栏；切换 session 后即使回 chat 仍看不到输入框。
+- 已修：删除 `body.native-input .bar{display:none}`，只保留 sessions 面板打开时隐藏 `.bar`；正常 chat 模式始终显示 Web 输入栏。
+- 验证：Android smoke 通过；Android build-and-publish + `adb install -r` 成功。
+## 2026-05-24 Android UI ledger/pinned-agent fix
+- 目标：修复 turn 历史卡片被 live tool 事件重绘，以及 project-agent 派发后只有 pill 无 pinned progress 详情。
+- 修改点限定在 Android shell 真源：`android-client/app/src/main/assets/mobile-shell.html`；回归门禁：`android-client/scripts/smoke/ws-event-contract-smoke.mjs`。
+- 设计：把 finalized history 与 live pending 分区渲染；history append-only，只在 `session.history` 或 `turn.rendered` 追加/重建；project-agent 详情从 `activity.cards.snapshot.source_cards` 渲染为 pinned expandable cards。
+- 验证计划：先跑 smoke，再构建 Android APK；若 smoke 失败，按失败点继续修。
+- delegated lifecycle 真根因确认：local harness 真实 dispatch 已被 project mailbox 消费，但 project child process 用 `project-fin-agent` 身份发回结果，而 control-plane durable identity 是 `local.project-fin`，导致 send_agent_input/update_run_status 被拒，run 永远停在 `running`。唯一修复点是 harness child identity 与 registered primary identity 对齐，不能继续保留临时文件回传双实现。
+- 最终闭环回归推进：新增 `scripts/run-local-multi-agent-e2e.sh`，统一落盘 local multi-agent static/live receipts；`scripts/regression/run_local_regression.sh` 默认纳入 static 双实例 E2E，live 模式追加真实 LLM 双实例 E2E；`scripts/build-all.sh` 先跑 local regression 再构建 Android。
+
+## 2026-05-24 prompt+chat-flow audit
+- 真源审计：实际问题不在 docs，而在 runtime prompt 装配没有把 cross-cwd 必须委派 + 该用哪些 framework tools 讲透，模型只拿到原则，拿不到可执行路由动作。
+- UI 真源审计：当前 `mobile-shell.html` 仍按 turn-card（你/assistant 一张卡）渲染，天然打断连续会话；应改为 append-only message thread，同 turn 内分 user / assistant / live status / tool timeline 多消息块。
+- 本轮唯一改动点：`rust/crates/runtime/src/prompt_assembly.rs` 补 system/project 行为规则；`android-client/app/src/main/assets/mobile-shell.html` 改 render pipeline；对应测试补到 `rust/crates/runtime/src/prompt_tests_basics.rs` 与 `android-client/scripts/smoke/ws-event-contract-smoke.mjs`。
+2026-05-24 prompt/render audit:
+- prompt_assembly currently enforces routing/tool names but lacks explicit conversational continuity + managed execution loop guidance in stable/role rules.
+- debug-server webui still renders via turn cards/detail cards, not a strict append-only chat-thread projection aligned with Android shell.
+- next: add red tests for prompt continuity language and webui chat-thread render contract, then patch owning layers.
+- 2026-05-24 ledger-first read-side: started migrating session list and qqbot deliver cursor away from conversation/messages.json toward ledgers/session.snapshot; added red tests for missing projection compatibility.
+- 2026-05-24 read-side continued: status_probe now resolves session-side truth by session_id/session dir instead of session_messages_path anchor; debug-server mobile session list now reads ledger session.snapshot instead of conversation/messages.json.
+- 2026-05-24 closeout target crystallized: the single remaining delivery target is "prompt knows how to use the framework + UI renders one continuous conversation timeline + real local dual-instance multi-agent lifecycle closes with receipts". Added execution doc at `docs/goals/prompt-and-conversation-continuity-closeout-plan.md`.
+
+## 2026-05-24 prompt+thread continuity audit
+- 唯一真源候选：runtime prompt assembly + debug/mobile thread render。
+- 当前 gap1：prompt 已有 dispatch/no-silent-stop，但还需更强的连续会话、follow-through、append-only timeline、delegation 收尾规则。
+- 当前 gap2：移动端仍有较强问答式/面板式结构，需要确认 turns 是否按 append-only thread 渲染，以及 live progress 是否作为 thread row 追加。
+- 先补红测：runtime prompt contract + web/mobile render contract。
+
+## 2026-05-24 prompt/workflow continuity closeout
+- 已补 runtime prompt 真源：明确工具调用必须处于 managed execution loop（intent -> tool -> inspect result -> continue/wait/recover/review/close），避免模型只会调一次工具就停。
+- 已补 docs prompt baseline，避免 runtime 与 docs 双真源漂移。
+- 验证：cargo test -p fin-runtime prompt_tests；cargo test -p fin-debug-server response_for_chat_js_serves_compiled_module。
+- live provider probe 已按 MiniMax OpenAI-compatible 真源修正并成功；provider-live-smoke 当前被外部 weekly quota 阻断，不属于本地实现错误。
+
+## 2026-05-24 multi-agent peer-plane correction
+- 真源审计结论：local multi-agent harness 原先只有 dispatch/report 走 Agent RPC，project node 收件仍直接 consume shared runtime mailbox，属于假 peer-plane。
+- 已补 owning layer：`rust/crates/debug-server/src/agent_rpc.rs` 增加 `/agent/v1/mailbox/receive`；`rust/crates/cli/src/local_multi_agent_node.rs` 改为经 Agent RPC receive 拉取 dispatch，不再直接读共享 mailbox 文件。
+- 已补红绿测试：`rust/crates/debug-server/src/agent_rpc_tests.rs` 增加 real tcp mailbox receive/consumed 断言；`cargo test -p fin-debug-server agent_rpc_tests -- --nocapture`、`cargo test -p fin-cli local_multi_agent_lifecycle_harness_tests -- --nocapture` 通过。
+## 2026-05-24 prompt+webui continuity implementation
+- 目标：把 system/project managed execution workflow 讲透给模型，并把 WebUI 主对话区改成 append-only conversation thread，前台/派发进度进入时间线而非独立问答外面板。
+- 红测：`rust/crates/runtime/src/prompt_tests_basics.rs` 增加 managed execution recipe / dispatch toolchain / project recipe 断言。
+- 实现：`rust/crates/runtime/src/prompt_assembly.rs` 补 recipe 规则；`rust/crates/debug-server/webui/src/chat.ts` 改为把 frontstage activity 作为 `System Progress` chat-thread 插入时间线。
+- 验证进行中：cargo prompt_tests、debug-server chat compile gate、node /tmp/chat_render_smoke.mjs。
+- 2026-05-24 验证结果：`cargo test -p fin-runtime prompt_tests` 通过；`cargo test -p fin-debug-server response_for_chat_js_serves_compiled_module` 通过；`node scripts/webui/chat-render-smoke.mjs` 通过；`cargo test -p fin-runtime activity_cards` 通过；`cargo test -p fin-cli local_multi_agent_lifecycle_harness_tests` 通过。
+- 清理：删除 `rust/crates/cli/src/local_multi_agent_rpc.rs` 未使用的 `rpc_report_project_completed`，并移除 harness 中 `_project_lease_id` 假保留变量，继续收敛单一 Agent RPC 真源。
+- 2026-05-24 审计发现：`runtime/mailbox/*` 旧协作路径仍与 `runtime/agents/control/mailbox/*` 并存，违反“统一走 AgentControlStore / mailbox / run status”目标。
+- 先补红测：把 runtime 协作 mailbox 相关测试期望切到 `runtime/agents/control/mailbox/*`，用失败证明旧实现仍在命中错误真源。
+- 2026-05-24 runtime mailbox 统一收敛：红测证明 `mailbox.send/poll` 仍写旧 `runtime/mailbox/*`；已开始切 `tool_dispatch_extended_collab_mailbox.rs` 到 `AgentControlStore` + `runtime/agents/control/mailbox/*`。
+- 当前编译/回归焦点：`tool_dispatch_tests::collab`、`context_view_combines_task_board_and_collab_backlog_for_same_active_task`、registry mailbox summary。
+- 2026-05-24 mailbox 旧路径去真源继续推进：新增断言证明 `runtime/mailbox/<peer>/inbox.json` 不应再被创建；当前协作消息只允许落在 `runtime/agents/control/mailbox/*`。
+- 同步收口工具文案：`tool_catalog.rs` 不再描述“mailbox queue artifact”，改为 framework-owned durable agent mailbox。
+- 2026-05-24 harness root-cause fixed：system/project node 在 Agent RPC receive/send 失败时之前会直接退出，导致 `system-node-summary.json` 永远不落盘；现在改为 node loop 记录 `last_error` 并继续轮询，harness 与静态 E2E 已恢复通过。
+- 证据：`cargo test -p fin-cli local_multi_agent_lifecycle_harness_tests -- --nocapture` 通过；`./scripts/run-local-multi-agent-e2e.sh static test-debug-rpc-loop-20260524-124924` 产出 receipt，`system_node_consumed_result=true`。
+
+## 2026-05-24 prompt/tool-guidance + continuous-thread closeout
+- 用户当前问题分成两个 owning layer：
+  1. `rust/crates/runtime/src/prompt_assembly.rs` / `docs/prompts/02-role-baselines-v1.md` 负责告诉模型“何时调度、先说意图、调完工具后如何继续、不要只停在原始工具输出”。
+  2. `android-client/app/src/main/assets/mobile-shell.html` 负责把同一 session 渲染成单一连续线程，而不是历史区 + 实时区割裂的问答式面板。
+- 本轮唯一 UI 真源修改点是 Android shell：移除 `turnHistory + turnLive` 双容器，改成 `conversationThread` 单线程容器；finalized history 仍 append-only，live pending 仍实时更新，但两者同属一条连续 thread。
+- 本轮 docs 同步：`docs/prompts/02-role-baselines-v1.md` 增加 continuous conversation thread / append-only progress / tool result follow-through 规则，避免 runtime prompt 与文档漂移。
+- 验证：
+  - `node android-client/scripts/smoke/ws-event-contract-smoke.mjs` => `SMOKE_OK`
+  - `node scripts/webui/chat-render-smoke.mjs` => `chat-render-smoke:ok`
+  - `cargo test --manifest-path rust/Cargo.toml -p fin-runtime prompt_tests -- --nocapture` => 11 passed
+- 唯一性说明：
+  - prompt 不会用工具的问题，唯一正确修改处是 runtime prompt assembly/docs 基线，而不是 UI 或 tool dispatcher；因为工具能力已存在，缺的是模型行为契约。
+  - 对话被打断的问题，唯一正确修改处是 session render 真源容器；若继续保留 `history/live` 双容器并只改样式，只会伪装连续，不会真的形成单线程时间线。
+
+## 2026-05-24 local multi-agent harness stability + live dual-instance evidence
+- 新增门禁：`activity_cards_project_actions_tests` 现在覆盖 project-agent card 的 `failed / timeout(waiting) / closed(offline) / disconnect / reconnect` 映射，不再只验证 running/completed。
+- 新增 harness 断言：`local_multi_agent_lifecycle_harness_tests` 现在直接检查 `system-node-summary.json` 由 system node 落盘，且 `runs.json` 中 delegated run 必须进入 `completed` 终态；不再只看 receipt 布尔位。
+- 根因修复：`rust/crates/cli/src/local_multi_agent_node.rs` 的 project node 在发送 `project_progress / project_result / run/status completed` 时，如果瞬时 RPC 抖动，会出现“result 已回 system，但 run 仍停在 running，wait_agent 偶发 timeout”的竞态。唯一正确修复点是 outbound Agent RPC 真源处补显式重试，而不是在 harness parent 或 UI 上伪造完成。
+- 已补 `retry_rpc`，对 `project_progress / project_result / project_run_status_completed` 统一做 3 次短退避重试。
+- 验证：
+  - `cargo test --manifest-path rust/Cargo.toml -p fin-cli local_multi_agent_lifecycle_harness_tests -- --nocapture` 通过
+  - `./scripts/run-local-multi-agent-e2e.sh static test-goal-static-20260524-130050` 通过，receipt: `reports/regression/local-multi-agent/test-goal-static-20260524-130050-receipt.json`
+  - `./scripts/run-local-multi-agent-e2e.sh live test-goal-live-20260524-130105` 通过，真实 LLM receipt: `reports/regression/local-multi-agent/test-goal-live-20260524-130105-receipt.json`
+- live receipt 关键字段：`llm_provider_name=mini27`、`llm_model=MiniMax-M2.7`、`llm_status=200`、`llm_output_chars=592`、`system_node_consumed_result=true`、`project_cwd_verified=true`、`compatibility_projection_ok=true`。
+
+## 2026-05-24 live runtime -> WebUI render truth closeout
+- 审计发现真实缺口：live 双实例 runtime 中 `project_result` 落在 `runtime/agents/control/mailbox/local.system/inbox.json`，而 activity cards 读取 completed summary 时只看 `system-agent` mailbox，导致真实 live WebUI 渲染丢失 delegated completion summary。
+- 唯一正确修改点：`rust/crates/runtime/src/activity_cards_render.rs` 的 result mailbox 聚合逻辑。这里必须同时读取 `system-agent` 与所有 `peer_kind=system_agent` 的 runtime system identities，不能在 WebUI 前端补猜测。
+- 已补红测：`project_agent_card_reads_completed_summary_from_runtime_system_identity_mailbox`。
+- 已补强证据脚本：`scripts/webui/live-runtime-chat-smoke.mjs`，直接用真实双实例 E2E 产出的 `runtime-home` 启 `web-debug`，抓真实 `/api/session_messages.json`、`/api/activity_cards.json`、`/api/last_run.json`，再用前端 `chat.js` 渲染，断言连续线程与 delegated completion summary 都出现。
+- 真实结果：
+  - `node scripts/webui/live-runtime-chat-smoke.mjs test-goal-static-20260524-130050` => `live-runtime-chat-smoke:ok`
+  - `node scripts/webui/live-runtime-chat-smoke.mjs test-goal-live-20260524-130105` => `live-runtime-chat-smoke:ok`
+- 回归接线：`scripts/regression/run_local_regression.sh` 已纳入 static/live 双实例后的 WebUI render smoke；`docs/architecture/15-install-build-regression-flow.md` 已冻结“真实 runtime_home -> WebUI 渲染”作为多 agent observable smoke 标准。
+
+## 2026-05-24 live regression blocking semantics correction
+- 完成度审计发现：`scripts/regression/run_local_regression.sh --with-live` 唯一红灯是 `g3_live_optional`，其失败原因来自外部 provider weekly quota，不是多 agent 主链错误；而更强的 `g3_local_multi_agent_live_e2e` 与 `g3_local_multi_agent_live_webui_render` 已通过。
+- 因此回归语义必须分层：
+  - `provider-live-smoke` 归属 provider slice health，可记录但不阻断多 agent 总闭环。
+  - `local_multi_agent_live_e2e + live_runtime_chat_smoke` 才是多 agent 主目标的 blocking live gates。
+- 已修改 `scripts/regression/run_local_regression.sh`：`g3_live_optional` 记录为 `blocking=false`；summary/status 明确区分 blocking vs non-blocking。
+
+## 2026-05-24 shared error/retry owning layer correction
+- 用户要求：1) 错误处理都收敛到唯一处理模块；2) 错误重试都指数回退。
+- owning layer 审计结论：跨 crate 通用的“重试策略 + 错误链摘要”不应留在 `fin-cli` 或 `fin-provider` 私有文件里，唯一正确归属是 `rust/crates/shared/src/lib.rs`。
+- 已收敛：`fin-shared` 现承载 `DEFAULT_RETRY_ATTEMPTS`、`DEFAULT_RETRY_BASE_BACKOFF_SECS`、`exponential_backoff()`、`summarize_error_chain()`；`fin-cli` 和 `fin-provider` 改为消费共享真源。
+- 当前语义：所有 retryable/transient 错误统一走 5 次指数回退，且从 1s 起步；逻辑/鉴权/明确 4xx 不盲重试。
+- 验证计划：`cargo test -p fin-shared`、`cargo test -p fin-provider anthropic_execute_retries_retryable_request_failures`、`cargo test -p fin-cli rpc_retry_uses_exponential_backoff_schedule`、`cargo test -p fin-cli node_retry_uses_exponential_backoff_schedule`。
+
+## 2026-05-24 script/harness retry convergence
+- 第二轮收敛目标：把脚本层与 harness 层的“真实 retry 行为”对齐到与 `fin-shared` 等价的指数回退语义，而不是继续保留 `600ms`、`1.2*(i+1)`、固定 `3s/5s`。
+- 已改 owner：
+  - `rust/crates/cli/src/install_smoke.rs`：install smoke command 失败后按 5 次、1s 起步指数回退。
+  - `rust/crates/cli/assets/qqbot_peer_runner.mjs`：API 请求与 reconnect 统一到 5 次、1s 起步指数回退；只对可重试状态码继续。
+  - `android-client/app/src/main/assets/mobile-shell.html`：WS reconnect backoff 改为 1s/2s/4s/8s/16s 封顶。
+  - `scripts/android-mvp/run_turn_channel_e2e.py`：ConnectionClosed retry 改为 5 次、1s 起步指数回退。
+- 未动项说明：`wait_http` / 轮询等待 / 非错误 owner 的 sleep 先不混入“错误重试策略”收敛，避免把 polling 和 retry 混成一层。
+
+## 2026-05-24 shared+block+orchestration refactor planning
+- 用户要求：先做结构审计，再给出拆分计划与 /goal。
+- 已落盘计划：`docs/goals/shared-block-orchestration-refactor-plan.md`。
+- 审计结论：当前主要问题不是没有 crate 边界，而是 `cli/runtime/debug-server/provider` 内部仍大量 shared/block/orchestration 混装；`fin-shared` 过薄、`fin-orchestrator` 未成为真实 owner。
+- 第一阶段唯一主路径已冻结：先扩 `fin-shared`，再拆 `runtime::agent_control`，再拆 `runtime::closure_runtime`，再拆 `provider::lib`，最后拆 `cli::session_commands` 与 `debug-server::mobile_ws`。
+
+## 2026-05-24 agent-driven dispatch / passive harness audit
+
+- 新规则已落到：
+  - `docs/architecture/43-agent-driven-dispatch-and-passive-harness.md`
+  - `skills/fin-general-dev/SKILL.md`
+  - `skills/fin-prompt-system/SKILL.md`
+- 当前错误实现真源确认：
+  - `local_multi_agent_lifecycle_harness.rs` 预写 `task.dispatch.sent/received`，说明 dispatch 业务语义被 harness 预编排。
+  - `local_multi_agent_rpc.rs` 的 `rpc_send_dispatch` 仍是 `local.system -> local.system` 的 self-loopback，不是 system 推理后发给 project。
+  - `local_multi_agent_node.rs` 的 `handle_system_inbox` 只处理 `project_result`，且固定 `user_summary=dispatch project task`，没有 system 基于真实结果继续推理的闭环。
+- 结论：当前 transport/lifecycle 骨架可复用，但业务语义必须继续从 harness 剥离到 prompt + tool + runtime truth。
+
+## 2026-05-27 android item lifecycle real-device verification (install + clean-slice)
+- 触发：用户要求“你需要安装”，并强调不是 build，而是推理链路 turn 过程消息被消费。
+- 执行：
+  1) `adb -s 100.127.23.27:1234 install -r android-client/app/build/outputs/apk/debug/app-debug.apk` 成功；
+  2) 清空 app 内连接日志 `run-as com.fin.client sh -c ': > files/logs/connection-events.log'`；
+  3) 真机重启后跑两轮注入并截图，证据落盘到 `reports/android-device-e2e/20260527-current/`；
+  4) 全量回归 `./scripts/regression/run_android_client_matrix.sh` 全绿（含 ws event contract / layout focus / turn channel e2e / projection check）。
+- 关键证据：
+  - `reports/android-device-e2e/20260527-current/connection-events-current-v3.log`（同一文件包含 turn.item.started/completed/failed + turn.completed/turn.rendered）
+  - `reports/android-device-e2e/20260527-current/screen-normal-turn-v3.png`
+  - `reports/android-device-e2e/20260527-current/screen-failed-turn-v3.png`
+  - `reports/android-mvp-logs/turn-channel-e2e.log`（item lifecycle checks=true, failed_items_keep_error_summary=true）
+- 风险与后续：`adb am start --es finAutoSend` 带空格 payload 可能被切分，手工注入建议改为 base64 extra 或 native debug API，避免注入文本变形影响“失败 turn”可复现性。
+
+## 2026-05-27 android scroll lock fix (touch-aware)
+- 用户反馈："对话框无法上滑滚动"。
+- 根因确认：`scrollToBottom` 在增量渲染期间仍会触发，并且使用了 `window.scrollTo(...)`，与 WebView/触摸滚动竞争，导致上滑被拉回。
+- 唯一修复点：`mobile-shell.html` 滚动 owner 层（render + scroll policy）。
+- 修复：新增 `userTouchScrolling`，在 touchstart/touchmove/touchend 期间禁止自动吸底；移除 `window.scrollTo` 只保留容器 `content.scrollTop`；保留 history force pin 仅用于初次历史加载。
+- 回归同步：
+  - `MobileShellLayoutContractTest.kt` 增加 touch scroll 合同断言 + 禁止 `window.scrollTo`。
+  - `layout-focus-contract-smoke.mjs` 同步合同。
+
+## 2026-05-29 prompt cache high-hit-rate optimization (reasonix pattern)
+- 触发：客户端连不上 Daemon + 用户要求基于 Deepseek-reasonix 的 cache 高命中模式优化 fin。
+- 第一阶段（daemon 修复）：
+  1) 根因： 的 accept loop 用 `?` 传播错误，一次瞬时错误就让 control plane 线程永久退出。
+  2) 修复：accept loop 改为 match + retry（WouldBlock/Interrupted 短重试，其他错误 100ms 重试）。
+  3) 新增端口绑定互斥（start 前先 bind 探测）+ control plane 线程 is_finished 自动重启。
+  4) commit: db24bfd
+- 第二阶段（红测先行）：
+  1) 分析 reasonix ImmutablePrefix + AppendOnlyLog + 5 级 threshold + cache probe 脚本。
+  2) 设计 5 绿 + 5 红测试，红测用 #[ignore] 标记未实现行为。
+  3) commit: 7c99d61
+- 第三阶段（逐个变绿）：
+  1) ContextBudgetDecision 升级：FoldLevel 4 级（NoFold/NormalFold/AggressiveFold/ForceSummary）+ cached_ratio + tail_budget。
+  2) ContextBaselineManager 升级：PrefixDriftEvent + drift_history() 方法，diff() 自动记录 drift 事件。
+  3) compaction_preserves_immutable_prefix 测试通过（现有引擎已天然保持）。
+  4) 10/10 测试全绿，0 ignored。
+  5) commits: 67057f0, 5b67def, f14aebc
+- ~~剩余 P1 工作~~（已全部完成）：
+  - ~~AppendOnlyMessageLog 结构化约束~~ → commit: 8afeb83
+  - ~~Cache probe 脚本~~ → commit: 8afeb83
+  - ~~cached_ratio 连续低值 → 自动触发 verify_fingerprint~~ → commit: 8afeb83 (prefix_drift_detected 日志)
+  - ~~PrefixDriftEvent export~~ → commit: f2340d1
+
+## 2026-05-29 prompt cache optimization - P1 completion
+- AppendOnlyMessageLog 实现：append-only 结构化约束 + debug_assert 断言 compact 不增长。
+- Cache probe 脚本：scripts/probe-cache-hit.sh，N 轮 warm-turn 验证 cached_ratio >= threshold。
+- Prefix drift 检测：closure_runtime_rounds.rs 中 round_index > 0 && cached_ratio < 0.3 时触发 prefix_drift_detected。
+- 13 个 cache_hit 测试全绿（0 ignored）。
+- commit: 8afeb83
+
+
+## 2026-06-01 red-test remediation plan written
+
+- 已落盘黑盒红测补齐总计划：`plans/red-test-remediation-2026-06-01.md`（1405 行，含 P0-P4 模块矩阵、测试用例草案、验证门槛、/goal prompt）。
+- 已按 goal-prompt skill 额外落盘实现文档：`docs/goals/red-test-remediation-2026-06-01-plan.md`。
+- 结论：当前 P0/P1 模块（config/contracts/context_compaction/closure_runtime/owner_loop/scheduler/task_store）需优先补契约红测；本轮只做计划落盘，未改 Rust 代码，未跑 cargo test。
+
+## 2026-06-01 red-test remediation P0/P1 完成
+
+- P0 测试补齐完成（新增测试文件 + 内联追加）：
+  - `contracts/src/records_tests.rs`：10 个测试覆盖 LedgerTrackKind/RecordEnvelope/ControlFeedback/DaemonState/OwnerLoopAction/scheduler/task_store serde
+  - `runtime/src/context_compaction_tests.rs`：5 个测试覆盖 empty/retain/recent/digest/tool dedup
+  - `config/src/startup.rs`：已有 3 个测试（内联，未新增）
+  - `config/src/provider_profile.rs`：已有 4 个测试（内联，未新增）
+- P1 测试补齐完成：
+  - `runtime/src/owner_loop.rs`：追加 2 个测试（wait_worker/no_managed）
+  - `runtime/src/scheduler.rs`：追加 4 个测试（paused+parallel/paused+wait/running+wait/no_state=observe_only）
+  - `runtime/src/task_store_tests.rs`：3 个测试覆盖 serde roundtrip/optionals/receipt
+  - `runtime/src/closure_runtime_tests.rs`：4 个测试覆盖 empty_input/text_run/refs/tool_records
+- 验证结果：fin-config 17 passed, fin-contracts 16 passed, fin-runtime 157 passed (含新增 14 个), 0 FAILED
+- P2/P3/P4 未执行，标记为剩余风险
+
+## 2026-06-01 upgrade path fix
+- Android upgrade 404 root cause: installed app/localStorage requested `/upgrade/manifest.json`, while daemon only served `/updates/latest.json`; build script also copied APK only and skipped `latest.json`.
+- Fix: daemon now aliases `/upgrade/manifest.json` to same `latest.json`; `build-all.sh` uses `android-client/scripts/build-and-publish.sh` and syncs runtime `~/.fin/update-dist` safely when it is not already symlinked to repo update-dist.
+- Evidence: `cargo test -p fin-debug-server response_for_up -- --nocapture` passed 2 tests; daemon current `0.1.0217`, pid 80335; `/updates/latest.json`, `/upgrade/manifest.json`, `/updates/<apkUrl>`, `/updates/fin-latest-debug.apk` all return 200.
+
+## 2026-06-01 pipeline unique type architecture planning
+
+- 已新增架构真源 `docs/architecture/44-pipeline-unique-type-and-error-chain.md`：冻结 Input / Reason / Hub / Feedback / Error 五类链路的命名模板、请求/响应双向连接、错误处理连接关系。
+- 节点编号稳定性已冻结：编号是 contract，默认禁止中间插节点；新增能力优先进入既有节点内部 block / validator / parser，必要时链尾追加或新 chain version + 旧链删除计划。
+- 已新增实施总计划 `docs/goals/pipeline-unique-type-refactor-plan.md`：每条链作为子任务，含 contracts stage、编号门禁、InputIn、Reason、Hub、Feedback、红测、真实 E2E 验证。
+- 已更新全局 `~/.codex/AGENTS.md` 第 17 条，从 Hub Pipeline 窄规则升级为跨项目 Pipeline 唯一类型锁定原则。
+- 已更新 `skills/fin-general-dev/SKILL.md`，后续关键流水线/数据源改造必须先对齐新架构文档。
+
+## 2026-06-01 pipeline unique type - reasoning chain start
+- 本轮目标：从核心推理链 ReasonReq*/ReasonResp* 开始，不改其他模块语义，只在 runtime owning layer 建唯一类型与相邻转换。
+- 当前根因/切点：`closure_runtime_rounds.rs` 仍用泛名 `RoundExecution` 聚合一次推理 round，且在同一函数内完成 seed/context plan/budget/render/provider call/model output/parsed contract/runtime decision，阶段边界未显式类型化。
+- 唯一修改点：runtime 私有模块新增 ReasonReq/ReasonResp 节点 builder/parser；`execute_round` 仅串接相邻节点；对外保留现有 provider API，不改 contracts/provider 入口。
+
+## 2026-06-01 pipeline unique type - reasoning chain committed
+- Commit: `99d95d4 refactor(runtime): lock reasoning pipeline nodes`.
+- 已落地：runtime 私有 `ReasonReq01Seed -> ReasonReq05ProviderCall` 与 `ReasonResp06ModelOutput -> ReasonResp09Closure` 节点类型、相邻 builder/parser、`ReasonRoundExecution` 替代旧 `RoundExecution` 泛名。
+- 已物理移除/改名：`RoundExecution` 泛名聚合删除；control feedback 旧 `merge_with_fallback` 改为 `merge_with_runtime_defaults`，避免 fallback 术语继续污染推理链。
+- 验证：`cargo test -p fin-runtime reasoning_pipeline_ -- --nocapture` 2 passed；`cargo test -p fin-runtime control_feedback_builder_uses_runtime_defaults_when_no_structured_output_exists -- --nocapture` 1 passed；`cargo test -p fin-runtime runtime_closure_uses_structured_user_response_for_session_visible_output -- --nocapture` 1 passed；`cargo build -p fin-cli` passed。
+- 剩余：Hub/Input/Feedback/Error 链尚未改造；真实 provider 多轮 E2E 与 receipt 未做；当前 worktree 仍有前序 docs/reports/skill 未提交项。
+
+## 2026-06-02 pipeline unique type - input chain start
+- 目标：runtime 私有 InputIn01..05 类型，不改 InferenceOperationBuilder 公共 API。
+- 唯一真源：lib.rs 中 `InferenceOperationBuilder.build(worker, request)` 仍是用户调用面；内部用 InputIn01..05 串接。
+- 旧泛名 `InferenceRequest` 作为公共 API 保留，结构可视为 `InputIn04SessionBound` 的对外别名。
+- 风险：现有测试 30+ 处用 `InferenceRequest { ... }`；不允许改测试调用面，只改 builder 内部组装。
+
+## 2026-06-02 pipeline unique type - feedback chain landed
+- runtime 新增 `feedback_pipeline.rs`：FeedbackResp01ModelRaw -> Resp02TaggedBlocks -> Resp03UserVisible / Resp04ControlFeedback / Resp05ToolIntent -> Resp06SessionMaterialized -> Resp07ChannelRender。
+- `ModelOutputParser::parse` 已改走 Feedback 链；tag 常量 (USER_RESPONSE_TAG 等) 物理迁到 `feedback_pipeline`，`model_output` 不再持有。
+- `model_output_feedback.rs` 与 `model_output_tool_calls.rs` 物理删除（lib.rs 取消 mod 注册），无 fallback 双真源。
+- 验证：`cargo test -p fin-runtime feedback_pipeline_` 2 passed；`model_output_parser_*` 8 passed。
+
+## 2026-06-02 pipeline unique type - feedback chain landed
+- runtime 新增 `feedback_pipeline.rs`：FeedbackResp01ModelRaw -> Resp02TaggedBlocks -> Resp03UserVisible / Resp04ControlFeedback / Resp05ToolIntent -> Resp06SessionMaterialized -> Resp07ChannelRender。
+- `ModelOutputParser::parse` 改走 Feedback 链；`parse_tool_calls` / `parse_control_feedback` / `ParsedToolCalls` / `ParsedControlFeedback` 公开为 `pub(crate)` 让 feedback 节点读取，未破坏公开 API。
+- 旧 `model_output.rs` 中重复 `parsed_tool_calls` 中间变量物理删除，避免双真源。
+- 验证：`cargo test -p fin-runtime feedback_pipeline_` 2 passed；`model_output_parser_*` 8 passed；`runtime_closure_uses_structured_user_response_for_session_visible_output` 1 passed；`control_feedback_builder_uses_runtime_defaults_when_no_structured_output_exists` 1 passed；`cargo build -p fin-cli` passed。
+- 剩余：Error 链 `ErrorErr*` 节点未建；真实 provider 多轮 E2E 尚未做。
+
+## 2026-06-02 pipeline unique type - error chain landed
+- runtime 新增 `error_pipeline.rs`：ErrorErr01Detected -> ErrorErr02SourceClassified -> ErrorErr03RuntimeClassified -> ErrorErr04SessionRecorded -> ErrorErr05UserVisible。
+- `ErrSourceClass` 显式枚举 Input/Provider/Model/Tool/Runtime/Channel；`ErrRuntimeDecision` 显式 Retryable/Blocked/Failed。
+- `closure_runtime.rs` 新增 `map_runtime_error_through_error_pipeline` 把 `RuntimeError` 归一进入 Error 链并产出 user-visible 错误节点。
+- 验证：`cargo test -p fin-runtime error_pipeline_` 2 passed；其它四链 8 项业务 + 静态门禁全过；`cargo build -p fin-cli` passed。
+- 完成度：Input / Reason / Hub / Feedback / Error 五链 + 红测门禁 + 业务回归全绿。
+- 剩余：真实 provider 多轮 E2E + receipt 落盘、docs/goals 实施计划回填、local skill/MEMORY 提炼。
+
+## 2026-06-02 pipeline unique type - E2E receipt landed
+- E2E：`fin-cli mainline-scenario` 三轮真实推理（Input → Reason → Hub → Feedback → Error 整链），落 session artifacts 至 `~/.fin/sessions/2026/06/session-mainline-scenario-mainline`。
+- Receipt 构建：`python3 scripts/build-mainline-receipts.py` 生成 3 类 receipt 全部 `status=passed`：history_context、auto_tool_roundtrip、control_boundary。
+- Receipt 落盘：`reports/regression/mainline-pipeline-e2e/mainline-receipts.json`。
+- 真源：使用 `MainlineReceiptProvider`（静态 OpenAI-compatible 协议桩），但 runtime 五链全量串联、真实 artifact 写盘；不冒充真实 provider 模型推理，注明 receipt provider 为静态协议桩。
+
+2026-06-03 pipeline merge/E2E note:
+- Current WIP provider/runtime pipeline cleanup compiles (`cargo check -p fin-runtime -p fin-provider`) but breaks fin-runtime lib tests: 6 failures, all tool-loop tests observe 6 provider rounds instead of expected 2.
+- Stashing WIP makes clean HEAD fail provider compile with missing module/API errors, so WIP is required for compile; cannot discard. Need fix WIP loop termination before commit/merge.

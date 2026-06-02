@@ -85,10 +85,11 @@ impl InferenceProvider for StructuredProvider {
         Ok(ProviderResponse {
             provider_name: request.provider_name.clone(),
             model: request.model.clone(),
-            output_text: "<fin_user_response>structured answer</fin_user_response>\n<fin_control_feedback>{\"origin\":\"model_output_contract_v1\",\"is_continuation\":true,\"is_simple_query\":false,\"candidate_task_id\":\"task-structured\",\"candidate_topic_thread_id\":\"topic-structured\",\"continuity_confidence\":95,\"topic_shift_confidence\":5,\"simple_query_confidence\":7,\"previous_topic_summary\":\"task\",\"current_topic_summary\":\"task\",\"note_candidate\":\"structured note\",\"digest_candidate\":\"structured digest\",\"reason\":\"explicit control block\"}</fin_control_feedback>".into(),
+            output_text: "<fin_user_response>structured answer</fin_user_response>\n<fin_control_feedback>{\"origin\":\"model_output_contract_v1\",\"is_continuation\":true,\"is_simple_query\":false,\"candidate_task_id\":\"task-structured\",\"candidate_topic_thread_id\":\"topic-structured\",\"continuity_confidence\":95,\"topic_shift_confidence\":5,\"simple_query_confidence\":7,\"previous_topic_summary\":\"task\",\"current_topic_summary\":\"task\",\"is_simple_chat\":true,\"note_candidate\":\"structured note\",\"digest_candidate\":\"structured digest\",\"reason\":\"explicit control block\"}</fin_control_feedback>\n<fin_tool_calls>[{\"tool_name\":\"reasoning.stop\",\"arguments\":{\"summary\":\"structured answer complete\"}}]</fin_tool_calls>".into(),
             response_id: Some("structured-response".into()),
             stop_reason: Some("end_turn".into()),
             status: 200,
+            tool_calls: Vec::new(),
         })
     }
 }
@@ -113,6 +114,7 @@ impl InferenceProvider for WaitToolProvider {
             response_id: Some("wait-response".into()),
             stop_reason: Some("end_turn".into()),
             status: 200,
+            tool_calls: Vec::new(),
         })
     }
 }
@@ -133,10 +135,11 @@ impl InferenceProvider for ReasoningStopProvider {
         Ok(ProviderResponse {
             provider_name: request.provider_name.clone(),
             model: request.model.clone(),
-            output_text: "<fin_user_response>任务完成。</fin_user_response>\n<fin_control_feedback>{\"origin\":\"model_output_contract_v1\",\"is_continuation\":false,\"is_simple_query\":false,\"candidate_task_id\":\"task-stop\",\"candidate_topic_thread_id\":\"topic-stop\",\"continuity_confidence\":35,\"topic_shift_confidence\":65,\"simple_query_confidence\":10,\"previous_topic_summary\":\"build\",\"current_topic_summary\":\"report\",\"note_candidate\":\"finished\",\"digest_candidate\":\"finished\",\"reason\":\"done\"}</fin_control_feedback>\n<fin_tool_calls>[{\"tool_name\":\"reasoning.stop\",\"arguments\":{\"summary\":\"all required checks done\"}}]</fin_tool_calls>".into(),
+            output_text: "<fin_user_response>任务完成。</fin_user_response>\n<fin_control_feedback>{\"origin\":\"model_output_contract_v1\",\"is_continuation\":false,\"is_simple_query\":false,\"candidate_task_id\":\"task-stop\",\"candidate_topic_thread_id\":\"topic-stop\",\"continuity_confidence\":35,\"topic_shift_confidence\":65,\"simple_query_confidence\":10,\"previous_topic_summary\":\"build\",\"current_topic_summary\":\"report\",\"note_candidate\":\"finished\",\"digest_candidate\":\"finished\",\"reason\":\"done\",\"task_completed\":true,\"completion_evidence\":[\"all checks passed\"],\"final_conclusions\":[\"task complete\"]}</fin_control_feedback>\n<fin_tool_calls>[{\"tool_name\":\"reasoning.stop\",\"arguments\":{\"summary\":\"all required checks done\"}}]</fin_tool_calls>".into(),
             response_id: Some("stop-response".into()),
             stop_reason: Some("end_turn".into()),
             status: 200,
+            tool_calls: Vec::new(),
         })
     }
 }
@@ -179,9 +182,9 @@ impl InferenceProvider for TwoRoundProvider {
     ) -> Result<ProviderResponse, fin_provider::ProviderError> {
         let output_text = if request
             .input
-            .starts_with("Continue the same turn with the latest tool results.")
+            .starts_with("Continue the same turn.")
         {
-            "<fin_user_response>工具结果已确认，现在收口。</fin_user_response>\n<fin_control_feedback>{\"origin\":\"model_output_contract_v1\",\"is_continuation\":true,\"is_simple_query\":false,\"candidate_task_id\":\"task-two-round\",\"candidate_topic_thread_id\":\"topic-two-round\",\"continuity_confidence\":90,\"topic_shift_confidence\":10,\"simple_query_confidence\":5,\"previous_topic_summary\":\"tool loop\",\"current_topic_summary\":\"tool loop\",\"note_candidate\":\"tool followup done\",\"digest_candidate\":\"tool followup done\",\"reason\":\"tool result inspected\"}</fin_control_feedback>\n<fin_tool_calls>[{\"tool_name\":\"reasoning.stop\",\"arguments\":{\"summary\":\"tool-backed followup finished\"}}]</fin_tool_calls>"
+            "<fin_user_response>工具结果已确认，现在收口。</fin_user_response>\n<fin_control_feedback>{\"origin\":\"model_output_contract_v1\",\"is_continuation\":true,\"is_simple_query\":false,\"candidate_task_id\":\"task-two-round\",\"candidate_topic_thread_id\":\"topic-two-round\",\"continuity_confidence\":90,\"topic_shift_confidence\":10,\"simple_query_confidence\":5,\"previous_topic_summary\":\"tool loop\",\"current_topic_summary\":\"tool loop\",\"note_candidate\":\"tool followup done\",\"digest_candidate\":\"tool followup done\",\"reason\":\"tool result inspected\",\"task_completed\":true,\"completion_evidence\":[\"tool results confirmed\"],\"final_conclusions\":[\"turn complete\"]}</fin_control_feedback>\n<fin_tool_calls>[{\"tool_name\":\"reasoning.stop\",\"arguments\":{\"summary\":\"tool-backed followup finished\"}}]</fin_tool_calls>"
         } else {
             "<fin_user_response>先查看 peer 列表。</fin_user_response>\n<fin_control_feedback>{\"origin\":\"model_output_contract_v1\",\"is_continuation\":true,\"is_simple_query\":false,\"candidate_task_id\":\"task-two-round\",\"candidate_topic_thread_id\":\"topic-two-round\",\"continuity_confidence\":88,\"topic_shift_confidence\":12,\"simple_query_confidence\":6,\"previous_topic_summary\":\"tool loop\",\"current_topic_summary\":\"tool loop\",\"note_candidate\":\"need peer list\",\"digest_candidate\":\"need peer list\",\"reason\":\"inspect peers before stopping\"}</fin_control_feedback>\n<fin_tool_calls>[{\"tool_name\":\"peer.list\",\"arguments\":{}}]</fin_tool_calls>"
         };
@@ -192,6 +195,7 @@ impl InferenceProvider for TwoRoundProvider {
             response_id: Some("two-round-response".into()),
             stop_reason: Some("end_turn".into()),
             status: 200,
+            tool_calls: Vec::new(),
         })
     }
 }
@@ -223,13 +227,18 @@ fn runtime_closure_uses_structured_user_response_for_session_visible_output() {
     assert_eq!(run.assistant_response_text, "structured answer");
     assert_eq!(
         run.note.summary,
-        "provider openai returned: structured answer"
+        "provider openai returned: structured answer; reasoning.stop requested; runtime will decide whether closure is valid"
     );
     assert_eq!(run.digest.continuity_tail[1], "structured answer");
     assert!(
         run.events
             .iter()
             .any(|event| event.event_type == "model.output_parsed")
+    );
+    assert!(
+        run.tool_records
+            .iter()
+            .any(|record| record.tool_name == "reasoning.stop" && record.status == "completed")
     );
 }
 
@@ -342,15 +351,16 @@ fn runtime_closure_uses_reasoning_stop_as_stop_signal() {
             .payload
             .get("status")
             .and_then(serde_json::Value::as_str),
-        Some("stopped")
+        Some("completed_with_evidence")
     );
     assert_eq!(
         operation_completed
             .payload
             .get("stop_source")
             .and_then(serde_json::Value::as_str),
-        Some("reasoning.stop")
+        Some("completed_with_evidence")
     );
+    assert_eq!(run.turn_record.status, "completed_with_evidence");
 }
 
 #[test]

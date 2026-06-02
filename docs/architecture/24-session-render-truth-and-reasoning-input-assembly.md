@@ -334,6 +334,17 @@ session artifacts + runtime binding
 - 当前 project / repo / cwd / selected paths
 - 必要的 project scope 信息
 - 当前任务相关文件区域或代码区域摘要
+- 当前 task board 摘要
+- 当前 active agent / presence 摘要
+- 当前 project supervision 摘要
+
+补充冻结（2026-04-20）：
+
+- 对 `project role`，`primary_project / active_projects / projects` 默认仍以当前单项目闭环为主。
+- 对 `system role`，这三个字段不能再只靠 `cwd` 或 `project_label` 猜一个项目；framework 应优先从 `~/.fin/runtime/projects/registry.json` 装配：
+  - `active_projects`：当前 busy / idle / waiting 或仍有 unfinished work 的项目
+  - `projects`：当前 registry 中可见的全部项目
+- 这样 system agent 的 prompt/context 才能真正对齐 framework-owned project portfolio truth，而不是退化成“前台当前目录视角”。
 
 ### G. `CurrentInputBlock`
 

@@ -1,11 +1,11 @@
 use crate::CliError;
 use crate::time::local_timestamp_now;
 use fin_config::SystemConfig;
-use fin_contracts::{DigestRecord, EntityRefs};
+use fin_contracts::{DigestRecord, EntityRefs, InputAttachmentSummary};
 use fin_provider::InferenceProvider;
 use fin_runtime::{
     ClosureRun, ContextAssemblyInput, ContextViewBuilder, InferenceOperationBuilder,
-    InferenceRequest, M1Runtime, WorkerRuntime,
+    InferenceRequest, M1Runtime, create_named_local_worker,
 };
 use std::{env, path::PathBuf};
 
@@ -22,8 +22,12 @@ pub(crate) struct DemoRequest {
     pub(crate) operation_id: String,
     pub(crate) trace_id: String,
     pub(crate) session_id: String,
-    pub(crate) task_id: String,
+    pub(crate) task_id: Option<String>,
+    pub(crate) topic_thread_id: Option<String>,
+    pub(crate) agent_name: Option<String>,
+    pub(crate) role_id: Option<String>,
     pub(crate) input: String,
+    pub(crate) source: String,
     pub(crate) recent_messages: Vec<String>,
     pub(crate) recent_digests: Vec<DigestRecord>,
     pub(crate) recent_reasoning_views: Vec<fin_contracts::ReasoningViewRecord>,
@@ -32,6 +36,7 @@ pub(crate) struct DemoRequest {
     pub(crate) runtime_home: Option<String>,
     pub(crate) cwd: Option<String>,
     pub(crate) selected_paths: Vec<String>,
+    pub(crate) attachment_summaries: Vec<InputAttachmentSummary>,
     pub(crate) submitted_at: String,
 }
 
@@ -48,8 +53,12 @@ pub(crate) fn run_demo(
             operation_id: demo_ids.operation_id,
             trace_id: demo_ids.trace_id,
             session_id: demo_ids.session_id,
-            task_id: demo_ids.task_id,
+            task_id: Some(demo_ids.task_id),
+            topic_thread_id: None,
+            agent_name: Some("cli-demo".into()),
+            role_id: None,
             input: input.to_string(),
+            source: "cli.user".into(),
             recent_messages: Vec::new(),
             recent_digests: Vec::new(),
             recent_reasoning_views: Vec::new(),
@@ -60,6 +69,7 @@ pub(crate) fn run_demo(
                 .ok()
                 .map(|path| path.display().to_string()),
             selected_paths: Vec::new(),
+            attachment_summaries: Vec::new(),
             submitted_at: local_timestamp_now(),
         },
     )
@@ -71,14 +81,32 @@ pub(crate) fn run_demo_request(
     request: DemoRequest,
 ) -> Result<ClosureRun, CliError> {
     let mut runtime = M1Runtime::default();
-    let worker =
-        WorkerRuntime::from_system(system, "agent-cli-demo", "worker-cli-demo", "cli", None)?;
+    let runtime_home = request.runtime_home.as_deref().map(PathBuf::from);
+    let worker = if let Some(runtime_home) = runtime_home.as_deref() {
+        create_named_local_worker(
+            system,
+            runtime_home,
+            request.agent_name.as_deref(),
+            "cli",
+            request.role_id.as_deref(),
+        )?
+    } else {
+        fin_runtime::WorkerRuntime::from_system(
+            system,
+            "agent-cli-demo",
+            "worker-cli-demo",
+            "cli",
+            request.role_id.as_deref(),
+        )?
+    };
     let refs = EntityRefs {
         session_id: Some(request.session_id.clone()),
-        task_id: Some(request.task_id.clone()),
+        task_id: request.task_id.clone(),
+        topic_thread_id: request.topic_thread_id.clone(),
         worker_id: Some(worker.worker_id.clone()),
         ..EntityRefs::default()
     };
+    let user_visible_input = user_visible_input_for_source(&request.source, &request.input);
     let context = ContextViewBuilder.build(
         &worker,
         ContextAssemblyInput {
@@ -86,7 +114,7 @@ pub(crate) fn run_demo_request(
             trace_id: request.trace_id.clone(),
             refs: refs.clone(),
             input: request.input.clone(),
-            source: "cli.user".into(),
+            source: request.source,
             recent_messages: request.recent_messages,
             recent_digests: request.recent_digests,
             recent_reasoning_views: request.recent_reasoning_views,
@@ -95,6 +123,7 @@ pub(crate) fn run_demo_request(
             runtime_home: request.runtime_home,
             cwd: request.cwd,
             selected_paths: request.selected_paths,
+            attachment_summaries: request.attachment_summaries,
         },
     );
     let operation = InferenceOperationBuilder.build(
@@ -108,7 +137,9 @@ pub(crate) fn run_demo_request(
             context,
         },
     )?;
-    Ok(runtime.run_closure(operation, provider)?)
+    let mut run = runtime.run_closure(operation, provider)?;
+    run.conversation_user_input = user_visible_input;
+    Ok(run)
 }
 
 pub(crate) fn runtime_home_override_from_env() -> Option<PathBuf> {
@@ -148,4 +179,17 @@ pub(crate) fn sanitize_id_fragment(raw: &str) -> String {
         .collect::<String>()
         .trim_matches('-')
         .to_string()
+}
+
+fn user_visible_input_for_source(source: &str, input: &str) -> Option<String> {
+    if source.starts_with("framework.resume_checkpoint")
+        || source.starts_with("framework.owner_loop.")
+        || source.starts_with("framework.task_kickoff.")
+        || source.starts_with("project.resume_checkpoint")
+        || source == "project.assignment"
+    {
+        None
+    } else {
+        Some(input.to_string())
+    }
 }

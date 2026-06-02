@@ -11,14 +11,18 @@ pub(super) fn provider_request_record(
     turn_id: &str,
     step_id: &str,
     round_index: u32,
+    attempt_index: u32,
     request: &PreparedRequest,
     created_at: &str,
 ) -> ProviderRequestRecord {
     ProviderRequestRecord {
-        request_id: format!("provider-request-{operation_id}-r{round_index:02}"),
+        request_id: format!(
+            "provider-request-{operation_id}-r{round_index:02}-a{attempt_index:02}"
+        ),
         turn_id: turn_id.into(),
         step_id: step_id.into(),
         round_index,
+        attempt_index,
         operation_id: operation_id.into(),
         trace_id: trace_id.into(),
         refs: refs.clone(),
@@ -40,16 +44,20 @@ pub(super) fn provider_response_record(
     turn_id: &str,
     step_id: &str,
     round_index: u32,
+    attempt_index: u32,
     request_id: &str,
     response: &ProviderResponse,
     created_at: &str,
 ) -> ProviderResponseRecord {
     ProviderResponseRecord {
-        response_record_id: format!("provider-response-{operation_id}-r{round_index:02}"),
+        response_record_id: format!(
+            "provider-response-{operation_id}-r{round_index:02}-a{attempt_index:02}"
+        ),
         request_id: request_id.into(),
         turn_id: turn_id.into(),
         step_id: step_id.into(),
         round_index,
+        attempt_index,
         operation_id: operation_id.into(),
         trace_id: trace_id.into(),
         refs: refs.clone(),
@@ -193,18 +201,24 @@ pub(super) fn routing_decision_record(
     created_at: &str,
     feedback: &ControlFeedback,
 ) -> RoutingDecisionRecord {
-    let (disposition, requires_user_confirmation) =
-        if refs.task_id.is_some() || feedback.is_continuation {
-            ("continue_current_task".to_string(), false)
-        } else if feedback.is_simple_query && feedback.simple_query_confidence >= 70 {
-            ("tentative_simple_chat".to_string(), false)
-        } else if feedback.candidate_task_id.is_some() {
-            ("candidate_existing_task".to_string(), true)
-        } else if feedback.topic_shift_confidence >= 60 {
+    let has_bound_task = refs.task_id.is_some();
+    let (disposition, requires_user_confirmation) = if has_bound_task {
+        if feedback.topic_shift_confidence >= 60
+            && feedback.continuity_confidence < feedback.topic_shift_confidence
+        {
             ("candidate_topic_switch".to_string(), true)
         } else {
-            ("pending_observation".to_string(), false)
-        };
+            ("continue_current_task".to_string(), false)
+        }
+    } else if feedback.is_simple_query && feedback.simple_query_confidence >= 70 {
+        ("tentative_simple_chat".to_string(), false)
+    } else if feedback.candidate_task_id.is_some() {
+        ("candidate_existing_task".to_string(), true)
+    } else if feedback.continuity_confidence < 70 {
+        ("candidate_new_task".to_string(), true)
+    } else {
+        ("pending_observation".to_string(), false)
+    };
 
     RoutingDecisionRecord {
         decision_id: format!("routing-{operation_id}"),

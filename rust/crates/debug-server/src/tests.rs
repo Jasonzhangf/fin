@@ -88,7 +88,7 @@ fn projector_tracks_latest_progress_note_digest_and_provider_activity() {
         created_at: "2026-04-17T00:00:00Z".into(),
     };
     let feedback = ControlFeedback {
-        origin: "runtime_heuristic".into(),
+        origin: "runtime_observation_only_v1".into(),
         continuity_confidence: 92,
         topic_shift_confidence: 8,
         simple_query_confidence: 20,
@@ -173,7 +173,7 @@ fn projector_tracks_latest_progress_note_digest_and_provider_activity() {
     );
     assert_eq!(
         projector.current.latest_control_origin.as_deref(),
-        Some("runtime_heuristic")
+        Some("runtime_observation_only_v1")
     );
     assert_eq!(projector.current.latest_continuity_confidence, Some(92));
     assert_eq!(projector.current.latest_topic_shift_confidence, Some(8));
@@ -215,11 +215,27 @@ fn response_for_root_serves_html_shell() {
 }
 
 #[test]
+fn response_for_activity_cards_ui_js_serves_compiled_module() {
+    let response = response_for_path("/activity_cards_ui.js", Path::new("/tmp/unused"));
+    let body = String::from_utf8(response.body).expect("js should be utf8");
+    assert_eq!(response.status_code, 200);
+    assert!(body.contains("activityFocusSource"));
+}
+
+#[test]
 fn response_for_chat_js_serves_compiled_module() {
     let response = response_for_path("/chat.js", Path::new("/tmp/unused"));
     let body = String::from_utf8(response.body).expect("js should be utf8");
     assert_eq!(response.status_code, 200);
     assert!(body.contains("export class ChatPane"));
+}
+
+#[test]
+fn response_for_chat_cards_js_serves_compiled_module() {
+    let response = response_for_path("/chat_cards.js", Path::new("/tmp/unused"));
+    let body = String::from_utf8(response.body).expect("js should be utf8");
+    assert_eq!(response.status_code, 200);
+    assert!(body.contains("buildTurnCards"));
 }
 
 #[test]
@@ -244,6 +260,14 @@ fn response_for_app_ui_js_serves_compiled_module() {
     let body = String::from_utf8(response.body).expect("js should be utf8");
     assert_eq!(response.status_code, 200);
     assert!(body.contains("setStatusPill"));
+}
+
+#[test]
+fn response_for_app_refresh_js_serves_compiled_module() {
+    let response = response_for_path("/app_refresh.js", Path::new("/tmp/unused"));
+    let body = String::from_utf8(response.body).expect("js should be utf8");
+    assert_eq!(response.status_code, 200);
+    assert!(body.contains("loadRefreshState"));
 }
 
 #[test]
@@ -276,6 +300,14 @@ fn response_for_section_renderers_js_serves_compiled_module() {
     let body = String::from_utf8(response.body).expect("js should be utf8");
     assert_eq!(response.status_code, 200);
     assert!(body.contains("renderInspectorSection"));
+}
+
+#[test]
+fn response_for_inspector_helpers_js_serves_compiled_module() {
+    let response = response_for_path("/inspector_helpers.js", Path::new("/tmp/unused"));
+    let body = String::from_utf8(response.body).expect("js should be utf8");
+    assert_eq!(response.status_code, 200);
+    assert!(body.contains("findEvent"));
 }
 
 #[test]
@@ -364,6 +396,30 @@ fn response_for_recent_closures_reads_runtime_artifact_via_last_run() {
         "sessions/2026/04/session-1/closures/recent_closures.json",
         br#"[{"operation_id":"op-1","assistant_response":"TRACE"}]"#,
         "TRACE",
+    );
+}
+
+#[test]
+fn response_for_recent_turns_reads_runtime_artifact_via_last_run() {
+    tests_archive::assert_runtime_artifact_response(
+        "turns",
+        API_RECENT_TURNS_PATH,
+        "session_recent_turns_path",
+        "sessions/2026/04/session-1/turns/recent_turns.json",
+        br#"[{"turn_id":"turn-op-1","operation_id":"op-1","status":"completed"}]"#,
+        "turn-op-1",
+    );
+}
+
+#[test]
+fn response_for_current_execution_state_reads_runtime_artifact_via_last_run() {
+    tests_archive::assert_runtime_artifact_response(
+        "execution-state",
+        API_CURRENT_EXECUTION_STATE_PATH,
+        "current_execution_state_path",
+        "runtime/current/current_execution_state.json",
+        br#"{"state_id":"exec-state-1","status":"paused","pending_input_count":2}"#,
+        "paused",
     );
 }
 

@@ -74,7 +74,7 @@ fn transcript_demo_persists_recent_context_history() {
         .expect("role prompt should exist");
     let tools = turn3_context.tools.as_ref().expect("tools should exist");
 
-    assert_eq!(role_prompt.role_id.as_str(), "default");
+    assert_eq!(role_prompt.role_id.as_str(), "project");
     assert_eq!(role_prompt.prompt_history.len(), 2);
     assert!(
         role_prompt
@@ -86,13 +86,13 @@ fn transcript_demo_persists_recent_context_history() {
         role_prompt
             .prompt_modules
             .iter()
-            .any(|item| item.module_id == "role.project.purpose")
+            .any(|item| item.module_id == "role.project.identity")
     );
     assert!(
         role_prompt
             .prompt_modules
             .iter()
-            .any(|item| item.module_id == "overlay.gpt_codex.tool_persistence")
+            .any(|item| item.module_id == "role.project.task_board_first")
     );
     assert!(
         role_prompt
@@ -119,8 +119,20 @@ fn transcript_demo_persists_recent_context_history() {
             .iter()
             .any(|tool| tool.tool_name == "provider.call")
     );
-    assert_eq!(tools.tool_selection_policy.len(), 6);
-    assert_eq!(tools.disabled_tools.len(), 6);
+    assert!(tools.tool_selection_policy.len() >= 8);
+    assert!(
+        tools
+            .tool_selection_policy
+            .iter()
+            .any(|item| item.contains("project-scoped closure"))
+    );
+    assert!(
+        tools
+            .tool_selection_policy
+            .iter()
+            .any(|item| item.contains("write_stdin"))
+    );
+    assert_eq!(tools.disabled_tools.len(), 3);
     assert_eq!(
         recent_contexts[2]
             .context
@@ -256,7 +268,7 @@ fn transcript_demo_persists_recent_context_history() {
     assert!(
         recent_closures[2]
             .rendered_input
-            .contains("Current user input:\nthird turn")
+            .contains("Current request:\nthird turn")
     );
 }
 

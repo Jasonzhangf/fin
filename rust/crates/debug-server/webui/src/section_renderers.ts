@@ -19,6 +19,18 @@ export function renderInspectorSection(
   if (cardId === 'operation' && label === 'Closure Trace') {
     return renderClosureTrace(asRecord(value), tree);
   }
+  if (cardId === 'operation' && label === 'Closed Loop Receipt') {
+    return renderClosedLoopReceipt(asRecord(value), tree);
+  }
+  if (cardId === 'operation' && label === 'Framework Flow') {
+    return renderFrameworkFlow(asRecord(value), tree);
+  }
+  if (cardId === 'operation' && label === 'Framework Timeline') {
+    return renderFrameworkTimeline(asRecord(value), tree);
+  }
+  if (cardId === 'system' && label === 'Framework Session Timeline') {
+    return renderFrameworkTimeline(asRecord(value), tree);
+  }
   return tree.renderPanelValue(value);
 }
 
@@ -122,6 +134,144 @@ function renderClosureTrace(value: JsonRecord, tree: StructuredTreeRenderer): st
   `;
 }
 
+function renderClosedLoopReceipt(value: JsonRecord, tree: StructuredTreeRenderer): string {
+  if (!Object.keys(value).length) return tree.renderPanelValue(value);
+  const milestones = asArray(value.milestones).map((item) => asRecord(item));
+  const blocker = scalar(value.blocker);
+  return `
+    <div class="semantic-stack">
+      ${renderSummaryGrid([
+        ['path', scalar(value.pathKind)],
+        ['stage', scalar(value.stage)],
+        ['session', scalar(value.sessionId)],
+        ['task', scalar(value.taskId)],
+        ['created', scalar(value.createdTasks)],
+        ['assignments', scalar(value.assignments)],
+        ['reviews', scalar(value.reviewed)],
+      ], tree)}
+      ${renderMetaRows([
+        ['last action', scalar(value.lastAction)],
+        ['next handoff', scalar(value.nextHandoff)],
+        ['blocker', blocker],
+      ], tree)}
+      ${blocker !== '-' ? `<section class="alert-strip error"><strong>Blocked:</strong> ${tree.escapeHtml(blocker)}</section>` : ''}
+      ${milestones.length ? `
+        <section class="semantic-panel">
+          <div class="semantic-panel-title">Milestones</div>
+          <div class="timeline-list compact-timeline-list">
+            ${milestones.map((milestone) => `
+              <article class="timeline-item ${tree.escapeHtml(scalar(milestone.tone) === 'ok' ? 'ok' : 'subtle')} compact-timeline-item">
+                <div class="timeline-item-header">
+                  <span class="timeline-name">${tree.escapeHtml(scalar(milestone.label))}</span>
+                  <span class="timeline-time">${tree.escapeHtml(scalar(milestone.time))}</span>
+                </div>
+                <div class="timeline-meta"><span>${tree.escapeHtml(scalar(milestone.summary))}</span></div>
+              </article>
+            `).join('')}
+          </div>
+        </section>
+      ` : ''}
+    </div>
+  `;
+}
+
+function renderFrameworkFlow(value: JsonRecord, tree: StructuredTreeRenderer): string {
+  if (!Object.keys(value).length) return tree.renderPanelValue(value);
+  const lanes = asArray(value.lanes).map((item) => asRecord(item));
+  return `
+    <div class="semantic-stack">
+      ${renderSummaryGrid([
+        ['path', scalar(value.pathKind)],
+        ['stage', scalar(value.stage)],
+        ['latest event', scalar(value.latestEvent)],
+        ['latest at', scalar(value.latestAt)],
+        ['event count', scalar(value.eventCount)],
+      ], tree)}
+      <section class="flow-lane-grid">
+        ${lanes.map((lane) => renderFlowLaneCard(lane, tree)).join('')}
+      </section>
+    </div>
+  `;
+}
+
+function renderFrameworkTimeline(value: JsonRecord, tree: StructuredTreeRenderer): string {
+  const events = asArray(value.events).map((item) => asRecord(item));
+  if (!events.length) return tree.renderPanelValue(value);
+  const frameworkEvents = events.filter((event) => isFrameworkEvent(scalar(event.event_type) !== '-' ? scalar(event.event_type) : scalar(event.eventType)));
+  const blocker = scalar(value.blocker) !== '-' ? scalar(value.blocker) : firstBlocker(frameworkEvents);
+  return `
+    <div class="semantic-stack">
+      ${blocker ? `<section class="alert-strip error"><strong>Current blocker:</strong> ${tree.escapeHtml(blocker)}</section>` : ''}
+      ${renderSummaryGrid([
+        ['path', scalar(value.pathKind)],
+        ['stage', scalar(value.stage)],
+        ['latest event', scalar(value.latestEvent)],
+        ['latest at', scalar(value.latestAt)],
+        ['events', scalar(value.eventCount)],
+        ['ops', scalar(value.uniqueOperationCount)],
+        ['selected op events', scalar(value.selectedOperationEventCount)],
+      ], tree)}
+      <section class="semantic-panel">
+        <div class="semantic-panel-title">Framework Timeline</div>
+        <div class="timeline-list compact-timeline-list">
+          ${frameworkEvents.map((event) => renderFrameworkTimelineEvent(event, tree)).join('')}
+        </div>
+      </section>
+    </div>
+  `;
+}
+
+function renderFlowLaneCard(value: JsonRecord, tree: StructuredTreeRenderer): string {
+  const events = asArray(value.events).map((item) => asRecord(item));
+  const tone = flowLaneTone(scalar(value.tone));
+  return `
+    <article class="flow-lane-card ${tree.escapeHtml(tone)}">
+      <div class="flow-lane-header">
+        <div>
+          <div class="flow-lane-title">${tree.escapeHtml(scalar(value.title))}</div>
+          <div class="flow-lane-summary">${tree.escapeHtml(scalar(value.summary))}</div>
+        </div>
+        <span class="flow-lane-pill ${tree.escapeHtml(tone)}">${tree.escapeHtml(scalar(value.status))}</span>
+      </div>
+      <div class="flow-lane-meta">
+        <span>${tree.escapeHtml(scalar(value.lastAt))}</span>
+        <span>${tree.escapeHtml(`${events.length} events`)}</span>
+      </div>
+      <div class="flow-lane-events">
+        ${events.length ? events.map((event) => `
+          <article class="flow-lane-event">
+            <div class="flow-lane-event-head">
+              <span class="flow-lane-event-name">${tree.escapeHtml(scalar(event.label))}</span>
+              <span class="flow-lane-event-time">${tree.escapeHtml(scalar(event.time))}</span>
+            </div>
+            <div class="flow-lane-event-summary">${tree.escapeHtml(scalar(event.summary))}</div>
+          </article>
+        `).join('') : '<div class="empty-state compact"><div class="empty-text">No events</div></div>'}
+      </div>
+    </article>
+  `;
+}
+
+function renderFrameworkTimelineEvent(value: JsonRecord, tree: StructuredTreeRenderer): string {
+  const eventType = scalar(value.event_type) !== '-' ? scalar(value.event_type) : scalar(value.eventType);
+  const tone = frameworkTimelineTone(eventType);
+  const operationId = scalar(value.operation_id) !== '-' ? scalar(value.operation_id) : scalar(value.operationId);
+  const selected = value.isSelectedOperation === true;
+  return `
+    <article class="timeline-item ${tree.escapeHtml(tone)} compact-timeline-item framework-timeline-item ${tree.escapeHtml(`framework-${tone}`)} ${selected ? 'selected-operation' : ''}" ${operationId !== '-' ? `data-focus-operation="${tree.escapeHtml(operationId)}"` : ''}>
+      <div class="timeline-item-header">
+        <span class="timeline-name">${tree.escapeHtml(eventType)}</span>
+        <span class="timeline-time">${tree.escapeHtml(scalar(value.occurred_at) !== '-' ? scalar(value.occurred_at) : scalar(value.timestamp))}</span>
+      </div>
+      <div class="timeline-meta">
+        <span>${tree.escapeHtml(frameworkTimelineSummary(value))}</span>
+        ${operationId !== '-' ? `<span>op=${tree.escapeHtml(operationId)}</span>` : ''}
+        ${selected ? '<span class="timeline-focus-badge">focus</span>' : ''}
+      </div>
+    </article>
+  `;
+}
+
 function renderSummaryGrid(lines: Array<[string, string]>, tree: StructuredTreeRenderer): string {
   const valid = lines.filter(([, value]) => value !== '-');
   if (!valid.length) return '';
@@ -191,6 +341,61 @@ function toolStatusTone(status: string): string {
   if (status.includes('complete') || status.includes('success')) return 'good';
   if (status.includes('running') || status.includes('active')) return 'info';
   return 'plain';
+}
+
+function flowLaneTone(tone: string): string {
+  if (tone === 'error') return 'error';
+  if (tone === 'ok') return 'ok';
+  return 'neutral';
+}
+
+function frameworkTimelineTone(eventType: string): string {
+  if (eventType.includes('blocked')) return 'error';
+  if (eventType.includes('review') || eventType.includes('submit') || eventType.includes('completed')) return 'ok';
+  return 'subtle';
+}
+
+function frameworkTimelineSummary(value: JsonRecord): string {
+  const payload = asRecord(value.payload);
+  const eventType = scalar(value.event_type);
+  if (eventType === 'session.formalized') return compactText(`task=${scalar(payload.task_id)} · topic=${scalar(payload.topic_thread_id)}`);
+  if (eventType === 'framework.task_kickoff_enqueued') return compactText(`kickoff · ${scalar(payload.goal_summary) !== '-' ? scalar(payload.goal_summary) : scalar(payload.enqueue_reason)}`);
+  if (eventType === 'scheduler.tick_decision_recorded') return compactText(`action=${scalar(payload.action_kind)} · pending=${scalar(payload.pending_input_count)}`);
+  if (eventType === 'scheduler.tick_blocked') return compactText(`blocked=${scalar(payload.blocked_by)} · ${scalar(payload.result_summary)}`);
+  if (eventType === 'supervisor.cycle_completed') return compactText(`blocked=${scalar(payload.blocked_kind)} · next=${scalar(payload.next_wake_hint)}`);
+  if (eventType === 'agent.assignment_requested') return compactText(`worker=${scalar(payload.target_worker_id)} · ${scalar(payload.task_summary)}`);
+  if (eventType.startsWith('project.task.')) {
+    const task = asRecord(payload.task);
+    return compactText(`task=${scalar(task.task_id) !== '-' ? scalar(task.task_id) : scalar(payload.task_id)} · status=${scalar(task.status) !== '-' ? scalar(task.status) : scalar(payload.status)}`);
+  }
+  return compactText(scalar(payload.result_summary) !== '-' ? scalar(payload.result_summary) : scalar(payload.reason));
+}
+
+function isFrameworkEvent(eventType: string): boolean {
+  return eventType === 'session.formalized'
+    || eventType === 'framework.task_kickoff_enqueued'
+    || eventType === 'agent.assignment_requested'
+    || eventType.startsWith('scheduler.tick_')
+    || eventType.startsWith('supervisor.cycle_')
+    || eventType.startsWith('project.task.');
+}
+
+function firstBlocker(events: JsonRecord[]): string | null {
+  for (const event of events) {
+    const payload = asRecord(event.payload);
+    const eventType = scalar(event.event_type);
+    if (eventType === 'scheduler.tick_blocked') {
+      return scalar(payload.blocked_by) !== '-' ? scalar(payload.blocked_by) : scalar(payload.result_summary);
+    }
+    if (eventType === 'supervisor.cycle_completed' && scalar(payload.blocked_kind) !== '-') {
+      return compactText(`${scalar(payload.blocked_kind)} · ${scalar(payload.next_wake_hint)}`);
+    }
+  }
+  return null;
+}
+
+function compactText(value: string): string {
+  return value.length > 140 ? `${value.slice(0, 140)}…` : value;
 }
 
 function scalar(value: unknown): string {

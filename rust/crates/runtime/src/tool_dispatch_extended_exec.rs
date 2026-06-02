@@ -13,6 +13,12 @@ use std::{
     time::Instant,
 };
 
+#[path = "tool_dispatch_extended_exec_receipts.rs"]
+mod tool_dispatch_extended_exec_receipts;
+use tool_dispatch_extended_exec_receipts::{
+    ExecCommandReceipt, WriteStdinReceipt, persist_exec_receipt, persist_write_stdin_receipt,
+};
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 struct ExecReplaySession {
     session_id: String,
@@ -76,8 +82,8 @@ pub(super) fn handle_exec_command(
                 cwd: cwd.clone(),
                 created_at: input.occurred_at.into(),
                 last_exit_code: Some(run.exit_code),
-                last_stdout: short_text(run.stdout.as_str(), 500),
-                last_stderr: short_text(run.stderr.as_str(), 500),
+                last_stdout: run.stdout.clone(),
+                last_stderr: run.stderr.clone(),
                 run_count: 1,
             };
             let path =
@@ -99,6 +105,36 @@ pub(super) fn handle_exec_command(
                 tool_call_id.into(),
                 "exec_command",
                 "open_stdin_session=true requires context.project.runtime_home",
+            ));
+            return true;
+        }
+    }
+
+    match persist_exec_receipt(
+        input,
+        tool_call_id,
+        &ExecCommandReceipt {
+            tool_call_id: tool_call_id.into(),
+            tool_name: "exec_command".into(),
+            cmd: cmd.clone(),
+            cwd: cwd.clone(),
+            open_stdin_session,
+            session_id: session_id.clone(),
+            exit_code: run.exit_code,
+            stdout: run.stdout.clone(),
+            stderr: run.stderr.clone(),
+            duration_ms: run.duration_ms,
+            occurred_at: input.occurred_at.into(),
+        },
+    ) {
+        Ok(Some(receipt_ref)) => artifact_refs.push(receipt_ref),
+        Ok(None) => {}
+        Err(err) => {
+            outcome.tool_records.push(failed_record(
+                input,
+                tool_call_id.into(),
+                "exec_command",
+                format!("failed to persist exec receipt: {err}").as_str(),
             ));
             return true;
         }
@@ -127,15 +163,11 @@ pub(super) fn handle_exec_command(
         tool_name: "exec_command".into(),
         tool_kind: "agent_tool".into(),
         title: "Execute Local Command".into(),
-        purpose: "run one local shell command and capture deterministic stdout/stderr summary"
+        purpose: "run one local shell command and capture deterministic stdout/stderr result"
             .into(),
         target_kind: Some("local_shell".into()),
         target_ref: cwd.clone(),
-        input_summary: Some(format!(
-            "cmd={}{}",
-            short_text(cmd.as_str(), 120),
-            cwd_suffix(&cwd)
-        )),
+        input_summary: Some(format!("cmd={}{}", cmd, cwd_suffix(&cwd))),
         output_summary: Some(output_summary),
         status: status.into(),
         started_at: input.occurred_at.into(),
@@ -239,8 +271,8 @@ pub(super) fn handle_write_stdin(
     };
 
     session.last_exit_code = Some(run.exit_code);
-    session.last_stdout = short_text(run.stdout.as_str(), 500);
-    session.last_stderr = short_text(run.stderr.as_str(), 500);
+    session.last_stdout = run.stdout.clone();
+    session.last_stderr = run.stderr.clone();
     session.run_count += 1;
     if let Err(err) = write_json(&path, &session) {
         outcome.tool_records.push(failed_record(
@@ -251,6 +283,34 @@ pub(super) fn handle_write_stdin(
         ));
         return true;
     }
+
+    let receipt_ref = match persist_write_stdin_receipt(
+        input,
+        tool_call_id,
+        &WriteStdinReceipt {
+            tool_call_id: tool_call_id.into(),
+            tool_name: "write_stdin".into(),
+            session_id: session_id.clone(),
+            chars: chars.clone(),
+            exit_code: run.exit_code,
+            stdout: run.stdout.clone(),
+            stderr: run.stderr.clone(),
+            duration_ms: run.duration_ms,
+            run_count: session.run_count,
+            occurred_at: input.occurred_at.into(),
+        },
+    ) {
+        Ok(value) => value,
+        Err(err) => {
+            outcome.tool_records.push(failed_record(
+                input,
+                tool_call_id.into(),
+                "write_stdin",
+                format!("failed to persist write_stdin receipt: {err}").as_str(),
+            ));
+            return true;
+        }
+    };
 
     outcome.tool_records.push(ToolExecutionRecord {
         tool_call_id: tool_call_id.into(),
@@ -295,6 +355,11 @@ pub(super) fn handle_write_stdin(
             ))
         },
     });
+    if let Some(receipt_ref) = receipt_ref {
+        if let Some(record) = outcome.tool_records.last_mut() {
+            record.artifact_refs.push(receipt_ref);
+        }
+    }
     outcome.events.push((
         "tool.write_stdin_completed".into(),
         json!({

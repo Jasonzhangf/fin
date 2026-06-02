@@ -10,7 +10,7 @@
 
 ## 1. 一句话结论
 
-截至 2026-04-19，`fin` 已经具备：
+截至 2026-04-20，`fin` 已经具备：
 
 - **真实 provider 可用**
 - **单 agent 多轮推理闭环可用**
@@ -18,14 +18,38 @@
 - **session / turn / step / event / control plane 的 durable truth 已落地**
 - **Web debug / status probe / compact / tick / reminder / queue / interrupt 基本闭环可用**
 - **正式 build/install gate 已恢复**
+- **qqbot 真实 channel gateway 对话闭环可用**
+  - 已覆盖 `message.ingest -> conversation/session restore -> session truth -> runtime inference -> session truth -> message.emit`
+  - repo 内已有 `process_inbound_message(...)` 集成 E2E
+  - 真实 runtime 已生成 live receipt：`~/.fin/harness/runs/qqbot-live-receipt-20260420-real/qqbot-live-receipt.json`
+  - 当前 live receipt 证明：
+    - `ack_notice_present = true`
+    - `session_reply_present = true`
+    - `provider_request_present = true`
+    - `provider_response_present = true`
 
 因此当前项目状态应视为：
 
-> **M1 已经从“边搭边试”进入“可冻结、可验证、可继续成熟化”的阶段。**
+> **M1 最小闭环已经成立；当前更重要的是守住冻结边界、补齐 receipts，并把剩余 always-on / daemon / distributed 扩展留在 M2。**
 
 ---
 
 ## 2. 当前已经稳定的能力边界
+
+## 2.0 agent taxonomy
+
+当前已冻结的 agent taxonomy：
+
+1. prompt role 真源只有 `system` 与 `project`
+2. `default` 仅作为历史兼容 alias，运行时解析到 `project`
+3. `worker` 不再是 role，而是 `project agent` 可派生/复用的 runtime 执行体
+
+这意味着当前 M1 的多执行体扩展方向已经固定为：
+
+- 多 worker runtime
+- supervision / mailbox / assign / merge
+
+而不是再增加新的 role family。
 
 ## 2.1 推理主链
 
@@ -166,20 +190,20 @@ Web 不持有业务真相，只持有：
 这些事情现在不要误判成“已经完成”：
 
 1. 真多 agent 执行面
-2. 跨机器 project agent 协作
-3. detached/headless daemon
+2. detached/headless daemon
+3. 跨机器 project agent 协作
 4. 真正从中间步骤恢复的 pause/resume
 5. 普通用户输入的真正并行推理
 6. 完整 session/task/topic 产品化交互
 7. 成熟 knowledge graph / wiki / memory graph
 
-这些仍然属于 M2/backlog，不应在当前阶段重新发散。
+以上均属于 M2/backlog，不应在当前阶段重新发散。
 
 ---
 
 ## 5. 当前收口结果
 
-截至当前，原本计划中的 **M1.1 stability pass 核心目标已经完成**。
+截至当前，原本计划中的 **M1.1 stability pass 核心目标已经收口**，其中 **qqbot channel gateway 闭环** 已经用 repo 内 E2E + live receipt 双重证据收下。
 
 已经实际收下的证据包括：
 
@@ -216,9 +240,27 @@ Web 不持有业务真相，只持有：
 - `supervisor_heartbeat_due`
 - `stale_lease`
 
+### 5.4 qqbot live receipt
+
+当前已新增：
+
+- 命令：`fin qqbot-live-receipt <user.toml> <qqbot-target> [run-id]`
+- live receipt：
+  - `~/.fin/harness/runs/qqbot-live-receipt-20260420-real/qqbot-live-receipt.json`
+
+receipt 当前固定验证：
+
+- target / conversation / session 绑定真相
+- latest inbound / latest delivered cursor
+- ack 已发出
+- session truth reply 已发出
+- provider request / response artifacts 存在
+
+这说明 `qqbot` 已经不再只是 peer skeleton，而是进入了 **真实 channel 闭环 + receipt 可回收** 的状态。
+
 结论：
 
-> 当前 `fin` 不再只是“推理核心能跑”，而是已经进入“推理核心可验证、可回归、可冻结”的状态。
+> 当前 `fin` 不再只是“推理核心能跑”，而是已经进入“推理核心可验证、可回归、可冻结，并且拥有真实 channel receipt”的状态。
 
 ---
 
@@ -244,7 +286,7 @@ Web 不持有业务真相，只持有：
 当前若继续推进，建议严格按这个顺序走：
 
 1. **保持当前 receipt / regression 持续为绿**
-2. **只做 truth consistency 与防回退修复**
+2. **只做 truth consistency 与防反弹修复**
 3. **若要扩能力，先明确是否正式切入 M2**
 4. **进入 M2 前，先回到 architecture docs 冻结 owning layer**
 
@@ -255,3 +297,4 @@ Web 不持有业务真相，只持有：
 如果只用一句话概括当前项目状态：
 
 > `fin` 现在已经有了一个可运行、可观察、可安装、可回归，并且主链 receipt 已闭合的单 agent runtime 内核；下一步最重要的不是继续补 M1 功能，而是守住冻结边界，并谨慎决定何时进入 M2。
+- `context.peer` 已能把 ensured local worker peer state 回流到后续上下文，因此 project->worker 的本地协作骨架不再只是 assignments/mailbox 落盘，而是进入推理与观察真源。

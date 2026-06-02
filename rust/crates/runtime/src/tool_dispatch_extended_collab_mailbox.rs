@@ -22,14 +22,20 @@ pub(super) fn handle_mailbox_send(
     tool_call_id: &str,
     arguments: &Value,
 ) -> bool {
-    let Some(target_peer_id) =
-        read_string(arguments, "target_peer_id").or_else(|| read_string(arguments, "peer_id"))
+    let target_worker_id = read_string(arguments, "target_worker_id");
+    let Some(target_peer_id) = read_string(arguments, "target_peer_id")
+        .or_else(|| read_string(arguments, "peer_id"))
+        .or_else(|| {
+            target_worker_id
+                .as_ref()
+                .map(|value| format!("local-{value}"))
+        })
     else {
         outcome.tool_records.push(failed_record(
             input,
             tool_call_id.into(),
             "mailbox.send",
-            "missing required argument: target_peer_id",
+            "missing required argument: target_peer_id or target_worker_id",
         ));
         return true;
     };
@@ -95,7 +101,16 @@ pub(super) fn handle_mailbox_send(
         target_kind: Some("peer_mailbox".into()),
         target_ref: Some(target_peer_id.clone()),
         input_summary: Some(format!(
-            "target_peer_id={target_peer_id}, message={}",
+            "target_peer_id={target_peer_id}{}{}, message={}",
+            target_worker_id
+                .as_ref()
+                .map(|value| format!(", target_worker_id={value}"))
+                .unwrap_or_default(),
+            if target_worker_id.is_some() && target_peer_id.starts_with("local-") {
+                ", route=worker_local_alias"
+            } else {
+                ""
+            },
             short_text(&message.to_string(), 120)
         )),
         output_summary: Some(format!("enqueued mailbox message: {message_id}")),
@@ -114,6 +129,7 @@ pub(super) fn handle_mailbox_send(
             "message_id": message_id,
             "from_peer_id": from_peer_id,
             "target_peer_id": target_peer_id,
+            "target_worker_id": target_worker_id,
         }),
     ));
     outcome
@@ -128,7 +144,9 @@ pub(super) fn handle_mailbox_poll(
     tool_call_id: &str,
     arguments: &Value,
 ) -> bool {
+    let worker_id = read_string(arguments, "worker_id");
     let peer_id = read_string(arguments, "peer_id")
+        .or_else(|| worker_id.as_ref().map(|value| format!("local-{value}")))
         .or_else(|| input.refs.worker_id.clone())
         .unwrap_or_else(|| "peer-local".into());
     let limit = read_u64(arguments, "limit").unwrap_or(20) as usize;
@@ -190,7 +208,16 @@ pub(super) fn handle_mailbox_poll(
         target_kind: Some("peer_mailbox".into()),
         target_ref: Some(peer_id.clone()),
         input_summary: Some(format!(
-            "peer_id={peer_id}, limit={limit}, consume={consume}"
+            "peer_id={peer_id}{}{}, limit={limit}, consume={consume}",
+            worker_id
+                .as_ref()
+                .map(|value| format!(", worker_id={value}"))
+                .unwrap_or_default(),
+            if worker_id.is_some() && peer_id.starts_with("local-") {
+                ", route=worker_local_alias"
+            } else {
+                ""
+            }
         )),
         output_summary: Some(format!(
             "messages={}, remaining={}, ids={}{}",
@@ -220,6 +247,7 @@ pub(super) fn handle_mailbox_poll(
         json!({
             "tool_call_id": tool_call_id,
             "peer_id": peer_id,
+            "worker_id": worker_id,
             "returned_count": selected.len(),
             "remaining_count": inbox.len(),
             "consume": consume,

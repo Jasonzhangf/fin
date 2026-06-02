@@ -78,7 +78,7 @@ fn run_scheduler_tick_routes_framework_events_through_archive_rebalance() {
         "manual_tick",
         &retention,
         8,
-        |_binding, _message, _merge_segment| {
+        |_binding, _message, _source, _attachments, _merge_segment| {
             Ok(ChatSendResponse {
                 binding: binding(&home),
                 answer: "noop".into(),

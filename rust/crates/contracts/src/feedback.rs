@@ -28,4 +28,20 @@ pub struct ControlFeedback {
     pub digest_candidate: String,
     #[serde(default)]
     pub reason: String,
+    #[serde(default)]
+    pub task_completed: bool,
+    #[serde(default)]
+    pub is_simple_chat: bool,
+    #[serde(default)]
+    pub blocked: bool,
+    #[serde(default)]
+    pub needs_user_involve: bool,
+    #[serde(default)]
+    pub completion_evidence: Vec<String>,
+    #[serde(default)]
+    pub final_conclusions: Vec<String>,
+    #[serde(default)]
+    pub blocked_reason: Option<String>,
+    #[serde(default)]
+    pub what_needs_to_be_done_by_user: Option<String>,
 }

@@ -1,5 +1,9 @@
 # 03 GPT Codex Overlay V1
 
+> Deprecated for agent prompt identity.
+>
+> 本文档保留为早期草案归档，只能作为 backend/runtime adapter 行为偏差处理的历史参考，不能再作为 `system/project` agent prompt 真源。
+
 本文档给出 `fin` 面向 GPT / Codex 类模型的第一版 overlay 文本草案。
 
 使用规则：

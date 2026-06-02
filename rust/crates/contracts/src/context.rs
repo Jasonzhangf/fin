@@ -157,6 +157,32 @@ pub struct ProjectContextBlock {
     pub scope_summary: Option<String>,
     #[serde(default)]
     pub focus_summary: Option<String>,
+    #[serde(default)]
+    pub active_task_id: Option<String>,
+    #[serde(default)]
+    pub task_board_summary: Option<String>,
+    #[serde(default)]
+    pub known_task_ids: Vec<String>,
+    #[serde(default)]
+    pub task_status_counts: Vec<String>,
+    #[serde(default)]
+    pub ready_task_ids: Vec<String>,
+    #[serde(default)]
+    pub submitted_task_ids: Vec<String>,
+    #[serde(default)]
+    pub owner_loop_summary: Option<String>,
+    #[serde(default)]
+    pub active_agent_ids: Vec<String>,
+    #[serde(default)]
+    pub agent_presence_summary: Option<String>,
+    #[serde(default)]
+    pub supervision_actions: Vec<String>,
+    #[serde(default)]
+    pub project_supervision_summary: Option<String>,
+    #[serde(default)]
+    pub assignment_queue_summary: Option<String>,
+    #[serde(default)]
+    pub mailbox_summary: Option<String>,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -222,11 +248,37 @@ pub struct PeerContextBlock {
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct InputAttachmentSummary {
+    #[serde(default)]
+    pub attachment_id: Option<String>,
+    #[serde(default)]
+    pub kind: String,
+    #[serde(default)]
+    pub content_type: Option<String>,
+    #[serde(default)]
+    pub name: Option<String>,
+    #[serde(default)]
+    pub url: Option<String>,
+    #[serde(default)]
+    pub local_path: Option<String>,
+    #[serde(default)]
+    pub size_bytes: Option<u64>,
+    #[serde(default)]
+    pub width: Option<u32>,
+    #[serde(default)]
+    pub height: Option<u32>,
+    #[serde(default)]
+    pub source: Option<String>,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct CurrentInputBlock {
     pub input: String,
     pub source: String,
     pub operation_id: String,
     pub trace_id: String,
+    #[serde(default)]
+    pub attachments: Vec<InputAttachmentSummary>,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]

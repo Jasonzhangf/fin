@@ -26,6 +26,9 @@
 5. 真实 payload 不可裁剪或改写语义；只允许裁剪内部调试快照。
 6. 所有关键状态推进都必须产出结构化事件，供 Web / harness / CI 消费。
 7. 所有实现遵循 owning layer，禁止跨层复制业务语义。
+8. inference/provider/tool 改动默认按真实 provider E2E 验收；没有真实 session/provider/tool artifacts，不算闭环。
+9. live provider/harness timeout 必须按阶段设置（connect / waiting provider / tool wait）；禁止用 180s/240s 这类短 wall-clock 总超时截断整条真实推理链。
+10. 不得把 prompt 压缩当作通过真实业务测试的手段；context 工程只能在“正常会塞满上下文”的前提下优化装配与重建。
 
 ## route-map
 1. 通用开发流程：`skills/fin-general-dev/SKILL.md`
@@ -33,7 +36,7 @@
 3. 测试、harness、回放与故障注入：`skills/fin-testing-harness/SKILL.md`
 4. 构建、版本、安装、提升与回滚：`skills/fin-build-versioning/SKILL.md`
 5. runtime 调试与事件定位：`skills/fin-runtime-debug/SKILL.md`
-6. prompt system 分层、role family、model overlays、tool prompt spec：`skills/fin-prompt-system/SKILL.md`
+6. prompt system 分层、role family、Agent-first prompt 边界、tool prompt spec：`skills/fin-prompt-system/SKILL.md`
 7. 系统总览：`docs/architecture/01-system-overview.md`
 8. 分层边界：`docs/architecture/02-layer-boundaries.md`
 9. runtime 模型：`docs/architecture/03-rust-runtime-model.md`
@@ -56,12 +59,12 @@
 26. M1 最小 agent core 模块切分：`docs/architecture/22-m1-minimal-agent-core-module-cut.md`
 27. M1 第一批实现顺序与 crate/file 落点：`docs/architecture/23-m1-first-implementation-order-and-crate-landing.md`
 28. session render 真源与 reasoning input assembly：`docs/architecture/24-session-render-truth-and-reasoning-input-assembly.md`
-29. prompt system 分层、source ownership、role/model overlays：`docs/architecture/25-prompt-system.md`
-30. role family baseline、prompt content writing style、model overlays：`docs/architecture/26-role-prompt-family-and-model-overlays.md`
+29. prompt system 分层、source ownership、Agent-first prompt 边界：`docs/architecture/25-prompt-system.md`
+30. role family baseline、system/project agent 基线、owner/dispatcher/reviewer 边界：`docs/architecture/26-role-prompt-family-and-model-overlays.md`
 31. stable core prompt 的归属、边界、装配顺序：`docs/architecture/27-stable-core-prompt.md`
 32. stable core prompt 第一版文本草案：`docs/prompts/01-stable-core-prompt-v1.md`
 33. 四类 role baseline 第一版文本：`docs/prompts/02-role-baselines-v1.md`
-34. GPT / Codex overlay 第一版文本：`docs/prompts/03-gpt-codex-overlay-v1.md`
+34. backend model 适配旧草案（已不再作为 agent prompt 真源）：`docs/prompts/03-gpt-codex-overlay-v1.md`
 35. M1 contract 索引与最小 schema：`docs/contracts/00-m1-contracts-index.md`
 36. prompt module / tool prompt / role prompt contract：`docs/contracts/prompt-module-contract.md`
 37. provider operation / event contract：`docs/contracts/provider-operation-contract.md`、`docs/contracts/provider-event-contract.md`
@@ -75,10 +78,19 @@
 45. M1 当前状态总结与下一阶段最小目标：`docs/closeout/m1-current-state-summary.md`
 46. M1 单 agent 推理主链 review 与固定边界：`docs/closeout/m1-inference-mainline-review.md`
 47. M1 receipt 标准化与 receipt-index 规则：`docs/closeout/m1-receipt-standardization.md`
+48. M2 最小入口建议：`docs/closeout/m2-entry-recommendation.md`
+49. M1 最终收口报告：`docs/closeout/m1-final-closeout-report-2026-04-20.md`
 43. system/project/daemon 与 peer 分类：`docs/architecture/30-peer-taxonomy-and-supervision.md`
 44. peer plane / execution plane / presence / binding：`docs/architecture/31-peer-plane-and-binding-model.md`
 45. peer-aware 本地推理骨架与 local-only placeholder：`docs/architecture/32-peer-aware-local-reasoning-skeleton.md`
 46. peer routing control skeleton 与 peer observation events：`docs/architecture/33-peer-routing-control-and-observation-events.md`
+47. 文本 channel 卡片压缩与去重原则：`docs/architecture/34-text-channel-activity-cards.md`
+48. runtime 启动身份与 entry role contract：`docs/architecture/35-runtime-startup-role-contract.md`
+49. daemon / supervisor / entry agent / worker 启动 contract：`docs/architecture/36-daemon-supervisor-startup-contract.md`
+50. project task system、owner loop、epic/task/claim/review 工作流：`docs/architecture/37-project-task-system-and-owner-loop.md`
+51. project registry、wake queue、always_on / unfinished work 唤醒规则：`docs/architecture/38-project-registry-and-wakeup.md`
+52. agent presence、busy/idle/offline、resume observation model：`docs/architecture/39-agent-presence-and-resume-model.md`
+53. attached 前台 control-plane wrapper 与 continuation 顺序：`docs/architecture/40-attached-control-plane-cycle.md`
 
 ## mandatory-flow
 1. 先读本文件。

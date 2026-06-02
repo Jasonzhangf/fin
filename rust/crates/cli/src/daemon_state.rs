@@ -1,51 +1,23 @@
-use crate::CliError;
-use fin_config::RuntimeRetentionConfig;
+use crate::{
+    CliError,
+    daemon_state_support::{
+        DaemonPaths, ensure_dirs, read_json_if_exists, read_json_or_empty, resolve_paths,
+        sanitize_id, session_recent_recovery_actions_relative, session_recent_states_relative,
+        trim_head, update_last_run_paths, write_json,
+    },
+    project_recovery::execute_project_recovery_if_needed,
+    project_runtime_pickup::materialize_project_runtime_pickups,
+    startup_control_summary::read_startup_control_summary,
+};
+use fin_config::{RuntimeRetentionConfig, SystemConfig};
 use fin_contracts::{
     DaemonRecoveryActionRecord, DaemonStateRecord, DebugVisibility, EntityRefs, EventEnvelope,
     Severity, SupervisorCycleRecord, SupervisorHeartbeatRecord,
 };
 use fin_debug_server::DebugBinding;
 use fin_runtime::append_framework_events;
-use serde::{Serialize, de::DeserializeOwned};
 use serde_json::{Value, json};
-use std::{
-    fs,
-    path::{Path, PathBuf},
-};
-
-#[derive(Debug, Clone)]
-struct DaemonPaths {
-    session_dir: PathBuf,
-}
-
-impl DaemonPaths {
-    fn latest_daemon_state_path(&self) -> PathBuf {
-        self.session_dir.join("control/daemon/latest_state.json")
-    }
-
-    fn recent_daemon_states_path(&self) -> PathBuf {
-        self.session_dir.join("control/daemon/recent_states.json")
-    }
-
-    fn latest_recovery_action_path(&self) -> PathBuf {
-        self.session_dir
-            .join("control/daemon/latest_recovery_action.json")
-    }
-
-    fn recent_recovery_actions_path(&self) -> PathBuf {
-        self.session_dir
-            .join("control/daemon/recent_recovery_actions.json")
-    }
-
-    fn latest_supervisor_cycle_path(&self) -> PathBuf {
-        self.session_dir.join("control/supervisor/latest.json")
-    }
-
-    fn latest_supervisor_heartbeat_path(&self) -> PathBuf {
-        self.session_dir
-            .join("control/supervisor/latest_heartbeat.json")
-    }
-}
+use std::path::Path;
 
 #[derive(Debug, Clone)]
 pub(crate) struct DaemonStateOutcome {
@@ -57,6 +29,7 @@ pub(crate) struct DaemonStateOutcome {
 
 pub(crate) fn refresh_attached_daemon_state(
     runtime_home: &Path,
+    system: &SystemConfig,
     binding: &DebugBinding,
     source: &str,
     retention: &RuntimeRetentionConfig,
@@ -72,6 +45,7 @@ pub(crate) fn refresh_attached_daemon_state(
 
     let now = crate::time::local_timestamp_now();
     let refs = entity_refs(binding);
+    let startup_before = read_startup_control_summary(runtime_home)?;
     let daemon_id = format!(
         "daemon-web-debug-attached-{}",
         refs.session_id.as_deref().unwrap_or("tentative")
@@ -85,18 +59,33 @@ pub(crate) fn refresh_attached_daemon_state(
         source,
         &now,
         &refs,
+        &startup_before,
         latest_cycle.as_ref(),
         latest_heartbeat.as_ref(),
     );
+    let recovery_execution = execute_project_recovery_if_needed(
+        runtime_home,
+        system,
+        source,
+        recovery_action.as_ref(),
+        &now,
+    )?;
+    let runtime_pickup = materialize_project_runtime_pickups(runtime_home, system, &now)?;
+    let startup_after = read_startup_control_summary(runtime_home)?;
     let state = derive_daemon_state(
         &daemon_id,
         &now,
         source,
         binding,
         &refs,
+        &startup_after,
         latest_cycle.as_ref(),
         latest_heartbeat.as_ref(),
         recovery_action.as_ref(),
+        recovery_execution
+            .as_ref()
+            .map(|item| item.summary.as_str()),
+        Some(runtime_pickup.status_summary().as_str()),
     );
 
     let mut events = vec![daemon_event(
@@ -138,9 +127,12 @@ fn derive_daemon_state(
     source: &str,
     binding: &DebugBinding,
     refs: &EntityRefs,
+    startup: &crate::startup_control_summary::StartupControlSummary,
     latest_cycle: Option<&SupervisorCycleRecord>,
     latest_heartbeat: Option<&SupervisorHeartbeatRecord>,
     recovery_action: Option<&DaemonRecoveryActionRecord>,
+    recovery_execution_summary: Option<&str>,
+    runtime_pickup_summary: Option<&str>,
 ) -> DaemonStateRecord {
     let health_state = if latest_heartbeat.is_some_and(|value| value.stale_lease) {
         Some("stale".into())
@@ -149,9 +141,17 @@ fn derive_daemon_state(
     } else {
         Some("unknown".into())
     };
-    let recovery_needed = recovery_action
-        .as_ref()
-        .is_some_and(|value| value.apply_immediately || value.action_kind != "observe_only");
+    let recovery_needed = if recovery_execution_summary.is_some()
+        && recovery_action
+            .as_ref()
+            .is_some_and(|value| value.action_kind == "recover_project_agents")
+    {
+        startup.recoverable_offline_count > 0
+    } else {
+        recovery_action
+            .as_ref()
+            .is_some_and(|value| value.apply_immediately || value.action_kind != "observe_only")
+    };
     let active_binding = Some(format!(
         "session={} task={}",
         binding.session_id.as_deref().unwrap_or("tentative"),
@@ -165,9 +165,7 @@ fn derive_daemon_state(
         refs: refs.clone(),
         service_kind: "web_debug_attached".into(),
         lifecycle_state: "attached_active".into(),
-        supervision_state: latest_cycle
-            .and_then(|value| value.blocked_kind.clone())
-            .unwrap_or_else(|| "observing".into()),
+        supervision_state: derive_supervision_state(startup, latest_cycle),
         mode: "attached".into(),
         pid: Some(std::process::id()),
         last_heartbeat_id: latest_heartbeat.map(|value| value.heartbeat_id.clone()),
@@ -177,7 +175,7 @@ fn derive_daemon_state(
         recovery_action_kind: recovery_action.map(|value| value.action_kind.clone()),
         active_binding,
         status_summary: format!(
-            "daemon source={} blocked_kind={} stale_lease={} recovery={}",
+            "daemon source={} blocked_kind={} stale_lease={} recovery={} startup={} recovery_exec={} runtime_pickup={}",
             source,
             latest_cycle
                 .and_then(|value| value.blocked_kind.as_deref())
@@ -186,7 +184,10 @@ fn derive_daemon_state(
             recovery_action
                 .as_ref()
                 .map(|value| value.action_kind.as_str())
-                .unwrap_or("none")
+                .unwrap_or("none"),
+            startup.status_summary(),
+            recovery_execution_summary.unwrap_or("-"),
+            runtime_pickup_summary.unwrap_or("-"),
         ),
     }
 }
@@ -195,6 +196,7 @@ fn derive_recovery_action(
     source: &str,
     now: &str,
     refs: &EntityRefs,
+    startup: &crate::startup_control_summary::StartupControlSummary,
     latest_cycle: Option<&SupervisorCycleRecord>,
     latest_heartbeat: Option<&SupervisorHeartbeatRecord>,
 ) -> Option<DaemonRecoveryActionRecord> {
@@ -229,6 +231,24 @@ fn derive_recovery_action(
                 false,
                 "cycle requires explicit user confirmation".to_string(),
             )
+        } else if startup.recoverable_offline_count > 0 {
+            (
+                "recover_project_agents",
+                true,
+                format!(
+                    "{} project agent(s) are offline but recoverable",
+                    startup.recoverable_offline_count
+                ),
+            )
+        } else if startup.waiting_project_count > 0 || startup.last_wake_had_remote_wait {
+            (
+                "monitor_project_remote_connectivity",
+                false,
+                format!(
+                    "{} project agent(s) are waiting on remote connectivity",
+                    startup.waiting_project_count
+                ),
+            )
         } else {
             ("observe_only", false, "daemon state observed".to_string())
         };
@@ -248,6 +268,21 @@ fn derive_recovery_action(
         target_cycle_id: latest_cycle.map(|value| value.cycle_id.clone()),
         reason,
     })
+}
+
+fn derive_supervision_state(
+    startup: &crate::startup_control_summary::StartupControlSummary,
+    latest_cycle: Option<&SupervisorCycleRecord>,
+) -> String {
+    if startup.recoverable_offline_count > 0 {
+        "project_recovery_needed".into()
+    } else if startup.waiting_project_count > 0 || startup.last_wake_had_remote_wait {
+        "project_remote_waiting".into()
+    } else {
+        latest_cycle
+            .and_then(|value| value.blocked_kind.clone())
+            .unwrap_or_else(|| "observing".into())
+    }
 }
 
 fn daemon_event(
@@ -313,154 +348,10 @@ fn persist_daemon_state(
     )
 }
 
-fn resolve_paths(
-    runtime_home: &Path,
-    binding: &DebugBinding,
-) -> Result<Option<DaemonPaths>, CliError> {
-    if let Some(relative) = &binding.session_messages_path {
-        if let Some(prefix) = relative.strip_suffix("conversation/messages.json") {
-            return Ok(Some(DaemonPaths {
-                session_dir: runtime_home.join(prefix.trim_end_matches('/')),
-            }));
-        }
-    }
-    let Some(session_id) = binding.session_id.as_deref() else {
-        return Ok(None);
-    };
-    Ok(find_session_dir(runtime_home, session_id).map(|session_dir| DaemonPaths { session_dir }))
-}
-
-fn ensure_dirs(paths: &DaemonPaths) -> Result<(), CliError> {
-    fs::create_dir_all(paths.session_dir.join("control/daemon")).map_err(|source| {
-        CliError::WriteFile {
-            path: paths
-                .session_dir
-                .join("control/daemon")
-                .display()
-                .to_string(),
-            source,
-        }
-    })
-}
-
-fn find_session_dir(runtime_home: &Path, session_id: &str) -> Option<PathBuf> {
-    let root = runtime_home.join("sessions");
-    let years = fs::read_dir(root).ok()?;
-    for year in years.flatten() {
-        let months = fs::read_dir(year.path()).ok()?;
-        for month in months.flatten() {
-            let dir = month.path().join(session_id);
-            if dir.exists() {
-                return Some(dir);
-            }
-        }
-    }
-    None
-}
-
 fn entity_refs(binding: &DebugBinding) -> EntityRefs {
     EntityRefs {
         session_id: binding.session_id.clone(),
         task_id: binding.task_id.clone(),
         ..EntityRefs::default()
     }
-}
-
-fn session_recent_states_relative(
-    paths: &DaemonPaths,
-    runtime_home: &Path,
-) -> Result<String, CliError> {
-    paths
-        .recent_daemon_states_path()
-        .strip_prefix(runtime_home)
-        .map(|path| path.to_string_lossy().trim_start_matches('/').to_string())
-        .map_err(|_| CliError::Usage)
-}
-
-fn session_recent_recovery_actions_relative(
-    paths: &DaemonPaths,
-    runtime_home: &Path,
-) -> Result<String, CliError> {
-    paths
-        .recent_recovery_actions_path()
-        .strip_prefix(runtime_home)
-        .map(|path| path.to_string_lossy().trim_start_matches('/').to_string())
-        .map_err(|_| CliError::Usage)
-}
-
-fn trim_head<T>(items: &mut Vec<T>, limit: usize) {
-    if items.len() > limit {
-        let drain_count = items.len() - limit;
-        items.drain(0..drain_count);
-    }
-}
-
-fn read_json_or_empty<T: DeserializeOwned>(path: &Path) -> Result<Vec<T>, CliError> {
-    match fs::read_to_string(path) {
-        Ok(content) => serde_json::from_str(&content).map_err(CliError::Serialize),
-        Err(err) if err.kind() == std::io::ErrorKind::NotFound => Ok(Vec::new()),
-        Err(source) => Err(CliError::ReadFile {
-            path: path.display().to_string(),
-            source,
-        }),
-    }
-}
-
-fn read_json_if_exists<T: DeserializeOwned>(path: &Path) -> Result<Option<T>, CliError> {
-    match fs::read_to_string(path) {
-        Ok(content) => serde_json::from_str(&content)
-            .map(Some)
-            .map_err(CliError::Serialize),
-        Err(err) if err.kind() == std::io::ErrorKind::NotFound => Ok(None),
-        Err(source) => Err(CliError::ReadFile {
-            path: path.display().to_string(),
-            source,
-        }),
-    }
-}
-
-fn write_json<T: Serialize>(path: &Path, value: &T) -> Result<(), CliError> {
-    if let Some(parent) = path.parent() {
-        fs::create_dir_all(parent).map_err(|source| CliError::WriteFile {
-            path: parent.display().to_string(),
-            source,
-        })?;
-    }
-    fs::write(
-        path,
-        serde_json::to_vec_pretty(value).map_err(CliError::Serialize)?,
-    )
-    .map_err(|source| CliError::WriteFile {
-        path: path.display().to_string(),
-        source,
-    })
-}
-
-fn update_last_run_paths(runtime_home: &Path, updates: Value) -> Result<(), CliError> {
-    let last_run_path = runtime_home.join("runtime/current/last_run.json");
-    let mut value = match fs::read_to_string(&last_run_path) {
-        Ok(content) => serde_json::from_str::<Value>(&content).map_err(CliError::Serialize)?,
-        Err(err) if err.kind() == std::io::ErrorKind::NotFound => json!({}),
-        Err(source) => {
-            return Err(CliError::ReadFile {
-                path: last_run_path.display().to_string(),
-                source,
-            });
-        }
-    };
-    if !value.is_object() {
-        value = json!({});
-    }
-    let object = value.as_object_mut().expect("object");
-    for (key, val) in updates.as_object().into_iter().flatten() {
-        object.insert(key.clone(), val.clone());
-    }
-    write_json(&last_run_path, &value)
-}
-
-fn sanitize_id(input: &str) -> String {
-    input
-        .chars()
-        .map(|ch| if ch.is_ascii_alphanumeric() { ch } else { '-' })
-        .collect()
 }

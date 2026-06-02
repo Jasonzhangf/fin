@@ -4,6 +4,11 @@ use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use thiserror::Error;
 
+mod startup;
+pub use startup::{
+    ProjectAgentMode, ProjectAgentStartupConfig, RuntimeStartupConfig, SystemAgentStartupConfig,
+};
+
 #[derive(Debug, Error)]
 pub enum ConfigError {
     #[error("failed to parse {context} toml: {source}")]
@@ -43,6 +48,14 @@ pub struct UserConfig {
     pub default_provider: String,
     #[serde(default)]
     pub providers: BTreeMap<String, UserProviderConfig>,
+    #[serde(default)]
+    pub runtime: UserRuntimeConfig,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct UserRuntimeConfig {
+    #[serde(default)]
+    pub device_name: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -69,7 +82,11 @@ pub struct RuntimeConfig {
     pub runtime_home: String,
     pub heartbeat_interval_ms: u64,
     #[serde(default)]
+    pub device_name: Option<String>,
+    #[serde(default)]
     pub retention: RuntimeRetentionConfig,
+    #[serde(default)]
+    pub startup: RuntimeStartupConfig,
 }
 
 impl Default for RuntimeConfig {
@@ -77,7 +94,9 @@ impl Default for RuntimeConfig {
         Self {
             runtime_home: "~/.fin".into(),
             heartbeat_interval_ms: 5_000,
+            device_name: None,
             retention: RuntimeRetentionConfig::default(),
+            startup: RuntimeStartupConfig::default(),
         }
     }
 }
@@ -104,21 +123,21 @@ pub struct RuntimeRetentionConfig {
 impl Default for RuntimeRetentionConfig {
     fn default() -> Self {
         Self {
-            session_event_hot_limit: 512,
-            session_event_local_archive_file_limit: 8,
-            recent_context_limit: 8,
-            recent_digest_limit: 8,
-            recent_reasoning_limit: 16,
-            recent_tool_record_limit: 32,
-            recent_closure_limit: 16,
-            recent_provider_request_limit: 32,
-            recent_provider_response_limit: 32,
-            recent_step_record_limit: 64,
-            recent_turn_limit: 16,
-            recent_routing_decision_limit: 32,
-            recent_round_limit: 32,
-            session_message_limit: 128,
-            reminder_pending_limit: 128,
+            session_event_hot_limit: 256,
+            session_event_local_archive_file_limit: 4,
+            recent_context_limit: 4,
+            recent_digest_limit: 4,
+            recent_reasoning_limit: 8,
+            recent_tool_record_limit: 16,
+            recent_closure_limit: 8,
+            recent_provider_request_limit: 8,
+            recent_provider_response_limit: 8,
+            recent_step_record_limit: 24,
+            recent_turn_limit: 8,
+            recent_routing_decision_limit: 16,
+            recent_round_limit: 8,
+            session_message_limit: 64,
+            reminder_pending_limit: 64,
         }
     }
 }
@@ -167,7 +186,7 @@ impl SystemConfig {
         &self,
         role_id: Option<&str>,
     ) -> Result<(String, &RoleProfileConfig), ConfigError> {
-        let role_id = role_id.unwrap_or(&self.policy.default_role);
+        let role_id = normalize_role_id(&self.policy.default_role, role_id, &self.policy.roles);
         let profile = self
             .policy
             .roles
@@ -190,11 +209,27 @@ impl SystemConfig {
         }
 
         require_non_empty("policy.default_role", &self.policy.default_role)?;
-        if !self.policy.roles.contains_key(&self.policy.default_role) {
+        let normalized_default_role =
+            normalize_role_id(&self.policy.default_role, None, &self.policy.roles);
+        if !self.policy.roles.contains_key(normalized_default_role) {
             return Err(ConfigError::Validation {
                 message: format!(
                     "runtime policy default_role '{}' missing from roles",
                     self.policy.default_role
+                ),
+            });
+        }
+
+        require_non_empty("policy.entry_role", &self.policy.entry_role)?;
+        if !self
+            .policy
+            .roles
+            .contains_key(self.policy.entry_role.as_str())
+        {
+            return Err(ConfigError::Validation {
+                message: format!(
+                    "runtime policy entry_role '{}' missing from roles",
+                    self.policy.entry_role
                 ),
             });
         }
@@ -260,6 +295,10 @@ impl SystemConfig {
             "runtime.retention.reminder_pending_limit",
             self.runtime.retention.reminder_pending_limit,
         )?;
+        if let Some(device_name) = &self.runtime.device_name {
+            require_non_empty("runtime.device_name", device_name)?;
+        }
+        self.runtime.startup.validate()?;
 
         Ok(())
     }
@@ -283,7 +322,48 @@ fn default_inference_timeout_ms() -> u64 {
 }
 
 fn default_role_id() -> String {
-    "default".into()
+    "project".into()
+}
+
+fn default_entry_role_id() -> String {
+    "system".into()
+}
+
+fn default_role_profiles(
+    default_provider: &str,
+    default_provider_model: &str,
+) -> Result<BTreeMap<String, RoleProfileConfig>, ConfigError> {
+    let role_profile = || -> Result<RoleProfileConfig, ConfigError> {
+        Ok(RoleProfileConfig {
+            provider_path: ProviderPathPolicy {
+                strategy: ProviderStrategy::Priority,
+                targets: vec![ProviderTarget::new(
+                    default_provider.to_string(),
+                    default_provider_model.to_string(),
+                )?],
+            },
+            stream: default_stream(),
+            timeout_ms: default_inference_timeout_ms(),
+        })
+    };
+
+    Ok(BTreeMap::from([
+        ("system".into(), role_profile()?),
+        ("project".into(), role_profile()?),
+    ]))
+}
+
+fn normalize_role_id<'a>(
+    default_role: &'a str,
+    requested_role: Option<&'a str>,
+    roles: &'a BTreeMap<String, RoleProfileConfig>,
+) -> &'a str {
+    let role_id = requested_role.unwrap_or(default_role);
+    if role_id == "default" && roles.contains_key("project") {
+        "project"
+    } else {
+        role_id
+    }
 }
 
 fn default_protocol_version() -> String {
@@ -367,6 +447,8 @@ impl RoleProfileConfig {
 pub struct RuntimePolicyConfig {
     #[serde(default = "default_role_id")]
     pub default_role: String,
+    #[serde(default = "default_entry_role_id")]
+    pub entry_role: String,
     #[serde(default = "default_protocol_version")]
     pub protocol_version: String,
     #[serde(default)]
@@ -377,6 +459,7 @@ impl Default for RuntimePolicyConfig {
     fn default() -> Self {
         Self {
             default_role: default_role_id(),
+            entry_role: default_entry_role_id(),
             protocol_version: default_protocol_version(),
             roles: BTreeMap::new(),
         }
@@ -464,23 +547,14 @@ impl ConfigMapper {
             providers,
             policy: RuntimePolicyConfig {
                 default_role: default_role_id(),
+                entry_role: default_entry_role_id(),
                 protocol_version: default_protocol_version(),
-                roles: BTreeMap::from([(
-                    default_role_id(),
-                    RoleProfileConfig {
-                        provider_path: ProviderPathPolicy {
-                            strategy: ProviderStrategy::Priority,
-                            targets: vec![ProviderTarget::new(
-                                default_provider,
-                                default_provider_model,
-                            )?],
-                        },
-                        stream: default_stream(),
-                        timeout_ms: default_inference_timeout_ms(),
-                    },
-                )]),
+                roles: default_role_profiles(&default_provider, &default_provider_model)?,
             },
-            runtime: RuntimeConfig::default(),
+            runtime: RuntimeConfig {
+                device_name: user.runtime.device_name.clone(),
+                ..RuntimeConfig::default()
+            },
             debug: DebugConfig::default(),
         };
         system.validate()?;
@@ -521,6 +595,9 @@ mod tests {
 
 default_provider = "openai"
 
+[runtime]
+device_name = "mac-studio"
+
 [providers.openai]
 protocol = "open-ai-compatible"
 base_url = "https://api.example.com/v1"
@@ -546,12 +623,17 @@ X-Client = "fin"
         );
         assert_eq!(system.providers["openai"].headers["X-Client"], "fin");
         assert_eq!(system.runtime.runtime_home, "~/.fin");
-        assert_eq!(system.runtime.retention.recent_round_limit, 32);
-        assert_eq!(system.policy.default_role, "default");
+        assert_eq!(system.runtime.device_name.as_deref(), Some("mac-studio"));
+        assert_eq!(system.runtime.retention.recent_round_limit, 8);
+        assert_eq!(system.policy.default_role, "project");
+        assert_eq!(system.policy.entry_role, "system");
         assert_eq!(
-            system.policy.roles["default"].provider_path.targets[0].provider_name,
+            system.policy.roles["project"].provider_path.targets[0].provider_name,
             "openai"
         );
+        assert_eq!(system.policy.roles.len(), 2);
+        assert!(system.policy.roles.contains_key("system"));
+        assert!(system.policy.roles.contains_key("project"));
     }
 
     #[test]
@@ -570,6 +652,7 @@ X-Client = "fin"
                     headers: BTreeMap::new(),
                 },
             )]),
+            runtime: UserRuntimeConfig::default(),
         };
 
         let err = ConfigMapper::map_user_to_system(&user)
@@ -599,22 +682,39 @@ X-Client = "fin"
                 },
             )]),
             policy: RuntimePolicyConfig {
-                default_role: "default".into(),
+                default_role: "project".into(),
+                entry_role: "system".into(),
                 protocol_version: "fin.m1".into(),
-                roles: BTreeMap::from([(
-                    "default".into(),
-                    RoleProfileConfig {
-                        provider_path: ProviderPathPolicy {
-                            strategy: ProviderStrategy::Priority,
-                            targets: vec![
-                                ProviderTarget::new("openai", "gpt-5")
-                                    .expect("provider target should be valid"),
-                            ],
+                roles: BTreeMap::from([
+                    (
+                        "system".into(),
+                        RoleProfileConfig {
+                            provider_path: ProviderPathPolicy {
+                                strategy: ProviderStrategy::Priority,
+                                targets: vec![
+                                    ProviderTarget::new("openai", "gpt-5")
+                                        .expect("provider target should be valid"),
+                                ],
+                            },
+                            stream: false,
+                            timeout_ms: 60_000,
                         },
-                        stream: false,
-                        timeout_ms: 60_000,
-                    },
-                )]),
+                    ),
+                    (
+                        "project".into(),
+                        RoleProfileConfig {
+                            provider_path: ProviderPathPolicy {
+                                strategy: ProviderStrategy::Priority,
+                                targets: vec![
+                                    ProviderTarget::new("openai", "gpt-5")
+                                        .expect("provider target should be valid"),
+                                ],
+                            },
+                            stream: false,
+                            timeout_ms: 60_000,
+                        },
+                    ),
+                ]),
             },
             runtime: RuntimeConfig::default(),
             debug: DebugConfig::default(),
@@ -630,7 +730,7 @@ X-Client = "fin"
         );
         assert_eq!(reparsed.providers["openai"].headers["X-Client"], "fin");
         assert_eq!(reparsed.policy.protocol_version, "fin.m1");
-        assert_eq!(reparsed.runtime.retention.session_message_limit, 128);
+        assert_eq!(reparsed.runtime.retention.session_message_limit, 64);
     }
 
     #[test]
@@ -649,17 +749,18 @@ kind = "api_key_env"
 env_var = "OPENAI_API_KEY"
 
 [policy]
-default_role = "default"
+default_role = "project"
+entry_role = "project"
 protocol_version = "fin.m1"
 
-[policy.roles.default]
+[policy.roles.project]
 stream = false
 timeout_ms = 60000
 
-[policy.roles.default.provider_path]
+[policy.roles.project.provider_path]
 strategy = "priority"
 
-[[policy.roles.default.provider_path.targets]]
+[[policy.roles.project.provider_path.targets]]
 provider_name = "missing"
 model = "gpt-5"
 "#;
@@ -668,6 +769,86 @@ model = "gpt-5"
         assert!(
             err.to_string()
                 .contains("provider_path target 'missing' is not present in providers")
+        );
+    }
+
+    #[test]
+    fn validate_accepts_legacy_default_role_alias_when_project_exists() {
+        let mut system = ConfigMapper::map_user_to_system(&UserConfig {
+            default_provider: "openai".into(),
+            providers: BTreeMap::from([(
+                "openai".into(),
+                UserProviderConfig {
+                    protocol: ProviderProtocol::OpenAiCompatible,
+                    base_url: "https://api.example.com/v1".into(),
+                    model: "gpt-5".into(),
+                    api_key: None,
+                    api_key_env: Some("OPENAI_API_KEY".into()),
+                    user_agent: None,
+                    headers: BTreeMap::new(),
+                },
+            )]),
+            runtime: UserRuntimeConfig::default(),
+        })
+        .expect("mapping should succeed");
+        system.policy.default_role = "default".into();
+
+        system
+            .validate()
+            .expect("legacy default alias should validate");
+        let (role_id, _) = system
+            .role_profile(Some("default"))
+            .expect("default alias should resolve");
+        assert_eq!(role_id, "project");
+    }
+
+    #[test]
+    fn parse_system_toml_rejects_unknown_entry_role() {
+        let input = r#"
+default_provider = "openai"
+
+[providers.openai]
+name = "openai"
+protocol = "open-ai-compatible"
+base_url = "https://api.example.com/v1"
+model = "gpt-5"
+
+[providers.openai.credential]
+kind = "api_key_env"
+env_var = "OPENAI_API_KEY"
+
+[policy]
+default_role = "project"
+entry_role = "missing"
+protocol_version = "fin.m1"
+
+[policy.roles.system]
+stream = false
+timeout_ms = 60000
+
+[policy.roles.system.provider_path]
+strategy = "priority"
+
+[[policy.roles.system.provider_path.targets]]
+provider_name = "openai"
+model = "gpt-5"
+
+[policy.roles.project]
+stream = false
+timeout_ms = 60000
+
+[policy.roles.project.provider_path]
+strategy = "priority"
+
+[[policy.roles.project.provider_path.targets]]
+provider_name = "openai"
+model = "gpt-5"
+"#;
+
+        let err = parse_system_toml(input).expect_err("unknown entry role must fail");
+        assert!(
+            err.to_string()
+                .contains("runtime policy entry_role 'missing' missing from roles")
         );
     }
 
@@ -695,30 +876,31 @@ session_event_hot_limit = 0
 session_event_local_archive_file_limit = 1
 recent_context_limit = 8
 recent_digest_limit = 8
-recent_reasoning_limit = 16
-recent_tool_record_limit = 32
-recent_closure_limit = 16
-recent_provider_request_limit = 32
-recent_provider_response_limit = 32
-recent_step_record_limit = 64
-recent_turn_limit = 16
-recent_routing_decision_limit = 32
-recent_round_limit = 32
-session_message_limit = 128
-reminder_pending_limit = 128
+recent_reasoning_limit = 8
+recent_tool_record_limit = 16
+recent_closure_limit = 8
+recent_provider_request_limit = 8
+recent_provider_response_limit = 8
+recent_step_record_limit = 24
+recent_turn_limit = 8
+recent_routing_decision_limit = 16
+recent_round_limit = 8
+session_message_limit = 64
+reminder_pending_limit = 64
 
 [policy]
-default_role = "default"
+default_role = "project"
+entry_role = "project"
 protocol_version = "fin.m1"
 
-[policy.roles.default]
+[policy.roles.project]
 stream = false
 timeout_ms = 60000
 
-[policy.roles.default.provider_path]
+[policy.roles.project.provider_path]
 strategy = "priority"
 
-[[policy.roles.default.provider_path.targets]]
+[[policy.roles.project.provider_path.targets]]
 provider_name = "openai"
 model = "gpt-5"
 "#;
@@ -728,5 +910,32 @@ model = "gpt-5"
             err.to_string()
                 .contains("runtime.retention.session_event_hot_limit must be greater than 0")
         );
+    }
+
+    #[test]
+    fn validate_rejects_blank_runtime_device_name() {
+        let mut system = ConfigMapper::map_user_to_system(&UserConfig {
+            default_provider: "openai".into(),
+            providers: BTreeMap::from([(
+                "openai".into(),
+                UserProviderConfig {
+                    protocol: ProviderProtocol::OpenAiCompatible,
+                    base_url: "https://api.example.com/v1".into(),
+                    model: "gpt-5".into(),
+                    api_key: None,
+                    api_key_env: Some("OPENAI_API_KEY".into()),
+                    user_agent: None,
+                    headers: BTreeMap::new(),
+                },
+            )]),
+            runtime: UserRuntimeConfig::default(),
+        })
+        .expect("mapping should succeed");
+        system.runtime.device_name = Some("   ".into());
+
+        let err = system
+            .validate()
+            .expect_err("blank runtime.device_name must fail");
+        assert!(err.to_string().contains("runtime.device_name"));
     }
 }

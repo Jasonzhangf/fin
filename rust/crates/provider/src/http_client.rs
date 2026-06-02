@@ -1,9 +1,11 @@
 use crate::ProviderError;
 use reqwest::Error as ReqwestError;
 use reqwest::blocking::Client;
+use std::collections::BTreeMap;
+use std::net::{IpAddr, SocketAddr};
 use std::time::Duration;
 
-const REQUEST_TIMEOUT_SECS: u64 = 120;
+const REQUEST_TIMEOUT_SECS: u64 = 15 * 60;
 const CONNECT_TIMEOUT_SECS: u64 = 15;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -12,11 +14,16 @@ pub struct RequestFailure {
     pub retryable: bool,
 }
 
-pub fn build_client() -> Result<Client, ProviderError> {
-    Client::builder()
+pub fn build_client(
+    resolve_overrides: &BTreeMap<String, IpAddr>,
+) -> Result<Client, ProviderError> {
+    let mut builder = Client::builder()
         .connect_timeout(Duration::from_secs(CONNECT_TIMEOUT_SECS))
-        .timeout(Duration::from_secs(REQUEST_TIMEOUT_SECS))
-        .build()
+        .timeout(Duration::from_secs(REQUEST_TIMEOUT_SECS));
+    for (host, ip) in resolve_overrides {
+        builder = builder.resolve(host, SocketAddr::new(*ip, 0));
+    }
+    builder.build()
         .map_err(|err| ProviderError::Request {
             message: format!("client build failed: {}", summarize_error_chain(&err)),
         })
@@ -59,6 +66,6 @@ mod tests {
 
     #[test]
     fn build_client_uses_blocking_client_builder() {
-        let _client: Client = build_client().expect("client should build");
+        let _client: Client = build_client(&BTreeMap::new()).expect("client should build");
     }
 }

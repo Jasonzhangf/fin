@@ -2,6 +2,15 @@ use crate::CliError;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum Command {
+    Start {
+        path: String,
+    },
+    Stop {
+        path: String,
+    },
+    DaemonRun {
+        path: String,
+    },
     ConfigCheck {
         path: String,
     },
@@ -30,6 +39,15 @@ pub(crate) enum Command {
         path: String,
         port: u16,
     },
+    ProviderLiveSmoke {
+        path: String,
+        transcript_path: Option<String>,
+    },
+    QqbotLiveReceipt {
+        path: String,
+        target: String,
+        run_id: Option<String>,
+    },
     BuildDev {
         path: String,
         build_version: Option<String>,
@@ -49,6 +67,9 @@ pub(crate) enum Command {
 
 pub(crate) fn parse_command(args: &[String]) -> Result<Command, CliError> {
     match args {
+        [cmd, path] if cmd == "start" => Ok(Command::Start { path: path.clone() }),
+        [cmd, path] if cmd == "stop" => Ok(Command::Stop { path: path.clone() }),
+        [cmd, path] if cmd == "daemon-run" => Ok(Command::DaemonRun { path: path.clone() }),
         [cmd, path] if cmd == "config-check" => Ok(Command::ConfigCheck { path: path.clone() }),
         [cmd, path] if cmd == "home-init" => Ok(Command::HomeInit { path: path.clone() }),
         [cmd, path] if cmd == "control-boundary-demo" => {
@@ -67,6 +88,28 @@ pub(crate) fn parse_command(args: &[String]) -> Result<Command, CliError> {
             path: path.clone(),
             transcript_path: transcript_path.clone(),
         }),
+        [cmd, path] if cmd == "provider-live-smoke" => Ok(Command::ProviderLiveSmoke {
+            path: path.clone(),
+            transcript_path: None,
+        }),
+        [cmd, path, transcript_path] if cmd == "provider-live-smoke" => {
+            Ok(Command::ProviderLiveSmoke {
+                path: path.clone(),
+                transcript_path: Some(transcript_path.clone()),
+            })
+        }
+        [cmd, path, target] if cmd == "qqbot-live-receipt" => Ok(Command::QqbotLiveReceipt {
+            path: path.clone(),
+            target: target.clone(),
+            run_id: None,
+        }),
+        [cmd, path, target, run_id] if cmd == "qqbot-live-receipt" => {
+            Ok(Command::QqbotLiveReceipt {
+                path: path.clone(),
+                target: target.clone(),
+                run_id: Some(run_id.clone()),
+            })
+        }
         [cmd, path] if cmd == "web-debug" => Ok(Command::WebDebug {
             path: path.clone(),
             port: 4040,

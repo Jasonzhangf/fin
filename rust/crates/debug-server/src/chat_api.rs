@@ -1,4 +1,6 @@
-use fin_contracts::{ControlFeedback, ExecutionNote, ProgressBlock, RoutingActionRecord};
+use fin_contracts::{
+    ControlFeedback, ExecutionNote, InputAttachmentSummary, ProgressBlock, RoutingActionRecord,
+};
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -18,6 +20,8 @@ pub struct ChatSendRequest {
     pub message: String,
     #[serde(default)]
     pub input_kind: Option<String>,
+    #[serde(default)]
+    pub attachments: Vec<InputAttachmentSummary>,
 }
 
 impl ChatSendRequest {

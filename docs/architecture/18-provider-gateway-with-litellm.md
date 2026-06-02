@@ -10,7 +10,7 @@
 4. 请求是 operation，响应是 event，二者分阶段隔离
 5. event 默认按 producer / consumer + subscription 设计
 6. provider 当前不做 routing，只按显式 `provider.model` 发请求
-7. provider 当前不做 fallback；多 provider 路径只允许显式配置
+7. provider 当前不做隐式切换；多 provider 路径只允许显式配置
 
 ---
 
@@ -142,16 +142,16 @@ LiteLLM 不应隐式取代 `fin` 的运行事实模型。
 
 1. fin 明确指定 provider/model target
 2. LiteLLM 不负责替 `fin` 做 provider routing 判断
-3. LiteLLM 不负责替 `fin` 做隐式 fallback
+3. LiteLLM 不负责替 `fin` 做隐式切换
 4. fin 必须能把 LiteLLM 的执行结果正规化为结构化事件
 
-### 4.2 当前不做 routing / fallback
+### 4.2 当前不做 routing / implicit switch
 
 当前阶段冻结：
 
 1. provider 请求只根据显式 `provider.model` 发送
 2. 不做自动 routing
-3. 不做隐式 fallback
+3. 不做隐式切换
 4. 若配置了多个 provider path，只允许按 `priority` 顺序选择一个发送目标
 
 ---
@@ -397,7 +397,7 @@ consumer 只负责订阅与聚合，不得回写事实。
 2. 不同 agent 可以绑定不同 provider policy
 3. `fin` 不自己做多协议 adapter，统一对接 LiteLLM
 4. provider 当前不做 routing，只按显式 `provider.model` 请求
-5. provider 当前不做 fallback
+5. provider 当前不做隐式切换
 6. 多 provider path 当前只支持 `priority` 策略
 7. 若未来扩展策略，必须作为独立可插拔模块
 8. 请求是 operation，响应是 event

@@ -2,25 +2,32 @@ use fin_shared::require_non_empty;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
+mod activity_cards;
 mod context;
 mod daemon;
 mod feedback;
+mod owner_loop;
 mod records;
 
+pub use activity_cards::{
+    ActivityCardsSnapshot, ActivitySourceSummary, SourceActivityCardView, ToolSemanticView,
+    UserActivityCardView,
+};
 pub use context::{
     ContextControlBlock, CurrentInputBlock, DaemonStateSummary, HistoryBlock,
-    KnowledgeArtifactBlock, MinimalContextView, PeerBindingSummary, PeerContextBlock,
-    PeerDescriptorSummary, ProjectContextBlock, ProjectRef, PromptLayerSummary, PromptModuleEntry,
-    RolePromptBlock, ToolCatalogBlock, ToolCatalogEntry,
+    InputAttachmentSummary, KnowledgeArtifactBlock, MinimalContextView, PeerBindingSummary,
+    PeerContextBlock, PeerDescriptorSummary, ProjectContextBlock, ProjectRef, PromptLayerSummary,
+    PromptModuleEntry, RolePromptBlock, ToolCatalogBlock, ToolCatalogEntry,
 };
-pub use daemon::{DaemonRecoveryActionRecord, DaemonStateRecord};
+pub use daemon::{DaemonEnsurePeerRequestRecord, DaemonRecoveryActionRecord, DaemonStateRecord};
 pub use feedback::ControlFeedback;
+pub use owner_loop::OwnerLoopActionRecord;
 pub use records::{
-    ClosureTraceRecord, ExecutionStateRecord, InterruptedSegmentRecord, PauseCheckpointRecord,
-    PendingInputRecord, ProviderRequestRecord, ProviderResponseRecord, ReasoningViewRecord,
-    RoundRecord, RoutingActionRecord, RoutingDecisionRecord, SchedulerDecisionRecord,
-    SchedulerTickRecord, SegmentMergeRecord, StepRecord, SupervisorCycleRecord,
-    SupervisorHeartbeatRecord, ToolExecutionRecord, TurnRecord,
+    ClosureTraceRecord, ExecutionCheckpointRecord, ExecutionStateRecord, InterruptedSegmentRecord,
+    PauseCheckpointRecord, PendingInputRecord, ProviderRequestRecord, ProviderResponseRecord,
+    ReasoningViewRecord, RoundRecord, RoutingActionRecord, RoutingDecisionRecord,
+    SchedulerDecisionRecord, SchedulerTickRecord, SegmentMergeRecord, StepRecord,
+    SupervisorCycleRecord, SupervisorHeartbeatRecord, ToolExecutionRecord, TurnRecord,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
@@ -477,7 +484,7 @@ mod tests {
             latest_provider_activity: Some("provider.request_started".into()),
             latest_provider_user_agent: Some("opencode/1.2.27".into()),
             latest_provider_header_names: vec!["user-agent".into(), "x-api-key".into()],
-            latest_control_origin: Some("runtime_heuristic".into()),
+            latest_control_origin: Some("runtime_observation_only_v1".into()),
             latest_continuity_confidence: Some(92),
             latest_topic_shift_confidence: Some(8),
             latest_simple_query_confidence: Some(15),

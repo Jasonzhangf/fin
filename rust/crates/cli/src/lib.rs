@@ -1,6 +1,18 @@
+mod agent_presence;
+#[cfg(test)]
+mod agent_presence_tests;
+mod agent_registry_status;
+mod assignment_runtime_resume;
+mod attached_control_plane;
+#[cfg(test)]
+mod attached_control_plane_tests;
 mod channel_peer;
+mod channel_peer_activity_delivery;
+mod channel_peer_activity_signature;
 mod channel_peer_commands;
 mod channel_peer_connectivity;
+mod channel_peer_conversations;
+mod channel_peer_qqbot_bridge;
 mod channel_peer_store;
 #[cfg(test)]
 mod channel_peer_tests;
@@ -10,19 +22,39 @@ mod command;
 mod config;
 mod control_boundary_demo;
 mod daemon_state;
+mod daemon_state_support;
 #[cfg(test)]
 mod daemon_state_tests;
 mod demo;
 mod error;
+mod execution_checkpoint;
 mod execution_segments;
 mod execution_state;
+mod formalize_planning;
 mod fs_utils;
+mod headless_daemon;
+mod headless_daemon_project_resume;
+#[cfg(test)]
+mod headless_daemon_tests;
 mod install_flow;
 mod install_smoke;
 mod local_command_notice;
 mod mainline_demo;
 mod process_utils;
+mod project_execution_handoff;
+mod project_recovery;
+mod project_runtime_pickup;
+#[cfg(test)]
+mod project_runtime_pickup_tests;
+mod project_runtime_resume;
+#[cfg(test)]
+mod project_runtime_resume_tests;
+mod project_supervision;
+mod provider_live_smoke;
+mod qqbot_live_receipt;
 mod reminder_scheduler;
+mod routing_prompt_state;
+mod runtime_current_snapshot;
 mod runtime_home;
 mod scheduler_driver;
 #[cfg(test)]
@@ -30,7 +62,14 @@ mod scheduler_driver_tests;
 mod scheduler_tick;
 #[cfg(test)]
 mod scheduler_tick_tests;
+mod session_binding;
 mod session_commands;
+mod session_routing_commands;
+mod startup_control_summary;
+mod startup_daemon_ensure;
+mod startup_project_task_scan;
+mod startup_topology;
+mod startup_wakeup;
 mod status_probe;
 mod supervisor_cycle;
 #[cfg(test)]
@@ -43,9 +82,15 @@ mod transcript;
 mod turn_ids;
 mod versioning;
 mod web_debug;
+mod web_debug_entry;
+mod web_debug_support;
 
+#[cfg(test)]
+mod test_env;
 #[cfg(test)]
 mod tests;
 
 pub use cli::{run, run_with_runtime_home};
 pub use error::CliError;
+
+mod headless_daemon_bridge;

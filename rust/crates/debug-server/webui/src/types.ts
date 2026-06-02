@@ -100,6 +100,72 @@ export interface ToolExecutionRecord extends JsonRecord {
   side_effects?: string[];
 }
 
+export interface ToolSemanticView extends JsonRecord {
+  tool_call_id?: string;
+  operation_id?: string;
+  tool_name?: string;
+  category?: string;
+  verb?: string;
+  object_kind?: string;
+  object_label?: string;
+  summary?: string;
+  detail?: string | null;
+  status?: string;
+  started_at?: string;
+  ended_at?: string | null;
+  artifact_refs?: string[];
+}
+
+export interface ActivitySourceSummary extends JsonRecord {
+  source_id?: string;
+  title?: string;
+  state?: string;
+  summary?: string;
+  visibility?: string;
+  auto_promoted?: boolean;
+}
+
+export interface SourceActivityCardView extends JsonRecord {
+  source_id?: string;
+  source_kind?: string;
+  title?: string;
+  visibility?: string;
+  state?: string;
+  summary?: string;
+  focus_label?: string | null;
+  auto_promoted?: boolean;
+  current_activity?: string | null;
+  recent_actions?: ToolSemanticView[];
+  waiting_detail?: string | null;
+  failure_detail?: string | null;
+  session_id?: string | null;
+  task_id?: string | null;
+  updated_at?: string;
+}
+
+export interface UserActivityCardView extends JsonRecord {
+  owner_source_id?: string;
+  header?: string;
+  state?: string;
+  focus_source_id?: string | null;
+  focus_summary?: string | null;
+  stage?: string | null;
+  recent_items?: string[];
+  active_sources?: ActivitySourceSummary[];
+  waiting_detail?: string | null;
+  failure_detail?: string | null;
+  updated_at?: string;
+}
+
+export interface ActivityCardsSnapshot extends JsonRecord {
+  session_id?: string | null;
+  task_id?: string | null;
+  generated_at?: string;
+  user_card?: UserActivityCardView | null;
+  source_cards?: SourceActivityCardView[];
+  tool_semantics?: ToolSemanticView[];
+}
+
 export interface ClosureTraceRecord extends JsonRecord {
   closure_id?: string;
   digest_id?: string;
@@ -107,6 +173,17 @@ export interface ClosureTraceRecord extends JsonRecord {
   trace_id?: string;
   created_at?: string;
   assistant_response?: string;
+}
+
+export interface TurnRecord extends JsonRecord {
+  turn_id?: string;
+  operation_id?: string;
+  status?: string;
+  user_input?: string;
+  assistant_visible_output?: string | null;
+  progress_summary?: string | null;
+  created_at?: string;
+  completed_at?: string | null;
 }
 
 export interface FocusTurn {
@@ -154,6 +231,14 @@ export interface RefreshState {
   recentReasoningViews: ReasoningViewRecord[];
   recentToolRecords: ToolExecutionRecord[];
   recentClosures: ClosureTraceRecord[];
+  recentTurns: TurnRecord[];
+  activityCards: ActivityCardsSnapshot | null;
+  currentExecutionState: JsonRecord | null;
+  currentPendingInputs: JsonRecord[];
+  currentPauseCheckpoint: JsonRecord | null;
+  currentInterruptedSegment: JsonRecord | null;
+  currentSegmentMerge: JsonRecord | null;
+  currentRoutingDecision: JsonRecord | null;
   messages: SessionMessage[];
   focusTurns: FocusTurn[];
   selectedOperationId: string | null;

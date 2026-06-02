@@ -6,9 +6,15 @@ use std::collections::BTreeMap;
 use thiserror::Error;
 
 mod http_client;
+mod hub_pipeline;
+#[cfg(test)]
+mod hub_pipeline_static_tests;
+mod provider_facade;
+mod provider_static;
 
 const DEFAULT_USER_AGENT: &str = "fin-coding-agent/0.1";
 const MAX_REQUEST_ATTEMPTS: usize = 3;
+const ANTHROPIC_MAX_OUTPUT_TOKENS: u64 = 2048;
 
 #[derive(Debug, Error, PartialEq, Eq)]
 pub enum ProviderError {
@@ -26,6 +32,8 @@ pub enum ProviderError {
     Request { message: String },
     #[error("response parse failed: {message}")]
     ParseResponse { message: String },
+    #[error("invalid resolve override '{entry}': {message}")]
+    InvalidResolveOverride { entry: String, message: String },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -48,6 +56,12 @@ pub struct ProviderRequest {
     pub input: String,
     pub rendered_input: Option<String>,
     pub override_model: Option<String>,
+    #[serde(default)]
+    pub tools: Vec<ProviderToolSpec>,
+    #[serde(default)]
+    pub prior_tool_calls: Vec<ProviderToolCall>,
+    #[serde(default)]
+    pub tool_results: Vec<ProviderToolResult>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -60,6 +74,12 @@ pub struct PreparedRequest {
     pub rendered_input: String,
     pub user_agent: Option<String>,
     pub sanitized_headers: BTreeMap<String, String>,
+    #[serde(default)]
+    pub tools: Vec<ProviderToolSpec>,
+    #[serde(default)]
+    pub prior_tool_calls: Vec<ProviderToolCall>,
+    #[serde(default)]
+    pub tool_results: Vec<ProviderToolResult>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -70,6 +90,31 @@ pub struct ProviderResponse {
     pub response_id: Option<String>,
     pub stop_reason: Option<String>,
     pub status: u16,
+    #[serde(default)]
+    pub tool_calls: Vec<ProviderToolCall>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ProviderToolSpec {
+    pub name: String,
+    pub description: String,
+    pub input_schema: Value,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ProviderToolCall {
+    pub tool_call_id: String,
+    pub name: String,
+    pub arguments: Value,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ProviderToolResult {
+    pub tool_call_id: String,
+    pub name: String,
+    pub content: String,
+    #[serde(default)]
+    pub is_error: bool,
 }
 
 impl ProviderDescriptor {
@@ -99,6 +144,9 @@ impl ProviderDescriptor {
                 .unwrap_or_else(|| request.input.clone()),
             user_agent: None,
             sanitized_headers: BTreeMap::new(),
+            tools: request.tools.clone(),
+            prior_tool_calls: request.prior_tool_calls.clone(),
+            tool_results: request.tool_results.clone(),
         }
     }
 }
@@ -178,36 +226,10 @@ pub trait InferenceProvider {
     ) -> Result<ProviderResponse, ProviderError>;
 }
 
-#[derive(Debug, Clone)]
-pub struct StaticProviderClient {
-    descriptor: ProviderDescriptor,
-}
+// ProviderFacade, StaticProviderClient, and StructuredStaticProviderClient
+// implementations are in their own modules: provider_facade.rs and provider_static.rs
 
-impl StaticProviderClient {
-    pub fn new(descriptor: ProviderDescriptor) -> Self {
-        Self { descriptor }
-    }
-}
-
-impl InferenceProvider for StaticProviderClient {
-    fn descriptor(&self) -> &ProviderDescriptor {
-        &self.descriptor
-    }
-
-    fn execute_prepared(
-        &self,
-        request: &PreparedRequest,
-    ) -> Result<ProviderResponse, ProviderError> {
-        Ok(ProviderResponse {
-            provider_name: request.provider_name.clone(),
-            model: request.model.clone(),
-            output_text: format!("simulated response for {}", request.input),
-            response_id: Some("simulated-response".into()),
-            stop_reason: Some("end_turn".into()),
-            status: 200,
-        })
-    }
-}
+pub use provider_static::{StaticProviderClient, StructuredStaticProviderClient};
 
 #[derive(Debug, Clone)]
 pub struct ProviderFacade {
@@ -215,274 +237,8 @@ pub struct ProviderFacade {
     credential: ProviderCredential,
     user_agent: Option<String>,
     headers: BTreeMap<String, String>,
-}
-
-impl ProviderFacade {
-    pub fn from_resolved(config: &ResolvedProviderConfig) -> Self {
-        Self {
-            descriptor: ProviderDescriptor::from_resolved(config),
-            credential: config.credential.clone(),
-            user_agent: config.user_agent.clone(),
-            headers: config.headers.clone(),
-        }
-    }
-
-    fn resolve_api_key(&self) -> Result<String, ProviderError> {
-        match &self.credential {
-            ProviderCredential::DirectApiKey { api_key } => Ok(api_key.clone()),
-            ProviderCredential::ApiKeyEnv { env_var } => {
-                std::env::var(env_var).map_err(|_| ProviderError::MissingCredentialEnv {
-                    env_var: env_var.clone(),
-                })
-            }
-        }
-    }
-
-    fn execute_anthropic(
-        &self,
-        request: &PreparedRequest,
-    ) -> Result<ProviderResponse, ProviderError> {
-        let client = http_client::build_client()?;
-        let api_key = self.resolve_api_key()?;
-        let headers = self.build_anthropic_headers(&api_key)?;
-        let payload = serde_json::json!({
-            "model": request.model,
-            "max_tokens": 256,
-            "messages": [
-                {
-                    "role": "user",
-                    "content": request.rendered_input,
-                }
-            ]
-        });
-        let mut last_retryable_error = None;
-
-        for attempt in 1..=MAX_REQUEST_ATTEMPTS {
-            let response = match client
-                .post(&request.endpoint)
-                .headers(headers.clone())
-                .json(&payload)
-                .send()
-            {
-                Ok(response) => response,
-                Err(err) => {
-                    let failure = http_client::classify_reqwest_error(
-                        err,
-                        "send",
-                        &request.endpoint,
-                        attempt,
-                        MAX_REQUEST_ATTEMPTS,
-                    );
-                    if failure.retryable && attempt < MAX_REQUEST_ATTEMPTS {
-                        last_retryable_error = Some(failure.message);
-                        continue;
-                    }
-                    return Err(ProviderError::Request {
-                        message: failure.message,
-                    });
-                }
-            };
-
-            let status = response.status().as_u16();
-            let body = match response.text() {
-                Ok(body) => body,
-                Err(err) => {
-                    let failure = http_client::classify_reqwest_error(
-                        err,
-                        "read_body",
-                        &request.endpoint,
-                        attempt,
-                        MAX_REQUEST_ATTEMPTS,
-                    );
-                    if failure.retryable && attempt < MAX_REQUEST_ATTEMPTS {
-                        last_retryable_error = Some(failure.message);
-                        continue;
-                    }
-                    return Err(ProviderError::Request {
-                        message: failure.message,
-                    });
-                }
-            };
-
-            if status >= 400 {
-                return Err(ProviderError::HttpStatus { status, body });
-            }
-
-            return parse_anthropic_response(request, status, &body);
-        }
-
-        Err(ProviderError::Request {
-            message: last_retryable_error.unwrap_or_else(|| {
-                format!(
-                    "request failed after {MAX_REQUEST_ATTEMPTS} attempts; endpoint={}",
-                    request.endpoint
-                )
-            }),
-        })
-    }
-
-    fn build_anthropic_headers(&self, api_key: &str) -> Result<HeaderMap, ProviderError> {
-        let mut headers = self.build_custom_headers()?;
-        headers.insert(CONTENT_TYPE, HeaderValue::from_static("application/json"));
-        headers.insert(ACCEPT, HeaderValue::from_static("application/json"));
-        headers.insert(
-            HeaderName::from_static("x-api-key"),
-            HeaderValue::from_str(api_key).map_err(|err| ProviderError::InvalidHeader {
-                name: "x-api-key".into(),
-                message: err.to_string(),
-            })?,
-        );
-        headers.insert(
-            HeaderName::from_static("anthropic-version"),
-            HeaderValue::from_static("2023-06-01"),
-        );
-        headers.insert(
-            USER_AGENT,
-            HeaderValue::from_str(self.effective_user_agent()).map_err(|err| {
-                ProviderError::InvalidHeader {
-                    name: "user-agent".into(),
-                    message: err.to_string(),
-                }
-            })?,
-        );
-        Ok(headers)
-    }
-
-    fn build_custom_headers(&self) -> Result<HeaderMap, ProviderError> {
-        let mut headers = HeaderMap::new();
-        for (name, value) in &self.headers {
-            let header_name = HeaderName::from_bytes(name.as_bytes()).map_err(|err| {
-                ProviderError::InvalidHeader {
-                    name: name.clone(),
-                    message: err.to_string(),
-                }
-            })?;
-            let header_value =
-                HeaderValue::from_str(value).map_err(|err| ProviderError::InvalidHeader {
-                    name: name.clone(),
-                    message: err.to_string(),
-                })?;
-            headers.insert(header_name, header_value);
-        }
-        Ok(headers)
-    }
-
-    fn build_sanitized_request_headers(&self) -> BTreeMap<String, String> {
-        let mut headers = BTreeMap::new();
-        for (name, value) in &self.headers {
-            if is_reserved_runtime_header(name) {
-                continue;
-            }
-            headers.insert(name.clone(), sanitize_header_value(name, value));
-        }
-        headers.insert("user-agent".into(), self.effective_user_agent().into());
-        if self.descriptor.protocol == ProviderProtocol::AnthropicWire {
-            headers.insert("accept".into(), "application/json".into());
-            headers.insert("content-type".into(), "application/json".into());
-            headers.insert("anthropic-version".into(), "2023-06-01".into());
-            headers.insert("x-api-key".into(), "<redacted>".into());
-        }
-        headers
-    }
-
-    fn effective_user_agent(&self) -> &str {
-        self.user_agent.as_deref().unwrap_or(DEFAULT_USER_AGENT)
-    }
-}
-
-fn is_reserved_runtime_header(name: &str) -> bool {
-    matches!(
-        name.trim().to_ascii_lowercase().as_str(),
-        "x-api-key" | "anthropic-version" | "content-type" | "accept" | "user-agent"
-    )
-}
-
-fn sanitize_header_value(name: &str, value: &str) -> String {
-    let name = name.trim().to_ascii_lowercase();
-    if ["authorization", "x-api-key", "cookie"]
-        .iter()
-        .any(|candidate| name == *candidate)
-        || ["token", "secret", "apikey", "api-key", "auth"]
-            .iter()
-            .any(|needle| name.contains(needle))
-    {
-        "<redacted>".into()
-    } else {
-        value.into()
-    }
-}
-
-impl InferenceProvider for ProviderFacade {
-    fn descriptor(&self) -> &ProviderDescriptor {
-        &self.descriptor
-    }
-
-    fn prepare_request(&self, request: &ProviderRequest) -> PreparedRequest {
-        PreparedRequest {
-            provider_name: self.descriptor.name.clone(),
-            protocol: self.descriptor.protocol,
-            endpoint: endpoint_for_protocol(&self.descriptor.base_url, self.descriptor.protocol),
-            model: request
-                .override_model
-                .clone()
-                .unwrap_or_else(|| self.descriptor.default_model.clone()),
-            input: request.input.clone(),
-            rendered_input: request
-                .rendered_input
-                .clone()
-                .unwrap_or_else(|| request.input.clone()),
-            user_agent: Some(self.effective_user_agent().into()),
-            sanitized_headers: self.build_sanitized_request_headers(),
-        }
-    }
-
-    fn execute_prepared(
-        &self,
-        request: &PreparedRequest,
-    ) -> Result<ProviderResponse, ProviderError> {
-        match self.descriptor.protocol {
-            ProviderProtocol::AnthropicWire => self.execute_anthropic(request),
-            protocol => Err(ProviderError::UnsupportedProtocol { protocol }),
-        }
-    }
-}
-
-fn parse_anthropic_response(
-    request: &PreparedRequest,
-    status: u16,
-    body: &str,
-) -> Result<ProviderResponse, ProviderError> {
-    let parsed: Value = serde_json::from_str(body).map_err(|err| ProviderError::ParseResponse {
-        message: err.to_string(),
-    })?;
-    let output_text = parsed
-        .get("content")
-        .and_then(Value::as_array)
-        .map(|items| {
-            items
-                .iter()
-                .filter_map(|item| {
-                    item.get("type")
-                        .and_then(Value::as_str)
-                        .filter(|kind| *kind == "text")
-                        .and_then(|_| item.get("text"))
-                        .and_then(Value::as_str)
-                })
-                .collect::<String>()
-        })
-        .unwrap_or_default();
-
-    Ok(ProviderResponse {
-        provider_name: request.provider_name.clone(),
-        model: request.model.clone(),
-        output_text,
-        response_id: parsed.get("id").and_then(Value::as_str).map(str::to_string),
-        stop_reason: parsed
-            .get("stop_reason")
-            .and_then(Value::as_str)
-            .map(str::to_string),
-        status,
-    })
+    resolve_overrides: BTreeMap<String, std::net::IpAddr>,
+    resolve_override_error: Option<String>,
 }
 
 #[cfg(test)]

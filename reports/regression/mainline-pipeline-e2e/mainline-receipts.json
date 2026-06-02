@@ -1,0 +1,189 @@
+{
+  "schema_version": "fin.receipt.mainline.v1",
+  "generated_at": "2026-06-02T22:19:17+08:00",
+  "build_version": "0.1.0-pipeline-e2e",
+  "runtime_home": "/Users/fanzhang/.fin",
+  "report_dir": "/Volumes/extension/code/fin/reports/regression/mainline-pipeline-e2e",
+  "source_session_id": "session-mainline-scenario-mainline",
+  "source_session_path": "sessions/2026/06/session-mainline-scenario-mainline",
+  "receipts": [
+    {
+      "receipt_id": "history_context",
+      "kind": "history_context",
+      "status": "passed",
+      "source_session_id": "session-mainline-scenario-mainline",
+      "source_session_path": "sessions/2026/06/session-mainline-scenario-mainline",
+      "supporting_paths": [
+        "sessions/2026/06/session-mainline-scenario-mainline/conversation/messages.json",
+        "sessions/2026/06/session-mainline-scenario-mainline/context/recent_contexts.json",
+        "sessions/2026/06/session-mainline-scenario-mainline/steps/recent_steps.json",
+        "sessions/2026/06/session-mainline-scenario-mainline/rounds/recent_rounds.json"
+      ],
+      "summary": {
+        "operation_count": 3,
+        "round_count": 4,
+        "message_count": 6,
+        "user_message_count": 3,
+        "assistant_message_count": 3,
+        "first_continuity_tail_messages": 0,
+        "max_continuity_tail_messages": 4,
+        "latest_continuity_tail_messages": 4,
+        "latest_tail_preview": [
+          "请记住代号 BANANA-42，并且只回复 记住了",
+          "记住了",
+          "请保持简短，只回复 继续",
+          "继续"
+        ],
+        "latest_input": "先检查 peer 再结束",
+        "ignored_auxiliary_context_records": 0,
+        "continuity_growth": [
+          {
+            "operation_id": "op-mainline-scenario-mainline-0001",
+            "continuity_tail_messages": 0,
+            "tail_preview": [],
+            "input": "请记住代号 BANANA-42，并且只回复 记住了"
+          },
+          {
+            "operation_id": "op-mainline-scenario-mainline-0002",
+            "continuity_tail_messages": 2,
+            "tail_preview": [
+              "请记住代号 BANANA-42，并且只回复 记住了",
+              "记住了"
+            ],
+            "input": "请保持简短，只回复 继续"
+          },
+          {
+            "operation_id": "op-mainline-scenario-mainline-0003",
+            "continuity_tail_messages": 4,
+            "tail_preview": [
+              "请记住代号 BANANA-42，并且只回复 记住了",
+              "记住了",
+              "请保持简短，只回复 继续",
+              "继续"
+            ],
+            "input": "先检查 peer 再结束"
+          }
+        ],
+        "context_build_steps": [
+          {
+            "operation_id": "op-mainline-scenario-mainline-0001",
+            "step_id": "step-op-mainline-scenario-mainline-0001-01-context_build",
+            "step_index": 1,
+            "summary": "assembled context for role=project with continuity_tail=0 messages"
+          },
+          {
+            "operation_id": "op-mainline-scenario-mainline-0002",
+            "step_id": "step-op-mainline-scenario-mainline-0002-01-context_build",
+            "step_index": 1,
+            "summary": "assembled context for role=project with continuity_tail=2 messages"
+          },
+          {
+            "operation_id": "op-mainline-scenario-mainline-0003",
+            "step_id": "step-op-mainline-scenario-mainline-0003-01-context_build",
+            "step_index": 1,
+            "summary": "assembled context for role=project with continuity_tail=4 messages"
+          }
+        ]
+      }
+    },
+    {
+      "receipt_id": "auto_tool_roundtrip",
+      "kind": "auto_tool_roundtrip",
+      "status": "passed",
+      "source_session_id": "session-mainline-scenario-mainline",
+      "source_session_path": "sessions/2026/06/session-mainline-scenario-mainline",
+      "supporting_paths": [
+        "sessions/2026/06/session-mainline-scenario-mainline/rounds/recent_rounds.json",
+        "sessions/2026/06/session-mainline-scenario-mainline/steps/recent_steps.json",
+        "sessions/2026/06/session-mainline-scenario-mainline/events/stream.jsonl",
+        "sessions/2026/06/session-mainline-scenario-mainline/tools/recent_tool_records.json"
+      ],
+      "summary": {
+        "multi_round_operation_ids": [
+          "op-mainline-scenario-mainline-0003"
+        ],
+        "max_rounds_in_operation": 2,
+        "roundtrip_event_count": 1,
+        "tool_record_count": 8,
+        "tool_dispatch_steps": [
+          {
+            "operation_id": "op-mainline-scenario-mainline-0001",
+            "step_id": "step-op-mainline-scenario-mainline-0001-05-tool_dispatch",
+            "step_index": 5,
+            "summary": "round 1 attempt 1 executed 1 tool calls, parse_status=exact, stop_requested=true, reminder_scheduled=false"
+          },
+          {
+            "operation_id": "op-mainline-scenario-mainline-0002",
+            "step_id": "step-op-mainline-scenario-mainline-0002-05-tool_dispatch",
+            "step_index": 5,
+            "summary": "round 1 attempt 1 executed 1 tool calls, parse_status=exact, stop_requested=true, reminder_scheduled=false"
+          },
+          {
+            "operation_id": "op-mainline-scenario-mainline-0003",
+            "step_id": "step-op-mainline-scenario-mainline-0003-05-tool_dispatch",
+            "step_index": 5,
+            "summary": "round 1 attempt 1 executed 1 tool calls, parse_status=exact, stop_requested=false, reminder_scheduled=false"
+          },
+          {
+            "operation_id": "op-mainline-scenario-mainline-0003",
+            "step_id": "step-op-mainline-scenario-mainline-0003-09-tool_dispatch",
+            "step_index": 9,
+            "summary": "round 2 attempt 1 executed 1 tool calls, parse_status=exact, stop_requested=true, reminder_scheduled=false"
+          }
+        ]
+      }
+    },
+    {
+      "receipt_id": "control_boundary",
+      "kind": "control_boundary",
+      "status": "passed",
+      "source_session_id": "session-mainline-scenario-mainline",
+      "source_session_path": "sessions/2026/06/session-mainline-scenario-mainline",
+      "supporting_paths": [
+        "sessions/2026/06/session-mainline-scenario-mainline/events/stream.jsonl",
+        "sessions/2026/06/session-mainline-scenario-mainline/conversation/messages.json",
+        "runtime/reminders/pending.json",
+        "runtime/current/current_execution_state.json"
+      ],
+      "summary": {
+        "present_families": [
+          "events_stream",
+          "runtime_current_execution_state",
+          "runtime_pending_reminders",
+          "session_messages"
+        ],
+        "queue_pending_inputs": 0,
+        "interrupt_segment_records": 0,
+        "interrupt_open_segments": 0,
+        "interrupt_merged_segments": 0,
+        "interrupt_merge_records": 0,
+        "pause_checkpoint_present": false,
+        "scheduler_action": null,
+        "scheduler_reason": null,
+        "tick_source": null,
+        "tick_drove_count": null,
+        "tick_initial_pending": null,
+        "tick_final_pending": null,
+        "supervisor_source": null,
+        "supervisor_drove_count": null,
+        "supervisor_pending_before": null,
+        "supervisor_pending_after": null,
+        "supervisor_blocked_kind": null,
+        "recent_tick_sources": [],
+        "recent_supervisor_sources": [],
+        "recent_heartbeat_statuses": [],
+        "waiting_external_observed": false,
+        "reminder_scheduled_observed": false,
+        "reminder_fired_observed": false,
+        "heartbeat_due_observed": false,
+        "stale_lease_observed": false,
+        "system_reminder_messages": 0,
+        "fired_reminder_records": 8,
+        "heartbeat_status": null,
+        "daemon_state": null,
+        "daemon_recovery_action": null,
+        "execution_phase": null
+      }
+    }
+  ]
+}

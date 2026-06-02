@@ -35,13 +35,21 @@ M1-A 当前先冻结七类最小 contract：
 1. `docs/contracts/provider-operation-contract.md`
 2. `docs/contracts/provider-event-contract.md`
 3. `docs/contracts/prompt-module-contract.md`
-4. `docs/contracts/reasoning-view-contract.md`
-5. `docs/contracts/tool-execution-record-contract.md`
-6. `docs/contracts/turn-record-contract.md`
-7. `docs/contracts/step-ledger-contract.md`
-8. `docs/contracts/digest-family-contract.md`
-9. `docs/contracts/context-rebuild-index-contract.md`
-10. `docs/contracts/peer-routing-feedback-contract.md`
+4. `docs/contracts/agent-taxonomy-contract.md`
+5. `docs/contracts/reasoning-view-contract.md`
+6. `docs/contracts/tool-execution-record-contract.md`
+7. `docs/contracts/turn-record-contract.md`
+8. `docs/contracts/step-ledger-contract.md`
+9. `docs/contracts/digest-family-contract.md`
+10. `docs/contracts/context-rebuild-index-contract.md`
+11. `docs/contracts/peer-routing-feedback-contract.md`
+12. `docs/contracts/model-output-repair-contract.md`
+
+补充冻结说明：
+
+- output contract retry 属于 runtime-owned control loop
+- `RoundRecord` 表示 logical round
+- retry 期间的每次 provider attempt 必须以 `ProviderRequestRecord/ProviderResponseRecord` 的 `attempt_index` 持久化
 
 ## crate 真源
 

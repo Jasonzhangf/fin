@@ -1,8 +1,48 @@
+use crate::tool_catalog_task_tools::build_project_task_model_tools;
 use fin_contracts::{ToolCatalogBlock, ToolCatalogEntry};
 
 pub(super) fn build_tool_catalog_block() -> ToolCatalogBlock {
     ToolCatalogBlock {
         model_tools: vec![
+            model_tool(
+                "update_plan",
+                "persist one structured execution plan update",
+                "record step/status progress as durable plan truth for the current runtime and session",
+                vec![
+                    "the task needs an explicit step plan or a plan status refresh".into(),
+                    "you want progress to persist structured steps instead of only free-form notes"
+                        .into(),
+                ],
+                vec![
+                    "the task is a one-shot simple answer with no concrete steps".into(),
+                    "you do not yet know the actual steps or statuses".into(),
+                ],
+                "steps[{step,status}] + optional explanation".into(),
+                "plan update receipt + persisted current plan artifact".into(),
+                vec![
+                    "writes current plan artifact under runtime/session truth".into(),
+                    "emits structured plan update event".into(),
+                ],
+                vec!["record plan: inspect code -> patch runtime -> run tests".into()],
+            ),
+            model_tool(
+                "session.list",
+                "list recently known sessions under the current runtime home",
+                "inspect reusable sessions before deciding whether to resume, compare, or report previous work threads",
+                vec![
+                    "you need to discover existing sessions or recent session ids".into(),
+                    "the user asks whether there is prior work history or resumable threads"
+                        .into(),
+                ],
+                vec![
+                    "the current turn already has the exact target session id".into(),
+                    "session discovery is irrelevant to the current task".into(),
+                ],
+                "optional limit".into(),
+                "recent session ids + short summary count".into(),
+                vec!["reads runtime_home/sessions directory".into()],
+                vec!["list the latest 10 sessions before deciding a resume strategy".into()],
+            ),
             model_tool(
                 "peer.list",
                 "list peer descriptors available to the current runtime context",
@@ -95,6 +135,71 @@ pub(super) fn build_tool_catalog_block() -> ToolCatalogBlock {
                 vec!["after finishing analysis, call reasoning.stop with concise summary".into()],
             ),
             model_tool(
+                "apply_patch",
+                "apply deterministic workspace file edits",
+                "edit one or more workspace files using Hermes-style replace mode or V4A patch text",
+                vec![
+                    "you need to modify files deterministically instead of only describing edits".into(),
+                    "you already know the exact old/new text or patch content to apply".into(),
+                ],
+                vec![
+                    "you are still exploring and do not know the concrete change yet".into(),
+                    "the edit target is outside the current project/workspace scope".into(),
+                ],
+                "mode=replace: path + old_string + new_string + replace_all? (use old_string=\"\" to create a new file) ; mode=patch: patch"
+                    .into(),
+                "patch receipt + modified file refs".into(),
+                vec![
+                    "writes workspace file content".into(),
+                    "stores patch receipt under runtime_home when available".into(),
+                ],
+                vec![
+                    "replace one exact function body in src/runtime.rs".into(),
+                    "create a new file with mode=replace using old_string=\"\" and the full new_string body".into(),
+                    "apply a multi-file V4A patch for a small deterministic refactor".into(),
+                ],
+            ),
+            model_tool(
+                "view_image",
+                "inspect one image attachment or local image file reference",
+                "read image attachment metadata and local file facts so the turn can reference the correct image object without guessing",
+                vec![
+                    "the current turn includes an image attachment or local image path you need to inspect".into(),
+                    "you need the exact attachment/path/size/dimensions metadata before responding or delegating".into(),
+                ],
+                vec![
+                    "the turn has no image attachment and no concrete local image path".into(),
+                    "you need full vision reasoning over pixels; M1 only exposes image reference metadata".into(),
+                ],
+                "optional path or attachment identifier; defaults to first image attachment in current input".into(),
+                "image metadata receipt + referenced artifact path/url".into(),
+                vec![
+                    "reads current attachment metadata".into(),
+                    "may stat a local image file in workspace scope".into(),
+                ],
+                vec!["inspect the first uploaded screenshot before deciding the next tool".into()],
+            ),
+            model_tool(
+                "context_history.rebuild",
+                "refresh context rebuild index from current session artifacts",
+                "recompute rebuild receipt/counts from current context artifacts when you need explicit continuity bookkeeping without a provider round-trip",
+                vec![
+                    "you need the latest rebuild receipt/counts for the active session".into(),
+                    "you want framework-visible continuity bookkeeping after a materialized context refresh".into(),
+                ],
+                vec![
+                    "the active session has no current context artifact yet".into(),
+                    "you are trying to ask the model to summarize history manually instead of using durable artifacts".into(),
+                ],
+                "optional reason".into(),
+                "rebuild receipt with recent context/digest/reasoning/tool counts".into(),
+                vec![
+                    "writes runtime/session rebuild-index artifacts".into(),
+                    "refreshes recent_contexts index from current context artifact".into(),
+                ],
+                vec!["refresh rebuild bookkeeping after a context maintenance step".into()],
+            ),
+            model_tool(
                 "exec_command",
                 "execute one bounded shell command",
                 "run a local command for discovery or validation and capture stdout/stderr summary",
@@ -127,35 +232,41 @@ pub(super) fn build_tool_catalog_block() -> ToolCatalogBlock {
             model_tool(
                 "mailbox.send",
                 "enqueue one collaboration message",
-                "send one structured note/request to another peer mailbox",
+                "send one structured note/request to another peer mailbox or project worker runtime mailbox",
                 vec!["you need asynchronous peer collaboration handoff".into()],
                 vec!["the task can be finished locally in this turn".into()],
-                "target_peer_id + message".into(),
+                "target_peer_id or target_worker_id + message".into(),
                 "mailbox message id receipt".into(),
                 vec!["writes mailbox queue artifact".into()],
-                vec!["send blocker details to project leader mailbox".into()],
+                vec![
+                    "send blocker details to project leader mailbox".into(),
+                    "send build slice result to worker-b mailbox via target_worker_id".into(),
+                ],
             ),
             model_tool(
                 "mailbox.poll",
                 "read pending collaboration messages",
-                "pull pending messages from current peer mailbox",
+                "pull pending messages from current peer mailbox or local worker runtime mailbox",
                 vec!["you need latest async collaboration updates".into()],
                 vec!["no mailbox sync is needed for this turn".into()],
-                "optional limit".into(),
+                "optional peer_id or worker_id + optional limit".into(),
                 "pending message list".into(),
                 vec!["reads mailbox queue artifact".into()],
-                vec!["poll mailbox before deciding next delegation step".into()],
+                vec![
+                    "poll mailbox before deciding next delegation step".into(),
+                    "poll worker-b mailbox after one delegated slice completes".into(),
+                ],
             ),
             model_tool(
                 "agent.assign",
-                "request one agent peer assignment",
-                "assign a bounded subtask to an agent peer",
+                "request one project-worker assignment",
+                "assign a bounded subtask to an agent peer or one project worker runtime",
                 vec!["a bounded subtask should be delegated to another peer".into()],
                 vec!["the task requires immediate local execution".into()],
-                "peer_id + task_summary".into(),
+                "peer_id or target_worker_id + task_summary".into(),
                 "assignment receipt".into(),
                 vec!["emits assignment intent event".into()],
-                vec!["assign test-only validation to reviewer peer".into()],
+                vec!["assign log validation to worker-b via target_worker_id".into()],
             ),
             model_tool(
                 "capability.invoke",
@@ -168,7 +279,10 @@ pub(super) fn build_tool_catalog_block() -> ToolCatalogBlock {
                 vec!["emits capability invoke intent/response events".into()],
                 vec!["invoke metadata capability from remote service peer".into()],
             ),
-        ],
+        ]
+        .into_iter()
+        .chain(build_project_task_model_tools())
+        .collect(),
         framework_tools: vec![
             framework_tool(
                 "provider.call",
@@ -241,17 +355,17 @@ pub(super) fn build_tool_catalog_block() -> ToolCatalogBlock {
             "only model_tools are eligible for model-selected tool use".into(),
             "peer tools are currently contract-frozen and placeholder-only until runtime dispatch is wired"
                 .into(),
+            "disabled_tools are known tool families in fin design, but they are not callable in the current runtime"
+                .into(),
             "if expected wait exceeds 1 minute, prefer wait.remind instead of busy waiting".into(),
             "do not rely on provider finish_reason for closure; use reasoning.stop when the turn should end".into(),
+            "when editing files, prefer apply_patch replace mode for one bounded exact change; use patch mode only for multi-file or add/delete/move edits".into(),
             "framework_tools are runtime-owned capabilities and must not be hallucinated as direct tool calls"
                 .into(),
             "if model_tools is empty, answer directly using current context and do not fabricate tool execution"
                 .into(),
         ],
         disabled_tools: vec![
-            "peer.list".into(),
-            "peer.describe".into(),
-            "daemon.ensure_peer".into(),
             "direct_fs_write".into(),
             "direct_channel_render".into(),
             "runtime_fact_mutation".into(),
@@ -291,7 +405,7 @@ fn framework_tool(
     }
 }
 
-fn model_tool(
+pub(super) fn model_tool(
     name: &str,
     summary: &str,
     purpose: &str,

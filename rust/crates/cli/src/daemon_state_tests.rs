@@ -1,7 +1,11 @@
 use crate::daemon_state::refresh_attached_daemon_state;
-use fin_config::RuntimeRetentionConfig;
+use fin_config::{
+    ConfigMapper, ProjectAgentMode, ProjectAgentStartupConfig, ProviderProtocol,
+    RuntimeRetentionConfig, SystemConfig, UserConfig, UserProviderConfig, UserRuntimeConfig,
+};
 use fin_debug_server::DebugBinding;
 use std::{
+    collections::BTreeMap,
     fs,
     path::{Path, PathBuf},
     sync::atomic::{AtomicU64, Ordering},
@@ -41,6 +45,43 @@ fn write_file(path: &Path, bytes: &[u8]) {
         fs::create_dir_all(parent).expect("parent");
     }
     fs::write(path, bytes).expect("write");
+}
+
+fn system() -> SystemConfig {
+    let mut system = ConfigMapper::map_user_to_system(&UserConfig {
+        default_provider: "openai".into(),
+        providers: BTreeMap::from([(
+            "openai".into(),
+            UserProviderConfig {
+                protocol: ProviderProtocol::OpenAiCompatible,
+                base_url: "https://api.example.com/v1".into(),
+                model: "gpt-5".into(),
+                api_key: None,
+                api_key_env: Some("OPENAI_API_KEY".into()),
+                user_agent: None,
+                headers: BTreeMap::new(),
+            },
+        )]),
+        runtime: UserRuntimeConfig::default(),
+    })
+    .expect("system");
+    system.runtime.device_name = Some("mbp".into());
+    system
+        .runtime
+        .startup
+        .project_agents
+        .push(ProjectAgentStartupConfig {
+            project_id: "fin".into(),
+            mode: ProjectAgentMode::Local,
+            project_root: Some("/tmp/fin".into()),
+            endpoint: None,
+            agent_name: Some("builder".into()),
+            worker_budget: 2,
+            always_on: true,
+            auto_resume: true,
+            auto_connect: true,
+        });
+    system
 }
 
 #[test]
@@ -99,6 +140,7 @@ fn refresh_attached_daemon_state_records_health_and_recovery() {
 
     let outcome = refresh_attached_daemon_state(
         &home,
+        &system(),
         &binding(&home),
         "web_debug_request",
         &RuntimeRetentionConfig::default(),
@@ -127,4 +169,193 @@ fn refresh_attached_daemon_state_records_health_and_recovery() {
         fs::read_to_string(session_dir.join("control/daemon/latest_recovery_action.json"))
             .expect("recovery");
     assert!(latest_recovery.contains("\"action_kind\": \"recover_stale_cycle\""));
+}
+
+#[test]
+fn refresh_attached_daemon_state_observes_project_recovery_need() {
+    let home = temp_runtime_home();
+    let session_dir = home.join("sessions/2026/04/session-daemon");
+    fs::create_dir_all(session_dir.join("conversation")).expect("conversation");
+    write_file(&session_dir.join("conversation/messages.json"), b"[]");
+    let project_session_dir = home.join("sessions/2026/04/session-fin");
+    fs::create_dir_all(project_session_dir.join("context")).expect("context");
+    fs::create_dir_all(project_session_dir.join("control")).expect("control");
+    write_file(
+        &project_session_dir.join("context/current_context.json"),
+        br#"{"project":{"primary_project":{"project_id":"fin"}}}"#,
+    );
+    write_file(
+        &project_session_dir.join("control/execution_state.json"),
+        br#"{
+  "state_id":"state-fin-1",
+  "session_id":"session-fin",
+  "task_id":"task-fin-1",
+  "status":"running",
+  "pending_input_count":0,
+  "accepts_user_input":false,
+  "updated_at":"2026-04-20T12:00:00+08:00"
+}"#,
+    );
+    write_file(
+        &home.join("runtime/current/current_startup_topology.json"),
+        br#"{
+  "updated_at":"2026-04-20T12:00:00+08:00",
+  "entry_role":"system",
+  "local_worker_budget":4,
+  "projects":[{
+    "project_id":"fin",
+    "agent_id":"mbp.builder",
+    "mode":"local",
+    "project_root":"/tmp/fin",
+    "endpoint":null,
+    "always_on":true,
+    "auto_resume":true,
+    "auto_connect":true,
+    "worker_budget":2,
+    "unfinished_task_count":1,
+    "last_active_task_id":"task-fin-1",
+    "presence_state":"offline",
+    "wake_state":"wake_requested",
+    "wake_reason":"unfinished_work_detected",
+    "updated_at":"2026-04-20T12:00:00+08:00"
+  }],
+  "wake_queue":[{
+    "request_id":"wake-fin-1",
+    "project_id":"fin",
+    "agent_id":"mbp.builder",
+    "reason":"unfinished_work_detected",
+    "requested_by":"framework.startup",
+    "auto_resume":true,
+    "created_at":"2026-04-20T12:00:00+08:00"
+  }]
+}"#,
+    );
+    write_file(&home.join("runtime/current/last_run.json"), b"{}");
+
+    let outcome = refresh_attached_daemon_state(
+        &home,
+        &system(),
+        &binding(&home),
+        "web_debug_request",
+        &RuntimeRetentionConfig::default(),
+        8,
+    )
+    .expect("daemon state");
+
+    let state = outcome.state.expect("state");
+    assert_ne!(state.supervision_state, "project_recovery_needed");
+    assert!(state.status_summary.contains("recovery_exec=recovered=1"));
+    let recovery = outcome.recovery_action.expect("recovery");
+    assert_eq!(recovery.action_kind, "recover_project_agents");
+    assert!(recovery.apply_immediately);
+    assert!(!state.recovery_needed);
+
+    let presence =
+        fs::read_to_string(home.join("runtime/agents/state/mbp.builder.json")).expect("presence");
+    assert!(presence.contains("\"status\": \"idle\""));
+}
+
+#[test]
+fn refresh_attached_daemon_state_materializes_runtime_pickup_summary() {
+    let home = temp_runtime_home();
+    let session_dir = home.join("sessions/2026/04/session-daemon");
+    fs::create_dir_all(session_dir.join("conversation")).expect("conversation");
+    write_file(&session_dir.join("conversation/messages.json"), b"[]");
+
+    let project_session_dir = home.join("sessions/2026/04/session-fin");
+    fs::create_dir_all(project_session_dir.join("context")).expect("context");
+    fs::create_dir_all(project_session_dir.join("control")).expect("control");
+    fs::create_dir_all(project_session_dir.join("conversation")).expect("conversation");
+    fs::create_dir_all(project_session_dir.join("tasks/registry")).expect("tasks");
+    write_file(
+        &project_session_dir.join("context/current_context.json"),
+        br#"{"project":{"primary_project":{"project_id":"fin"}}}"#,
+    );
+    write_file(
+        &project_session_dir.join("conversation/messages.json"),
+        b"[]",
+    );
+    write_file(
+        &project_session_dir.join("control/execution_state.json"),
+        br#"{
+  "state_id":"state-fin-1",
+  "session_id":"session-fin",
+  "task_id":"task-fin-1",
+  "status":"running",
+  "pending_input_count":0,
+  "accepts_user_input":false,
+  "updated_at":"2026-04-20T12:00:00+08:00"
+}"#,
+    );
+    write_file(
+        &project_session_dir.join("tasks/registry/task-fin-1.json"),
+        br#"{
+  "task_id":"task-fin-1",
+  "session_id":"session-fin",
+  "title":"task",
+  "summary":"task",
+  "status":"ready",
+  "created_at":"2026-04-20T12:00:00+08:00",
+  "updated_at":"2026-04-20T12:00:00+08:00"
+}"#,
+    );
+    write_file(
+        &home.join("runtime/current/current_startup_topology.json"),
+        br#"{
+  "updated_at":"2026-04-20T12:00:00+08:00",
+  "entry_role":"system",
+  "local_worker_budget":4,
+  "projects":[{
+    "project_id":"fin",
+    "agent_id":"mbp.builder",
+    "mode":"local",
+    "project_root":"/tmp/fin",
+    "endpoint":null,
+    "always_on":true,
+    "auto_resume":true,
+    "auto_connect":true,
+    "worker_budget":2,
+    "unfinished_task_count":1,
+    "last_active_task_id":"task-fin-1",
+    "presence_state":"offline",
+    "wake_state":"wake_requested",
+    "wake_reason":"unfinished_work_detected",
+    "updated_at":"2026-04-20T12:00:00+08:00"
+  }],
+  "wake_queue":[{
+    "request_id":"wake-fin-1",
+    "project_id":"fin",
+    "agent_id":"mbp.builder",
+    "reason":"unfinished_work_detected",
+    "requested_by":"framework.startup",
+    "auto_resume":true,
+    "created_at":"2026-04-20T12:00:00+08:00"
+  }]
+}"#,
+    );
+    write_file(&home.join("runtime/current/last_run.json"), b"{}");
+
+    let outcome = refresh_attached_daemon_state(
+        &home,
+        &system(),
+        &binding(&home),
+        "web_debug_request",
+        &RuntimeRetentionConfig::default(),
+        8,
+    )
+    .expect("daemon state");
+
+    let state = outcome.state.expect("state");
+    assert!(state.status_summary.contains("runtime_pickup=running=1"));
+
+    let runtime_pickups =
+        fs::read_to_string(home.join("runtime/current/current_project_runtime_pickups.json"))
+            .expect("runtime pickups");
+    assert!(runtime_pickups.contains("\"pickup_state\": \"running\""));
+    assert!(runtime_pickups.contains("\"project_id\": \"fin\""));
+
+    let presence =
+        fs::read_to_string(home.join("runtime/agents/state/mbp.builder.json")).expect("presence");
+    assert!(presence.contains("\"status\": \"busy\""));
+    assert!(presence.contains("\"current_phase\": \"reasoning\""));
 }

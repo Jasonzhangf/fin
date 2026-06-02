@@ -113,7 +113,7 @@ ProviderOperation
 1. LiteLLM 只作为统一 gateway
 2. `fin` 自己决定实际发送到哪个 `provider.model`
 3. 当前仅支持 `priority` 路径选择
-4. 当前不做 fallback
+4. 当前不做隐式切换
 
 未来若支持：
 

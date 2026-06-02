@@ -3,7 +3,10 @@ use crate::{
     scheduler_driver::{SchedulerDriveResult, drive_scheduler},
 };
 use fin_config::RuntimeRetentionConfig;
-use fin_contracts::{DebugVisibility, EntityRefs, EventEnvelope, SchedulerTickRecord, Severity};
+use fin_contracts::{
+    DebugVisibility, EntityRefs, EventEnvelope, InputAttachmentSummary, SchedulerTickRecord,
+    Severity,
+};
 use fin_debug_server::{ChatSendResponse, DebugBinding};
 use fin_runtime::append_framework_events;
 use serde::{Serialize, de::DeserializeOwned};
@@ -40,6 +43,8 @@ where
     F: FnMut(
         DebugBinding,
         String,
+        String,
+        Vec<InputAttachmentSummary>,
         Option<&fin_contracts::InterruptedSegmentRecord>,
     ) -> Result<ChatSendResponse, CliError>,
 {
@@ -50,6 +55,7 @@ where
             drive: SchedulerDriveResult {
                 last_response: None,
                 decisions: Vec::new(),
+                owner_loop_actions: Vec::new(),
                 drove_count: 0,
             },
         });
@@ -73,11 +79,30 @@ where
     );
     let mut framework_events = vec![started_event];
 
-    let drive = drive_scheduler(runtime_home, binding, recent_limit, &mut run_next)?;
-    for (index, decision) in drive.decisions.iter().enumerate() {
+    let drive = drive_scheduler(
+        runtime_home,
+        binding,
+        retention,
+        recent_limit,
+        &mut run_next,
+    )?;
+    for (index, action) in drive.owner_loop_actions.iter().enumerate() {
         let event = tick_event(
             &tick_id,
             (index as u64) + 2,
+            "scheduler.tick_owner_loop_action_recorded",
+            &action.created_at,
+            &refs,
+            None,
+            serde_json::to_value(action).map_err(CliError::Serialize)?,
+        );
+        framework_events.push(event);
+    }
+    let decision_sequence_start = (drive.owner_loop_actions.len() as u64) + 2;
+    for (index, decision) in drive.decisions.iter().enumerate() {
+        let event = tick_event(
+            &tick_id,
+            decision_sequence_start + (index as u64),
             "scheduler.tick_decision_recorded",
             &decision.created_at,
             &refs,
@@ -93,7 +118,7 @@ where
     if drive.drove_count > 0 {
         let event = tick_event(
             &tick_id,
-            (drive.decisions.len() as u64) + 2,
+            decision_sequence_start + (drive.decisions.len() as u64),
             "scheduler.tick_drove_pending",
             &completed_at,
             &refs,
@@ -109,7 +134,7 @@ where
     } else {
         let event = tick_event(
             &tick_id,
-            (drive.decisions.len() as u64) + 2,
+            decision_sequence_start + (drive.decisions.len() as u64),
             "scheduler.tick_blocked",
             &completed_at,
             &refs,
@@ -126,7 +151,7 @@ where
 
     let completed_event = tick_event(
         &tick_id,
-        (drive.decisions.len() as u64) + 3,
+        decision_sequence_start + (drive.decisions.len() as u64) + 1,
         "scheduler.tick_completed",
         &completed_at,
         &refs,

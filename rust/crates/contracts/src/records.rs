@@ -1,4 +1,4 @@
-use crate::EntityRefs;
+use crate::{EntityRefs, InputAttachmentSummary};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
@@ -89,6 +89,8 @@ pub struct ProviderRequestRecord {
     pub turn_id: String,
     pub step_id: String,
     pub round_index: u32,
+    #[serde(default = "default_attempt_index")]
+    pub attempt_index: u32,
     pub operation_id: String,
     pub trace_id: String,
     #[serde(flatten)]
@@ -112,6 +114,8 @@ pub struct ProviderResponseRecord {
     pub turn_id: String,
     pub step_id: String,
     pub round_index: u32,
+    #[serde(default = "default_attempt_index")]
+    pub attempt_index: u32,
     pub operation_id: String,
     pub trace_id: String,
     #[serde(flatten)]
@@ -148,6 +152,10 @@ pub struct RoundRecord {
     pub stop_requested: bool,
     pub yield_requested: bool,
     pub reminder_scheduled: bool,
+}
+
+fn default_attempt_index() -> u32 {
+    1
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -378,8 +386,6 @@ pub struct ExecutionStateRecord {
     pub active_turn_id: Option<String>,
     #[serde(default)]
     pub active_step_id: Option<String>,
-    #[serde(default)]
-    pub resume_from_step_id: Option<String>,
     pub pending_input_count: usize,
     pub accepts_user_input: bool,
     #[serde(default)]
@@ -393,7 +399,11 @@ pub struct PendingInputRecord {
     #[serde(flatten)]
     pub refs: EntityRefs,
     pub input_kind: String,
+    #[serde(default)]
+    pub source: String,
     pub message: String,
+    #[serde(default)]
+    pub attachments: Vec<InputAttachmentSummary>,
     pub status: String,
     pub enqueue_reason: String,
     pub enqueued_at: String,
@@ -411,8 +421,33 @@ pub struct PauseCheckpointRecord {
     #[serde(default)]
     pub resume_from_step_id: Option<String>,
     #[serde(default)]
+    pub resume_checkpoint_id: Option<String>,
+    #[serde(default)]
     pub reason: Option<String>,
     pub paused_at: String,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ExecutionCheckpointRecord {
+    pub checkpoint_id: String,
+    #[serde(flatten)]
+    pub refs: EntityRefs,
+    pub trace_id: String,
+    pub source_operation_id: String,
+    pub source_turn_id: String,
+    pub source_step_id: String,
+    pub checkpoint_kind: String,
+    pub status: String,
+    pub source_round_index: u32,
+    pub next_round_index: u32,
+    pub resume_input: String,
+    #[serde(default)]
+    pub summary: Option<String>,
+    pub created_at: String,
+    #[serde(default)]
+    pub consumed_at: Option<String>,
+    #[serde(default)]
+    pub consumed_by_operation_id: Option<String>,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]

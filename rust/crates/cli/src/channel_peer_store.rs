@@ -6,6 +6,7 @@ use std::{fs, io::Write, path::Path};
 const QQBOT_PEER_ID: &str = "peer-channel-gateway-qqbot-local";
 const QQBOT_PEER_KIND: &str = "channel_gateway.qqbot";
 const PEER_PROTOCOL_VERSION: &str = "fin.peer.m1";
+const PEER_EVENT_RECENT_LIMIT: usize = 512;
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 struct PeerRegistry {
@@ -110,8 +111,32 @@ pub(super) fn append_peer_event(
             path: events_path.display().to_string(),
             source,
         })?;
+    trim_peer_event_file(&events_path, PEER_EVENT_RECENT_LIMIT)?;
     state.next_event_sequence = state.next_event_sequence.saturating_add(1);
     Ok(())
+}
+
+fn trim_peer_event_file(path: &Path, limit: usize) -> Result<(), CliError> {
+    let content = fs::read_to_string(path).map_err(|source| CliError::ReadFile {
+        path: path.display().to_string(),
+        source,
+    })?;
+    let mut lines = content
+        .lines()
+        .filter(|line| !line.trim().is_empty())
+        .map(str::to_string)
+        .collect::<Vec<_>>();
+    if lines.len() <= limit {
+        return Ok(());
+    }
+    let keep_from = lines.len() - limit;
+    lines.drain(0..keep_from);
+    let mut trimmed = lines.join("\n");
+    trimmed.push('\n');
+    fs::write(path, trimmed).map_err(|source| CliError::WriteFile {
+        path: path.display().to_string(),
+        source,
+    })
 }
 
 fn ensure_peer_registry(runtime_home: &Path, state: &GatewayPeerState) -> Result<(), CliError> {

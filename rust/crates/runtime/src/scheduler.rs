@@ -1,38 +1,81 @@
 use fin_contracts::{
-    EntityRefs, ExecutionStateRecord, RoutingActionRecord, SchedulerDecisionRecord,
+    EntityRefs, ExecutionStateRecord, OwnerLoopActionRecord, PendingInputRecord,
+    RoutingActionRecord, SchedulerDecisionRecord,
 };
 
 pub fn derive_scheduler_decision(
     refs: &EntityRefs,
     state: Option<&ExecutionStateRecord>,
-    pending_input_count: usize,
+    pending_inputs: &[PendingInputRecord],
     routing_action: Option<&RoutingActionRecord>,
+    owner_loop_action: Option<&OwnerLoopActionRecord>,
     created_at: &str,
 ) -> SchedulerDecisionRecord {
     let state_status = state
         .map(|value| value.status.clone())
         .unwrap_or_else(|| "unavailable".into());
     let latest_routing_action_kind = routing_action.map(|value| value.action_kind.clone());
+    let pending_input_count = pending_inputs.len();
+    let parallel_pending_count = pending_inputs
+        .iter()
+        .filter(|value| is_parallel_pending(value))
+        .count();
 
     let (action_kind, continue_until_blocked, blocked_by, reason) = match state_status.as_str() {
         "paused" => (
-            "wait_paused",
-            false,
-            Some("paused".into()),
-            "execution is paused".into(),
+            if parallel_pending_count > 0 {
+                "run_next_parallel"
+            } else {
+                "wait_paused"
+            },
+            parallel_pending_count > 0,
+            if parallel_pending_count > 0 {
+                None
+            } else {
+                Some("paused".into())
+            },
+            if parallel_pending_count > 0 {
+                format!("paused with {parallel_pending_count} parallel user inputs ready")
+            } else {
+                "execution is paused".into()
+            },
         ),
-        "running" => (
-            "wait_running",
-            false,
-            Some("running".into()),
-            "closure is still running".into(),
-        ),
-        "waiting_external" => (
-            "wait_external",
-            false,
-            Some("waiting_external".into()),
-            "waiting external reminder or upstream result".into(),
-        ),
+        "running" => {
+            if parallel_pending_count > 0 {
+                (
+                    "run_next_parallel",
+                    true,
+                    None,
+                    format!("running with {parallel_pending_count} parallel user inputs ready"),
+                )
+            } else {
+                (
+                    "wait_running",
+                    false,
+                    Some("running".into()),
+                    "closure is still running".into(),
+                )
+            }
+        },
+        "waiting_external" => {
+            if parallel_pending_count > 0 {
+                (
+                    "run_next_parallel",
+                    true,
+                    None,
+                    format!(
+                        "waiting_external with {parallel_pending_count} parallel user inputs ready"
+                    ),
+                )
+            } else {
+                (
+                    "wait_external",
+                    false,
+                    Some("waiting_external".into()),
+                    "waiting external reminder or upstream result".into(),
+                )
+            }
+        }
         "idle" => {
             if routing_action.is_some_and(|value| value.prompt_user) {
                 (
@@ -41,12 +84,27 @@ pub fn derive_scheduler_decision(
                     Some("routing_prompt_user".into()),
                     "latest routing action requires explicit user confirmation".into(),
                 )
+            } else if parallel_pending_count > 0 {
+                (
+                    "run_next_parallel",
+                    true,
+                    None,
+                    format!("idle with {parallel_pending_count} parallel user inputs"),
+                )
             } else if pending_input_count > 0 {
                 (
                     "run_next_pending",
                     true,
                     None,
                     format!("idle with {pending_input_count} pending inputs"),
+                )
+            } else if owner_loop_action.is_some_and(is_actionable_owner_loop) {
+                let action = owner_loop_action.expect("owner loop action checked");
+                (
+                    action.action_kind.as_str(),
+                    false,
+                    Some(action.action_kind.clone()),
+                    action.reason.clone(),
                 )
             } else {
                 (
@@ -83,6 +141,23 @@ pub fn derive_scheduler_decision(
     }
 }
 
+fn is_actionable_owner_loop(action: &OwnerLoopActionRecord) -> bool {
+    matches!(
+        action.action_kind.as_str(),
+        "review_submitted_task" | "dispatch_ready_task" | "wait_worker_feedback"
+    )
+}
+
+fn is_parallel_pending(input: &PendingInputRecord) -> bool {
+    matches!(
+        input.input_kind.as_str(),
+        "parallel_chat" | "parallel_channel_ingress"
+    ) || matches!(
+        input.source.as_str(),
+        "cli.parallel_user" | "channel.parallel_user"
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -105,13 +180,35 @@ mod tests {
                 status: "idle".into(),
                 active_turn_id: None,
                 active_step_id: None,
-                resume_from_step_id: None,
                 pending_input_count: 2,
                 accepts_user_input: true,
                 reason: None,
                 updated_at: "2026-04-19T22:00:00+08:00".into(),
             }),
-            2,
+            &vec![
+                PendingInputRecord {
+                    pending_input_id: "pending-1".into(),
+                    refs: refs(),
+                    input_kind: "chat".into(),
+                    source: "cli.user".into(),
+                    message: "queued".into(),
+                    attachments: Vec::new(),
+                    status: "pending".into(),
+                    enqueue_reason: "idle".into(),
+                    enqueued_at: "2026-04-19T22:00:00+08:00".into(),
+                },
+                PendingInputRecord {
+                    pending_input_id: "pending-2".into(),
+                    refs: refs(),
+                    input_kind: "chat".into(),
+                    source: "cli.user".into(),
+                    message: "queued-2".into(),
+                    attachments: Vec::new(),
+                    status: "pending".into(),
+                    enqueue_reason: "idle".into(),
+                    enqueued_at: "2026-04-19T22:00:00+08:00".into(),
+                },
+            ],
             Some(&RoutingActionRecord {
                 action_id: "routing-action-1".into(),
                 decision_id: "routing-1".into(),
@@ -129,6 +226,7 @@ mod tests {
                 confidence: 92,
                 reason: "same task".into(),
             }),
+            None,
             "2026-04-19T22:00:00+08:00",
         );
         assert_eq!(decision.action_kind, "run_next_pending");
@@ -145,13 +243,22 @@ mod tests {
                 status: "idle".into(),
                 active_turn_id: None,
                 active_step_id: None,
-                resume_from_step_id: None,
                 pending_input_count: 1,
                 accepts_user_input: true,
                 reason: None,
                 updated_at: "2026-04-19T22:00:01+08:00".into(),
             }),
-            1,
+            &vec![PendingInputRecord {
+                pending_input_id: "pending-1".into(),
+                refs: refs(),
+                input_kind: "chat".into(),
+                source: "cli.user".into(),
+                message: "queued".into(),
+                attachments: Vec::new(),
+                status: "pending".into(),
+                enqueue_reason: "idle".into(),
+                enqueued_at: "2026-04-19T22:00:01+08:00".into(),
+            }],
             Some(&RoutingActionRecord {
                 action_id: "routing-action-2".into(),
                 decision_id: "routing-2".into(),
@@ -169,9 +276,127 @@ mod tests {
                 confidence: 81,
                 reason: "topic changed".into(),
             }),
+            None,
             "2026-04-19T22:00:01+08:00",
         );
         assert_eq!(decision.action_kind, "await_user_confirmation");
         assert_eq!(decision.blocked_by.as_deref(), Some("routing_prompt_user"));
+    }
+
+    #[test]
+    fn scheduler_prefers_pending_queue_when_idle() {
+        let decision = derive_scheduler_decision(
+            &refs(),
+            Some(&ExecutionStateRecord {
+                state_id: "exec-3".into(),
+                refs: refs(),
+                status: "idle".into(),
+                active_turn_id: Some("turn-op-1".into()),
+                active_step_id: Some("step-op-1-04-tool_dispatch".into()),
+                pending_input_count: 2,
+                accepts_user_input: true,
+                reason: Some("checkpoint ready".into()),
+                updated_at: "2026-04-20T10:00:00+08:00".into(),
+            }),
+            &vec![
+                PendingInputRecord {
+                    pending_input_id: "pending-1".into(),
+                    refs: refs(),
+                    input_kind: "chat".into(),
+                    source: "cli.user".into(),
+                    message: "queued".into(),
+                    attachments: Vec::new(),
+                    status: "pending".into(),
+                    enqueue_reason: "checkpoint".into(),
+                    enqueued_at: "2026-04-20T10:00:00+08:00".into(),
+                },
+                PendingInputRecord {
+                    pending_input_id: "pending-2".into(),
+                    refs: refs(),
+                    input_kind: "chat".into(),
+                    source: "cli.user".into(),
+                    message: "queued-2".into(),
+                    attachments: Vec::new(),
+                    status: "pending".into(),
+                    enqueue_reason: "checkpoint".into(),
+                    enqueued_at: "2026-04-20T10:00:00+08:00".into(),
+                },
+            ],
+            None,
+            None,
+            "2026-04-20T10:00:00+08:00",
+        );
+        assert_eq!(decision.action_kind, "run_next_pending");
+    }
+
+    #[test]
+    fn scheduler_runs_parallel_pending_before_wait_external_block() {
+        let decision = derive_scheduler_decision(
+            &refs(),
+            Some(&ExecutionStateRecord {
+                state_id: "exec-4".into(),
+                refs: refs(),
+                status: "waiting_external".into(),
+                active_turn_id: Some("turn-op-2".into()),
+                active_step_id: Some("step-op-2-05-finalize".into()),
+                pending_input_count: 1,
+                accepts_user_input: true,
+                reason: Some("waiting".into()),
+                updated_at: "2026-04-21T10:00:00+08:00".into(),
+            }),
+            &vec![PendingInputRecord {
+                pending_input_id: "pending-1".into(),
+                refs: refs(),
+                input_kind: "parallel_chat".into(),
+                source: "cli.parallel_user".into(),
+                message: "parallel".into(),
+                attachments: Vec::new(),
+                status: "pending".into(),
+                enqueue_reason: "waiting_external".into(),
+                enqueued_at: "2026-04-21T10:00:00+08:00".into(),
+            }],
+            None,
+            None,
+            "2026-04-21T10:00:00+08:00",
+        );
+        assert_eq!(decision.action_kind, "run_next_parallel");
+        assert!(decision.continue_until_blocked);
+    }
+
+    #[test]
+    fn scheduler_surfaces_owner_loop_action_when_idle_without_pending_inputs() {
+        let decision = derive_scheduler_decision(
+            &refs(),
+            Some(&ExecutionStateRecord {
+                state_id: "exec-5".into(),
+                refs: refs(),
+                status: "idle".into(),
+                active_turn_id: None,
+                active_step_id: None,
+                pending_input_count: 0,
+                accepts_user_input: true,
+                reason: None,
+                updated_at: "2026-04-21T10:05:00+08:00".into(),
+            }),
+            &[],
+            None,
+            Some(&OwnerLoopActionRecord {
+                action_id: "owner-loop-1".into(),
+                created_at: "2026-04-21T10:05:00+08:00".into(),
+                refs: refs(),
+                source: "managed_task_registry".into(),
+                action_kind: "review_submitted_task".into(),
+                active_task_id: Some("task-review".into()),
+                target_task_ids: vec!["task-review".into()],
+                task_status_counts: vec!["submitted=1".into()],
+                reason: "review_submitted_tasks count=1 [task-review]".into(),
+            }),
+            "2026-04-21T10:05:00+08:00",
+        );
+        assert_eq!(decision.action_kind, "review_submitted_task");
+        assert_eq!(
+            decision.blocked_by.as_deref(),
+            Some("review_submitted_task")
+        );
     }
 }

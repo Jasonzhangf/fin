@@ -43,3 +43,27 @@ pub struct DaemonRecoveryActionRecord {
     pub target_cycle_id: Option<String>,
     pub reason: String,
 }
+
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DaemonEnsurePeerRequestRecord {
+    pub request_id: String,
+    pub peer_id: String,
+    pub peer_kind: String,
+    #[serde(default)]
+    pub project_id: Option<String>,
+    #[serde(default)]
+    pub agent_name: Option<String>,
+    #[serde(default)]
+    pub mode_hint: Option<String>,
+    #[serde(default)]
+    pub project_root: Option<String>,
+    #[serde(default)]
+    pub endpoint: Option<String>,
+    pub lease_ttl_ms: u64,
+    pub requested_at: String,
+    #[serde(default)]
+    pub requested_by_worker_id: Option<String>,
+    pub status: String,
+    #[serde(default)]
+    pub consumed_at: Option<String>,
+}

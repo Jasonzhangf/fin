@@ -24,18 +24,33 @@ pub(super) fn derive_routing_action(decision: &RoutingDecisionRecord) -> Routing
             false,
             true,
             Some(match decision.candidate_task_id.as_deref() {
-                Some(task_id) => format!("框架判断你可能想切换到已有任务 {task_id}，是否切换？"),
-                None => "框架判断你可能想切换到已有任务，是否切换？".into(),
+                Some(task_id) => format!(
+                    "框架判断你可能想切换到已有任务 {task_id}。输入 /formalize 复用它，或输入 /stay 保持当前会话。"
+                ),
+                None => "框架判断你可能想切换到已有任务。输入 /formalize 复用它，或输入 /stay 保持当前会话。".into(),
             }),
             decision
                 .continuity_confidence
                 .max(100 - decision.topic_shift_confidence),
         ),
+        "candidate_new_task" => (
+            "ask_formalize_task",
+            false,
+            true,
+            Some(
+                "框架判断当前输入已经形成明确任务。输入 /formalize 创建正式任务，或输入 /stay 继续轻量对话。"
+                    .into(),
+            ),
+            decision.continuity_confidence.max(100 - decision.simple_query_confidence),
+        ),
         "candidate_topic_switch" => (
             "ask_topic_switch",
             false,
             true,
-            Some("框架判断当前话题可能已经变化，是否切换到新话题？".into()),
+            Some(
+                "框架判断当前话题可能已经变化。输入 /formalize 切到新任务/话题，或输入 /stay 继续当前主线。"
+                    .into(),
+            ),
             decision.topic_shift_confidence,
         ),
         _ => ("observe_only", false, false, None, 0),

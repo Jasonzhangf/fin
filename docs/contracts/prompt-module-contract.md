@@ -90,6 +90,12 @@ example_uses: string[]
 - 但语义必须清楚区分：
   - `model_tools`：模型可直接选择
   - `framework_tools`：框架内部能力，不可伪装为模型直接调用
+- `when_to_use / when_not_to_use / input_schema_summary / output_schema_summary / example_uses`
+  不是仅供 Web 展示的“装饰字段”，而是 prompt contract 的一部分；`ModelInputAssembler`
+  必须把这些信息真实暴露给模型，避免退化回“只有工具名 + 一句 summary”的不可调用 catalog
+- 对存在显式调用策略的工具，contract 必须把策略钉死到可见字段里。例如：
+  - `apply_patch`：默认优先 `mode=replace`（单点精确改动）
+  - 仅在多文件 / add / delete / move 时使用 `mode=patch`
 
 ---
 
@@ -148,6 +154,13 @@ selected_paths: string[]
 relative_selected_paths: string[]
 scope_summary: string | null
 focus_summary: string | null
+active_task_id: string | null
+task_board_summary: string | null
+known_task_ids: string[]
+active_agent_ids: string[]
+agent_presence_summary: string | null
+supervision_actions: string[]
+project_supervision_summary: string | null
 ```
 
 语义要求：
@@ -155,6 +168,9 @@ focus_summary: string | null
 - `primary_project`：当前主要 project
 - `active_projects`：当前推理涉及的活跃 projects
 - `projects`：当前 agent 已知 projects 列表
+- `active_task_id / task_board_summary / known_task_ids`：当前 task board 摘要
+- `active_agent_ids / agent_presence_summary`：framework-owned agent presence 摘要
+- `supervision_actions / project_supervision_summary`：framework-owned supervision 摘要
 
 ---
 
@@ -178,6 +194,16 @@ rendered_model_input
 - 当前 output contract 是什么
 - 当前 tools 的选择政策是什么
 - 当前 project scope / active projects 是什么
+
+另外，tool catalog 在最终 `rendered_model_input` 里至少要暴露这些子行：
+
+- `use: ...`
+- `avoid: ...`
+- `input: ...`
+- `output: ...`
+- `example: ...`
+
+否则视为 prompt contract 未被真正装配到模型输入。
 
 ---
 
