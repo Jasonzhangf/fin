@@ -258,6 +258,7 @@
 - [2026-04-20] `resume_project_task` 不再只是 supervision 文本：对 local `resume_ready` project，framework 现在会继续 materialize `runtime/projects/execution_handoffs*.json`；但截至 2026-04-22，这里已经从真实 `handoff_project_task(...)` 改为只读 `preview_project_task_handoff(...)`，只能产出 `prepared / noop / missing_task` 观察结果，不得再偷偷改 task-store truth。
 - [2026-04-20] execution handoff 之后，framework 现在还会 materialize `runtime/projects/runtime_pickups*.json`：它读取 handoff + session `execution_state` + pending queue，把 local project runtime 明确分类为 `running / waiting_external / paused / ready_to_resume / prepared_idle / missing_binding`，并同步把 project agent presence 从单纯 `resume_ready` 推进到更接近运行事实的 busy/waiting/idle。当前仍未跨到 detached/background provider 真执行。
 
+<<<<<<< HEAD
 - [2026-04-24] hidden checkpoint consume 的 `consumed_by_operation_id` 不能继续只读 `last_run.operation_id`；正确归因真源必须优先是 `runtime/current/current_turn.json.operation_id`，否则 hidden resume 会把 checkpoint consumed 错记到 stale frontstage run。
 - [2026-04-24] 验 assignment-resume / hidden worker turn 不能只看 task 已 `submitted/completed`；还必须同时断言 worker session `conversation/digests/reasoning/tools` 仍为空，并且 frontstage `runtime/current/last_run.json` 完全不变，才能证明 hidden-turn 边界真闭合。
 - [2026-04-24] QQ dev/debug 的工具摘要顺序不能依赖输入数组天然有序；必须按 `started_at + tool_call_id` 做“最新优先”排序后再截断/去重，否则多 agent 合并时用户会在 QQ 里看到旧工具排在前面，误判为没有新进展。
@@ -267,3 +268,102 @@
 - [2026-04-25] `.fin` 资源收口当前冻结成三层：**latest/current truth 保留；recent/debug 文件只保留 bounded window；framework hidden/control-plane turn 不进普通 session history**。不要把 `runtime/current/current_provider_requests.json` 这类 current truth 和 `recent_provider_requests.json` / `qqbot/events.jsonl` / `headless-daemon.log` 这类 bounded recent/debug 混成一类处理。
 - [2026-04-25] 仅修改 `RuntimeRetentionConfig::default()` 不会自动影响 live，因为 `load_effective_system_config(...)` 会优先保留已有 `~/.fin/config/system.toml` 的 retention 覆盖；若要真实收口现网，必须同步更新 live `system.toml` 或迁移逻辑。
 - [2026-04-25] headless daemon 文本日志的真实增长面不只来自主动 heartbeat 日志；macOS launchd `StandardOutPath/StandardErrorPath` 也指向同一 `logs/runtime/headless-daemon.log`。因此正确的 bounded 修法是让同一路径在下一次 `append_log(...)` 时统一做 tail trim，而不是只在某个写日志调用点局部截断。
+=======
+## 2026-05-23 Durable Primary Agent + Subagent Control Plane
+
+- Verified: fin multi-agent identity must be modeled in runtime as durable `system_agent` / `project_agent` primary identities plus parent-owned `subagent` runs; `project_agent` is not a `system_agent` child/subagent.
+- Implementation truth: `rust/crates/runtime/src/agent_control.rs` owns `AgentIdentity`, `AgentRunRecord`, durable agent mailbox seq, `register_primary_agent`, `spawn_subagent`, `send_agent_input`, `wait_agent`, `close_agent`, and `resume_agent` semantics.
+- Validation: `cargo test -p fin-runtime` passed on 2026-05-23 with 112 runtime unit tests, including primary registration, system/project subagent spawn paths, context policy guards, mailbox seq, and wait/close/resume lifecycle.
+
+## 2026-05-23 Global Install + Permission Bootstrap
+
+- Verified: global install must use `scripts/install-fin-global.sh`, which builds release `fin-cli` and then invokes canonical `fin-cli install-dev`; direct binary copy is not a valid install truth.
+- Verified: daemon restart in install scripts must use `fin stop` / `fin start`; broad process kill commands are forbidden and were removed from the global install script.
+- Verified: macOS first-install permissions cannot be silently granted; `scripts/bootstrap-macos-permissions.sh` opens the required privacy panes once and records `~/.fin/install/macos-permissions-bootstrap.json` as an offered-bootstrap marker.
+
+## 2026-05-23 Agent RPC Network Collaboration
+
+- Verified: cross-machine agent collaboration uses dedicated Agent RPC, not WebUI/QQBot/mobile debug channels.
+- Implementation truth: `runtime.agent_network.enabled` gates the listener; Bearer Lease token source must be `token_env` or `token_file`.
+- Agent RPC v1 endpoints: `/agent/v1/handshake`, `/agent/v1/heartbeat`, `/agent/v1/agents`, `/agent/v1/mailbox/send`; successful requests write runtime agent identity, network leases, presence/peer registries, and durable mailbox truth.
+
+## 2026-05-23 Agent RPC Lifecycle Harness
+
+- Verified: Agent RPC test harness now covers full v1 lifecycle: register primary agents, heartbeat refresh, online discovery, mailbox delivery, seq increment, and artifact writes.
+- Verified error coverage: auth failures, malformed route/body, identity mismatch, subagent rejection, project missing `project_id`, duplicate online register, unknown/expired lease, bad mailbox sender/target/lease.
+- Validation: `cargo test -p fin-debug-server` passed with 43 tests; `cargo test -p fin-config agent_network` and `cargo test -p fin-runtime agent_control_tests` also passed.
+
+## 2026-05-23 Agent RPC Failure/Recovery Coverage
+
+- Verified: Agent RPC harness covers network unavailable, mid-request dropped connection, lost heartbeat -> offline, recovery heartbeat -> online, and execution failure report -> failed run truth.
+- Implementation truth: `/agent/v1/run/status` records remote execution outcomes through `AgentControlStore::update_run_status`; heartbeat recovery refreshes presence/peer registry to `network_heartbeat`.
+- Validation: `cargo test -p fin-debug-server` passed with 46 tests, plus config agent_network and runtime agent_control targeted tests passed.
+
+## 2026-05-24 External quota / provider transient failure policy
+
+- Jason 明确冻结：外部 provider 配额类问题（如 `weekly quota`）不得因单次或偶发失败就判定为系统阻断；必须按**同类错误连续出现 3 次**才算真实阻断。
+- 适用范围：`provider smoke`、live LLM E2E 中的外部 quota / provider-side policy / transient upstream refusal。
+- 判定要求：
+  - 需要是**同类错误**，不能把不同错误混算；
+  - 需要是**连续 3 次**，中间若成功或错误类型变化则重新计数；
+  - 在未达到 3 次前，只能记录为 observation/warning，不得拿来否定已通过的本地主链或多 agent live 闭环。
+- 这条规则只影响“外部依赖故障是否升级为阻断”的判定，不影响本地 runtime / mailbox / lifecycle / render 真源问题的严格阻断标准。
+
+## 2026-05-24 Code retry policy
+
+- Jason 明确冻结：代码侧遇到可重试错误时，必须采用**指数回退并最多重试 5 次**，不能只做 1-3 次线性重试。
+- 适用范围：本地多 agent RPC、provider HTTP 发送/读 body、其他已判定为 retryable 的网络/瞬时链路故障。
+- 判定要求：
+  - 只对 retryable/transient 错误生效，逻辑错误、鉴权错误、schema 错误、明确 4xx 业务错误不得盲重试；
+  - 每次 retry 必须保留 attempt 事实，不能静默吞掉；
+  - backoff 必须为指数型，而不是固定或线性等待；
+  - Jason 进一步收紧：**从 1s 起步**，标准序列为 `1s/2s/4s/8s/16s`，毫秒级快速重试视为错误实现。
+- owning layer 已冻结：跨 crate 的重试/backoff/错误链摘要统一收敛到 `fin-shared`，调用方（如 `fin-cli`、`fin-provider`）只消费共享策略，不再各自维护一套 retry helper。
+- 脚本/前端侧的真实重连与 E2E retry 也必须对齐同一节奏：允许语言实现不同，但语义必须等价为 `1s/2s/4s/8s/16s`；不得再保留毫秒级或线性等待的第二套重试语义。
+
+## 2026-05-23 Simplified Agent Startup Model
+
+- Verified: startup model now defaults to local system primary agent registration at the standard `system:<id>` AgentControl path.
+- Verified: project agents can be dynamically configured via `runtime/agents/project_agents.json`; startup topology merges static config plus dynamic config and materializes project availability from the merged list.
+- Verified: subagents remain parent-local execution units and are not included in cross-agent network discovery.
+
+## 2026-05-23 simplified agent startup closeout
+- Dynamic project agent config is a formal CLI control plane: `fin project-agent add|remove|list <user.toml> ...` reads/writes `runtime/agents/project_agents.json`. Local project agent add allocates an endpoint port once and preserves it on subsequent updates, keeping startup topology deterministic.
+- QQBot restored-target inbound turns must keep explicit session binding authoritative for the whole turn; do not re-read `last_run` after attached control-plane refresh when `send_chat_message_on_binding` was called with an explicit binding, or restored target messages can execute in the wrong active session.
+
+## 2026-05-23 channel default listener boundary
+- WebUI / Android / QQBot channel adapters default to the `system_agent` listener. `project_agent` listeners may exist and can be explicitly connected or used by Agent RPC, but they are not default UI/channel targets.
+- Regression truth: channel ingress must keep `source=channel.qqbot`, `role_id=system`, and `worker_id=worker-system` even when a project agent endpoint is configured; project agent presence may be observable but must not become the channel execution target by default.
+
+## 2026-05-23 Canonical fin Repository Path
+- Canonical fin development path is `~/code/fin`, not `~/Documents/github/fin`; Android client and build-all live under `~/code/fin/android-client` and `~/code/fin/scripts/build-all.sh`. Future fin implementation and verification must start from `~/code/fin`.
+
+## 2026-05-23 Unified config entry for headed/headless/provider
+- Verified: `user.toml` is the provider/profile/model truth; `system.toml` only keeps runtime/startup overlays and must merge user provider+policy from `ConfigMapper::merge_user_layer`.
+- RCC provider import is now a CLI/config-layer operation (`config-import-rcc`) and build install imports `~/.rcc/provider/ali-coding-plan/config.v2.json` before install; Android stores only a `runtime_config_snapshot`, not an editable provider truth.
+- Install/build smoke must not depend on expiring external provider tokens; use offline `mainline-scenario` for install artifact truth and keep real provider validation in explicit live smoke.
+
+## 2026-05-23 — Local multi-agent E2E completion bar
+
+- 无头 local multi-agent harness 只有在 project agent 子进程真实调用当前 provider/LLM、返回非空模型输出并把 provider/model/status/output_chars/result refs 写入 receipt 与 ledger 后，才算 E2E 闭环；仅目录观察、静态文件通信或 synthetic receipt 不算完成。
+- MiniMax-M2.7 在 OpenAI-compatible `/v1/chat/completions` 下可能把 2048 completion budget 全部消耗在 reasoning tokens，导致 HTTP 200 但 content 为空；provider 请求预算需保留足够 completion 空间，当前 OpenAI-compatible 默认 `max_tokens=8192`。
+
+## 2026-05-23 — Agent-to-agent communication baseline
+
+- Local multi-agent harness 的 agent 间通信必须走 Agent RPC + AgentControl durable mailbox：system 通过 `/agent/v1/handshake`、`/agent/v1/agents`、`/agent/v1/mailbox/send` 发现和派发，project agent 从 `AgentControlStore::consume_next_mailbox_message` 消费；禁止再把 `runtime/mailbox/<agent>/inbox.json` 作为通信协议。
+- 文件仍可作为 runtime 持久化事实（control mailbox、result/progress artifacts、ledger），但不能作为 system/project agent 之间的临时协议通道；E2E receipt 必须证明 `agent_rpc_transport="agent_rpc"`、project 通过 RPC 枚举在线、control mailbox 已 consumed。
+
+## 2026-05-23 Android live config contamination guard
+- 已验证教训：Android 真机验收禁止改写真实 `ws_profiles.json` / daemon endpoint 做 adb reverse 或 mock 测试；上轮把 endpoint 写成 `ws://127.0.0.1:4040/ws` 导致手机连自己，表现为 daemon 连接不稳。以后测试替身必须用独立测试 profile/临时 runtime，并在验收前确认真实 profile 仍指向 `ws://100.66.1.82:4040/ws` 或用户指定真实地址。
+
+- [2026-06-01] red-test remediation P0/P1 完成：新增 4 个测试文件（records_tests/context_compaction_tests/task_store_tests/closure_runtime_tests）+ 2 个内联追加（owner_loop/scheduler），共新增 14 个测试，全部通过。P2/P3/P4 待后续补齐。验证结果：fin-config 17, fin-contracts 16, fin-runtime 157 passed, 0 FAILED。
+
+## 2026-06-02 Pipeline Unique Type architecture landed (Input/Reason/Hub/Feedback/Error)
+
+- 5 链按 `<Domain><Direction><NN><Node>` 全部落地，commit：99d95d4 (Reason) / 5ae5c7a (Input) / c93dd7c (Hub) / 7c6d98f (Feedback) / f1f353e (Error)。
+- 唯一真源切点：Reason `reason_pipeline.rs`、Input `input_pipeline.rs`、Hub `hub_pipeline.rs`、Feedback `feedback_pipeline.rs`、Error `error_pipeline.rs`；`ModelOutputParser` / `InferenceOperationBuilder` / `ProviderDescriptor::prepare_request` / `ProviderFacade::execute_json_request` 已改为仅串联相邻节点。
+- 已物理删除/改名：`RoundExecution` → `ReasonRoundExecution`；`merge_with_fallback` → `merge_with_runtime_defaults`；`model_output.rs` 中重复 `parsed_tool_calls` 中间变量删除；feedback tag 常量从 `model_output.rs` 迁出。
+- 错误归一：`map_runtime_error_through_error_pipeline` 把 `RuntimeError` 显式串入 ErrorErr01..05，禁止吞异常 / fallback 成成功 truth。
+- 静态门禁 10 项（命名 + 编号 + 禁止 `From` / `*_V2` / `*.` / `*a` / `*_1`）+ 业务回归 9 项全过；`cargo build -p fin-cli` 持续通过；未触碰 cli/debug-server 公开 API。
+- 教训：`apply_patch` 用 `rust/...` 路径曾误写到 `rust/crates/runtime/src/...`；后续 git 提交前必须 `git status --short` 检查 staged 路径前缀。
+>>>>>>> ef90b2b (docs: record pipeline unique type architecture completion)
