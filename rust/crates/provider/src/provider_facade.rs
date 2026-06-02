@@ -90,6 +90,17 @@ impl ProviderFacade {
             };
 
             if status >= 400 {
+                let failure = http_client::classify_http_status(
+                    status,
+                    &body,
+                    attempt,
+                    MAX_REQUEST_ATTEMPTS,
+                );
+                if failure.retryable && attempt < MAX_REQUEST_ATTEMPTS {
+                    last_retryable_error = Some(failure.message.clone());
+                    std::thread::sleep(std::time::Duration::from_secs(1 << (attempt - 1)));
+                    continue;
+                }
                 return Err(ProviderError::HttpStatus { status, body });
             }
 
@@ -176,6 +187,129 @@ impl ProviderFacade {
     fn effective_user_agent(&self) -> &str {
         self.user_agent.as_deref().unwrap_or(DEFAULT_USER_AGENT)
     }
+
+    fn execute_openai_compatible(
+        &self,
+        request: &PreparedRequest,
+    ) -> Result<ProviderResponse, ProviderError> {
+        let client = http_client::build_client(&self.resolve_overrides)?;
+        let api_key = self.resolve_api_key()?;
+        let headers = self.build_openai_headers(&api_key)?;
+        let payload = serde_json::json!({
+            "model": request.model,
+            "max_tokens": OPENAI_MAX_OUTPUT_TOKENS,
+            "messages": [
+                {
+                    "role": "user",
+                    "content": request.rendered_input,
+                }
+            ],
+        });
+        let mut last_retryable_error = None;
+
+        for attempt in 1..=MAX_REQUEST_ATTEMPTS {
+            let response = match client
+                .post(&request.endpoint)
+                .headers(headers.clone())
+                .json(&payload)
+                .send()
+            {
+                Ok(response) => response,
+                Err(err) => {
+                    let failure = http_client::classify_reqwest_error(
+                        err,
+                        "send",
+                        &request.endpoint,
+                        attempt,
+                        MAX_REQUEST_ATTEMPTS,
+                    );
+                    if failure.retryable && attempt < MAX_REQUEST_ATTEMPTS {
+                        last_retryable_error = Some(failure.message);
+                        continue;
+                    }
+                    return Err(ProviderError::Request {
+                        message: failure.message,
+                    });
+                }
+            };
+
+            let status = response.status().as_u16();
+            let body = match response.text() {
+                Ok(body) => body,
+                Err(err) => {
+                    let failure = http_client::classify_reqwest_error(
+                        err,
+                        "read_body",
+                        &request.endpoint,
+                        attempt,
+                        MAX_REQUEST_ATTEMPTS,
+                    );
+                    if failure.retryable && attempt < MAX_REQUEST_ATTEMPTS {
+                        last_retryable_error = Some(failure.message);
+                        continue;
+                    }
+                    return Err(ProviderError::Request {
+                        message: failure.message,
+                    });
+                }
+            };
+
+            if status >= 400 {
+                let failure = http_client::classify_http_status(
+                    status,
+                    &body,
+                    attempt,
+                    MAX_REQUEST_ATTEMPTS,
+                );
+                if failure.retryable && attempt < MAX_REQUEST_ATTEMPTS {
+                    last_retryable_error = Some(failure.message.clone());
+                    std::thread::sleep(std::time::Duration::from_secs(1 << (attempt - 1)));
+                    continue;
+                }
+                return Err(ProviderError::HttpStatus { status, body });
+            }
+
+            return parse_openai_response(request, status, &body);
+        }
+
+        Err(ProviderError::Request {
+            message: last_retryable_error.unwrap_or_else(|| {
+                format!(
+                    "request failed after {MAX_REQUEST_ATTEMPTS} attempts; endpoint={}",
+                    request.endpoint
+                )
+            }),
+        })
+    }
+
+    pub(crate) fn build_openai_headers(
+        &self,
+        api_key: &str,
+    ) -> Result<HeaderMap, ProviderError> {
+        let mut headers = self.build_custom_headers()?;
+        headers.insert(CONTENT_TYPE, HeaderValue::from_static("application/json"));
+        headers.insert(ACCEPT, HeaderValue::from_static("application/json"));
+        headers.insert(
+            HeaderName::from_static("authorization"),
+            HeaderValue::from_str(&format!("Bearer {api_key}")).map_err(|err| {
+                ProviderError::InvalidHeader {
+                    name: "authorization".into(),
+                    message: err.to_string(),
+                }
+            })?,
+        );
+        headers.insert(
+            USER_AGENT,
+            HeaderValue::from_str(self.effective_user_agent()).map_err(|err| {
+                ProviderError::InvalidHeader {
+                    name: "user-agent".into(),
+                    message: err.to_string(),
+                }
+            })?,
+        );
+        Ok(headers)
+    }
+
 }
 
 fn is_reserved_runtime_header(name: &str) -> bool {
@@ -244,6 +378,7 @@ fn split_internal_headers(
     (forwarded_headers, resolve_overrides, parse_error)
 }
 
+
 impl InferenceProvider for ProviderFacade {
     fn descriptor(&self) -> &ProviderDescriptor {
         &self.descriptor
@@ -283,9 +418,10 @@ impl InferenceProvider for ProviderFacade {
         }
         match self.descriptor.protocol {
             ProviderProtocol::AnthropicWire => self.execute_anthropic(request),
-            protocol => Err(ProviderError::UnsupportedProtocol { protocol }),
+            ProviderProtocol::OpenAiCompatible => self.execute_openai_compatible(request),
         }
     }
+
 }
 
 pub(crate) fn parse_anthropic_response(
@@ -399,3 +535,45 @@ fn build_anthropic_tools(request: &PreparedRequest) -> Vec<Value> {
         })
         .collect()
 }
+
+pub(crate) fn parse_openai_response(
+    request: &PreparedRequest,
+    status: u16,
+    body: &str,
+) -> Result<ProviderResponse, ProviderError> {
+    let parsed: Value = serde_json::from_str(body).map_err(|err| ProviderError::ParseResponse {
+        message: err.to_string(),
+    })?;
+    let output_text = parsed
+        .get("choices")
+        .and_then(Value::as_array)
+        .map(|items| {
+            items
+                .iter()
+                .filter_map(|item| {
+                    item.get("message")
+                        .and_then(|m| m.get("content"))
+                        .and_then(Value::as_str)
+                })
+                .collect::<String>()
+        })
+        .unwrap_or_default();
+    let stop_reason = parsed
+        .get("choices")
+        .and_then(Value::as_array)
+        .and_then(|items| items.first())
+        .and_then(|item| item.get("finish_reason"))
+        .and_then(Value::as_str)
+        .map(str::to_string);
+    let response_id = parsed.get("id").and_then(Value::as_str).map(str::to_string);
+    Ok(ProviderResponse {
+        provider_name: request.provider_name.clone(),
+        model: request.model.clone(),
+        output_text,
+        response_id,
+        stop_reason,
+        status,
+        tool_calls: Vec::new(),
+    })
+}
+

@@ -13,8 +13,9 @@ mod provider_facade;
 mod provider_static;
 
 const DEFAULT_USER_AGENT: &str = "fin-coding-agent/0.1";
-const MAX_REQUEST_ATTEMPTS: usize = 3;
+const MAX_REQUEST_ATTEMPTS: usize = 5;
 const ANTHROPIC_MAX_OUTPUT_TOKENS: u64 = 2048;
+const OPENAI_MAX_OUTPUT_TOKENS: u64 = 8192;
 
 #[derive(Debug, Error, PartialEq, Eq)]
 pub enum ProviderError {

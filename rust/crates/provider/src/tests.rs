@@ -281,6 +281,62 @@ fn anthropic_execute_uses_larger_output_budget() {
 }
 
 #[test]
+fn openai_compatible_execute_posts_chat_completions_request() {
+    let listener = TcpListener::bind("127.0.0.1:0").expect("listener");
+    let address = listener.local_addr().expect("local addr");
+    let captured_request = Arc::new(std::sync::Mutex::new(String::new()));
+    let captured_request_for_thread = Arc::clone(&captured_request);
+    let server = thread::spawn(move || {
+        let (mut stream, _) = listener.accept().expect("accept");
+        let mut buffer = [0_u8; 16384];
+        let read = stream.read(&mut buffer).expect("read request");
+        let raw = String::from_utf8_lossy(&buffer[..read]).to_string();
+        *captured_request_for_thread.lock().expect("lock request") = raw;
+        let response_body = r#"{"id":"chatcmpl-1","choices":[{"message":{"role":"assistant","content":"OK"},"finish_reason":"stop"}]}"#;
+        let response = format!(
+            "HTTP/1.1 200 OK\r\ncontent-type: application/json\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{}",
+            response_body.len(),
+            response_body
+        );
+        stream
+            .write_all(response.as_bytes())
+            .expect("write response");
+    });
+
+    let facade = ProviderFacade::from_resolved(&ResolvedProviderConfig {
+        name: "local-openai".into(),
+        protocol: ProviderProtocol::OpenAiCompatible,
+        base_url: format!("http://{}", address),
+        model: "gpt-5".into(),
+        credential: ProviderCredential::DirectApiKey {
+            api_key: "test-key".into(),
+        },
+        user_agent: Some("opencode/1.2.27".into()),
+        headers: BTreeMap::new(),
+    });
+    let prepared = facade.prepare_request(&ProviderRequest {
+        input: "hello".into(),
+        rendered_input: Some("hello".into()),
+        override_model: None,
+        tools: Vec::new(),
+        prior_tool_calls: Vec::new(),
+        tool_results: Vec::new(),
+    });
+
+    let response = facade
+        .execute_prepared(&prepared)
+        .expect("openai compatible request should succeed");
+    assert_eq!(response.output_text, "OK");
+    assert_eq!(response.stop_reason.as_deref(), Some("stop"));
+    server.join().expect("server thread");
+
+    let request = captured_request.lock().expect("lock request").clone();
+    assert!(request.starts_with("POST /chat/completions HTTP/1.1"));
+    assert!(request.contains("authorization: Bearer test-key"));
+    assert!(request.contains("\"max_tokens\":8192"));
+}
+
+#[test]
 fn anthropic_execute_does_not_retry_http_status_errors() {
     let listener = TcpListener::bind("127.0.0.1:0").expect("listener");
     let address = listener.local_addr().expect("local addr");

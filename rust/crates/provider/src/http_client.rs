@@ -48,6 +48,31 @@ pub fn classify_reqwest_error(
     );
     RequestFailure { message, retryable }
 }
+pub fn classify_http_status(
+    status: u16,
+    body: &str,
+    attempt: usize,
+    attempts: usize,
+) -> RequestFailure {
+    let retryable = status == 429 || status == 503 || status >= 500;
+    let body_lower = body.to_ascii_lowercase();
+    let is_quota = body_lower.contains("quota")
+        || body_lower.contains("usage limit")
+        || body_lower.contains("usage_limit")
+        || body_lower.contains("rate_limit")
+        || body_lower.contains("rate limit")
+        || body_lower.contains("usage limit exceeded")
+        || body_lower.contains("weekly usage limit reached")
+        || body.contains("余额不足")
+        || body.contains("无可用资源包");
+    let retryable = retryable || (is_quota && status == 400);
+    let message = format!(
+        "http status {status} at attempt {attempt}/{attempts}; retryable={retryable}; body_snippet={}",
+        &body[..body.len().min(200)],
+    );
+    RequestFailure { message, retryable }
+}
+
 
 fn summarize_error_chain(err: &dyn std::error::Error) -> String {
     let mut parts = vec![err.to_string()];
@@ -67,5 +92,13 @@ mod tests {
     #[test]
     fn build_client_uses_blocking_client_builder() {
         let _client: Client = build_client(&BTreeMap::new()).expect("client should build");
+    }
+
+    #[test]
+    fn classify_http_status_retries_rate_limit_and_quota_errors() {
+        assert!(classify_http_status(429, "rate limit", 1, 5).retryable);
+        assert!(classify_http_status(400, "weekly usage limit reached", 1, 5).retryable);
+        assert!(classify_http_status(400, "余额不足或无可用资源包", 1, 5).retryable);
+        assert!(!classify_http_status(400, "invalid request", 1, 5).retryable);
     }
 }
