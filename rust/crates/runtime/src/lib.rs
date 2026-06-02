@@ -51,6 +51,9 @@ mod control_feedback;
 mod control_plane;
 #[cfg(test)]
 mod execution_checkpoint_tests;
+mod error_pipeline;
+#[cfg(test)]
+mod error_pipeline_static_tests;
 mod feedback_pipeline;
 #[cfg(test)]
 mod feedback_pipeline_static_tests;

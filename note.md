@@ -4817,3 +4817,11 @@ Tool records in first turn: 16
 - 旧 `model_output.rs` 中重复 `parsed_tool_calls` 中间变量物理删除，避免双真源。
 - 验证：`cargo test -p fin-runtime feedback_pipeline_` 2 passed；`model_output_parser_*` 8 passed；`runtime_closure_uses_structured_user_response_for_session_visible_output` 1 passed；`control_feedback_builder_uses_runtime_defaults_when_no_structured_output_exists` 1 passed；`cargo build -p fin-cli` passed。
 - 剩余：Error 链 `ErrorErr*` 节点未建；真实 provider 多轮 E2E 尚未做。
+
+## 2026-06-02 pipeline unique type - error chain landed
+- runtime 新增 `error_pipeline.rs`：ErrorErr01Detected -> ErrorErr02SourceClassified -> ErrorErr03RuntimeClassified -> ErrorErr04SessionRecorded -> ErrorErr05UserVisible。
+- `ErrSourceClass` 显式枚举 Input/Provider/Model/Tool/Runtime/Channel；`ErrRuntimeDecision` 显式 Retryable/Blocked/Failed。
+- `closure_runtime.rs` 新增 `map_runtime_error_through_error_pipeline` 把 `RuntimeError` 归一进入 Error 链并产出 user-visible 错误节点。
+- 验证：`cargo test -p fin-runtime error_pipeline_` 2 passed；其它四链 8 项业务 + 静态门禁全过；`cargo build -p fin-cli` passed。
+- 完成度：Input / Reason / Hub / Feedback / Error 五链 + 红测门禁 + 业务回归全绿。
+- 剩余：真实 provider 多轮 E2E + receipt 落盘、docs/goals 实施计划回填、local skill/MEMORY 提炼。
