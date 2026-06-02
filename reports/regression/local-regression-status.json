@@ -1,9 +1,9 @@
 {
-  "run_id": "test-local-reg-20260529-104359",
+  "run_id": "test-local-reg-20260602-224915",
   "gates": [
     {
       "name": "g0_config_check",
-      "cmd": "cargo run -p fin-cli --manifest-path rust/Cargo.toml -- config-check '/Users/fanzhang/.fin/harness/runs/test-local-reg-20260529-104359/user.test.toml'",
+      "cmd": "cargo run -p fin-cli --manifest-path rust/Cargo.toml -- config-check '/Users/fanzhang/.fin/harness/runs/test-local-reg-20260602-224915/user.test.toml'",
       "ok": true,
       "code": 0,
       "log": "reports/regression/g0_config_check.log",
@@ -39,22 +39,6 @@
       "ok": true,
       "code": 0,
       "log": "reports/regression/g1_context_cache_round_loop_tests.log",
-      "blocking": true
-    },
-    {
-      "name": "g3_local_multi_agent_live_e2e",
-      "cmd": "scripts/run-local-multi-agent-e2e.sh live 'test-local-reg-20260529-104232-live-multi-agent'",
-      "ok": true,
-      "code": 0,
-      "log": "reports/regression/g3_local_multi_agent_live_e2e.log",
-      "blocking": true
-    },
-    {
-      "name": "g3_local_multi_agent_live_webui_render",
-      "cmd": "node scripts/webui/live-runtime-chat-smoke.mjs 'test-local-reg-20260529-104232-live-multi-agent'",
-      "ok": true,
-      "code": 0,
-      "log": "reports/regression/g3_local_multi_agent_live_webui_render.log",
       "blocking": true
     },
     {
@@ -106,32 +90,16 @@
       "blocking": true
     },
     {
-      "name": "g3_local_multi_agent_live_e2e",
-      "cmd": "scripts/run-local-multi-agent-e2e.sh live 'test-local-reg-20260529-104249-live-multi-agent'",
-      "ok": true,
-      "code": 0,
-      "log": "reports/regression/g3_local_multi_agent_live_e2e.log",
-      "blocking": true
-    },
-    {
-      "name": "g3_local_multi_agent_live_webui_render",
-      "cmd": "node scripts/webui/live-runtime-chat-smoke.mjs 'test-local-reg-20260529-104249-live-multi-agent'",
-      "ok": true,
-      "code": 0,
-      "log": "reports/regression/g3_local_multi_agent_live_webui_render.log",
-      "blocking": true
-    },
-    {
       "name": "g3_live_provider_smoke",
-      "cmd": "scripts/run-real-provider-smoke.sh 'test-local-reg-20260529-104359-live'",
-      "ok": false,
-      "code": 1,
+      "cmd": "scripts/run-real-provider-smoke.sh 'test-local-reg-20260602-224915-live'",
+      "ok": true,
+      "code": 0,
       "log": "reports/regression/g3_live_provider_smoke.log",
       "blocking": true
     },
     {
       "name": "g3_local_multi_agent_live_e2e",
-      "cmd": "scripts/run-local-multi-agent-e2e.sh live 'test-local-reg-20260529-104359-live-multi-agent'",
+      "cmd": "scripts/run-local-multi-agent-e2e.sh live 'test-local-reg-20260602-224915-live-multi-agent'",
       "ok": true,
       "code": 0,
       "log": "reports/regression/g3_local_multi_agent_live_e2e.log",
@@ -139,13 +107,13 @@
     },
     {
       "name": "g3_local_multi_agent_live_webui_render",
-      "cmd": "node scripts/webui/live-runtime-chat-smoke.mjs 'test-local-reg-20260529-104359-live-multi-agent'",
+      "cmd": "node scripts/webui/live-runtime-chat-smoke.mjs 'test-local-reg-20260602-224915-live-multi-agent'",
       "ok": true,
       "code": 0,
       "log": "reports/regression/g3_local_multi_agent_live_webui_render.log",
       "blocking": true
     }
   ],
-  "ts": "2026-05-29T02:45:14.961482Z",
-  "overall_ok": false
+  "ts": "2026-06-02T14:51:04.626760Z",
+  "overall_ok": true
 }
