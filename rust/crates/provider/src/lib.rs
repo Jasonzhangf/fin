@@ -4,6 +4,9 @@ use serde_json::Value;
 use std::collections::BTreeMap;
 
 mod http_client;
+mod hub_pipeline;
+#[cfg(test)]
+mod hub_pipeline_static_tests;
 #[cfg(test)]
 mod tests;
 
@@ -80,23 +83,16 @@ pub trait InferenceProvider {
 
 impl ProviderDescriptor {
     pub fn prepare_request(&self, request: &ProviderRequest) -> PreparedRequest {
-        PreparedRequest {
-            provider_name: self.name.clone(),
-            protocol: self.protocol,
-            endpoint: endpoint_for_protocol(&self.base_url, self.protocol),
-            model: request
-                .override_model
-                .clone()
-                .unwrap_or_else(|| self.default_model.clone()),
-            input: request.input.clone(),
-            rendered_input: request
-                .rendered_input
-                .clone()
-                .unwrap_or_else(|| request.input.clone()),
-            prompt_cache_key: request.prompt_cache_key.clone(),
-            user_agent: None,
-            sanitized_headers: BTreeMap::new(),
-        }
+        let inbound = HubReq01InboundBuilder
+            .build(self, request.clone())
+            .expect("hub inbound: descriptor must exist");
+        let process = HubReq02ProcessBuilder
+            .build(inbound)
+            .expect("hub process: descriptor must be valid");
+        let outbound = HubReq03OutboundBuilder
+            .build(process)
+            .expect("hub outbound: builder must succeed");
+        outbound.prepared
     }
 }
 
@@ -236,7 +232,6 @@ impl ProviderFacade {
         request: &PreparedRequest,
         payload: &Value,
         headers: reqwest::header::HeaderMap,
-        parser: fn(&PreparedRequest, u16, &str) -> Result<ProviderResponse, ProviderError>,
     ) -> Result<ProviderResponse, ProviderError> {
         let client = http_client::build_client()?;
         let mut last_retryable_error = None;
@@ -294,7 +289,12 @@ impl ProviderFacade {
                 return Err(ProviderError::HttpStatus { status, body });
             }
 
-            return parser(request, status, &body);
+            let outbound = HubReq03OutboundBuilder.rebuild_from_prepared(request.clone());
+            let inbound_resp =
+                hub_inbound_response(outbound, status, body.clone(), HubTransport::http());
+            let processed = HubResp05ProcessParser.parse(inbound_resp)?;
+            let _outbound_resp = HubResp06OutboundBuilder.build(processed.clone());
+            return Ok(processed.response);
         }
 
         Err(ProviderError::Request {
@@ -370,7 +370,7 @@ impl InferenceProvider for ProviderFacade {
                     self.effective_user_agent(),
                     &self.headers,
                 )?;
-                self.execute_json_request(request, &payload, headers, parse_anthropic_response)
+                self.execute_json_request(request, &payload, headers)
             }
             ProviderProtocol::OpenAiCompatible => {
                 let payload =
@@ -380,8 +380,12 @@ impl InferenceProvider for ProviderFacade {
                     self.effective_user_agent(),
                     &self.headers,
                 )?;
-                self.execute_json_request(request, &payload, headers, parse_openai_response)
+                self.execute_json_request(request, &payload, headers)
             }
         }
     }
 }
+use crate::hub_pipeline::{
+    HubReq01InboundBuilder, HubReq02ProcessBuilder, HubReq03OutboundBuilder,
+    HubResp05ProcessParser, HubResp06OutboundBuilder, HubTransport, hub_inbound_response,
+};
