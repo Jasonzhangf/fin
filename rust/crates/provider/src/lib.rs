@@ -1,175 +1,33 @@
 use fin_config::{ProviderCredential, ProviderProtocol, ResolvedProviderConfig};
-use reqwest::header::{ACCEPT, CONTENT_TYPE, HeaderMap, HeaderName, HeaderValue, USER_AGENT};
-use serde::{Deserialize, Serialize};
+use fin_shared::{DEFAULT_RETRY_ATTEMPTS, exponential_backoff};
 use serde_json::Value;
 use std::collections::BTreeMap;
-use thiserror::Error;
 
 mod http_client;
-mod provider_facade;
-mod provider_static;
+mod hub_pipeline;
+#[cfg(test)]
+mod hub_pipeline_static_tests;
+#[cfg(test)]
+mod tests;
+
+pub mod blocks {
+    pub mod descriptor;
+    pub mod errors;
+    pub mod request;
+    pub mod response;
+}
+
+pub mod wire {
+    pub mod anthropic_wire;
+    pub mod openai_wire;
+}
+
+pub use blocks::descriptor::{ProviderCapabilities, ProviderDescriptor, endpoint_for_protocol};
+pub use blocks::errors::ProviderError;
+pub use blocks::request::{PreparedRequest, ProviderRequest, TokenUsage};
+pub use blocks::response::{ProviderResponse, parse_anthropic_response, parse_openai_response};
 
 const DEFAULT_USER_AGENT: &str = "fin-coding-agent/0.1";
-const MAX_REQUEST_ATTEMPTS: usize = 3;
-const ANTHROPIC_MAX_OUTPUT_TOKENS: u64 = 2048;
-
-#[derive(Debug, Error, PartialEq, Eq)]
-pub enum ProviderError {
-    #[error("duplicate provider '{name}'")]
-    DuplicateProvider { name: String },
-    #[error("unsupported protocol for real execution: {protocol:?}")]
-    UnsupportedProtocol { protocol: ProviderProtocol },
-    #[error("missing provider credential env '{env_var}'")]
-    MissingCredentialEnv { env_var: String },
-    #[error("invalid header '{name}': {message}")]
-    InvalidHeader { name: String, message: String },
-    #[error("http status {status}: {body}")]
-    HttpStatus { status: u16, body: String },
-    #[error("request failed: {message}")]
-    Request { message: String },
-    #[error("response parse failed: {message}")]
-    ParseResponse { message: String },
-    #[error("invalid resolve override '{entry}': {message}")]
-    InvalidResolveOverride { entry: String, message: String },
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct ProviderCapabilities {
-    pub supports_streaming: bool,
-    pub supports_tool_calls: bool,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct ProviderDescriptor {
-    pub name: String,
-    pub protocol: ProviderProtocol,
-    pub base_url: String,
-    pub default_model: String,
-    pub capabilities: ProviderCapabilities,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct ProviderRequest {
-    pub input: String,
-    pub rendered_input: Option<String>,
-    pub override_model: Option<String>,
-    #[serde(default)]
-    pub tools: Vec<ProviderToolSpec>,
-    #[serde(default)]
-    pub prior_tool_calls: Vec<ProviderToolCall>,
-    #[serde(default)]
-    pub tool_results: Vec<ProviderToolResult>,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct PreparedRequest {
-    pub provider_name: String,
-    pub protocol: ProviderProtocol,
-    pub endpoint: String,
-    pub model: String,
-    pub input: String,
-    pub rendered_input: String,
-    pub user_agent: Option<String>,
-    pub sanitized_headers: BTreeMap<String, String>,
-    #[serde(default)]
-    pub tools: Vec<ProviderToolSpec>,
-    #[serde(default)]
-    pub prior_tool_calls: Vec<ProviderToolCall>,
-    #[serde(default)]
-    pub tool_results: Vec<ProviderToolResult>,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct ProviderResponse {
-    pub provider_name: String,
-    pub model: String,
-    pub output_text: String,
-    pub response_id: Option<String>,
-    pub stop_reason: Option<String>,
-    pub status: u16,
-    #[serde(default)]
-    pub tool_calls: Vec<ProviderToolCall>,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct ProviderToolSpec {
-    pub name: String,
-    pub description: String,
-    pub input_schema: Value,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct ProviderToolCall {
-    pub tool_call_id: String,
-    pub name: String,
-    pub arguments: Value,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct ProviderToolResult {
-    pub tool_call_id: String,
-    pub name: String,
-    pub content: String,
-    #[serde(default)]
-    pub is_error: bool,
-}
-
-impl ProviderDescriptor {
-    pub fn from_resolved(config: &ResolvedProviderConfig) -> Self {
-        Self {
-            name: config.name.clone(),
-            protocol: config.protocol,
-            base_url: config.base_url.clone(),
-            default_model: config.model.clone(),
-            capabilities: ProviderCapabilities::for_protocol(config.protocol),
-        }
-    }
-
-    pub fn prepare_request(&self, request: &ProviderRequest) -> PreparedRequest {
-        PreparedRequest {
-            provider_name: self.name.clone(),
-            protocol: self.protocol,
-            endpoint: endpoint_for_protocol(&self.base_url, self.protocol),
-            model: request
-                .override_model
-                .clone()
-                .unwrap_or_else(|| self.default_model.clone()),
-            input: request.input.clone(),
-            rendered_input: request
-                .rendered_input
-                .clone()
-                .unwrap_or_else(|| request.input.clone()),
-            user_agent: None,
-            sanitized_headers: BTreeMap::new(),
-            tools: request.tools.clone(),
-            prior_tool_calls: request.prior_tool_calls.clone(),
-            tool_results: request.tool_results.clone(),
-        }
-    }
-}
-
-impl ProviderCapabilities {
-    pub fn for_protocol(protocol: ProviderProtocol) -> Self {
-        match protocol {
-            ProviderProtocol::OpenAiCompatible => Self {
-                supports_streaming: true,
-                supports_tool_calls: true,
-            },
-            ProviderProtocol::AnthropicWire => Self {
-                supports_streaming: true,
-                supports_tool_calls: false,
-            },
-        }
-    }
-}
-
-fn endpoint_for_protocol(base_url: &str, protocol: ProviderProtocol) -> String {
-    let base = base_url.trim_end_matches('/');
-    match protocol {
-        ProviderProtocol::AnthropicWire => format!("{base}/v1/messages"),
-        ProviderProtocol::OpenAiCompatible => format!("{base}/chat/completions"),
-    }
-}
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct ProviderRegistry {
@@ -223,10 +81,122 @@ pub trait InferenceProvider {
     ) -> Result<ProviderResponse, ProviderError>;
 }
 
-// ProviderFacade, StaticProviderClient, and StructuredStaticProviderClient
-// implementations are in their own modules: provider_facade.rs and provider_static.rs
+impl ProviderDescriptor {
+    pub fn prepare_request(&self, request: &ProviderRequest) -> PreparedRequest {
+        let inbound = HubReq01InboundBuilder
+            .build(self, request.clone())
+            .expect("hub inbound: descriptor must exist");
+        let process = HubReq02ProcessBuilder
+            .build(inbound)
+            .expect("hub process: descriptor must be valid");
+        let outbound = HubReq03OutboundBuilder
+            .build(process)
+            .expect("hub outbound: builder must succeed");
+        outbound.prepared
+    }
+}
 
-pub use provider_static::{StaticProviderClient, StructuredStaticProviderClient};
+#[derive(Debug, Clone)]
+pub struct StaticProviderClient {
+    descriptor: ProviderDescriptor,
+}
+
+impl StaticProviderClient {
+    pub fn new(descriptor: ProviderDescriptor) -> Self {
+        Self { descriptor }
+    }
+}
+
+impl InferenceProvider for StaticProviderClient {
+    fn descriptor(&self) -> &ProviderDescriptor {
+        &self.descriptor
+    }
+
+    fn execute_prepared(
+        &self,
+        request: &PreparedRequest,
+    ) -> Result<ProviderResponse, ProviderError> {
+        Ok(ProviderResponse {
+            provider_name: request.provider_name.clone(),
+            model: request.model.clone(),
+            output_text: format!("simulated response for {}", request.input),
+            response_id: Some("simulated-response".into()),
+            stop_reason: Some("end_turn".into()),
+            status: 200,
+            usage: Some(TokenUsage {
+                prompt_tokens: Some(request.rendered_input.chars().count() as u64 / 4),
+                completion_tokens: Some(8),
+                total_tokens: None,
+                cached_tokens: None,
+                reasoning_tokens: None,
+                usage_source: "static_estimate".into(),
+            }),
+        })
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct StructuredStaticProviderClient {
+    descriptor: ProviderDescriptor,
+}
+
+impl StructuredStaticProviderClient {
+    pub fn new(descriptor: ProviderDescriptor) -> Self {
+        Self { descriptor }
+    }
+}
+
+impl InferenceProvider for StructuredStaticProviderClient {
+    fn descriptor(&self) -> &ProviderDescriptor {
+        &self.descriptor
+    }
+
+    fn execute_prepared(
+        &self,
+        request: &PreparedRequest,
+    ) -> Result<ProviderResponse, ProviderError> {
+        let user_response = format!("simulated response for {}", request.input);
+        let escaped_response = serde_json::to_string(&user_response).map_err(|error| {
+            ProviderError::ParseResponse {
+                message: format!("failed to encode structured static response: {error}"),
+            }
+        })?;
+        let trimmed_input = request.input.trim();
+        let word_count = trimmed_input.split_whitespace().count();
+        let punctuation_count = trimmed_input
+            .chars()
+            .filter(|ch| matches!(ch, '?' | '？' | '!' | '！'))
+            .count();
+        let is_simple_query = word_count <= 12 && punctuation_count <= 1;
+        let continuity_confidence = if is_simple_query { 72 } else { 58 };
+        let topic_shift_confidence = if is_simple_query { 28 } else { 36 };
+        let simple_query_confidence = if is_simple_query { 88 } else { 24 };
+        let escaped_current_topic =
+            serde_json::to_string(trimmed_input).map_err(|error| ProviderError::ParseResponse {
+                message: format!("failed to encode current topic summary: {error}"),
+            })?;
+        Ok(ProviderResponse {
+            provider_name: request.provider_name.clone(),
+            model: request.model.clone(),
+            output_text: format!(
+                "<fin_user_response>{user_response}</fin_user_response>\\
+<fin_control_feedback>{{\"origin\":\"model_output_contract_v1\",\"is_continuation\":false,\"is_simple_query\":{is_simple_query},\"candidate_task_id\":null,\"candidate_topic_thread_id\":null,\"continuity_confidence\":{continuity_confidence},\"topic_shift_confidence\":{topic_shift_confidence},\"simple_query_confidence\":{simple_query_confidence},\"previous_topic_summary\":\"static provider\",\"current_topic_summary\":{escaped_current_topic},\"note_candidate\":{escaped_response},\"digest_candidate\":{escaped_response},\"reason\":\"structured static provider\"}}</fin_control_feedback>\\
+<fin_tool_calls>[{{\"name\":\"reasoning.stop\",\"arguments\":{{\"summary\":{escaped_response}}}}}]</fin_tool_calls>"
+            ),
+            response_id: Some("structured-static-response".into()),
+            stop_reason: Some("end_turn".into()),
+            status: 200,
+            usage: Some(TokenUsage {
+                prompt_tokens: Some(request.rendered_input.chars().count() as u64 / 4),
+                completion_tokens: Some(16),
+                total_tokens: None,
+                cached_tokens: None,
+                reasoning_tokens: None,
+                usage_source: "static_estimate".into(),
+            }),
+        })
+    }
+}
 
 #[derive(Debug, Clone)]
 pub struct ProviderFacade {
@@ -234,9 +204,188 @@ pub struct ProviderFacade {
     credential: ProviderCredential,
     user_agent: Option<String>,
     headers: BTreeMap<String, String>,
-    resolve_overrides: BTreeMap<String, std::net::IpAddr>,
-    resolve_override_error: Option<String>,
 }
 
-#[cfg(test)]
-mod tests;
+impl ProviderFacade {
+    pub fn from_resolved(config: &ResolvedProviderConfig) -> Self {
+        Self {
+            descriptor: ProviderDescriptor::from_resolved(config),
+            credential: config.credential.clone(),
+            user_agent: config.user_agent.clone(),
+            headers: config.headers.clone(),
+        }
+    }
+
+    fn resolve_api_key(&self) -> Result<String, ProviderError> {
+        match &self.credential {
+            ProviderCredential::DirectApiKey { api_key } => Ok(api_key.clone()),
+            ProviderCredential::ApiKeyEnv { env_var } => {
+                std::env::var(env_var).map_err(|_| ProviderError::MissingCredentialEnv {
+                    env_var: env_var.clone(),
+                })
+            }
+        }
+    }
+
+    fn execute_json_request(
+        &self,
+        request: &PreparedRequest,
+        payload: &Value,
+        headers: reqwest::header::HeaderMap,
+    ) -> Result<ProviderResponse, ProviderError> {
+        let client = http_client::build_client()?;
+        let mut last_retryable_error = None;
+
+        for attempt in 1..=DEFAULT_RETRY_ATTEMPTS {
+            let response = match client
+                .post(&request.endpoint)
+                .headers(headers.clone())
+                .json(&payload)
+                .send()
+            {
+                Ok(response) => response,
+                Err(err) => {
+                    let failure = http_client::classify_reqwest_error(
+                        err,
+                        "send",
+                        &request.endpoint,
+                        attempt,
+                        DEFAULT_RETRY_ATTEMPTS,
+                    );
+                    if failure.retryable && attempt < DEFAULT_RETRY_ATTEMPTS {
+                        last_retryable_error = Some(failure.message);
+                        std::thread::sleep(exponential_backoff(attempt));
+                        continue;
+                    }
+                    return Err(ProviderError::Request {
+                        message: failure.message,
+                    });
+                }
+            };
+
+            let status = response.status().as_u16();
+            let body = match response.text() {
+                Ok(body) => body,
+                Err(err) => {
+                    let failure = http_client::classify_reqwest_error(
+                        err,
+                        "read_body",
+                        &request.endpoint,
+                        attempt,
+                        DEFAULT_RETRY_ATTEMPTS,
+                    );
+                    if failure.retryable && attempt < DEFAULT_RETRY_ATTEMPTS {
+                        last_retryable_error = Some(failure.message);
+                        std::thread::sleep(exponential_backoff(attempt));
+                        continue;
+                    }
+                    return Err(ProviderError::Request {
+                        message: failure.message,
+                    });
+                }
+            };
+
+            if status >= 400 {
+                return Err(ProviderError::HttpStatus { status, body });
+            }
+
+            let outbound = HubReq03OutboundBuilder.rebuild_from_prepared(request.clone());
+            let inbound_resp =
+                hub_inbound_response(outbound, status, body.clone(), HubTransport::http());
+            let processed = HubResp05ProcessParser.parse(inbound_resp)?;
+            let _outbound_resp = HubResp06OutboundBuilder.build(processed.clone());
+            return Ok(processed.response);
+        }
+
+        Err(ProviderError::Request {
+            message: last_retryable_error.unwrap_or_else(|| {
+                format!(
+                    "request failed after {} attempts; endpoint={}",
+                    DEFAULT_RETRY_ATTEMPTS, request.endpoint
+                )
+            }),
+        })
+    }
+
+    fn build_anthropic_headers(&self) -> Result<reqwest::header::HeaderMap, ProviderError> {
+        let api_key = self.resolve_api_key()?;
+        wire::anthropic_wire::build_headers(&api_key, self.effective_user_agent(), &self.headers)
+    }
+
+    fn build_openai_headers(&self) -> Result<reqwest::header::HeaderMap, ProviderError> {
+        let api_key = self.resolve_api_key()?;
+        wire::openai_wire::build_headers(&api_key, self.effective_user_agent(), &self.headers)
+    }
+
+    fn effective_user_agent(&self) -> &str {
+        self.user_agent.as_deref().unwrap_or(DEFAULT_USER_AGENT)
+    }
+}
+
+impl InferenceProvider for ProviderFacade {
+    fn descriptor(&self) -> &ProviderDescriptor {
+        &self.descriptor
+    }
+
+    fn prepare_request(&self, request: &ProviderRequest) -> PreparedRequest {
+        PreparedRequest {
+            provider_name: self.descriptor.name.clone(),
+            protocol: self.descriptor.protocol,
+            endpoint: endpoint_for_protocol(&self.descriptor.base_url, self.descriptor.protocol),
+            model: request
+                .override_model
+                .clone()
+                .unwrap_or_else(|| self.descriptor.default_model.clone()),
+            input: request.input.clone(),
+            rendered_input: request
+                .rendered_input
+                .clone()
+                .unwrap_or_else(|| request.input.clone()),
+            user_agent: Some(self.effective_user_agent().into()),
+            sanitized_headers: match self.descriptor.protocol {
+                ProviderProtocol::AnthropicWire => wire::anthropic_wire::build_sanitized_headers(
+                    self.effective_user_agent(),
+                    &self.headers,
+                ),
+                ProviderProtocol::OpenAiCompatible => wire::openai_wire::build_sanitized_headers(
+                    self.effective_user_agent(),
+                    &self.headers,
+                ),
+            },
+            prompt_cache_key: request.prompt_cache_key.clone(),
+        }
+    }
+
+    fn execute_prepared(
+        &self,
+        request: &PreparedRequest,
+    ) -> Result<ProviderResponse, ProviderError> {
+        let api_key = self.resolve_api_key()?;
+        match self.descriptor.protocol {
+            ProviderProtocol::AnthropicWire => {
+                let payload =
+                    wire::anthropic_wire::build_payload(&request.model, &request.rendered_input);
+                let headers = wire::anthropic_wire::build_headers(
+                    &api_key,
+                    self.effective_user_agent(),
+                    &self.headers,
+                )?;
+                self.execute_json_request(request, &payload, headers)
+            }
+            ProviderProtocol::OpenAiCompatible => {
+                let payload =
+                    wire::openai_wire::build_payload(&request.model, &request.rendered_input);
+                let headers = wire::openai_wire::build_headers(
+                    &api_key,
+                    self.effective_user_agent(),
+                    &self.headers,
+                )?;
+                self.execute_json_request(request, &payload, headers)
+            }
+        }
+    }
+}
+use crate::hub_pipeline::{
+    HubReq01InboundBuilder, HubReq02ProcessBuilder, HubReq03OutboundBuilder,
+    HubResp05ProcessParser, HubResp06OutboundBuilder, HubTransport, hub_inbound_response,
+};
