@@ -4791,3 +4791,16 @@ Tool records in first turn: 16
 - 本轮目标：从核心推理链 ReasonReq*/ReasonResp* 开始，不改其他模块语义，只在 runtime owning layer 建唯一类型与相邻转换。
 - 当前根因/切点：`closure_runtime_rounds.rs` 仍用泛名 `RoundExecution` 聚合一次推理 round，且在同一函数内完成 seed/context plan/budget/render/provider call/model output/parsed contract/runtime decision，阶段边界未显式类型化。
 - 唯一修改点：runtime 私有模块新增 ReasonReq/ReasonResp 节点 builder/parser；`execute_round` 仅串接相邻节点；对外保留现有 provider API，不改 contracts/provider 入口。
+
+## 2026-06-01 pipeline unique type - reasoning chain committed
+- Commit: `99d95d4 refactor(runtime): lock reasoning pipeline nodes`.
+- 已落地：runtime 私有 `ReasonReq01Seed -> ReasonReq05ProviderCall` 与 `ReasonResp06ModelOutput -> ReasonResp09Closure` 节点类型、相邻 builder/parser、`ReasonRoundExecution` 替代旧 `RoundExecution` 泛名。
+- 已物理移除/改名：`RoundExecution` 泛名聚合删除；control feedback 旧 `merge_with_fallback` 改为 `merge_with_runtime_defaults`，避免 fallback 术语继续污染推理链。
+- 验证：`cargo test -p fin-runtime reasoning_pipeline_ -- --nocapture` 2 passed；`cargo test -p fin-runtime control_feedback_builder_uses_runtime_defaults_when_no_structured_output_exists -- --nocapture` 1 passed；`cargo test -p fin-runtime runtime_closure_uses_structured_user_response_for_session_visible_output -- --nocapture` 1 passed；`cargo build -p fin-cli` passed。
+- 剩余：Hub/Input/Feedback/Error 链尚未改造；真实 provider 多轮 E2E 与 receipt 未做；当前 worktree 仍有前序 docs/reports/skill 未提交项。
+
+## 2026-06-02 pipeline unique type - input chain start
+- 目标：runtime 私有 InputIn01..05 类型，不改 InferenceOperationBuilder 公共 API。
+- 唯一真源：lib.rs 中 `InferenceOperationBuilder.build(worker, request)` 仍是用户调用面；内部用 InputIn01..05 串接。
+- 旧泛名 `InferenceRequest` 作为公共 API 保留，结构可视为 `InputIn04SessionBound` 的对外别名。
+- 风险：现有测试 30+ 处用 `InferenceRequest { ... }`；不允许改测试调用面，只改 builder 内部组装。

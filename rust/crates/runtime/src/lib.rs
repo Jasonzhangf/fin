@@ -1,3 +1,7 @@
+use crate::input_pipeline::{
+    ChannelMetadata, InputIn01ChannelRaw, InputIn02NormalizedBuilder, InputIn03OperationBuilder,
+    InputIn04SessionBoundBuilder, InputIn05ReasoningSeedBuilder,
+};
 use fin_contracts::{
     AgentId, ClosureTraceRecord, ContextSnapshotRecord, ControlFeedback, DigestRecord, EntityRefs,
     EventEnvelope, ExecutionCheckpointRecord, ExecutionNote, InferenceOperationPayload,
@@ -47,6 +51,9 @@ mod control_feedback;
 mod control_plane;
 #[cfg(test)]
 mod execution_checkpoint_tests;
+mod input_pipeline;
+#[cfg(test)]
+mod input_pipeline_static_tests;
 mod ledger_store;
 mod managed_task_board;
 mod model_input_assembler;
@@ -253,28 +260,26 @@ impl InferenceOperationBuilder {
         request: InferenceRequest,
     ) -> Result<OperationEnvelope<InferenceOperationPayload>, RuntimeError> {
         fin_shared::require_non_empty("submitted_at", &request.submitted_at)?;
-        let payload = InferenceOperationPayload {
-            input: request.input,
-            role: worker.policy.role.clone(),
-            provider_path: worker.policy.provider_path.clone(),
-            provider_strategy: worker.policy.provider_strategy,
-            protocol_version: worker.policy.protocol_version.clone(),
-            stream: worker.policy.stream,
-            context: request.context,
+        let channel_raw = InputIn01ChannelRaw {
+            operation_id: request.operation_id.clone(),
+            trace_id: request.trace_id.clone(),
+            submitted_at: request.submitted_at.clone(),
+            source: worker.source.clone(),
+            refs: request.refs.clone(),
+            raw_input: request.input.clone(),
+            raw_context: request.context.clone(),
+            raw_attachments: Vec::new(),
+            channel_metadata: ChannelMetadata {
+                channel: "runtime".into(),
+                origin: "api".into(),
+                received_at: request.submitted_at.clone(),
+            },
         };
-        payload.validate()?;
-
-        let mut operation = OperationEnvelope::new(
-            request.operation_id,
-            "start_inference",
-            request.submitted_at,
-            worker.source.clone(),
-            request.trace_id,
-            payload,
-        );
-        operation.refs = request.refs;
-        operation.timeout_ms = Some(worker.policy.timeout_ms);
-        Ok(operation)
+        let normalized = InputIn02NormalizedBuilder.build(channel_raw)?;
+        let operation_node = InputIn03OperationBuilder.build(normalized, worker)?;
+        let session_bound = InputIn04SessionBoundBuilder.build(operation_node)?;
+        let _seed = InputIn05ReasoningSeedBuilder.build(session_bound)?;
+        Ok(_seed.operation)
     }
 }
 #[derive(Debug, Clone, PartialEq)]
