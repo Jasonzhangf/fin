@@ -77,6 +77,7 @@ description: Project-local default development workflow for fin. Use for feature
 - detached/headless always-on 的生命周期真相必须落在 framework-owned pid/lease/state/recovery artifacts；前台请求链只能消费或唤起，不能冒充 daemon supervision 真源
 - 模型输出的结构化 block 必须做 schema 识别；错 shape 的 JSON 只能当 raw provider output 观察，不能冒充有效 control feedback
 - 若模型输出的 control block 只是在 value type 上不合法但包含白名单 key，runtime 应做 mask 白名单提取与受控 coercion；未知字段一律丢弃，不允许半结构化脏数据进入 control truth
+- 新增或改造关键流水线/数据源时，必须先对齐 `docs/architecture/44-pipeline-unique-type-and-error-chain.md`：按 `<Domain><Direction><NN><Node>` 建唯一类型，显式连接请求链/响应链/错误链；默认禁止中间插节点，新增能力优先进既有节点内部 block / validator / parser
 - normal conversation 与 debug 共享同一份 session render truth；所谓 richer UI 是 richness level 的差异，不允许做两套前后端真源
 - `Minimal / Rich / Full Trace` 这类 UI richness 开关只能控制展示层次，不能切换事实来源；所有 richness 都必须基于同一份 `operation_id -> session artifacts` 绑定结果
 - 用户在任务进行中询问“当前状态”的请求应视为特殊并行 inquiry；必须带显式标记，走 non-interrupting side path，从最新 progress/note/control/tool state 组装回复，不能打断主推理
