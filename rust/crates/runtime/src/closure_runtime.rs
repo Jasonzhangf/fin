@@ -79,6 +79,8 @@ impl M1Runtime {
             &initial_round_context,
             1,
             operation.payload.input.clone(),
+            &[],
+            &[],
         )?;
         let initial_round = initial_retry_bundle.final_round.clone();
         let mut prepared_request = initial_round.prepared_request.clone();
@@ -151,9 +153,10 @@ impl M1Runtime {
         {
             let next_round_index = round_count as u32 + 1;
             let followup_input = build_followup_input(
+                &operation.payload.context,
                 operation.payload.input.as_str(),
                 assistant_response_text.as_str(),
-                parsed_output.tool_calls.is_empty(),
+                &tool_records,
             );
             let followup_round_context = build_round_context(DynamicRoundContextInput {
                 role_id: operation.payload.role.role_id.as_str(),
@@ -172,6 +175,8 @@ impl M1Runtime {
                 &followup_round_context,
                 next_round_index,
                 followup_input,
+                &parsed_output.tool_calls,
+                &tool_records,
             )?;
             contract_retry_summaries.push(followup_retry_bundle.summary.clone());
             let followup_round = followup_retry_bundle.final_round.clone();

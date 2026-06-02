@@ -29,6 +29,8 @@ pub(super) fn execute_round_with_contract_retries(
     round_context: &MinimalContextView,
     round_index: u32,
     input: String,
+    prior_tool_calls: &[crate::model_output::ModelToolCall],
+    tool_results: &[ToolExecutionRecord],
 ) -> Result<ContractRetriedRound, RuntimeError> {
     let round = execute_round(
         operation,
@@ -37,8 +39,8 @@ pub(super) fn execute_round_with_contract_retries(
         round_context,
         round_index,
         input.clone(),
-        &[],
-        &[],
+        prior_tool_calls,
+        tool_results,
     )?;
     let mut retry_events = Vec::new();
     let mut errors =
@@ -81,8 +83,8 @@ pub(super) fn execute_round_with_contract_retries(
             round_context,
             round_index,
             retry_input.clone(),
-            &[],
-            &[],
+            prior_tool_calls,
+            tool_results,
         )?;
         errors =
             validate_model_output_contract(&round.parsed_output, &round.assistant_response_text);

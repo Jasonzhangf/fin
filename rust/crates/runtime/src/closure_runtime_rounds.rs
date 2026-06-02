@@ -1,4 +1,7 @@
 use super::*;
+use crate::model_output::ModelToolCall;
+use serde_json::json;
+use std::{fs, path::PathBuf};
 use crate::reason_pipeline::{
     ReasonReq01Seed, ReasonReq02ContextPlanBuilder, ReasonReq03BudgetedContextBuilder,
     ReasonReq04RenderedInputBuilder, ReasonReq05ProviderCallBuilder, ReasonResp06ModelOutputParser,
@@ -36,6 +39,8 @@ pub(super) fn execute_round(
     round_context: &MinimalContextView,
     round_index: u32,
     input: String,
+    prior_tool_calls: &[ModelToolCall],
+    tool_results: &[ToolExecutionRecord],
 ) -> Result<ReasonRoundExecution, RuntimeError> {
     let seed = ReasonReq01Seed {
         operation: operation.clone(),
@@ -43,6 +48,8 @@ pub(super) fn execute_round(
         round_index,
         input,
         context: round_context.clone(),
+        prior_tool_calls: prior_tool_calls.to_vec(),
+        tool_results: tool_results.to_vec(),
     };
     let context_plan = ReasonReq02ContextPlanBuilder.build(seed);
     let budgeted_context = ReasonReq03BudgetedContextBuilder.build(context_plan);
@@ -338,7 +345,7 @@ pub(super) fn build_followup_input(
 ) -> String {
     let tool_lines = render_current_tool_execution_history(context, tool_records);
     format!(
-        "Continue the same turn with the latest tool results.\nOriginal request: {original_input}\nLast assistant response: {assistant_response}\nExecuted tool results (authoritative client facts, full current history):\n- {}\nInspect these tool results before deciding whether another tool is needed. If the task is complete, answer directly and emit reasoning.stop.",
+        "Continue the same turn. Latest tool results are available.\nOriginal request: {original_input}\nLast assistant response: {assistant_response}\nExecuted tool results (authoritative client facts, full current history):\n- {}\nInspect these tool results before deciding whether another tool is needed. If the task is complete, answer directly and emit reasoning.stop.",
         if tool_lines.is_empty() {
             "none".to_string()
         } else {

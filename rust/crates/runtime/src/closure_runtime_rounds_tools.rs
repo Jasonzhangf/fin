@@ -1,6 +1,10 @@
 use super::*;
+use serde_json::json;
 use fin_provider::{ProviderToolSpec, ProviderToolCall, ProviderToolResult};
 use fin_contracts::ToolCatalogEntry;
+use crate::model_output::ModelToolCall;
+use std::path::PathBuf;
+use std::fs;
 
 pub(super) fn build_provider_tool_specs(context: &MinimalContextView) -> Vec<ProviderToolSpec> {
     context
@@ -430,8 +434,12 @@ fn resolve_artifact_path(context: &MinimalContextView, artifact_ref: &str) -> Op
 #[cfg(test)]
 mod tests {
     use super::*;
+use serde_json::json;
 use fin_provider::{ProviderToolSpec, ProviderToolCall, ProviderToolResult};
 use fin_contracts::ToolCatalogEntry;
+use crate::model_output::ModelToolCall;
+use std::path::PathBuf;
+use std::fs;
     use crate::tool_catalog::build_tool_catalog_block;
 
     #[test]

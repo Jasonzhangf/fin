@@ -1,10 +1,6 @@
-use crate::input_pipeline::{
-    ChannelMetadata, InputIn01ChannelRaw, InputIn02NormalizedBuilder, InputIn03OperationBuilder,
-    InputIn04SessionBoundBuilder, InputIn05ReasoningSeedBuilder,
-};
 use fin_contracts::{
     AgentId, ClosureTraceRecord, ContextSnapshotRecord, ControlFeedback, DigestRecord, EntityRefs,
-    EventEnvelope, ExecutionCheckpointRecord, ExecutionNote, InferenceOperationPayload,
+    EventEnvelope, ExecutionNote, InferenceOperationPayload,
     MinimalContextView, OperationEnvelope, ProgressBlock, ProviderEventPayload, ProviderPath,
     ProviderRequestRecord, ProviderResponseRecord, ProviderStrategy, ReasoningViewRecord,
     RoleProfileRef, RoundRecord, RoutingActionRecord, RoutingDecisionRecord,
@@ -14,31 +10,21 @@ use fin_provider::{InferenceProvider, PreparedRequest, ProviderRequest, Provider
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use thiserror::Error;
+use crate::input_pipeline::{
+    ChannelMetadata, InputIn01ChannelRaw, InputIn02NormalizedBuilder, InputIn03OperationBuilder,
+    InputIn04SessionBoundBuilder, InputIn05ReasoningSeedBuilder, RawAttachment,
+};
 mod activity_cards;
 #[cfg(test)]
-mod activity_cards_project_actions_tests;
-#[cfg(test)]
 mod activity_cards_tests;
-mod agent_control;
-mod agent_control_io;
-#[cfg(test)]
-mod agent_control_tests;
 mod agent_naming;
-mod append_only_message_log;
 #[cfg(test)]
 mod assembler_tests;
 mod assignment_queue;
 mod closure_runtime;
-#[cfg(test)]
-mod closure_runtime_tests;
-mod context_assembly_plan;
-mod context_baseline;
+mod closure_runtime_rounds_tools;
 mod context_block_render;
 mod context_blocks;
-mod context_budget;
-mod context_compaction;
-#[cfg(test)]
-mod context_compaction_tests;
 mod context_project_support;
 mod context_view;
 #[cfg(test)]
@@ -49,8 +35,6 @@ mod context_view_task_board_tests;
 mod context_view_tests;
 mod control_feedback;
 mod control_plane;
-#[cfg(test)]
-mod execution_checkpoint_tests;
 mod error_pipeline;
 #[cfg(test)]
 mod error_pipeline_static_tests;
@@ -60,7 +44,11 @@ mod feedback_pipeline_static_tests;
 mod input_pipeline;
 #[cfg(test)]
 mod input_pipeline_static_tests;
-mod ledger_store;
+mod reason_pipeline;
+#[cfg(test)]
+mod reason_pipeline_static_tests;
+#[cfg(test)]
+mod execution_checkpoint_tests;
 mod managed_task_board;
 mod model_input_assembler;
 mod model_output;
@@ -71,9 +59,6 @@ mod owner_loop;
 mod prompt_assembly;
 #[cfg(test)]
 mod prompt_tests;
-pub(crate) mod reason_pipeline;
-#[cfg(test)]
-mod reason_pipeline_static_tests;
 mod round_context;
 #[cfg(test)]
 mod round_loop_runtime_tests;
@@ -86,12 +71,9 @@ mod scheduler;
 mod session_materializer;
 mod session_record_journal;
 mod skill_loader;
-mod source_visibility;
 mod task_board_snapshot;
 mod task_handoff;
 mod task_store;
-#[cfg(test)]
-mod task_store_tests;
 mod tool_catalog;
 mod tool_catalog_dynamic;
 mod tool_catalog_task_tools;
@@ -119,44 +101,27 @@ mod tool_dispatch_task_write_tests;
 mod tool_dispatch_tests;
 mod tool_history_render;
 mod tool_semantics;
+mod source_visibility;
 mod trace_records;
 mod turn_records;
-pub use activity_cards::build_activity_cards;
-pub use agent_control::{AgentControlStore, AgentMailboxMessage, SendAgentInput};
+pub use activity_cards::{build_activity_cards, build_activity_cards_for_session};
 pub use agent_naming::{
     AgentAssignmentSummary, AllocatedAgentIdentity, allocate_local_agent_identity,
     create_named_local_worker, persist_assignment_summary, read_assignment_summary,
     resolve_agent_identity_by_worker_id, resolve_device_name,
 };
-pub use append_only_message_log::AppendOnlyMessageLog;
 pub use assignment_queue::{
     AssignmentRecord, append_assignment_record, read_assignment_queue,
     target_agent_name_from_worker_id, update_assignment_record,
 };
-pub use context_assembly_plan::{
-    ContextAssemblyPlan, ContextAssemblyPlanner, ContextAssemblySection, ContextBudgetSnapshot,
-    ContextStabilityClass,
-};
-pub use context_baseline::{
-    ContextBaselineDiff, ContextBaselineManager, ContextBaselineRecord, PrefixDriftEvent,
-};
-pub use context_budget::{
-    ContextBudgetDecision, ContextBudgetManager, ContextCompactionDecisionKind, FoldLevel,
-};
-pub use context_compaction::{CompactedHistoryRecord, CompactionInput, ContextCompactionEngine};
 pub use context_view::{ContextAssemblyInput, ContextViewBuilder};
+pub use source_visibility::uses_ephemeral_session_persistence;
 pub use control_feedback::ControlFeedbackBuilder;
 pub use control_plane::{
     PendingInputDequeue, apply_segment_merge, clear_waiting_state_if_due, dequeue_pending_input,
     failed_state, interrupted_segment, new_pending_input, paused_state, resumed_state,
     running_state, segment_merge, state_after_run, state_with_pending_count,
 };
-pub use fin_shared::{
-    AgentIdentity, AgentKind, AgentRunRecord, CapabilityDescriptor, CloseAgentResult, ContextMode,
-    ContextPolicy, RegisterPrimaryAgentInput, ResumeAgentResult, SpawnSubagentInput,
-    WaitAgentResult,
-};
-pub use ledger_store::{AppendLedgerRecordInput, LedgerQuery, LedgerStore};
 pub use model_input_assembler::ModelInputAssembler;
 pub use model_output::{ModelOutputParser, ParsedModelOutput};
 pub use owner_loop::derive_owner_loop_action_for_runtime;
@@ -177,8 +142,6 @@ pub enum RuntimeError {
     Config(#[from] fin_config::ConfigError),
     #[error(transparent)]
     InvalidOperation(#[from] fin_shared::SharedError),
-    #[error(transparent)]
-    SharedIo(#[from] fin_shared::SharedIoError),
     #[error(transparent)]
     Provider(#[from] fin_provider::ProviderError),
     #[error("failed to serialize runtime payload: {0}")]
@@ -265,8 +228,7 @@ impl InferenceOperationBuilder {
         worker: &WorkerRuntime,
         request: InferenceRequest,
     ) -> Result<OperationEnvelope<InferenceOperationPayload>, RuntimeError> {
-        fin_shared::require_non_empty("submitted_at", &request.submitted_at)?;
-        let channel_raw = InputIn01ChannelRaw {
+        let raw = InputIn01ChannelRaw {
             operation_id: request.operation_id.clone(),
             trace_id: request.trace_id.clone(),
             submitted_at: request.submitted_at.clone(),
@@ -275,17 +237,13 @@ impl InferenceOperationBuilder {
             raw_input: request.input.clone(),
             raw_context: request.context.clone(),
             raw_attachments: Vec::new(),
-            channel_metadata: ChannelMetadata {
-                channel: "runtime".into(),
-                origin: "api".into(),
-                received_at: request.submitted_at.clone(),
-            },
+            channel_metadata: ChannelMetadata { channel: String::new(), origin: worker.source.clone(), received_at: request.submitted_at.clone() },
         };
-        let normalized = InputIn02NormalizedBuilder.build(channel_raw)?;
+        let normalized = InputIn02NormalizedBuilder.build(raw)?;
         let operation_node = InputIn03OperationBuilder.build(normalized, worker)?;
         let session_bound = InputIn04SessionBoundBuilder.build(operation_node)?;
-        let _seed = InputIn05ReasoningSeedBuilder.build(session_bound)?;
-        Ok(_seed.operation)
+        let seed = InputIn05ReasoningSeedBuilder.build(session_bound)?;
+        Ok(seed.operation)
     }
 }
 #[derive(Debug, Clone, PartialEq)]
@@ -309,15 +267,11 @@ pub struct ClosureRun {
     pub turn_record: TurnRecord,
     pub routing_decision: RoutingDecisionRecord,
     pub routing_action: RoutingActionRecord,
-    pub resume_checkpoint: Option<ExecutionCheckpointRecord>,
-    pub compacted_history_records: Vec<CompactedHistoryRecord>,
     pub closure_trace: ClosureTraceRecord,
     pub events: Vec<EventEnvelope<Value>>,
 }
 
 pub use closure_runtime::M1Runtime;
 
-#[cfg(test)]
-mod cache_hit_tests;
 #[cfg(test)]
 mod tests;

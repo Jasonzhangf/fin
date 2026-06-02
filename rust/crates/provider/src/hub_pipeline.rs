@@ -1,7 +1,5 @@
 use super::*;
-use crate::blocks::descriptor::{ProviderCapabilities, ProviderDescriptor, endpoint_for_protocol};
-use crate::blocks::request::{PreparedRequest, ProviderRequest, TokenUsage};
-use crate::blocks::response::ProviderResponse;
+use crate::provider_facade::parse_anthropic_response;
 use std::collections::BTreeMap;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -16,7 +14,6 @@ pub struct HubReq02Process {
     pub resolved_model: String,
     pub resolved_input: String,
     pub resolved_rendered_input: String,
-    pub resolved_cache_key: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -48,7 +45,6 @@ impl HubTransport {
 pub struct HubResp05Process {
     pub inbound: HubResp04Inbound,
     pub response: ProviderResponse,
-    pub usage: Option<TokenUsage>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -91,13 +87,11 @@ impl HubReq02ProcessBuilder {
             .rendered_input
             .clone()
             .unwrap_or_else(|| resolved_input.clone());
-        let resolved_cache_key = inbound.operation.prompt_cache_key.clone();
         Ok(HubReq02Process {
             inbound,
             resolved_model,
             resolved_input,
             resolved_rendered_input,
-            resolved_cache_key,
         })
     }
 }
@@ -117,9 +111,11 @@ impl HubReq03OutboundBuilder {
             model: process.resolved_model.clone(),
             input: process.resolved_input.clone(),
             rendered_input: process.resolved_rendered_input.clone(),
-            prompt_cache_key: process.resolved_cache_key.clone(),
             user_agent: None,
             sanitized_headers: BTreeMap::new(),
+            tools: process.inbound.operation.tools.clone(),
+            prior_tool_calls: process.inbound.operation.prior_tool_calls.clone(),
+            tool_results: process.inbound.operation.tool_results.clone(),
         };
         Ok(HubReq03Outbound { process, prepared })
     }
@@ -129,14 +125,19 @@ impl HubReq03OutboundBuilder {
             input: prepared.input.clone(),
             rendered_input: Some(prepared.rendered_input.clone()),
             override_model: Some(prepared.model.clone()),
-            prompt_cache_key: prepared.prompt_cache_key.clone(),
+            tools: prepared.tools.clone(),
+            prior_tool_calls: prepared.prior_tool_calls.clone(),
+            tool_results: prepared.tool_results.clone(),
         };
         let descriptor = ProviderDescriptor {
             name: prepared.provider_name.clone(),
             protocol: prepared.protocol,
             base_url: prepared.endpoint.clone(),
             default_model: prepared.model.clone(),
-            capabilities: ProviderCapabilities::for_protocol(prepared.protocol),
+            capabilities: ProviderCapabilities {
+                supports_streaming: false,
+                supports_tool_calls: false,
+            },
         };
         HubReq03Outbound {
             process: HubReq02Process {
@@ -147,7 +148,6 @@ impl HubReq03OutboundBuilder {
                 resolved_model: prepared.model.clone(),
                 resolved_input: prepared.input.clone(),
                 resolved_rendered_input: prepared.rendered_input.clone(),
-                resolved_cache_key: prepared.prompt_cache_key.clone(),
             },
             prepared,
         }
@@ -159,16 +159,23 @@ pub struct HubResp05ProcessParser;
 
 impl HubResp05ProcessParser {
     pub fn parse(&self, inbound: HubResp04Inbound) -> Result<HubResp05Process, ProviderError> {
-        let parser = match inbound.outbound.prepared.protocol {
-            fin_config::ProviderProtocol::AnthropicWire => parse_anthropic_response,
-            _ => parse_openai_response,
+        let response = match inbound.outbound.prepared.protocol {
+            fin_config::ProviderProtocol::AnthropicWire => {
+                parse_anthropic_response(&inbound.outbound.prepared, inbound.status, &inbound.body)?
+            }
+            _ => ProviderResponse {
+                provider_name: inbound.outbound.prepared.provider_name.clone(),
+                model: inbound.outbound.prepared.model.clone(),
+                output_text: String::new(),
+                response_id: None,
+                stop_reason: None,
+                status: inbound.status,
+                tool_calls: Vec::new(),
+            },
         };
-        let response = parser(&inbound.outbound.prepared, inbound.status, &inbound.body)?;
-        let usage = response.usage.clone();
         Ok(HubResp05Process {
             inbound,
             response,
-            usage,
         })
     }
 }

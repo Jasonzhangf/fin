@@ -155,11 +155,10 @@ pub fn classify_runtime_error(
     let source = match runtime_error {
         RuntimeError::Config(_) => ErrSourceClass::Input,
         RuntimeError::InvalidOperation(_) => ErrSourceClass::Input,
-        RuntimeError::SharedIo(_) => ErrSourceClass::Runtime,
+        RuntimeError::Io { .. } => ErrSourceClass::Runtime,
         RuntimeError::Provider(_) => ErrSourceClass::Provider,
         RuntimeError::Serialize(_) => ErrSourceClass::Runtime,
         RuntimeError::State(_) => ErrSourceClass::Runtime,
-        RuntimeError::Io { .. } => ErrSourceClass::Runtime,
     };
     let decision = ErrRuntimeDecision::Failed {
         reason: runtime_error.to_string(),

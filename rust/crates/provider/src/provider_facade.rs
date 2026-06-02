@@ -288,7 +288,7 @@ impl InferenceProvider for ProviderFacade {
     }
 }
 
-fn parse_anthropic_response(
+pub(crate) fn parse_anthropic_response(
     request: &PreparedRequest,
     status: u16,
     body: &str,

@@ -4831,3 +4831,7 @@ Tool records in first turn: 16
 - Receipt 构建：`python3 scripts/build-mainline-receipts.py` 生成 3 类 receipt 全部 `status=passed`：history_context、auto_tool_roundtrip、control_boundary。
 - Receipt 落盘：`reports/regression/mainline-pipeline-e2e/mainline-receipts.json`。
 - 真源：使用 `MainlineReceiptProvider`（静态 OpenAI-compatible 协议桩），但 runtime 五链全量串联、真实 artifact 写盘；不冒充真实 provider 模型推理，注明 receipt provider 为静态协议桩。
+
+2026-06-03 pipeline merge/E2E note:
+- Current WIP provider/runtime pipeline cleanup compiles (`cargo check -p fin-runtime -p fin-provider`) but breaks fin-runtime lib tests: 6 failures, all tool-loop tests observe 6 provider rounds instead of expected 2.
+- Stashing WIP makes clean HEAD fail provider compile with missing module/API errors, so WIP is required for compile; cannot discard. Need fix WIP loop termination before commit/merge.
