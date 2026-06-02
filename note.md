@@ -4804,3 +4804,16 @@ Tool records in first turn: 16
 - 唯一真源：lib.rs 中 `InferenceOperationBuilder.build(worker, request)` 仍是用户调用面；内部用 InputIn01..05 串接。
 - 旧泛名 `InferenceRequest` 作为公共 API 保留，结构可视为 `InputIn04SessionBound` 的对外别名。
 - 风险：现有测试 30+ 处用 `InferenceRequest { ... }`；不允许改测试调用面，只改 builder 内部组装。
+
+## 2026-06-02 pipeline unique type - feedback chain landed
+- runtime 新增 `feedback_pipeline.rs`：FeedbackResp01ModelRaw -> Resp02TaggedBlocks -> Resp03UserVisible / Resp04ControlFeedback / Resp05ToolIntent -> Resp06SessionMaterialized -> Resp07ChannelRender。
+- `ModelOutputParser::parse` 已改走 Feedback 链；tag 常量 (USER_RESPONSE_TAG 等) 物理迁到 `feedback_pipeline`，`model_output` 不再持有。
+- `model_output_feedback.rs` 与 `model_output_tool_calls.rs` 物理删除（lib.rs 取消 mod 注册），无 fallback 双真源。
+- 验证：`cargo test -p fin-runtime feedback_pipeline_` 2 passed；`model_output_parser_*` 8 passed。
+
+## 2026-06-02 pipeline unique type - feedback chain landed
+- runtime 新增 `feedback_pipeline.rs`：FeedbackResp01ModelRaw -> Resp02TaggedBlocks -> Resp03UserVisible / Resp04ControlFeedback / Resp05ToolIntent -> Resp06SessionMaterialized -> Resp07ChannelRender。
+- `ModelOutputParser::parse` 改走 Feedback 链；`parse_tool_calls` / `parse_control_feedback` / `ParsedToolCalls` / `ParsedControlFeedback` 公开为 `pub(crate)` 让 feedback 节点读取，未破坏公开 API。
+- 旧 `model_output.rs` 中重复 `parsed_tool_calls` 中间变量物理删除，避免双真源。
+- 验证：`cargo test -p fin-runtime feedback_pipeline_` 2 passed；`model_output_parser_*` 8 passed；`runtime_closure_uses_structured_user_response_for_session_visible_output` 1 passed；`control_feedback_builder_uses_runtime_defaults_when_no_structured_output_exists` 1 passed；`cargo build -p fin-cli` passed。
+- 剩余：Error 链 `ErrorErr*` 节点未建；真实 provider 多轮 E2E 尚未做。
