@@ -258,7 +258,6 @@
 - [2026-04-20] `resume_project_task` 不再只是 supervision 文本：对 local `resume_ready` project，framework 现在会继续 materialize `runtime/projects/execution_handoffs*.json`；但截至 2026-04-22，这里已经从真实 `handoff_project_task(...)` 改为只读 `preview_project_task_handoff(...)`，只能产出 `prepared / noop / missing_task` 观察结果，不得再偷偷改 task-store truth。
 - [2026-04-20] execution handoff 之后，framework 现在还会 materialize `runtime/projects/runtime_pickups*.json`：它读取 handoff + session `execution_state` + pending queue，把 local project runtime 明确分类为 `running / waiting_external / paused / ready_to_resume / prepared_idle / missing_binding`，并同步把 project agent presence 从单纯 `resume_ready` 推进到更接近运行事实的 busy/waiting/idle。当前仍未跨到 detached/background provider 真执行。
 
-<<<<<<< HEAD
 - [2026-04-24] hidden checkpoint consume 的 `consumed_by_operation_id` 不能继续只读 `last_run.operation_id`；正确归因真源必须优先是 `runtime/current/current_turn.json.operation_id`，否则 hidden resume 会把 checkpoint consumed 错记到 stale frontstage run。
 - [2026-04-24] 验 assignment-resume / hidden worker turn 不能只看 task 已 `submitted/completed`；还必须同时断言 worker session `conversation/digests/reasoning/tools` 仍为空，并且 frontstage `runtime/current/last_run.json` 完全不变，才能证明 hidden-turn 边界真闭合。
 - [2026-04-24] QQ dev/debug 的工具摘要顺序不能依赖输入数组天然有序；必须按 `started_at + tool_call_id` 做“最新优先”排序后再截断/去重，否则多 agent 合并时用户会在 QQ 里看到旧工具排在前面，误判为没有新进展。
@@ -268,7 +267,7 @@
 - [2026-04-25] `.fin` 资源收口当前冻结成三层：**latest/current truth 保留；recent/debug 文件只保留 bounded window；framework hidden/control-plane turn 不进普通 session history**。不要把 `runtime/current/current_provider_requests.json` 这类 current truth 和 `recent_provider_requests.json` / `qqbot/events.jsonl` / `headless-daemon.log` 这类 bounded recent/debug 混成一类处理。
 - [2026-04-25] 仅修改 `RuntimeRetentionConfig::default()` 不会自动影响 live，因为 `load_effective_system_config(...)` 会优先保留已有 `~/.fin/config/system.toml` 的 retention 覆盖；若要真实收口现网，必须同步更新 live `system.toml` 或迁移逻辑。
 - [2026-04-25] headless daemon 文本日志的真实增长面不只来自主动 heartbeat 日志；macOS launchd `StandardOutPath/StandardErrorPath` 也指向同一 `logs/runtime/headless-daemon.log`。因此正确的 bounded 修法是让同一路径在下一次 `append_log(...)` 时统一做 tail trim，而不是只在某个写日志调用点局部截断。
-=======
+
 ## 2026-05-23 Durable Primary Agent + Subagent Control Plane
 
 - Verified: fin multi-agent identity must be modeled in runtime as durable `system_agent` / `project_agent` primary identities plus parent-owned `subagent` runs; `project_agent` is not a `system_agent` child/subagent.
@@ -366,4 +365,3 @@
 - 错误归一：`map_runtime_error_through_error_pipeline` 把 `RuntimeError` 显式串入 ErrorErr01..05，禁止吞异常 / fallback 成成功 truth。
 - 静态门禁 10 项（命名 + 编号 + 禁止 `From` / `*_V2` / `*.` / `*a` / `*_1`）+ 业务回归 9 项全过；`cargo build -p fin-cli` 持续通过；未触碰 cli/debug-server 公开 API。
 - 教训：`apply_patch` 用 `rust/...` 路径曾误写到 `rust/crates/runtime/src/...`；后续 git 提交前必须 `git status --short` 检查 staged 路径前缀。
->>>>>>> ef90b2b (docs: record pipeline unique type architecture completion)
