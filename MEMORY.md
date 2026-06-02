@@ -312,3 +312,12 @@
 - 已验证教训：Android 真机验收禁止改写真实 `ws_profiles.json` / daemon endpoint 做 adb reverse 或 mock 测试；上轮把 endpoint 写成 `ws://127.0.0.1:4040/ws` 导致手机连自己，表现为 daemon 连接不稳。以后测试替身必须用独立测试 profile/临时 runtime，并在验收前确认真实 profile 仍指向 `ws://100.66.1.82:4040/ws` 或用户指定真实地址。
 
 - [2026-06-01] red-test remediation P0/P1 完成：新增 4 个测试文件（records_tests/context_compaction_tests/task_store_tests/closure_runtime_tests）+ 2 个内联追加（owner_loop/scheduler），共新增 14 个测试，全部通过。P2/P3/P4 待后续补齐。验证结果：fin-config 17, fin-contracts 16, fin-runtime 157 passed, 0 FAILED。
+
+## 2026-06-02 Pipeline Unique Type architecture landed (Input/Reason/Hub/Feedback/Error)
+
+- 5 链按 `<Domain><Direction><NN><Node>` 全部落地，commit：99d95d4 (Reason) / 5ae5c7a (Input) / c93dd7c (Hub) / 7c6d98f (Feedback) / f1f353e (Error)。
+- 唯一真源切点：Reason `reason_pipeline.rs`、Input `input_pipeline.rs`、Hub `hub_pipeline.rs`、Feedback `feedback_pipeline.rs`、Error `error_pipeline.rs`；`ModelOutputParser` / `InferenceOperationBuilder` / `ProviderDescriptor::prepare_request` / `ProviderFacade::execute_json_request` 已改为仅串联相邻节点。
+- 已物理删除/改名：`RoundExecution` → `ReasonRoundExecution`；`merge_with_fallback` → `merge_with_runtime_defaults`；`model_output.rs` 中重复 `parsed_tool_calls` 中间变量删除；feedback tag 常量从 `model_output.rs` 迁出。
+- 错误归一：`map_runtime_error_through_error_pipeline` 把 `RuntimeError` 显式串入 ErrorErr01..05，禁止吞异常 / fallback 成成功 truth。
+- 静态门禁 10 项（命名 + 编号 + 禁止 `From` / `*_V2` / `*.` / `*a` / `*_1`）+ 业务回归 9 项全过；`cargo build -p fin-cli` 持续通过；未触碰 cli/debug-server 公开 API。
+- 教训：`apply_patch` 用 `rust/...` 路径曾误写到 `rust/crates/runtime/src/...`；后续 git 提交前必须 `git status --short` 检查 staged 路径前缀。
