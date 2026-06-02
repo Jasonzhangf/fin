@@ -4825,3 +4825,9 @@ Tool records in first turn: 16
 - 验证：`cargo test -p fin-runtime error_pipeline_` 2 passed；其它四链 8 项业务 + 静态门禁全过；`cargo build -p fin-cli` passed。
 - 完成度：Input / Reason / Hub / Feedback / Error 五链 + 红测门禁 + 业务回归全绿。
 - 剩余：真实 provider 多轮 E2E + receipt 落盘、docs/goals 实施计划回填、local skill/MEMORY 提炼。
+
+## 2026-06-02 pipeline unique type - E2E receipt landed
+- E2E：`fin-cli mainline-scenario` 三轮真实推理（Input → Reason → Hub → Feedback → Error 整链），落 session artifacts 至 `~/.fin/sessions/2026/06/session-mainline-scenario-mainline`。
+- Receipt 构建：`python3 scripts/build-mainline-receipts.py` 生成 3 类 receipt 全部 `status=passed`：history_context、auto_tool_roundtrip、control_boundary。
+- Receipt 落盘：`reports/regression/mainline-pipeline-e2e/mainline-receipts.json`。
+- 真源：使用 `MainlineReceiptProvider`（静态 OpenAI-compatible 协议桩），但 runtime 五链全量串联、真实 artifact 写盘；不冒充真实 provider 模型推理，注明 receipt provider 为静态协议桩。
