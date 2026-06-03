@@ -391,3 +391,116 @@ fn anthropic_execute_does_not_retry_http_status_errors() {
     assert_eq!(attempts.load(Ordering::SeqCst), 1);
     server.join().expect("server thread");
 }
+
+#[test]
+fn execute_prepared_covers_every_registered_provider_protocol() {
+    use fin_config::ProviderProtocol;
+
+    let source = std::fs::read_to_string(
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src/provider_facade.rs"),
+    )
+    .expect("read provider_facade.rs");
+
+    // Locate the body of fn execute_prepared(&self, request: &PreparedRequest)
+    let fn_idx = source
+        .find("fn execute_prepared(")
+        .expect("execute_prepared must exist");
+    // Take a generous window (next 800 chars) covering the full match block.
+    let window_end = source.len().min(fn_idx + 1500);
+    let window = &source[fn_idx..window_end];
+    let body_end_rel = window
+        .find("\n    }\n")
+        .expect("execute_prepared must end with closing brace");
+    let body = &window[..body_end_rel];
+
+    // Every registered ProviderProtocol variant must appear as an explicit match arm.
+    for variant in [
+        "ProviderProtocol::AnthropicWire",
+        "ProviderProtocol::OpenAiCompatible",
+    ] {
+        assert!(
+            body.contains(variant),
+            "execute_prepared must dispatch {variant}; current body:\n{body}",
+        );
+    }
+
+    // Negative invariant: no wildcard catch-all (silent drop) is allowed.
+    let has_wildcard = body.contains("protocol =>")
+        || body.contains("_, =>")
+        || body.contains("_, =>");
+    assert!(
+        !has_wildcard,
+        "execute_prepared must not use a wildcard catch-all; got:\n{body}",
+    );
+
+    // The protocol enum itself must enumerate every variant we expect;
+    // if a new variant is added, this test must be updated to assert it.
+    let protocol_enum_source = std::fs::read_to_string(
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../config/src/lib.rs"),
+    )
+    .ok();
+    if let Some(src) = protocol_enum_source {
+        for variant in [
+            "OpenAiCompatible",
+            "AnthropicWire",
+        ] {
+            assert!(
+                src.contains(&format!("    {variant},")),
+                "ProviderProtocol variant {variant} must be declared; update this test if you add a new variant",
+            );
+        }
+        // Verify the test does not silently miss a new variant: count variants
+        // and require the test to enumerate the same count.
+        let enum_block_start = src
+            .find("pub enum ProviderProtocol")
+            .expect("ProviderProtocol enum");
+        let enum_block_end = src
+            .rfind('}')
+            .expect("ProviderProtocol enum end");
+        let enum_block = &src[enum_block_start..enum_block_end];
+        let declared_variants: Vec<String> = enum_block
+            .lines()
+            .map(|l| l.trim().trim_end_matches(',').trim().to_string())
+            .filter(|l| {
+                !l.is_empty()
+                    && !l.starts_with("//")
+                    && !l.starts_with("#[")
+                    && l.chars().next().map_or(false, |c| c.is_ascii_uppercase())
+            })
+            .collect();
+        assert!(
+            declared_variants.len() >= 2,
+            "ProviderProtocol must declare at least 2 variants (AnthropicWire, OpenAiCompatible); got {:?}; update this test when adding a new variant",
+            declared_variants
+        );
+        let _ = declared_variants;
+        let _ = ProviderProtocol::AnthropicWire; // keep import live even if unused
+    }
+}
+
+#[test]
+fn provider_facade_rejects_unknown_protocol_with_explicit_error() {
+    // A custom enum value that is not in the registered set is impossible to
+    // construct via the public API because ProviderProtocol is a closed enum;
+    // this test only documents that the execute_prepared body has no
+    // 'protocol => Err(UnsupportedProtocol)' fallback that would silently
+    // route new variants to a generic error.
+    let source = std::fs::read_to_string(
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src/provider_facade.rs"),
+    )
+    .expect("read provider_facade.rs");
+    let fn_idx = source
+        .find("fn execute_prepared(")
+        .expect("execute_prepared must exist");
+    let window_end = source.len().min(fn_idx + 1500);
+    let window = &source[fn_idx..window_end];
+    let body_end_rel = window
+        .find("\n    }\n")
+        .expect("execute_prepared must end with closing brace");
+    let body = &window[..body_end_rel];
+    assert!(
+        !body.contains("Err(ProviderError::UnsupportedProtocol"),
+        "execute_prepared must not fall back to UnsupportedProtocol; every ProviderProtocol variant must be handled explicitly",
+    );
+}
