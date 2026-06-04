@@ -4835,3 +4835,26 @@ Tool records in first turn: 16
 2026-06-03 pipeline merge/E2E note:
 - Current WIP provider/runtime pipeline cleanup compiles (`cargo check -p fin-runtime -p fin-provider`) but breaks fin-runtime lib tests: 6 failures, all tool-loop tests observe 6 provider rounds instead of expected 2.
 - Stashing WIP makes clean HEAD fail provider compile with missing module/API errors, so WIP is required for compile; cannot discard. Need fix WIP loop termination before commit/merge.
+
+## 2026-06-03T15:58:59.973Z stopless learned
+
+- requestId: openai-responses-minimax.key1-MiniMax-M3-20260603T235749620-253986-1823:stop_followup:stop_followup
+- sessionId: 019e83cf-75e1-7a42-bf61-ea7db47bfe05
+- stopReason: 全部要求完成且证据可核验：分支合并到 main 完毕（无冲突），main HEAD=7fbba93=origin/main，OpenAI-compatible 真实执行链路补回 ProviderFacade，429/5xx 指数回退 5 次落进 AGENTS 护栏 #15，provider 单测 13/13 green，真实 mini27 provider-live-smoke 3 turns/8 真实请求 200 OK（stop_reason=stop），closeout 文档 + skill 沉淀已提交，临时隔离测试 home 已清理。
+- evidence: git rev-parse main=7fbba93, git rev-parse origin/main=7fbba93（merge no-conflict）。provider-live-smoke 真实输出 17 行 200/reasoning_stop_present=true。provider 单测 13/13 ok。mainline-receipts.json 14 阶段全绿（f6fe97d build_version，14 阶段 receipt）。改后文件：rust/crates/provider/src/provider_facade.rs 新增 execute_openai_compatible/parse_openai_response/MAX_REQUEST_ATTEMPTS=5；http_client.rs 新增 classify_http_status；lib.rs re-export。提交：e1c7d1e skills、7fbba93 openai+backoff、dda65f2 merge。临时 home /Volumes/extension/code/fin/runtime-home-m1smoke 已 rm。
+
+1) AGENTS 护栏 #15：provider 4xx/5xx 必须走指数回退分类器，status >= 400 直接返回违反护栏。2) pipeline unique type 重构最容易吞掉协议分支：execute_prepared 在重构后只覆盖 AnthropicWire，OpenAI-compatible 静默未接——单测只测了已支持的协议，uncovered 的协议不会被任何测试红。修复办法是加 e2e static check 'execute_prepared 协议覆盖 = ProviderProtocol::all()'。3) fin runtime 测试用隔离 runtime_home（runtime-home-m1smoke）+ 直 key mini27 provider 避免污染 ~/.fin；用完必须 rm。4) 单测 24 个失败是 pre-existing，HEAD clean 就有，必须与本次改动隔离判断（baseline 验证再判定）。5) m1 closeout 阶段常误以为推理==E2E；实际 E2E 包含 config-check + install-dev upgrade + provider-live-smoke 三段，全部要 receipt。6) 'merge done != E2E done'，merge 后必须在 main 重新跑 receipt，否则旧 receipt 覆盖新 build。7) 'old receipt' 在 mainline-receipts.json 持续误用时 build_version 字段是首要 sanity check。
+
+## 2026-06-04 review: pipeline/module/error state
+
+- 推理链命名：代码已落 `InputIn01ChannelRaw -> InputIn05ReasoningSeed`、`ReasonReq01Seed -> ReasonResp09Closure`、`FeedbackResp01ModelRaw -> FeedbackResp07ChannelRender`、`HubReq01Inbound -> HubResp06Outbound`、`ErrorErr01Detected -> ErrorErr05UserVisible`，并有 static tests 锁唯一节点名、禁止 `From`/中间编号/旧 `RoundExecution`。
+- 命名风险：`ReasonReq03BudgetedContext` 当前只是包一层，未见真实预算裁剪逻辑；`HubReq*` pipeline 编译时全部 dead_code warning，说明 provider hub 命名链当前更像 contract skeleton，未成为实际 provider 调用真源。
+- 模块状态：workspace crate 命名符合 `fin-*` 和 docs/architecture/09；crate 依赖整体单向，但 `fin-runtime` 模块数约 117，`tool_dispatch_extended_*`、`*_v4a` 等命名显示 runtime 内部仍有横向膨胀/临时版本痕迹，模块内去耦合未完全收口。
+- 错误中心：`runtime/src/error_pipeline.rs` 有 `ErrorErr*` 链和 `closure_runtime.rs::map_runtime_error_through_error_pipeline`，但 `rg` 只发现该函数定义无调用；`M1Runtime::run_closure` 仍用 `?` 直接返回 `RuntimeError`，全项目仍有 `CliError`/`ProviderError`/`DebugDataError`/`ConfigError` 等各层错误 enum。因此不能判定“唯一错误中心已完成”，只能判定 runtime 层有错误链骨架。
+- 验证：`cargo test -p fin-runtime -- --nocapture` 通过 104 tests；`cargo test -p fin-provider -- --nocapture` 通过 15 tests；provider hub dead_code warnings 仍存在。
+
+## 2026-06-04 phase 1 architecture cleanup docs
+
+- 已冻结第一步 docs 真源：`docs/architecture/02-layer-boundaries.md` 增加 runtime 内部 domain 边界、命名收口规则、错误链入口；`docs/architecture/09-workspace-and-crate-map.md` 增加 owning crate contract、runtime 目标目录布局、迁移/物理删除规则。
+- 新增错误中心真源 `docs/architecture/44-runtime-error-center.md`，明确唯一主路径 `RuntimeError -> ErrorErr01..05 -> events + ledger + user-visible message`，禁止 fallback/silent salvage，列出主链接入目标和验证 gates。
+- 编号注意：已有 `docs/architecture/43-closure-lifecycle-and-restart-recovery.md`，错误中心文档使用 `44`，避免 43 冲突。

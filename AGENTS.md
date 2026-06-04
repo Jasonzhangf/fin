@@ -91,6 +91,7 @@
 51. project registry、wake queue、always_on / unfinished work 唤醒规则：`docs/architecture/38-project-registry-and-wakeup.md`
 52. agent presence、busy/idle/offline、resume observation model：`docs/architecture/39-agent-presence-and-resume-model.md`
 53. attached 前台 control-plane wrapper 与 continuation 顺序：`docs/architecture/40-attached-control-plane-cycle.md`
+54. runtime 错误中心、禁止 fallback、错误 event/ledger 唯一路径：`docs/architecture/44-runtime-error-center.md`
 
 ## mandatory-flow
 1. 先读本文件。
