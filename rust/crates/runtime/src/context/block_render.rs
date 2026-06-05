@@ -1,6 +1,6 @@
 use fin_contracts::{PeerContextBlock, ProjectContextBlock, RolePromptBlock};
 
-pub(super) fn render_role_prompt_lines(role_prompt: &RolePromptBlock) -> Vec<String> {
+pub(crate) fn render_role_prompt_lines(role_prompt: &RolePromptBlock) -> Vec<String> {
     let mut lines = vec![
         format!("role={}", role_prompt.role_id),
         format!("current={}", role_prompt.current_prompt_summary),
@@ -54,7 +54,7 @@ pub(super) fn render_role_prompt_lines(role_prompt: &RolePromptBlock) -> Vec<Str
     lines
 }
 
-pub(super) fn render_peer_lines(peer: &PeerContextBlock) -> Vec<String> {
+pub(crate) fn render_peer_lines(peer: &PeerContextBlock) -> Vec<String> {
     let mut lines = Vec::new();
     if let Some(summary) = &peer.topology_summary {
         lines.push(format!("topology={summary}"));
@@ -91,7 +91,7 @@ pub(super) fn render_peer_lines(peer: &PeerContextBlock) -> Vec<String> {
     lines
 }
 
-pub(super) fn render_project_lines(project: &ProjectContextBlock) -> Vec<String> {
+pub(crate) fn render_project_lines(project: &ProjectContextBlock) -> Vec<String> {
     let mut lines = Vec::new();
     if let Some(primary_project) = &project.primary_project {
         lines.push(format!(

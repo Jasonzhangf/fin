@@ -6,49 +6,49 @@ use std::{
 };
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
-pub(super) struct ProjectRegistryContextSnapshot {
-    pub(super) active_projects: Vec<ProjectRef>,
-    pub(super) projects: Vec<ProjectRef>,
-    pub(super) active_agent_ids: Vec<String>,
-    pub(super) agent_presence_summary: Option<String>,
-    pub(super) supervision_actions: Vec<String>,
-    pub(super) project_supervision_summary: Option<String>,
-    pub(super) assignment_queue_summary: Option<String>,
-    pub(super) mailbox_summary: Option<String>,
+pub(crate) struct ProjectRegistryContextSnapshot {
+    pub(crate) active_projects: Vec<ProjectRef>,
+    pub(crate) projects: Vec<ProjectRef>,
+    pub(crate) active_agent_ids: Vec<String>,
+    pub(crate) agent_presence_summary: Option<String>,
+    pub(crate) supervision_actions: Vec<String>,
+    pub(crate) project_supervision_summary: Option<String>,
+    pub(crate) assignment_queue_summary: Option<String>,
+    pub(crate) mailbox_summary: Option<String>,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
-pub(super) struct AgentPresenceSnapshot {
-    pub(super) agents: Vec<AgentPresenceSnapshotEntry>,
-    pub(super) active_agent_ids: Vec<String>,
-    pub(super) summary: Option<String>,
+pub(crate) struct AgentPresenceSnapshot {
+    pub(crate) agents: Vec<AgentPresenceSnapshotEntry>,
+    pub(crate) active_agent_ids: Vec<String>,
+    pub(crate) summary: Option<String>,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
-pub(super) struct AgentPresenceSnapshotEntry {
-    pub(super) agent_id: String,
-    pub(super) worker_id: String,
-    pub(super) device_name: String,
-    pub(super) agent_name: String,
-    pub(super) status: String,
+pub(crate) struct AgentPresenceSnapshotEntry {
+    pub(crate) agent_id: String,
+    pub(crate) worker_id: String,
+    pub(crate) device_name: String,
+    pub(crate) agent_name: String,
+    pub(crate) status: String,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
-pub(super) struct ProjectSupervisionSnapshot {
-    pub(super) ready_count: usize,
-    pub(super) resume_ready_count: usize,
-    pub(super) busy_count: usize,
-    pub(super) waiting_count: usize,
-    pub(super) recover_needed_count: usize,
-    pub(super) projects: Vec<ProjectSupervisionSnapshotEntry>,
-    pub(super) actions: Vec<String>,
-    pub(super) summary: Option<String>,
+pub(crate) struct ProjectSupervisionSnapshot {
+    pub(crate) ready_count: usize,
+    pub(crate) resume_ready_count: usize,
+    pub(crate) busy_count: usize,
+    pub(crate) waiting_count: usize,
+    pub(crate) recover_needed_count: usize,
+    pub(crate) projects: Vec<ProjectSupervisionSnapshotEntry>,
+    pub(crate) actions: Vec<String>,
+    pub(crate) summary: Option<String>,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
-pub(super) struct ProjectSupervisionSnapshotEntry {
-    pub(super) project_id: String,
-    pub(super) desired_action: String,
+pub(crate) struct ProjectSupervisionSnapshotEntry {
+    pub(crate) project_id: String,
+    pub(crate) desired_action: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
@@ -64,7 +64,7 @@ struct StoredProjectRegistryEntry {
     unfinished_task_count: usize,
 }
 
-pub(super) fn load_project_registry_context(
+pub(crate) fn load_project_registry_context(
     runtime_home: Option<&str>,
 ) -> ProjectRegistryContextSnapshot {
     let Some(runtime_home) = runtime_home.filter(|value| !value.trim().is_empty()) else {
@@ -288,7 +288,7 @@ fn load_mailbox_summary(runtime_home: &str) -> Option<String> {
     })
 }
 
-pub(super) fn load_agent_presence_snapshot(runtime_home: &str) -> Option<AgentPresenceSnapshot> {
+pub(crate) fn load_agent_presence_snapshot(runtime_home: &str) -> Option<AgentPresenceSnapshot> {
     let path = Path::new(runtime_home).join("runtime/current/current_agent_presence_registry.json");
     let Ok(content) = fs::read_to_string(path) else {
         return None;
@@ -344,7 +344,7 @@ pub(super) fn load_agent_presence_snapshot(runtime_home: &str) -> Option<AgentPr
     })
 }
 
-pub(super) fn load_project_supervision_snapshot(
+pub(crate) fn load_project_supervision_snapshot(
     runtime_home: &str,
 ) -> Option<ProjectSupervisionSnapshot> {
     let path = Path::new(runtime_home).join("runtime/current/current_project_supervision.json");
@@ -388,7 +388,7 @@ pub(super) fn load_project_supervision_snapshot(
     })
 }
 
-pub(super) fn resolve_project_root(cwd: &str) -> Option<String> {
+pub(crate) fn resolve_project_root(cwd: &str) -> Option<String> {
     let mut current = PathBuf::from(cwd);
     if !current.exists() {
         return None;
@@ -407,7 +407,7 @@ pub(super) fn resolve_project_root(cwd: &str) -> Option<String> {
     }
 }
 
-pub(super) fn relativize_selected_paths(
+pub(crate) fn relativize_selected_paths(
     project_root: &str,
     selected_paths: &[String],
 ) -> Vec<String> {
@@ -429,14 +429,14 @@ pub(super) fn relativize_selected_paths(
         .collect()
 }
 
-pub(super) fn path_basename(path: &str) -> Option<String> {
+pub(crate) fn path_basename(path: &str) -> Option<String> {
     Path::new(path)
         .file_name()
         .and_then(|value| value.to_str())
         .map(str::to_string)
 }
 
-pub(super) fn sanitize_project_id(label: &str) -> String {
+pub(crate) fn sanitize_project_id(label: &str) -> String {
     let value = label
         .trim()
         .chars()

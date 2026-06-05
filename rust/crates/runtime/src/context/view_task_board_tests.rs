@@ -18,7 +18,7 @@ fn temp_runtime_home(prefix: &str) -> PathBuf {
     ))
 }
 
-fn worker_runtime() -> WorkerRuntime {
+pub(crate) fn worker_runtime() -> WorkerRuntime {
     let user = UserConfig {
         default_provider: "openai".into(),
         providers: BTreeMap::from([(

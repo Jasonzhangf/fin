@@ -24,16 +24,7 @@ mod assignment_queue;
 mod closure;
 #[cfg(test)]
 mod run_closure_error_center_tests;
-mod context_block_render;
-mod context_blocks;
-mod context_project_support;
-mod context_view;
-#[cfg(test)]
-mod context_view_registry_tests;
-#[cfg(test)]
-mod context_view_task_board_tests;
-#[cfg(test)]
-mod context_view_tests;
+mod context;
 mod control_feedback;
 mod control_plane;
 mod pipeline;
@@ -104,7 +95,7 @@ pub use assignment_queue::{
     AssignmentRecord, append_assignment_record, read_assignment_queue,
     target_agent_name_from_worker_id, update_assignment_record,
 };
-pub use context_view::{ContextAssemblyInput, ContextViewBuilder};
+pub use context::view::{ContextAssemblyInput, ContextViewBuilder};
 pub use source_visibility::uses_ephemeral_session_persistence;
 pub use control_feedback::ControlFeedbackBuilder;
 pub use control_plane::{

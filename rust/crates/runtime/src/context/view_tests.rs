@@ -2,7 +2,7 @@ use crate::{ContextAssemblyInput, ContextViewBuilder, WorkerRuntime};
 use fin_config::{ConfigMapper, ProviderProtocol, UserConfig, UserProviderConfig};
 use std::{collections::BTreeMap, fs};
 
-fn worker_runtime() -> WorkerRuntime {
+pub(crate) fn worker_runtime() -> WorkerRuntime {
     let user = UserConfig {
         default_provider: "openai".into(),
         providers: BTreeMap::from([(
@@ -24,7 +24,7 @@ fn worker_runtime() -> WorkerRuntime {
         .expect("worker runtime")
 }
 
-#[path = "context_view_tests_peer_state.rs"]
+#[path = "view_tests_peer_state.rs"]
 mod peer_state;
-#[path = "context_view_tests_rich_blocks.rs"]
+#[path = "view_tests_rich_blocks.rs"]
 mod rich_blocks;
