@@ -92,6 +92,8 @@
 52. agent presence、busy/idle/offline、resume observation model：`docs/architecture/39-agent-presence-and-resume-model.md`
 53. attached 前台 control-plane wrapper 与 continuation 顺序：`docs/architecture/40-attached-control-plane-cycle.md`
 54. runtime 错误中心、禁止 fallback、错误 event/ledger 唯一路径：`docs/architecture/44-runtime-error-center.md`
+55. runtime 模块 inventory + function map + verification map + 命名/layer gate：`docs/architecture/45-runtime-module-inventory.md`
+56. runtime 9 个 owning domain 子目录（pipeline/ closure/ context/ tools/ session/ control/ task/ agent/ runtime_home/）的唯一入口与边界 gate：`rust/crates/runtime/src/pipeline/naming_static_tests.rs` 中 `lib_rs_domain_dirs_have_mod_entries` / `domain_mods_do_not_use_legacy_crate_paths` / `domain_dirs_have_no_fallback_or_salvage` / `cross_domain_no_direct_crate_file_imports`
 
 ## mandatory-flow
 1. 先读本文件。
