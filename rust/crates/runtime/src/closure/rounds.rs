@@ -8,7 +8,8 @@ use crate::pipeline::reason::{
     ReasonResp07ParsedContractParser, ReasonResp08RuntimeDecisionBuilder, ReasonResp09Closure,
     ReasonResp09ClosureBuilder,
 };
-use crate::tool_history_render::render_current_tool_execution_history;
+use crate::tools::tool_history_render::render_current_tool_execution_history;
+use crate::tools::tool_dispatch;
 
 pub(super) struct StepAllocation {
     pub(super) step_id: String,

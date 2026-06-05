@@ -77,35 +77,36 @@ fn provider_hub_pipeline_fully_deleted() {
 
 #[test]
 fn lib_rs_extended_mod_declarations_count_is_documented() {
-    // Phase 5d was skipped due to bridge-approach failure (196 errors).
-    // The target state is zero `mod ..._extended_...;` lines in lib.rs, with all
-    // such modules consolidated under `tools/`. This test asserts the CURRENT
-    // count (a known backlog item) and will fail when M2 lands the consolidation,
-    // signaling it's time to remove the test.
+    // Phase 5d completed: all `mod tool_dispatch_extended_*` declarations moved
+    // out of lib.rs into tools/mod.rs.
     let lib = read_crate_file("src/lib.rs");
-    let current_count = lib.matches("mod tool_dispatch_extended").count()
-        + lib.matches("mod tool_dispatch_extended_").count();
-    // The substring "mod tool_dispatch_extended" appears once per declaration,
-    // but "mod tool_dispatch_extended" is a prefix of "mod tool_dispatch_extended_*"
-    // so we count only the unique declarations.
-    let unique_lines: std::collections::HashSet<&str> = lib
+    let lib_lines: std::collections::HashSet<&str> = lib
         .lines()
         .filter(|l| l.trim().starts_with("mod tool_dispatch_extended"))
         .collect();
     assert_eq!(
-        unique_lines.len(),
-        13,
-        "expected 13 tool_dispatch_extended declarations (Phase 5d backlog), found {}",
-        unique_lines.len()
+        lib_lines.len(),
+        0,
+        "lib.rs must not declare tool_dispatch_extended_* modules; move to tools/mod.rs"
+    );
+    let tools_mod = read_crate_file("src/tools/mod.rs");
+    let tools_lines: std::collections::HashSet<&str> = tools_mod
+        .lines()
+        .filter(|l| l.trim().starts_with("pub(crate) mod tool_dispatch_extended")
+                || l.trim().starts_with("mod tool_dispatch_extended"))
+        .collect();
+    assert!(
+        !tools_lines.is_empty(),
+        "expected at least one tool_dispatch_extended_* submodule in tools/mod.rs"
     );
 }
 
 #[test]
-fn lib_rs_v4a_mod_declarations_count_is_documented() {
+fn tools_mod_v4a_mod_declarations_count_is_documented() {
     // v4a is a temp version marker. Target state: zero occurrences.
-    // Current state: 1 (tool_dispatch_extended_patch_v4a).
-    let lib = read_crate_file("src/lib.rs");
-    let count = lib.matches("_v4a").count();
+    // Current state: 1 (tool_dispatch_extended_patch_v4a) in tools/mod.rs.
+    let tools_mod = read_crate_file("src/tools/mod.rs");
+    let count = tools_mod.matches("_v4a").count();
     assert_eq!(
         count, 1,
         "expected 1 _v4a declaration (Phase 5d backlog), found {}",

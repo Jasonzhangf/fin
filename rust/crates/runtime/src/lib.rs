@@ -55,33 +55,7 @@ mod skill_loader;
 mod task_board_snapshot;
 mod task_handoff;
 mod task_store;
-mod tool_catalog;
-mod tool_catalog_dynamic;
-mod tool_catalog_task_tools;
-mod tool_dispatch;
-mod tool_dispatch_control;
-mod tool_dispatch_extended;
-mod tool_dispatch_extended_collab;
-mod tool_dispatch_extended_collab_coordination;
-mod tool_dispatch_extended_collab_mailbox;
-mod tool_dispatch_extended_exec;
-mod tool_dispatch_extended_patch;
-mod tool_dispatch_extended_patch_v4a;
-mod tool_dispatch_extended_query;
-mod tool_dispatch_extended_query_control;
-mod tool_dispatch_extended_query_history;
-mod tool_dispatch_extended_query_image;
-mod tool_dispatch_extended_query_task;
-mod tool_dispatch_extended_task_write;
-mod tool_dispatch_peer;
-#[cfg(test)]
-mod tool_dispatch_query_tests;
-#[cfg(test)]
-mod tool_dispatch_task_write_tests;
-#[cfg(test)]
-mod tool_dispatch_tests;
-mod tool_history_render;
-mod tool_semantics;
+mod tools;
 mod source_visibility;
 mod trace_records;
 mod turn_records;

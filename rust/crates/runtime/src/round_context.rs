@@ -1,5 +1,5 @@
-use crate::tool_catalog_dynamic::{DynamicToolCatalogInput, build_dynamic_tool_catalog_block};
-use crate::tool_history_render::render_current_tool_execution_history;
+use crate::tools::tool_catalog_dynamic::{DynamicToolCatalogInput, build_dynamic_tool_catalog_block};
+use crate::tools::tool_history_render::render_current_tool_execution_history;
 use fin_contracts::{
     CurrentInputBlock, KnowledgeArtifactBlock, MinimalContextView, ToolExecutionRecord,
 };

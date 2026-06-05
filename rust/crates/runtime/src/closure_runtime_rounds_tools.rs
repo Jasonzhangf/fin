@@ -415,7 +415,7 @@ fn load_authoritative_receipt(
 }
 
 fn is_authoritative_receipt_ref(artifact_ref: &str) -> bool {
-    crate::tool_dispatch::authoritative_receipt_ref(artifact_ref)
+    crate::tools::tool_dispatch::authoritative_receipt_ref(artifact_ref)
 }
 
 fn resolve_artifact_path(context: &MinimalContextView, artifact_ref: &str) -> Option<PathBuf> {
@@ -440,7 +440,7 @@ use fin_contracts::ToolCatalogEntry;
 use crate::model_output::ModelToolCall;
 use std::path::PathBuf;
 use std::fs;
-    use crate::tool_catalog::build_tool_catalog_block;
+    use crate::tools::tool_catalog::build_tool_catalog_block;
 
     #[test]
     fn provider_tool_specs_include_required_fields_for_managed_task_tools() {

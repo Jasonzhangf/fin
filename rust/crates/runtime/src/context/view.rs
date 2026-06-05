@@ -2,8 +2,8 @@ use crate::{
     WorkerRuntime,
     context::blocks::{build_peer_block, build_project_block},
     prompt_assembly::build_role_prompt_block,
-    tool_catalog_dynamic::{DynamicToolCatalogInput, build_dynamic_tool_catalog_block},
-    tool_history_render::render_current_tool_execution_history,
+    tools::tool_catalog_dynamic::{DynamicToolCatalogInput, build_dynamic_tool_catalog_block},
+    tools::tool_history_render::render_current_tool_execution_history,
 };
 use fin_contracts::{
     ContextControlBlock, CurrentInputBlock, DigestRecord, EntityRefs, HistoryBlock,

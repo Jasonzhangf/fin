@@ -70,8 +70,8 @@ fn context_tool_catalog_exposes_rich_apply_patch_and_query_tool_metadata() {
 
 #[test]
 fn dynamic_tool_catalog_marks_runtime_and_peer_dependent_tools_when_context_is_missing() {
-    let tools = crate::tool_catalog_dynamic::build_dynamic_tool_catalog_block(
-        &crate::tool_catalog_dynamic::DynamicToolCatalogInput {
+    let tools = crate::tools::tool_catalog_dynamic::build_dynamic_tool_catalog_block(
+        &crate::tools::tool_catalog_dynamic::DynamicToolCatalogInput {
             role_id: None,
             context: &MinimalContextView::default(),
             recent_tool_records: &Vec::<ToolExecutionRecord>::new(),

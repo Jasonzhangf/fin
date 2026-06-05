@@ -3,7 +3,7 @@ use crate::model_output::ModelToolCall;
 use fin_contracts::ToolExecutionRecord;
 use crate::control_feedback::ControlFeedbackBuilder;
 use crate::model_output::ModelOutputParser;
-use crate::tool_dispatch;
+use crate::tools::tool_dispatch;
 
 #[derive(Debug, Clone)]
 pub(crate) struct ReasonReq01Seed {
