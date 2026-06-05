@@ -34,6 +34,7 @@ mod closure_runtime_state;
 pub struct M1Runtime {
     source: String,
     sequence: u64,
+    pub last_error_events: Vec<EventEnvelope<Value>>,
 }
 
 impl Default for M1Runtime {
@@ -47,10 +48,26 @@ impl M1Runtime {
         Self {
             source: source.into(),
             sequence: 0,
+            last_error_events: Vec::new(),
         }
     }
 
     pub fn run_closure(
+        &mut self,
+        operation: OperationEnvelope<InferenceOperationPayload>,
+        provider: &impl InferenceProvider,
+    ) -> Result<ClosureRun, RuntimeError> {
+        match self.run_closure_inner(operation.clone(), provider) {
+            Ok(run) => Ok(run),
+            Err(err) => {
+                let user_visible = map_runtime_error_through_error_pipeline(&operation, &err);
+                self.emit_error_events(&operation, &user_visible, &err);
+                Err(err)
+            }
+        }
+    }
+
+    fn run_closure_inner(
         &mut self,
         operation: OperationEnvelope<InferenceOperationPayload>,
         provider: &impl InferenceProvider,
@@ -494,6 +511,58 @@ impl M1Runtime {
         event.operation_id = operation_id;
         event.validate()?;
         Ok(event)
+    }
+
+    pub(super) fn emit_error_events(
+        &mut self,
+        operation: &OperationEnvelope<InferenceOperationPayload>,
+        user_visible: &crate::error_pipeline::ErrorErr05UserVisible,
+        err: &RuntimeError,
+    ) {
+        let refs = operation.refs.clone();
+        let trace_id = operation.trace_id.clone();
+        let operation_id = operation.operation_id.clone();
+        let submitted_at = operation.submitted_at.clone();
+        let detected = &user_visible.recorded.classified.classified.detected;
+        let source_class_json = serde_json::to_value(&user_visible.recorded.classified.classified.source_class)
+            .ok()
+            .and_then(|v| v.as_str().map(|s| s.to_string()))
+            .unwrap_or_else(|| "Runtime".to_string());
+        let decision_json = serde_json::to_value(&user_visible.recorded.classified.decision).ok();
+        let payload_detected = serde_json::json!({
+            "source_node": detected.source_node,
+            "fact": detected.fact,
+            "captured_at": detected.captured_at,
+            "source_class": source_class_json,
+            "decision": decision_json,
+            "error_message": err.to_string(),
+            "ledger_path": user_visible.recorded.ledger_path,
+            "recorded_event_id": user_visible.recorded.recorded_event_id,
+        });
+        if let Ok(ev) = self.event(
+            "error.detected",
+            &trace_id,
+            &submitted_at,
+            &refs,
+            Some(operation_id.clone()),
+            payload_detected,
+        ) {
+            self.last_error_events.push(ev);
+        }
+        let payload_user = serde_json::json!({
+            "user_message": user_visible.user_message,
+            "safe_for_channel": user_visible.safe_for_channel,
+        });
+        if let Ok(ev) = self.event(
+            "error.user_visible_prepared",
+            &trace_id,
+            &submitted_at,
+            &refs,
+            Some(operation_id),
+            payload_user,
+        ) {
+            self.last_error_events.push(ev);
+        }
     }
 }
 

@@ -22,6 +22,8 @@ mod agent_naming;
 mod assembler_tests;
 mod assignment_queue;
 mod closure_runtime;
+#[cfg(test)]
+mod run_closure_error_center_tests;
 mod closure_runtime_rounds_tools;
 mod context_block_render;
 mod context_blocks;
