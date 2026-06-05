@@ -1,4 +1,4 @@
-use super::closure_runtime_contract_retry::ContractRetrySummary;
+use super::retry::ContractRetrySummary;
 use crate::tool_dispatch::ToolDispatchOutcome;
 use fin_contracts::ControlFeedback;
 

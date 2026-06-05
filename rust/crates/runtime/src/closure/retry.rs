@@ -1,4 +1,4 @@
-use super::closure_runtime_rounds::{ReasonRoundExecution, execute_round};
+use super::rounds::{ReasonRoundExecution, execute_round};
 use super::*;
 
 pub(super) const MAX_OUTPUT_CONTRACT_RETRIES: usize = 3;

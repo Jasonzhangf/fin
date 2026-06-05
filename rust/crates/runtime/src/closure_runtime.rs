@@ -1,34 +1,22 @@
 use super::*;
-use closure_runtime_checkpoint::build_resume_checkpoint;
-use closure_runtime_contract_retry::{
+use super::checkpoint::build_resume_checkpoint;
+use super::retry::{
     MAX_OUTPUT_CONTRACT_RETRIES, execute_round_with_contract_retries,
 };
-use closure_runtime_events::{EventEmissionInput, emit_runtime_events};
-use closure_runtime_finalize::{
+use super::events::{EventEmissionInput, emit_runtime_events};
+use super::finalize::{
     append_checkpoint_recorded_event, append_finalize_step, build_final_run, build_partial_run,
 };
-use closure_runtime_rounds::{
+use super::rounds::{
     allocate_step, build_context_build_step_record, build_context_snapshot, build_followup_input,
     record_round,
 };
-use closure_runtime_state::{
+use super::state::{
     merge_dispatch_outcome, next_step, operation_status, record_auto_tool_round_limit,
     record_output_contract_retry_limit, stop_source,
 };
 use round_context::{DynamicRoundContextInput, build_round_context};
 
-#[path = "closure_runtime_checkpoint.rs"]
-mod closure_runtime_checkpoint;
-#[path = "closure_runtime_contract_retry.rs"]
-mod closure_runtime_contract_retry;
-#[path = "closure_runtime_events.rs"]
-mod closure_runtime_events;
-#[path = "closure_runtime_finalize.rs"]
-mod closure_runtime_finalize;
-#[path = "closure_runtime_rounds.rs"]
-mod closure_runtime_rounds;
-#[path = "closure_runtime_state.rs"]
-mod closure_runtime_state;
 
 #[derive(Debug, Clone)]
 pub struct M1Runtime {

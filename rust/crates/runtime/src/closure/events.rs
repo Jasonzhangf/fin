@@ -1,4 +1,4 @@
-use super::closure_runtime_rounds::append_step_event_id;
+use super::rounds::append_step_event_id;
 use super::*;
 
 pub(super) struct EventEmissionInput<'a> {
