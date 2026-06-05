@@ -4876,3 +4876,10 @@ exec_command 验证文件落盘比 write_stdin 截断结果更可靠；provider_
 - evidence: commit 5e71f1a pushed; docs/architecture/45-runtime-module-inventory.md uncommitted; Phase 2-7 unstarted; Phase 3 fallback scan passed mainline
 
 docs refactor (P1) cheap; code refactor (P4-7) needs 3x budget; Phase 2 inventory must commit before Phase 5 rename to avoid merge conflicts
+
+## 2026-06-05 phase 5b closure split — failed + rolled back
+
+- 状态：closure/ 子模块迁移进入编译冲突（use super 范围 + pub(crate) 暴露 + 子模块 #[path] 互引），手回退中途触发 `git reset` + `git restore` 13 文件 + 删 `closure/mod.rs` 残留 + `rmdir` 目录。
+- 当前 working tree 干净，`cargo test -p fin-runtime` 105 passed。pipeline/ 域保留。
+- Phase 5b 教训：closure 子模块太多（16 文件）+ `closure_runtime.rs` 内部 `#[path]` 模引用 + 子模块间 `pub(super)` vs `pub(crate)` 边界混用，一次大改难收口。后续拆 closure 需分更小批（先 4 文件）。
+- 下轮入口：`docs/goals/architecture-cleanup-plan.md` Phase 5b 标注"未做"；`docs/architecture/45-runtime-module-inventory.md` 中 closure 域 8 个 OK 行仍未迁。Phase 6/7/8 全部未做。
