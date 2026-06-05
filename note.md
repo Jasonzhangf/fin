@@ -4883,3 +4883,16 @@ docs refactor (P1) cheap; code refactor (P4-7) needs 3x budget; Phase 2 inventor
 - 当前 working tree 干净，`cargo test -p fin-runtime` 105 passed。pipeline/ 域保留。
 - Phase 5b 教训：closure 子模块太多（16 文件）+ `closure_runtime.rs` 内部 `#[path]` 模引用 + 子模块间 `pub(super)` vs `pub(crate)` 边界混用，一次大改难收口。后续拆 closure 需分更小批（先 4 文件）。
 - 下轮入口：`docs/goals/architecture-cleanup-plan.md` Phase 5b 标注"未做"；`docs/architecture/45-runtime-module-inventory.md` 中 closure 域 8 个 OK 行仍未迁。Phase 6/7/8 全部未做。
+
+## 2026-06-05T15:50 phase 5b-5e next batch planning
+
+- 现状：HEAD = 4c09bb5（note 记录）+ 6f078b9（pipeline/ 9 文件）+ a3f8746（error center mainline）。working tree 干净。cargo test 105 + 15 passed。
+- 下一轮 Phase 5b 拆分（避免重蹈 16 文件大改失败）：
+  - 批 1: closure_runtime_*.rs 中只迁 closure_runtime.rs（主文件），4 子文件保留 `#[path]` 桥接先不动。
+  - 批 2: closure_runtime_rounds + closure_runtime_state 迁入。
+  - 批 3: 其它 8 个子文件逐 2 迁入。
+  - 批 4: model_input / model_output 迁入。
+- 关键陷阱：closure_runtime.rs 内部已用 `#[path = "closure_runtime_X.rs"] mod X;` 桥接，子模块要 `use super::X::`（不是 `use X::`）。
+- Phase 6: provider hub dead_code 决策 = 接入 `ProviderFacade::execute_prepared` 或删除 skeleton（当前 19 个 dead_code warning）。建议删除。
+- Phase 7: 在 pipeline/error/static_tests.rs 增加 `forbidden: ["extended", "v4a", "_v4_"]` 字面 + 禁止 `impl From<PipelineNode>` cross-node。
+- Phase 8: 5 个 cargo test 都已跑；缺 live provider smoke（需 mini27 key）；CI harness 集成。
