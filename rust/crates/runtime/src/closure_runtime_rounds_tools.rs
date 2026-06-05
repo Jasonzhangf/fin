@@ -6,7 +6,7 @@ use crate::model_output::ModelToolCall;
 use std::path::PathBuf;
 use std::fs;
 
-pub(super) fn build_provider_tool_specs(context: &MinimalContextView) -> Vec<ProviderToolSpec> {
+pub(crate) fn build_provider_tool_specs(context: &MinimalContextView) -> Vec<ProviderToolSpec> {
     context
         .tools
         .as_ref()
@@ -355,7 +355,7 @@ fn build_tool_description(tool: &ToolCatalogEntry) -> String {
     parts.join("\n")
 }
 
-pub(super) fn model_tool_call_to_provider_tool_call(call: &ModelToolCall) -> ProviderToolCall {
+pub(crate) fn model_tool_call_to_provider_tool_call(call: &ModelToolCall) -> ProviderToolCall {
     ProviderToolCall {
         tool_call_id: call
             .tool_call_id
@@ -366,7 +366,7 @@ pub(super) fn model_tool_call_to_provider_tool_call(call: &ModelToolCall) -> Pro
     }
 }
 
-pub(super) fn build_provider_tool_results(
+pub(crate) fn build_provider_tool_results(
     context: &MinimalContextView,
     tool_results: &[ToolExecutionRecord],
 ) -> Vec<ProviderToolResult> {

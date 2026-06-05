@@ -21,10 +21,9 @@ mod agent_naming;
 #[cfg(test)]
 mod assembler_tests;
 mod assignment_queue;
-mod closure_runtime;
+mod closure;
 #[cfg(test)]
 mod run_closure_error_center_tests;
-mod closure_runtime_rounds_tools;
 mod context_block_render;
 mod context_blocks;
 mod context_project_support;
@@ -262,7 +261,7 @@ pub struct ClosureRun {
     pub events: Vec<EventEnvelope<Value>>,
 }
 
-pub use closure_runtime::M1Runtime;
+pub use closure::closure_runtime::M1Runtime;
 
 #[cfg(test)]
 mod tests;

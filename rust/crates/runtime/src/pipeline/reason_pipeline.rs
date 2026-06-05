@@ -125,9 +125,9 @@ impl ReasonReq05ProviderCallBuilder {
             override_model: Some(
                 seed.operation.payload.provider_path.primary_target().model.clone(),
             ),
-            tools: crate::closure_runtime_rounds_tools::build_provider_tool_specs(&seed.context),
-            prior_tool_calls: seed.prior_tool_calls.iter().map(crate::closure_runtime_rounds_tools::model_tool_call_to_provider_tool_call).collect(),
-            tool_results: crate::closure_runtime_rounds_tools::build_provider_tool_results(&seed.context, &seed.tool_results),
+            tools: crate::closure::closure_runtime_rounds_tools::build_provider_tool_specs(&seed.context),
+            prior_tool_calls: seed.prior_tool_calls.iter().map(crate::closure::closure_runtime_rounds_tools::model_tool_call_to_provider_tool_call).collect(),
+            tool_results: crate::closure::closure_runtime_rounds_tools::build_provider_tool_results(&seed.context, &seed.tool_results),
         };
         ReasonReq05ProviderCall { rendered_input: rendered, provider_request }
     }
