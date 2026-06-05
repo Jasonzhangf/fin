@@ -1,6 +1,6 @@
 use crate::{
     WorkerRuntime,
-    skill_loader::{LoadedSkill, load_global_skills, summarize_loaded_skills},
+    runtime_home::skill_loader::{LoadedSkill, load_global_skills, summarize_loaded_skills},
 };
 use fin_contracts::{DigestRecord, PromptLayerSummary, PromptModuleEntry, RolePromptBlock};
 

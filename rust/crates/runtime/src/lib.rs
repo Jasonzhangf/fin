@@ -51,12 +51,12 @@ mod round_loop_runtime_tests_full_history;
 
 mod session;
 
-mod skill_loader;
+mod runtime_home;
 
 
 
 mod tools;
-mod source_visibility;
+
 
 
 pub use activity_cards::{build_activity_cards, build_activity_cards_for_session};
@@ -70,7 +70,7 @@ pub use task::assignment_queue::{
     target_agent_name_from_worker_id, update_assignment_record,
 };
 pub use context::view::{ContextAssemblyInput, ContextViewBuilder};
-pub use source_visibility::uses_ephemeral_session_persistence;
+pub use runtime_home::source_visibility::uses_ephemeral_session_persistence;
 pub use control::feedback::ControlFeedbackBuilder;
 pub use control::plane::{
     PendingInputDequeue, apply_segment_merge, clear_waiting_state_if_due, dequeue_pending_input,
