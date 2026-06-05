@@ -26,3 +26,6 @@ pub mod feedback;
 #[cfg(test)]
 #[path = "feedback_pipeline_static_tests.rs"]
 mod feedback_static_tests;
+#[cfg(test)]
+#[path = "naming_static_tests.rs"]
+mod naming_static_tests;
