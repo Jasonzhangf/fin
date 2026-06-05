@@ -4960,3 +4960,27 @@ current domain dirs: agent/ closure/ context/ control/ pipeline/ session/ task/ 
 remaining at root: prompt_*, model_*, skill_loader, source_visibility, round_context, model_output_runtime_tests_*, prompt_tests_*, agent_naming_tests, execution_checkpoint_tests, run_closure_error_center_tests, closure_runtime, closure_runtime_rounds_tools, tests.*
 
 cargo test -p fin-runtime: 116/116 green after each push.
+
+## Phase 5+Gate: 9 domain splits + 边界 static gate + inventory doc (c2e9557 pushed)
+
+9 domain 子目录已完成 + 推送：
+- pipeline/ closure/ context/ tools/ session/ control/ task/ agent/ runtime_home/
+- 6 个 commit：f870c2a (tools), bf875ae (session), 4430edc (control), 76981d6 (task),
+  6c1fc60 (agent), 83a09e1 (runtime_home), c2e9557 (doc+gate)
+
+本轮按用户要求补的 gate + doc：
+- docs/architecture/45-runtime-module-inventory.md 整篇重写：9 个 domain 入口、
+  当前 inventory 表格、function map（11 features）、verification map、
+  命名/layer gate 规范、lessons
+- rust/crates/runtime/src/pipeline/naming_static_tests.rs 加 4 个 boundary gate：
+  * lib_rs_domain_dirs_have_mod_entries — 9 domain 必须有 mod 声明
+  * domain_mods_do_not_use_legacy_crate_paths — lib.rs 不能有已迁入的 flat 声明
+  * domain_dirs_have_no_fallback_or_salvage — domain/mod.rs 不能有 fallback
+  * cross_domain_no_direct_crate_file_imports — 已迁子文件不能用旧 crate::<old>
+- AGENTS.md route-map §55 §56 补 9 domain 入口 + 4 gate 名
+
+gate 状态：119/120 pass，1 red（lib.rs 还有 `mod prompt_assembly;`，因 prompt/ 拆分
+bridge approach 多次失败 revert 而成 backlog — gate 本身设计为红直至 Phase 5b/c/d 解决，
+per 原则 "新规则若无法被 gate 验证，默认不算硬边界"）这是正确的锁定行为，不是 regression。
+
+剩余 debt：37 个根 .rs 文件（prompt/model/activity_cards 跨域引用重，待 Phase 5b/c/d）。
