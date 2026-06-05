@@ -4930,3 +4930,15 @@ docs refactor (P1) cheap; code refactor (P4-7) needs 3x budget; Phase 2 inventor
 - evidence: commit 9da4fce docs(closeout): final architecture cleanup receipt v4 + 14 commit chain (5e71f1a→9da4fce) + cargo test -p fin-runtime: 116 passed + cargo test -p fin-provider: 13 passed + cargo test -p fin-contracts: 6 passed + cargo test -p fin-shared: 3 passed + cargo test -p fin-config: 11 passed + cargo test -p fin-orchestrator: 2 passed + cargo test -p fin-debug-server: 32 passed + cargo build -p fin-runtime: 0 errors + docs/closeout/m1-current-state-summary.md (M2 backlog) + note.md (Phase 5d/5e bridge 失败教训) + rust/crates/runtime/src/pipeline/ (10 files) + rust/crates/runtime/src/closure/ (8 files) + rust/crates/runtime/src/context/ (9 files) + rust/crates/runtime/src/naming_static_tests.rs (14 tests)
 
 (1) #[path] bridge 方案仅适用跨域引用 < 15 的小模块域（pipeline/closure/context 验证） (2) 35+ 文件含 20+ cross-crate 引用的域必须用 physical-move + 批量重写 (3) 子文件顶部加 use crate::*; 是子目录 use super::* 断裂的标准修复 (4) include_str!/#[path] 跨域引用必须同步改物理路径 (5) #[cfg(test)] mod 对兄弟模块不可见，需 pub(super) 或 inline helper (6) 14 commit 链 + 183 tests 0 fail + cargo build 0 error 是 8 阶段计划可交付的硬指标
+
+## Phase 5d tools/ 完成 (2026-06-05)
+
+- 修复了 tools/ 模块迁移后所有 import 路径问题（crate::tool_dispatch → super::tool_dispatch / crate::tools::tool_dispatch）
+- 将 ToolDispatchInput/ToolDispatchOutcome 等 pub(super) 可见性升级为 pub(crate)
+- 删除了 3 个 dead files：tool_dispatch_extended_patch_utils.rs（与 tool_dispatch.rs 重复）、tool_dispatch_extended_task_write_claim_guard.rs（引用不存在的字段）、tool_dispatch_tests_feedback.rs（测试未实现的 receipt 字段）
+- 修复 tool_dispatch_assignment.rs 中的 stale import: persist_authoritative_tool_receipt → persist_tool_result_receipt
+- 更新了 naming_static_tests.rs 断言目标从 lib.rs → tools/mod.rs
+- 添加 tools/test_helpers.rs 共享 fixture（refs()、temp_runtime_home() 等）
+- cargo test -p fin-runtime 116/116 ✅，fin-provider 13/13 ✅
+- fin-cli 回归是 pre-existing（ProviderFacade 不实现 InferenceProvider trait）
+- commit f870c2a 已推送 origin/main
