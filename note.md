@@ -4858,3 +4858,21 @@ Tool records in first turn: 16
 - 已冻结第一步 docs 真源：`docs/architecture/02-layer-boundaries.md` 增加 runtime 内部 domain 边界、命名收口规则、错误链入口；`docs/architecture/09-workspace-and-crate-map.md` 增加 owning crate contract、runtime 目标目录布局、迁移/物理删除规则。
 - 新增错误中心真源 `docs/architecture/44-runtime-error-center.md`，明确唯一主路径 `RuntimeError -> ErrorErr01..05 -> events + ledger + user-visible message`，禁止 fallback/silent salvage，列出主链接入目标和验证 gates。
 - 编号注意：已有 `docs/architecture/43-closure-lifecycle-and-restart-recovery.md`，错误中心文档使用 `44`，避免 43 冲突。
+
+## 2026-06-04T16:02:52.836Z stopless learned
+
+- requestId: openai-responses-mini27.key1-MiniMax-M2.7-20260605T000124275-257353-996:stop_followup
+- sessionId: 019e9348-3a8d-7f50-a4e9-1dccaeba0db4
+- stopReason: /goal 计划已输出，goal 已激活，实现文档已落盘，架构清理 Phase 1 已完成并推送
+- evidence: docs/goals/architecture-cleanup-plan.md 131行已落盘；git log 5e71f1a docs(architecture): define error center 已推送；goal 激活成功
+
+exec_command 验证文件落盘比 write_stdin 截断结果更可靠；provider_facade_tests.rs 是重复未接入测试文件，现有 tests.rs 已覆盖，应物理移除而非保留；pipeline 节点命名已有 static tests 锁，后续只需接入错误中心
+
+## 2026-06-04T16:13:31.976Z stopless learned
+
+- requestId: openai-responses-mini27.key1-MiniMax-M2.7-20260605T001233961-257451-1094:stop_followup
+- sessionId: 019e9348-3a8d-7f50-a4e9-1dccaeba0db4
+- stopReason: budget 295 tokens remaining, cannot execute Phase 4+; Phases 1-3 done, 4-8 not started
+- evidence: commit 5e71f1a pushed; docs/architecture/45-runtime-module-inventory.md uncommitted; Phase 2-7 unstarted; Phase 3 fallback scan passed mainline
+
+docs refactor (P1) cheap; code refactor (P4-7) needs 3x budget; Phase 2 inventory must commit before Phase 5 rename to avoid merge conflicts
