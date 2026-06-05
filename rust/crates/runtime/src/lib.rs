@@ -24,6 +24,8 @@ mod task;
 mod closure;
 #[cfg(test)]
 mod run_closure_error_center_tests;
+#[cfg(test)]
+mod fault_injection_tests;
 mod context;
 mod control;
 
