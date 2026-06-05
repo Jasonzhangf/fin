@@ -17,7 +17,7 @@ use crate::pipeline::input::{
 mod activity_cards;
 #[cfg(test)]
 mod activity_cards_tests;
-mod agent_naming;
+mod agent;
 #[cfg(test)]
 mod assembler_tests;
 mod task;
@@ -60,7 +60,7 @@ mod source_visibility;
 
 
 pub use activity_cards::{build_activity_cards, build_activity_cards_for_session};
-pub use agent_naming::{
+pub use agent::naming::{
     AgentAssignmentSummary, AllocatedAgentIdentity, allocate_local_agent_identity,
     create_named_local_worker, persist_assignment_summary, read_assignment_summary,
     resolve_agent_identity_by_worker_id, resolve_device_name,

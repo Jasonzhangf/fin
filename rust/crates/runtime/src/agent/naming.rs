@@ -376,5 +376,5 @@ fn read_json<T: for<'de> Deserialize<'de>>(path: &Path) -> Result<Option<T>, Run
 }
 
 #[cfg(test)]
-#[path = "agent_naming_tests.rs"]
-mod tests;
+#[path = "naming_tests.rs"]
+mod naming_tests;
