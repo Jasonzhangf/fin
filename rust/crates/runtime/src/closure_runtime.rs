@@ -516,7 +516,7 @@ impl M1Runtime {
     pub(super) fn emit_error_events(
         &mut self,
         operation: &OperationEnvelope<InferenceOperationPayload>,
-        user_visible: &crate::error_pipeline::ErrorErr05UserVisible,
+        user_visible: &crate::pipeline::error::ErrorErr05UserVisible,
         err: &RuntimeError,
     ) {
         let refs = operation.refs.clone();
@@ -569,8 +569,8 @@ impl M1Runtime {
 pub fn map_runtime_error_through_error_pipeline(
     operation: &OperationEnvelope<InferenceOperationPayload>,
     err: &RuntimeError,
-) -> crate::error_pipeline::ErrorErr05UserVisible {
-    use crate::error_pipeline::{
+) -> crate::pipeline::error::ErrorErr05UserVisible {
+    use crate::pipeline::error::{
         ErrorErr01DetectedBuilder, ErrorErr02SourceClassifiedBuilder,
         ErrorErr03RuntimeClassifiedBuilder, ErrorErr04SessionRecordedBuilder,
         ErrorErr05UserVisibleBuilder,

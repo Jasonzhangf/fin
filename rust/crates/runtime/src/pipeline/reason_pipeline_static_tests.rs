@@ -19,7 +19,7 @@ fn reasoning_pipeline_uses_unique_node_type_names_and_no_round_execution_alias()
         );
     }
 
-    let rounds = include_str!("closure_runtime_rounds.rs");
+    let rounds = include_str!("../closure_runtime_rounds.rs");
     assert!(
         !rounds.contains("struct RoundExecution"),
         "generic RoundExecution must not remain as reasoning-chain truth"

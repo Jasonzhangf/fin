@@ -10,7 +10,7 @@ use fin_provider::{InferenceProvider, PreparedRequest, ProviderRequest, Provider
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use thiserror::Error;
-use crate::input_pipeline::{
+use crate::pipeline::input::{
     ChannelMetadata, InputIn01ChannelRaw, InputIn02NormalizedBuilder, InputIn03OperationBuilder,
     InputIn04SessionBoundBuilder, InputIn05ReasoningSeedBuilder, RawAttachment,
 };
@@ -37,18 +37,7 @@ mod context_view_task_board_tests;
 mod context_view_tests;
 mod control_feedback;
 mod control_plane;
-mod error_pipeline;
-#[cfg(test)]
-mod error_pipeline_static_tests;
-mod feedback_pipeline;
-#[cfg(test)]
-mod feedback_pipeline_static_tests;
-mod input_pipeline;
-#[cfg(test)]
-mod input_pipeline_static_tests;
-mod reason_pipeline;
-#[cfg(test)]
-mod reason_pipeline_static_tests;
+mod pipeline;
 #[cfg(test)]
 mod execution_checkpoint_tests;
 mod managed_task_board;

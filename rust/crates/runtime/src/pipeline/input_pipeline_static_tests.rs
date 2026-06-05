@@ -26,7 +26,7 @@ fn input_pipeline_uses_unique_node_type_names_and_adjacent_builders() {
         );
     }
 
-    let runtime = include_str!("lib.rs");
+    let runtime = include_str!("../lib.rs");
     assert!(
         runtime.contains("InputIn01ChannelRaw")
             && runtime.contains("InputIn05ReasoningSeedBuilder.build(session_bound)?"),
