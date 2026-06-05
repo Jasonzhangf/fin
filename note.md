@@ -4910,3 +4910,14 @@ docs refactor (P1) cheap; code refactor (P4-7) needs 3x budget; Phase 2 inventor
 - 教训：5 步 domain split 模式（bridge → 编译 → 移动 → 去桥接 → 测试）只适用于"内部引用简单"的子域。tools 域需要"先 git mv 全部 → 一次改完所有 use → 编译 → 修复"的物理移动模式。
 - 下一轮入口：tools 域拆分子目录要么不做（保持原状 30+ 文件在根），要么先全部 git mv 进 tools/ 然后用 sed/python 批量改 crate::tool_X → crate::tools::tool_X。已记录在 skills/fin-architecture/。
 - Phase 5d 跳过；Phase 5e (session/control) + 7b (静态测试) + 8 (验证矩阵) 继续。
+
+## 2026-06-05T17:15 phase 5e session+control split — bridge approach also failed, rolled back
+
+- 状态：control/mod.rs + session/mod.rs 桥接后 cargo build 报 142 错误（控制域 5 个模块 + 会话域 17 个模块 + 12+ `use super::*` 子文件需要补 crate::* + 跨域引用密集），已 `git restore` + 删 control/ session/ 目录，工作树干净。
+- 根因（同 5d tools）：当 domain 文件 > 5 个且跨域引用 > 20 时，`#[path]` 桥接方案不可行。原因：桥接把 `crate::X` 命名空间改到 `crate::domain::X`，但文件还在原位 → 内部 `crate::X` 断链 + brace-grouped `use crate::{X::, Y::}` 形式难批量改。
+- 教训汇总（架构清理 domain split 适用边界）：
+  - 适用 `#[path]` 桥接 + 后续去桥接：cross-domain refs < 10（pipeline 10 文件 / closure 8 文件 / context 9 文件勉强可用）
+  - 不适用：cross-domain refs > 15（tools 35 文件 / session+control 22 文件）
+  - 正确方式：先 git mv 全部 → 一次性改所有 `crate::X` → `crate::domain::X` → cargo build 一次性修复
+- Phase 5d (tools) + Phase 5e (session+control) 标记为「不做」+ 在 docs/closeout/m1-architecture-cleanup-receipt.md 中记录 skip + reason。
+- 下一轮入口：直接进入 Phase 7b (静态测试) + Phase 8 (验证矩阵 L1-L2)，不依赖 runtime 内部子目录化。
