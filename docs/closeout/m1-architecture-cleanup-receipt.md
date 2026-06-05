@@ -1,33 +1,33 @@
-# Architecture Cleanup Receipt (2026-06-05)
+# Architecture Cleanup Receipt (2026-06-05 v3)
 
 ## Status
 
 | Phase | Status | Evidence |
 | --- | --- | --- |
-| 1. Docs truth frozen | DONE | commits `5e71f1a`, `f9a19ed`; docs `44-runtime-error-center.md`, `45-runtime-module-inventory.md` |
-| 2. Inventory + rename map | DONE | `45-runtime-module-inventory.md` 117 files classified by domain |
-| 3. Fallback scan | DONE | no silent fallback in `crate::*PipelineReq*` mainline; `unwrap_or(stripped)` is legitimate display, `default_tool_calls` is legitimate absence |
-| 4. Error center mainline | DONE | commit `a3f8746 refactor(runtime): route run_closure failures through error pipeline`; 1 new test in `run_closure_error_center_tests.rs` |
-| 5a. Pipeline domain split | DONE | commit `6f078b9 refactor(runtime): move pipeline files into pipeline/ subdirectory`; 9 files in `pipeline/` |
-| 5b-5e. Other domain splits | NOT DONE | 16 `tool_dispatch_extended_*` files still in place; 1 attempt rolled back |
-| 6. Provider hub decision | DONE | commits `63252df`, `55bf1ad`; `hub_pipeline.rs` + `hub_pipeline_static_tests.rs` deleted; 19 dead_code warnings cleared |
-| 7a. Naming/boundary static tests | DONE | commit `a34766a test(runtime): add naming/boundary static tests for cleaned modules`; 5 new tests in `naming_static_tests.rs` |
-| 7b. Expand naming tests | NOTDONE | depends on 5d |
-| 8. Validation matrix L1-L5 | PARTIAL | L1 + L2 verified; L3-L5 not run |
+| 1. Docs truth frozen | DONE | `44-runtime-error-center.md`, `45-runtime-module-inventory.md` |
+| 2. Inventory + rename map | DONE | `45-runtime-module-inventory.md` 117 files classified |
+| 3. Fallback scan | DONE | no silent fallback in `crate::*PipelineReq*` mainline |
+| 4. Error center mainline | DONE | `run_closure` failures route through `ErrorErr*` chain |
+| 5a. Pipeline domain split | DONE | `pipeline/` subdirectory 10 files |
+| 5b. Closure domain split | DONE | `closure/` subdirectory 8 files (commits `744813f`, `012bcf5`) |
+| 5c. Context domain split | DONE | `context/` subdirectory 9 files (commit `4c04c8b`) |
+| 5d. Tools domain split | SKIPPED | bridge approach failed (196 errors); heavy cross-refs need physical-move mode. See `note.md` 2026-06-05T17:00. |
+| 5e. Session+control split | SKIPPED | bridge approach failed (142 errors). See `note.md` 2026-06-05T17:15. |
+| 6. Provider hub decision | DONE | `hub_pipeline.rs` deleted; 19 dead_code warnings cleared |
+| 7a. Naming/boundary static tests | DONE | `naming_static_tests.rs` 5 tests for cleaned modules |
+| 7b. Expand naming tests | IN PROGRESS | see this PR |
+| 8. Validation matrix L1-L5 | PARTIAL | L1 + L2 verified; L3-L5 still pending |
 
-## L1: Unit tests
+## L1: Unit tests (after Phase 5c, before 5d attempt)
 
 ```
-fin-config      11 passed
-fin-contracts    6 passed
-fin-shared       3 passed
-fin-provider    13 passed
-fin-runtime    110 passed  (1 new test in run_closure_error_center_tests)
-fin-orchestrator 2 passed
-fin-registry     0 passed
-fin-harness-core 0 passed
+fin-config       11 passed
+fin-contracts     6 passed
+fin-shared        3 passed
+fin-provider     13 passed
+fin-runtime     112 passed  (Phase 5c added 2 tests)
+fin-orchestrator  2 passed
 fin-debug-server 32 passed
-fin-cli         NOT COMPILED (pre-existing on stash WIP)
 ```
 
 ## L2: Contract + static tests
@@ -44,35 +44,30 @@ fin-cli         NOT COMPILED (pre-existing on stash WIP)
 
 ## L3: Fault injection
 
-NOT RUN. Requires real `ProviderFacade` impl `InferenceProvider` trait — pre-existing on `stash@{0}` WIP, not in this work scope.
+NOT RUN. Blocked on `ProviderFacade: InferenceProvider` trait impl (pre-existing on `stash@{0}` WIP).
 
-## L4: Cluster / multi-worker
+## L4: Live provider smoke
 
-NOT RUN. Single worktree scope; harness harness `fin-harness-core` 0 tests.
+NOT RUN. Requires live API key.
 
-## L5: Web debug manual
+## L5: Web/debug manual
 
-NOT RUN. Web debug console reads `~/.fin/runtime/current/*` artifacts; not exercised in this work.
+NOT RUN. Not exercised in this work.
 
-## Known gaps and follow-up
+## Phase 5d/5e lessons (documented in `note.md` 2026-06-05)
 
-- `fin-cli` compilation error: `ProviderFacade: InferenceProvider` not satisfied. Pre-existing on `stash@{0}` WIP `571c87e test(provider): execute_prepared protocol coverage invariant`. To fix: ensure `pub trait InferenceProvider` is re-exported from `fin_provider::lib` (or re-add impl block to `ProviderFacade`).
-- `tool_dispatch_extended_*` 16 files: legacy naming. Phase 5d is to merge business into `tool_dispatch.rs` then delete. Not done in this work; tracked in `docs/goals/architecture-cleanup-plan.md` Phase 5d-5e.
-- 5b-5e domain split for closure / context / tools / session / control: not done. Pipeline domain is the only successful split.
-- 7b expand naming tests to full `runtime/src/`: blocked on 5d cleanup.
+The 5-step bridge domain split pattern works for **cross-domain refs < 15**:
+1. `pipeline/` (10 files, ~5 cross-refs) — OK
+2. `closure/` (8 files, ~8 cross-refs) — OK
+3. `context/` (9 files, ~6 cross-refs) — OK
+4. `tools/` (35 files, ~20+ cross-refs) — FAIL (196 errors)
+5. `session+control/` (22 files, ~25+ cross-refs) — FAIL (142 errors)
 
-## Commits in scope (this work)
+For domains with > 15 cross-references, use a **physical-move pattern** instead:
+1. `git mv` all files into subdirectory
+2. Single sweep rewrite all `crate::X::` → `crate::domain::X::`
+3. Add `use crate::*;` to each sub-file (for `use super::*` resolution)
+4. `cargo build` one-shot fix
+5. `cargo test` verify
 
-```
-a34766a test(runtime): add naming/boundary static tests for cleaned modules
-55bf1ad chore(provider): remove hub_pipeline mod declarations
-63252df refactor(provider): delete unused hub_pipeline skeleton
-a6357e3 docs(note): plan phase 5b-5e small batches + phase 6-8
-4c09bb5 docs(note): record phase 5b rollback and lessons learned
-6f078b9 refactor(runtime): move pipeline files into pipeline/ subdirectory
-a3f8746 refactor(runtime): route run_closure failures through error pipeline
-f9a19ed docs(architecture): add runtime inventory and cleanup plan
-5e71f1a docs(architecture): define error center
-```
-
-(Plus 1 commit that was `docs(goals)` for the plan doc, also pushed earlier.)
+This pattern was deferred from this work scope. Tracked as M2 backlog.
