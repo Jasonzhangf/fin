@@ -4921,3 +4921,12 @@ docs refactor (P1) cheap; code refactor (P4-7) needs 3x budget; Phase 2 inventor
   - 正确方式：先 git mv 全部 → 一次性改所有 `crate::X` → `crate::domain::X` → cargo build 一次性修复
 - Phase 5d (tools) + Phase 5e (session+control) 标记为「不做」+ 在 docs/closeout/m1-architecture-cleanup-receipt.md 中记录 skip + reason。
 - 下一轮入口：直接进入 Phase 7b (静态测试) + Phase 8 (验证矩阵 L1-L2)，不依赖 runtime 内部子目录化。
+
+## 2026-06-05T09:48:08.071Z stopless learned
+
+- requestId: openai-responses-minimax.key1-MiniMax-M3-20260605T174649075-260019-1423:stop_followup
+- sessionId: 019e9348-3a8d-7f50-a4e9-1dccaeba0db4
+- stopReason: 架构清理 8 阶段计划已完成 10/13 子阶段：Phase 1-4、5a-5c、6、7a-7b、8 L1+L2。Phase 5d/5e（tools+session+control 拆目录）用 #[path] bridge 方案因跨域引用过密失败（196+142 错误），需新 physical-move 策略，已 commit 回退并写入 M2 backlog。Phase 8 L3-L5（fault injection/live provider smoke/web manual）需外部依赖（API key/浏览器），deferred。183 tests 0 fail，cargo build 0 error，14 个 commit 已 push。
+- evidence: commit 9da4fce docs(closeout): final architecture cleanup receipt v4 + 14 commit chain (5e71f1a→9da4fce) + cargo test -p fin-runtime: 116 passed + cargo test -p fin-provider: 13 passed + cargo test -p fin-contracts: 6 passed + cargo test -p fin-shared: 3 passed + cargo test -p fin-config: 11 passed + cargo test -p fin-orchestrator: 2 passed + cargo test -p fin-debug-server: 32 passed + cargo build -p fin-runtime: 0 errors + docs/closeout/m1-current-state-summary.md (M2 backlog) + note.md (Phase 5d/5e bridge 失败教训) + rust/crates/runtime/src/pipeline/ (10 files) + rust/crates/runtime/src/closure/ (8 files) + rust/crates/runtime/src/context/ (9 files) + rust/crates/runtime/src/naming_static_tests.rs (14 tests)
+
+(1) #[path] bridge 方案仅适用跨域引用 < 15 的小模块域（pipeline/closure/context 验证） (2) 35+ 文件含 20+ cross-crate 引用的域必须用 physical-move + 批量重写 (3) 子文件顶部加 use crate::*; 是子目录 use super::* 断裂的标准修复 (4) include_str!/#[path] 跨域引用必须同步改物理路径 (5) #[cfg(test)] mod 对兄弟模块不可见，需 pub(super) 或 inline helper (6) 14 commit 链 + 183 tests 0 fail + cargo build 0 error 是 8 阶段计划可交付的硬指标
