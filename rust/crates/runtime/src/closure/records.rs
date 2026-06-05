@@ -121,7 +121,7 @@ pub(super) fn build_closure_records(
         &operation.submitted_at,
         &control_feedback,
     );
-    let routing_action = routing_actions::derive_routing_action(&routing_decision);
+    let routing_action = control::routing::derive_routing_action(&routing_decision);
 
     ClosureRecordsBundle {
         progress,

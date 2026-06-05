@@ -1,6 +1,6 @@
 use fin_contracts::{RoutingActionRecord, RoutingDecisionRecord};
 
-pub(super) fn derive_routing_action(decision: &RoutingDecisionRecord) -> RoutingActionRecord {
+pub(crate) fn derive_routing_action(decision: &RoutingDecisionRecord) -> RoutingActionRecord {
     let (action_kind, apply_immediately, prompt_user, prompt_text, confidence) = match decision
         .disposition
         .as_str()

@@ -346,7 +346,7 @@ impl M1Runtime {
             &operation.submitted_at,
             &control_feedback,
         );
-        let routing_action = routing_actions::derive_routing_action(&routing_decision);
+        let routing_action = control::routing::derive_routing_action(&routing_decision);
         append_finalize_step(
             &mut step_index,
             &operation,

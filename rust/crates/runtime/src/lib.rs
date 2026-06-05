@@ -25,8 +25,8 @@ mod closure;
 #[cfg(test)]
 mod run_closure_error_center_tests;
 mod context;
-mod control_feedback;
-mod control_plane;
+mod control;
+
 mod pipeline;
 #[cfg(test)]
 mod execution_checkpoint_tests;
@@ -36,7 +36,7 @@ mod model_output;
 mod model_output_shapes;
 #[cfg(test)]
 mod model_output_tests;
-mod owner_loop;
+
 mod prompt_assembly;
 #[cfg(test)]
 mod prompt_tests;
@@ -47,8 +47,8 @@ mod round_loop_runtime_tests;
 mod round_loop_runtime_tests_contract_retry;
 #[cfg(test)]
 mod round_loop_runtime_tests_full_history;
-mod routing_actions;
-mod scheduler;
+
+
 mod session;
 
 mod skill_loader;
@@ -71,16 +71,16 @@ pub use assignment_queue::{
 };
 pub use context::view::{ContextAssemblyInput, ContextViewBuilder};
 pub use source_visibility::uses_ephemeral_session_persistence;
-pub use control_feedback::ControlFeedbackBuilder;
-pub use control_plane::{
+pub use control::feedback::ControlFeedbackBuilder;
+pub use control::plane::{
     PendingInputDequeue, apply_segment_merge, clear_waiting_state_if_due, dequeue_pending_input,
     failed_state, interrupted_segment, new_pending_input, paused_state, resumed_state,
     running_state, segment_merge, state_after_run, state_with_pending_count,
 };
 pub use model_input_assembler::ModelInputAssembler;
 pub use model_output::{ModelOutputParser, ParsedModelOutput};
-pub use owner_loop::derive_owner_loop_action_for_runtime;
-pub use scheduler::derive_scheduler_decision;
+pub use control::owner_loop::derive_owner_loop_action_for_runtime;
+pub use control::scheduler::derive_scheduler_decision;
 pub use session::materializer::{
     SessionMaterializationReceipt, SessionMaterializer, SessionMessageRecord,
     append_framework_events,

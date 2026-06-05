@@ -4,7 +4,7 @@ use fin_contracts::{
     PendingInputRecord,
 };
 
-#[path = "control_plane_segments.rs"]
+#[path = "plane_segments.rs"]
 mod control_plane_segments;
 pub use control_plane_segments::{apply_segment_merge, interrupted_segment, segment_merge};
 
@@ -199,5 +199,5 @@ pub fn clear_waiting_state_if_due(
 }
 
 #[cfg(test)]
-#[path = "control_plane_tests.rs"]
-mod tests;
+#[path = "plane_tests.rs"]
+mod plane_tests;
