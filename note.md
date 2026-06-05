@@ -4942,3 +4942,21 @@ docs refactor (P1) cheap; code refactor (P4-7) needs 3x budget; Phase 2 inventor
 - cargo test -p fin-runtime 116/116 ✅，fin-provider 13/13 ✅
 - fin-cli 回归是 pre-existing（ProviderFacade 不实现 InferenceProvider trait）
 - commit f870c2a 已推送 origin/main
+
+## Phase 5d-e: 5d tools, 5e session, 5f control, 5g task, 5h agent domain splits — pushed
+
+5 subdirs completed + pushed to origin/main (commits f870c2a, bf875ae, 4430edc, 76981d6, 6c1fc60):
+- tool/ 41 files
+- session/ 6 files (materializer, materializer_events, materializer_support, journal, turn, trace)
+- control/ 7 files (feedback, plane, plane_segments, plane_tests, owner_loop, routing, scheduler)
+- task/ 5 files (board_snapshot, handoff, store, managed_board, assignment_queue)
+- agent/ 2 files (naming, naming_tests)
+
+reverted: model/ activity_cards/ prompt/ — too many cross-dep (e.g. prompt_assembly used in
+context/view + model_input_assembler + closure_runtime; activity_cards/cards.rs has internal
+#[path] bridges that break on directory move; model_output_feedback has 7 use sites).
+
+current domain dirs: agent/ closure/ context/ control/ pipeline/ session/ task/ tools/ (8).
+remaining at root: prompt_*, model_*, skill_loader, source_visibility, round_context, model_output_runtime_tests_*, prompt_tests_*, agent_naming_tests, execution_checkpoint_tests, run_closure_error_center_tests, closure_runtime, closure_runtime_rounds_tools, tests.*
+
+cargo test -p fin-runtime: 116/116 green after each push.
