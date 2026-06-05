@@ -6,9 +6,7 @@ use std::collections::BTreeMap;
 use thiserror::Error;
 
 mod http_client;
-mod hub_pipeline;
 #[cfg(test)]
-mod hub_pipeline_static_tests;
 mod provider_facade;
 mod provider_static;
 
