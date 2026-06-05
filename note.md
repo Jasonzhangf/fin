@@ -4896,3 +4896,9 @@ docs refactor (P1) cheap; code refactor (P4-7) needs 3x budget; Phase 2 inventor
 - Phase 6: provider hub dead_code 决策 = 接入 `ProviderFacade::execute_prepared` 或删除 skeleton（当前 19 个 dead_code warning）。建议删除。
 - Phase 7: 在 pipeline/error/static_tests.rs 增加 `forbidden: ["extended", "v4a", "_v4_"]` 字面 + 禁止 `impl From<PipelineNode>` cross-node。
 - Phase 8: 5 个 cargo test 都已跑；缺 live provider smoke（需 mini27 key）；CI harness 集成。
+
+## 2026-06-05T16:00 phase 5b closure split — small batch start
+
+- 策略：分小批（4 文件一批）+ 保留 `#[path]` 桥接先不动。
+- 第 1 批目标：迁 `closure_runtime_events.rs`、`closure_runtime_finalize.rs`、`closure_runtime_records.rs`、`closure_runtime_rounds_tools.rs`（4 个文件，无内部 `#[path]` 互引到别的 closure 子模块）→ `closure/` 子目录。
+- 步骤：建 `closure/mod.rs` 用 `#[path]` 桥接 + 重命名 files，但内部 `use super::*` 仍可工作（子模块在同 closure/ 子目录下）。
