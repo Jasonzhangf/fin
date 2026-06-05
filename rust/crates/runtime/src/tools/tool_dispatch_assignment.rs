@@ -1,4 +1,4 @@
-use crate::assignment_queue::{read_assignment_queue, update_assignment_record};
+use crate::task::assignment_queue::{read_assignment_queue, update_assignment_record};
 use super::tool_dispatch as tool_dispatch;
 use super::tool_dispatch::{
     ToolDispatchInput, ToolDispatchOutcome, failed_record, read_string, read_u64,

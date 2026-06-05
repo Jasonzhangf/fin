@@ -20,7 +20,7 @@ mod activity_cards_tests;
 mod agent_naming;
 #[cfg(test)]
 mod assembler_tests;
-mod assignment_queue;
+mod task;
 mod closure;
 #[cfg(test)]
 mod run_closure_error_center_tests;
@@ -30,7 +30,7 @@ mod control;
 mod pipeline;
 #[cfg(test)]
 mod execution_checkpoint_tests;
-mod managed_task_board;
+
 mod model_input_assembler;
 mod model_output;
 mod model_output_shapes;
@@ -52,9 +52,9 @@ mod round_loop_runtime_tests_full_history;
 mod session;
 
 mod skill_loader;
-mod task_board_snapshot;
-mod task_handoff;
-mod task_store;
+
+
+
 mod tools;
 mod source_visibility;
 
@@ -65,7 +65,7 @@ pub use agent_naming::{
     create_named_local_worker, persist_assignment_summary, read_assignment_summary,
     resolve_agent_identity_by_worker_id, resolve_device_name,
 };
-pub use assignment_queue::{
+pub use task::assignment_queue::{
     AssignmentRecord, append_assignment_record, read_assignment_queue,
     target_agent_name_from_worker_id, update_assignment_record,
 };
@@ -85,9 +85,9 @@ pub use session::materializer::{
     SessionMaterializationReceipt, SessionMaterializer, SessionMessageRecord,
     append_framework_events,
 };
-pub use task_board_snapshot::TaskSummary;
-pub use task_handoff::{TaskHandoffReceipt, handoff_project_task};
-pub use task_store::{
+pub use task::board_snapshot::TaskSummary;
+pub use task::handoff::{TaskHandoffReceipt, handoff_project_task};
+pub use task::store::{
     StoredTaskRecord, TaskMutationReceipt, create_task_record, load_task_record,
     session_dir_for_session_id, update_task_record,
 };

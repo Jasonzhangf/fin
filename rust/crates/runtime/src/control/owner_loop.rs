@@ -1,4 +1,4 @@
-use crate::managed_task_board::{ManagedTaskBoardTruth, load_managed_task_board_truth};
+use crate::task::managed_board::{ManagedTaskBoardTruth, load_managed_task_board_truth};
 use fin_contracts::{EntityRefs, OwnerLoopActionRecord};
 use std::path::Path;
 

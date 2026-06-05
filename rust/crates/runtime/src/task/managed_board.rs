@@ -1,4 +1,4 @@
-use crate::task_store::{StoredTaskRecord, list_registered_tasks};
+use crate::task::store::{StoredTaskRecord, list_registered_tasks};
 use std::{cmp::Reverse, collections::BTreeMap, path::Path};
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -129,7 +129,7 @@ fn is_ready_unclaimed(task: &StoredTaskRecord) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::task_store::create_task_record;
+    use crate::task::store::create_task_record;
     use std::{
         fs,
         path::PathBuf,

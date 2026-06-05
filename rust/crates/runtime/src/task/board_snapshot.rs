@@ -1,4 +1,4 @@
-use crate::managed_task_board::load_managed_task_board_truth;
+use crate::task::managed_board::load_managed_task_board_truth;
 use fin_contracts::ExecutionStateRecord;
 use serde_json::Value;
 use std::{
@@ -15,29 +15,29 @@ pub struct TaskSummary {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(super) struct TaskStatusSnapshot {
-    pub(super) task_id: String,
-    pub(super) session_id: String,
-    pub(super) status: String,
-    pub(super) pending_input_count: usize,
-    pub(super) action_kind: String,
-    pub(super) plan_step_count: usize,
-    pub(super) output_summary: String,
-    pub(super) artifact_refs: Vec<String>,
+pub(crate) struct TaskStatusSnapshot {
+    pub(crate) task_id: String,
+    pub(crate) session_id: String,
+    pub(crate) status: String,
+    pub(crate) pending_input_count: usize,
+    pub(crate) action_kind: String,
+    pub(crate) plan_step_count: usize,
+    pub(crate) output_summary: String,
+    pub(crate) artifact_refs: Vec<String>,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
-pub(super) struct TaskBoardContextSnapshot {
-    pub(super) active_task_id: Option<String>,
-    pub(super) task_board_summary: Option<String>,
-    pub(super) known_task_ids: Vec<String>,
-    pub(super) task_status_counts: Vec<String>,
-    pub(super) ready_task_ids: Vec<String>,
-    pub(super) submitted_task_ids: Vec<String>,
-    pub(super) owner_loop_summary: Option<String>,
+pub(crate) struct TaskBoardContextSnapshot {
+    pub(crate) active_task_id: Option<String>,
+    pub(crate) task_board_summary: Option<String>,
+    pub(crate) known_task_ids: Vec<String>,
+    pub(crate) task_status_counts: Vec<String>,
+    pub(crate) ready_task_ids: Vec<String>,
+    pub(crate) submitted_task_ids: Vec<String>,
+    pub(crate) owner_loop_summary: Option<String>,
 }
 
-pub(super) fn collect_tasks(runtime_home: &Path) -> Result<BTreeMap<String, TaskSummary>, String> {
+pub(crate) fn collect_tasks(runtime_home: &Path) -> Result<BTreeMap<String, TaskSummary>, String> {
     let mut tasks = BTreeMap::new();
     let sessions_root = runtime_home.join("sessions");
     if !sessions_root.exists() {
@@ -76,7 +76,7 @@ pub(super) fn collect_tasks(runtime_home: &Path) -> Result<BTreeMap<String, Task
     Ok(tasks)
 }
 
-pub(super) fn read_task_status(summary: &TaskSummary) -> Result<TaskStatusSnapshot, String> {
+pub(crate) fn read_task_status(summary: &TaskSummary) -> Result<TaskStatusSnapshot, String> {
     let execution_state_path = summary.session_dir.join("control/execution_state.json");
     let execution_state = read_json_typed::<ExecutionStateRecord>(&execution_state_path)
         .map_err(|error| format!("failed to read execution state: {error}"))?;
@@ -126,7 +126,7 @@ pub(super) fn read_task_status(summary: &TaskSummary) -> Result<TaskStatusSnapsh
     })
 }
 
-pub(super) fn build_task_board_context(
+pub(crate) fn build_task_board_context(
     runtime_home: Option<&str>,
     session_id: Option<&str>,
     preferred_task_id: Option<&str>,

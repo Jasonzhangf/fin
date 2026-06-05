@@ -1,4 +1,4 @@
-use crate::task_board_snapshot::TaskSummary;
+use crate::task::board_snapshot::TaskSummary;
 use serde::{Deserialize, Serialize};
 use std::{
     collections::BTreeMap,

@@ -1,6 +1,6 @@
 use crate::{
     RuntimeError,
-    task_store::{load_task_record, update_task_record},
+    task::store::{load_task_record, update_task_record},
 };
 use serde::{Deserialize, Serialize};
 use std::path::Path;
@@ -91,7 +91,7 @@ fn map_string_error(runtime_home: &Path) -> impl FnOnce(String) -> RuntimeError 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::task_store::{StoredTaskRecord, create_task_record};
+    use crate::task::store::{StoredTaskRecord, create_task_record};
     use std::{
         fs,
         path::PathBuf,

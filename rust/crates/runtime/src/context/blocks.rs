@@ -4,7 +4,7 @@ use crate::context::project_support::{
     load_project_registry_context, path_basename, relativize_selected_paths, resolve_project_root,
     sanitize_project_id,
 };
-use crate::task_board_snapshot::build_task_board_context;
+use crate::task::board_snapshot::build_task_board_context;
 use fin_contracts::{
     DaemonStateSummary, PeerBindingSummary, PeerContextBlock, PeerDescriptorSummary,
     ProjectContextBlock, ProjectRef,
