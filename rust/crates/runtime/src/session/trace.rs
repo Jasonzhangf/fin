@@ -5,7 +5,7 @@ use fin_contracts::{
 };
 use fin_provider::{PreparedRequest, ProviderResponse};
 
-pub(super) fn provider_tool_record(
+pub(crate) fn provider_tool_record(
     operation_id: &str,
     trace_id: &str,
     refs: &EntityRefs,
@@ -49,7 +49,7 @@ pub(super) fn provider_tool_record(
     }
 }
 
-pub(super) fn reasoning_view_record(
+pub(crate) fn reasoning_view_record(
     operation_id: &str,
     trace_id: &str,
     refs: &EntityRefs,
@@ -98,7 +98,7 @@ pub(super) fn reasoning_view_record(
     }
 }
 
-pub(super) fn closure_trace_record(run: &ClosureRun) -> ClosureTraceRecord {
+pub(crate) fn closure_trace_record(run: &ClosureRun) -> ClosureTraceRecord {
     ClosureTraceRecord {
         closure_id: run.digest.closure_id.clone(),
         digest_id: run.digest.digest_id.clone(),

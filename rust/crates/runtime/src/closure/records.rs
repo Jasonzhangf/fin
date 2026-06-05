@@ -77,7 +77,7 @@ pub(super) fn build_closure_records(
         control_feedback: Some(control_feedback.clone()),
         created_at: operation.submitted_at.clone(),
     };
-    let reasoning_view = trace_records::reasoning_view_record(
+    let reasoning_view = session::trace::reasoning_view_record(
         &operation.operation_id,
         &operation.trace_id,
         &refs,
@@ -114,7 +114,7 @@ pub(super) fn build_closure_records(
         control_feedback: Some(control_feedback.clone()),
         created_at: operation.submitted_at.clone(),
     };
-    let routing_decision = turn_records::routing_decision_record(
+    let routing_decision = session::turn::routing_decision_record(
         &operation.operation_id,
         &operation.trace_id,
         &refs,

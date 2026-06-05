@@ -1,4 +1,5 @@
-use crate::{ClosureRun, RuntimeError, session_record_journal, uses_ephemeral_session_persistence};
+use crate::{ClosureRun, RuntimeError, uses_ephemeral_session_persistence};
+use super::journal;
 use fin_config::RuntimeRetentionConfig;
 use fin_contracts::EventEnvelope;
 use fin_contracts::{
@@ -13,15 +14,11 @@ use std::{
     path::{Path, PathBuf},
 };
 
-#[path = "session_materializer_events.rs"]
-mod session_materializer_events;
-#[path = "session_materializer_support.rs"]
-mod session_materializer_support;
-use session_materializer_events::persist_event_stream;
-use session_materializer_support::{
+use super::materializer_events::persist_event_stream;
+use super::materializer_support::{
     PendingReminderRecord, parse_scheduled_reminder_payload, parse_turn_index,
 };
-pub(crate) use session_materializer_support::{
+pub(crate) use super::materializer_support::{
     create_dir_all, read_json_or_empty, trim_head, write_bytes, write_json_file,
 };
 
@@ -188,7 +185,7 @@ impl SessionMaterializer {
             retention,
             persistence_mode.persist_session_history(),
         )?;
-        let journal_paths = session_record_journal::persist_extended_records(
+        let journal_paths = super::journal::persist_extended_records(
             runtime_home,
             &session_dir,
             year,

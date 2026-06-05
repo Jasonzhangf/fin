@@ -1,4 +1,9 @@
-use super::*;
+use crate::{RuntimeError, uses_ephemeral_session_persistence};
+use super::materializer::{create_dir_all, write_json_file};
+use std::fs;
+use fin_contracts::EventEnvelope;
+use serde_json::Value;
+use std::path::{Path, PathBuf};
 use fin_config::RuntimeRetentionConfig;
 use std::io::Write;
 
@@ -19,8 +24,8 @@ pub(crate) fn persist_event_stream(
         .join(month)
         .join(session_id)
         .join("events");
-    super::create_dir_all(&archive_dir)?;
-    super::create_dir_all(&cold_archive_dir)?;
+    create_dir_all(&archive_dir)?;
+    create_dir_all(&cold_archive_dir)?;
 
     let mut lines = read_json_lines_or_empty(&stream_path)?;
     lines.extend(
@@ -54,8 +59,8 @@ pub(crate) fn persist_event_stream(
         "local_archive_file_count": local_segments.len(),
         "cold_archive_file_count": cold_segments.len(),
     });
-    super::write_json_file(&session_dir.join("events/archive_index.json"), &index)?;
-    super::write_json_file(
+    write_json_file(&session_dir.join("events/archive_index.json"), &index)?;
+    write_json_file(
         &runtime_home.join("runtime/current/current_event_archive_index.json"),
         &index,
     )?;

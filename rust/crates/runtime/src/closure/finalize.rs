@@ -73,8 +73,8 @@ pub(super) fn append_finalize_step(
     step_records: &mut Vec<StepRecord>,
 ) {
     let finalize_step = allocate_step(step_index, &operation.operation_id, "finalize");
-    step_records.push(turn_records::finalize_step_record(
-        turn_records::step_record(
+    step_records.push(session::turn::finalize_step_record(
+        session::turn::step_record(
             finalize_step.step_id,
             turn_id,
             &operation.operation_id,

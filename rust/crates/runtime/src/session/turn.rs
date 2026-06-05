@@ -4,7 +4,7 @@ use fin_contracts::{
 };
 use fin_provider::{PreparedRequest, ProviderResponse};
 
-pub(super) fn provider_request_record(
+pub(crate) fn provider_request_record(
     operation_id: &str,
     trace_id: &str,
     refs: &EntityRefs,
@@ -37,7 +37,7 @@ pub(super) fn provider_request_record(
     }
 }
 
-pub(super) fn provider_response_record(
+pub(crate) fn provider_response_record(
     operation_id: &str,
     trace_id: &str,
     refs: &EntityRefs,
@@ -69,7 +69,7 @@ pub(super) fn provider_response_record(
     }
 }
 
-pub(super) fn step_record(
+pub(crate) fn step_record(
     step_id: String,
     turn_id: &str,
     operation_id: &str,
@@ -106,7 +106,7 @@ pub(super) fn step_record(
     }
 }
 
-pub(super) fn finalize_step_record(
+pub(crate) fn finalize_step_record(
     mut step: StepRecord,
     progress: &ProgressBlock,
     note: &ExecutionNote,
@@ -120,7 +120,7 @@ pub(super) fn finalize_step_record(
     step
 }
 
-pub(super) fn turn_record(
+pub(crate) fn turn_record(
     operation_id: &str,
     trace_id: &str,
     refs: &EntityRefs,
@@ -194,7 +194,7 @@ pub(super) fn turn_record(
     }
 }
 
-pub(super) fn routing_decision_record(
+pub(crate) fn routing_decision_record(
     operation_id: &str,
     trace_id: &str,
     refs: &EntityRefs,

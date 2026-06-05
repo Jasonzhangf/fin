@@ -1,7 +1,5 @@
-use crate::{
-    ClosureRun, RuntimeError,
-    session_materializer::{read_json_or_empty, trim_head, write_json_file},
-};
+use crate::{ClosureRun, RuntimeError};
+use super::materializer::{read_json_or_empty, trim_head, write_json_file};
 use fin_config::RuntimeRetentionConfig;
 use std::path::Path;
 
@@ -16,7 +14,7 @@ pub(super) struct SessionJournalPaths {
     pub(super) session_recent_routing_actions_path: String,
 }
 
-pub(super) fn persist_extended_records(
+pub(crate) fn persist_extended_records(
     runtime_home: &Path,
     session_dir: &Path,
     year: &str,

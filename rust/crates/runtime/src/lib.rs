@@ -49,16 +49,16 @@ mod round_loop_runtime_tests_contract_retry;
 mod round_loop_runtime_tests_full_history;
 mod routing_actions;
 mod scheduler;
-mod session_materializer;
-mod session_record_journal;
+mod session;
+
 mod skill_loader;
 mod task_board_snapshot;
 mod task_handoff;
 mod task_store;
 mod tools;
 mod source_visibility;
-mod trace_records;
-mod turn_records;
+
+
 pub use activity_cards::{build_activity_cards, build_activity_cards_for_session};
 pub use agent_naming::{
     AgentAssignmentSummary, AllocatedAgentIdentity, allocate_local_agent_identity,
@@ -81,7 +81,7 @@ pub use model_input_assembler::ModelInputAssembler;
 pub use model_output::{ModelOutputParser, ParsedModelOutput};
 pub use owner_loop::derive_owner_loop_action_for_runtime;
 pub use scheduler::derive_scheduler_decision;
-pub use session_materializer::{
+pub use session::materializer::{
     SessionMaterializationReceipt, SessionMaterializer, SessionMessageRecord,
     append_framework_events,
 };

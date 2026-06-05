@@ -90,7 +90,7 @@ pub(super) fn build_context_build_step_record(
     refs: &EntityRefs,
     turn_id: &str,
 ) -> StepRecord {
-    turn_records::step_record(
+    session::turn::step_record(
         step_id,
         turn_id,
         &operation.operation_id,
@@ -139,7 +139,7 @@ pub(super) fn record_round(
     step_records: &mut Vec<StepRecord>,
 ) {
     let provider_step = allocate_step(step_index, &operation.operation_id, "provider_request");
-    let request_record = turn_records::provider_request_record(
+    let request_record = session::turn::provider_request_record(
         &operation.operation_id,
         &operation.trace_id,
         refs,
@@ -150,7 +150,7 @@ pub(super) fn record_round(
         prepared,
         &operation.submitted_at,
     );
-    let response_record = turn_records::provider_response_record(
+    let response_record = session::turn::provider_response_record(
         &operation.operation_id,
         &operation.trace_id,
         refs,
@@ -169,7 +169,7 @@ pub(super) fn record_round(
 
     provider_request_records.push(request_record.clone());
     provider_response_records.push(response_record.clone());
-    step_records.push(turn_records::step_record(
+    step_records.push(session::turn::step_record(
         provider_step.step_id.clone(),
         turn_id,
         &operation.operation_id,
@@ -200,7 +200,7 @@ pub(super) fn record_round(
         )),
         Some("model_parse".into()),
     ));
-    step_records.push(turn_records::step_record(
+    step_records.push(session::turn::step_record(
         model_parse_step.step_id.clone(),
         turn_id,
         &operation.operation_id,
@@ -237,7 +237,7 @@ pub(super) fn record_round(
         )),
         Some("control_feedback".into()),
     ));
-    step_records.push(turn_records::step_record(
+    step_records.push(session::turn::step_record(
         control_feedback_step.step_id.clone(),
         turn_id,
         &operation.operation_id,
@@ -264,7 +264,7 @@ pub(super) fn record_round(
         )),
         Some("tool_dispatch".into()),
     ));
-    step_records.push(turn_records::step_record(
+    step_records.push(session::turn::step_record(
         tool_dispatch_step.step_id.clone(),
         turn_id,
         &operation.operation_id,

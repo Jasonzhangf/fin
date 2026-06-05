@@ -114,7 +114,7 @@ impl M1Runtime {
 
         let mut tool_records = Vec::new();
         for attempt in &initial_retry_bundle.attempts {
-            tool_records.push(trace_records::provider_tool_record(
+            tool_records.push(session::trace::provider_tool_record(
                 &operation.operation_id,
                 &operation.trace_id,
                 &refs,
@@ -186,7 +186,7 @@ impl M1Runtime {
             contract_retry_summaries.push(followup_retry_bundle.summary.clone());
             let followup_round = followup_retry_bundle.final_round.clone();
             for attempt in &followup_retry_bundle.attempts {
-                tool_records.push(trace_records::provider_tool_record(
+                tool_records.push(session::trace::provider_tool_record(
                     &operation.operation_id,
                     &operation.trace_id,
                     &refs,
@@ -300,7 +300,7 @@ impl M1Runtime {
             control_feedback: Some(control_feedback.clone()),
             created_at: operation.submitted_at.clone(),
         };
-        let reasoning_view = trace_records::reasoning_view_record(
+        let reasoning_view = session::trace::reasoning_view_record(
             &operation.operation_id,
             &operation.trace_id,
             &refs,
@@ -339,7 +339,7 @@ impl M1Runtime {
             control_feedback: Some(control_feedback.clone()),
             created_at: operation.submitted_at.clone(),
         };
-        let routing_decision = turn_records::routing_decision_record(
+        let routing_decision = session::turn::routing_decision_record(
             &operation.operation_id,
             &operation.trace_id,
             &refs,
@@ -359,7 +359,7 @@ impl M1Runtime {
             &note,
             &mut step_records,
         );
-        let turn_record = turn_records::turn_record(
+        let turn_record = session::turn::turn_record(
             &operation.operation_id,
             &operation.trace_id,
             &refs,
@@ -424,7 +424,7 @@ impl M1Runtime {
             &routing_action,
             &events,
         );
-        let closure_trace = trace_records::closure_trace_record(&partial_run);
+        let closure_trace = session::trace::closure_trace_record(&partial_run);
         events.push(self.event(
             "closure.trace_recorded",
             &operation.trace_id,
