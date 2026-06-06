@@ -5120,3 +5120,19 @@ per 原则 "新规则若无法被 gate 验证，默认不算硬边界"）这是�
 - evidence: cargo test -p fin-runtime: 132 passed; cargo test -p fin-provider: 13 passed; cargo build -p fin-cli: OK; naming_static_tests: 13/13 pass; fault_injection_tests: 4/4 pass; rg fallback_ok 0 hits in production code; 11 domain dirs established
 
 #[path] bridge only works for <15 cross-domain refs; #[cfg(test)] mod + unconditional pub use = build break; provider_facade was incorrectly gated behind #[cfg(test)]
+
+## 2026-06-06T12:54:41.468Z stopless learned
+
+- requestId: openai-responses-mimo.key2-mimo-v2.5-20260606T205426801-277945-856
+- stopReason: 8-phase architecture cleanup complete: Phase 1-7 fully done with evidence, Phase 8 L1-L3 verified (145 tests + 13 gates + 4 fault injection), L4-L5 deferred (external deps). GitHub push blocked by SSL network issue.
+- evidence: 132+13=145 tests pass, 13/13 naming_static_tests pass, 4/4 fault_injection_tests pass, 0 forbidden terms in production code, CLI builds, 11 domain subdirs established, closeout receipt committed
+
+#[cfg(test)] on production modules (task, provider_facade) silently breaks CLI build; cargo fix handles unused imports; #[path] bridge approach fails for domains with >15 cross-deps (use physical-move instead); Pipeline dead_code warnings are expected for contract types not yet wired into mainline
+
+## 2026-06-06 architecture review notes
+
+- Evidence gathered: `./scripts/verify-governance.sh` passed; `cargo test -p fin-runtime pipeline::naming_static_tests --manifest-path rust/Cargo.toml` passed 13/13; `python3 scripts/check-code-line-limit.py` failed with 12 non-whitelisted files over 500 lines.
+- Architecture gap: docs require CI order `governance -> line-limit -> fmt/test -> provider/config/replay/install smoke`, but `.github/workflows/ci.yml` only runs skeleton + cargo test, so several documented gates are soft rules.
+- Runtime module gap: `docs/architecture/45-runtime-module-inventory.md` is stale/incomplete after model/prompt split and still omits `model`/`prompt` as domains; `activity_cards` remains root-level with `#[path]` bridges; `tools` still has `extended`/`v4a`/`support` naming debt.
+- Pipeline truth gap: `skills/fin-general-dev/SKILL.md` references missing `docs/architecture/44-pipeline-unique-type-and-error-chain.md`; current 44 is runtime error center, so pipeline unique-type design routing is broken.
+- Error center status: `M1Runtime::run_closure` maps runtime errors into `ErrorErr*` and emits two error events, but still returns `Err(RuntimeError)` and does not persist full ErrorErr ledger chain; current status is "wired skeleton, not full unique error center".

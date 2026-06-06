@@ -5,7 +5,7 @@
 
 ## 1. domain 目录结构（当前真源）
 
-`fin-runtime` 内部模块按 owning domain 收口为 9 个子目录入口：
+`fin-runtime` 内部模块按 owning domain 收口为 11 个子目录入口：
 
 | domain | 目录 | 入口文件 | 职责 |
 | --- | --- | --- | --- |
@@ -18,6 +18,8 @@
 | `task` | `src/task/` | `mod.rs` | assignment_queue / board_snapshot / handoff / managed_board / store |
 | `agent` | `src/agent/` | `mod.rs` | naming + naming_tests |
 | `runtime_home` | `src/runtime_home/` | `mod.rs` | skill_loader / source_visibility（`~/.fin` 持久化辅助） |
+| `model` | `src/model/` | `mod.rs` | input assembler / parser / shapes + model tests |
+| `prompt` | `src/prompt/` | `mod.rs` | assembly / basics / catalog / role_policy + prompt tests |
 
 每个 domain 的 `mod.rs` 是该 domain 的唯一入口；上层模块通过 `crate::<domain>::<module>` 引用，禁止跨 domain 短路。
 

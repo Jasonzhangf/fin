@@ -157,6 +157,7 @@ fn lib_rs_domain_dirs_have_mod_entries() {
     for domain in [
         "pipeline", "closure", "context", "tools",
         "session", "control", "task", "agent", "runtime_home",
+        "model", "prompt",
     ] {
         assert!(
             lib.contains(&format!("mod {domain};")),
@@ -198,6 +199,7 @@ fn domain_dirs_have_no_fallback_or_salvage() {
     for domain in [
         "pipeline", "closure", "context", "tools",
         "session", "control", "task", "agent", "runtime_home",
+        "model", "prompt",
     ] {
         let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
             .join(format!("src/{domain}/mod.rs"));
