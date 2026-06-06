@@ -1,7 +1,6 @@
 use crate::context::project_support::{
     load_agent_presence_snapshot, load_project_supervision_snapshot,
 };
-use super::tool_dispatch as tool_dispatch;
 use super::tool_dispatch::{
     ToolDispatchInput, ToolDispatchOutcome, failed_record, read_string, read_u64,
     runtime_home_from_context, short_text,

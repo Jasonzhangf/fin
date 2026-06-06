@@ -1,7 +1,5 @@
 use super::*;
 use crate::model::parser::ModelToolCall;
-use serde_json::json;
-use std::{fs, path::PathBuf};
 use crate::pipeline::reason::{
     ReasonReq01Seed, ReasonReq02ContextPlanBuilder, ReasonReq03BudgetedContextBuilder,
     ReasonReq04RenderedInputBuilder, ReasonReq05ProviderCallBuilder, ReasonResp06ModelOutputParser,

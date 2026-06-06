@@ -1,5 +1,4 @@
 use super::tool_dispatch::{ToolDispatchInput, ToolDispatchOutcome};
-use super::tool_dispatch as tool_dispatch;
 use super::tool_dispatch_extended_query_control;
 use super::tool_dispatch_extended_query_history;
 use super::tool_dispatch_extended_query_image;

@@ -1,5 +1,4 @@
 use crate::task::assignment_queue::{read_assignment_queue, update_assignment_record};
-use super::tool_dispatch as tool_dispatch;
 use super::tool_dispatch::{
     ToolDispatchInput, ToolDispatchOutcome, failed_record, read_string, read_u64,
     runtime_home_from_context, short_text,
@@ -43,7 +42,7 @@ pub(super) fn handle_assignment_list(
         .filter(|a| status_filter == "all" || a.status == status_filter)
         .take(limit)
         .collect();
-    let preview = if filtered.is_empty() {
+    let _preview = if filtered.is_empty() {
         format!("no {status_filter} assignments found")
     } else {
         filtered

@@ -1,7 +1,6 @@
 use super::tool_dispatch::{
     ToolDispatchInput, ToolDispatchOutcome, failed_record, read_string, runtime_home_from_context,
 };
-use super::tool_dispatch as tool_dispatch;
 use fin_contracts::ToolExecutionRecord;
 use serde_json::{Value, json};
 use std::{

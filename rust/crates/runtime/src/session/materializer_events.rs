@@ -1,4 +1,4 @@
-use crate::{RuntimeError, uses_ephemeral_session_persistence};
+use crate::RuntimeError;
 use super::materializer::{create_dir_all, write_json_file};
 use std::fs;
 use fin_contracts::EventEnvelope;

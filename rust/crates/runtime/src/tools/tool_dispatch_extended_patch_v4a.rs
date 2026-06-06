@@ -1,7 +1,6 @@
 use super::tool_dispatch_extended_patch::{
     PatchApplyResult, display_artifact, replace_exact, resolve_workspace_path, write_parent,
 };
-use super::tool_dispatch as tool_dispatch;
 use super::tool_dispatch::{ToolDispatchInput, read_string};
 use serde_json::Value;
 use std::fs;

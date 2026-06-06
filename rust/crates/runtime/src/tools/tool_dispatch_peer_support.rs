@@ -1,5 +1,4 @@
 use super::tool_dispatch::runtime_home_from_context;
-use super::tool_dispatch as tool_dispatch;
 use fin_contracts::DaemonEnsurePeerRequestRecord;
 use serde::{Deserialize, Serialize};
 use std::{

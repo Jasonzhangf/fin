@@ -2,7 +2,6 @@ use super::tool_dispatch::{
     ToolDispatchInput, ToolDispatchOutcome, failed_record, read_bool, read_string,
     runtime_home_from_context, short_text,
 };
-use super::tool_dispatch as tool_dispatch;
 use super::tool_dispatch_extended_patch_v4a;
 use fin_contracts::ToolExecutionRecord;
 use serde::Serialize;

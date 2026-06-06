@@ -12,7 +12,7 @@ use serde_json::Value;
 use thiserror::Error;
 use crate::pipeline::input::{
     ChannelMetadata, InputIn01ChannelRaw, InputIn02NormalizedBuilder, InputIn03OperationBuilder,
-    InputIn04SessionBoundBuilder, InputIn05ReasoningSeedBuilder, RawAttachment,
+    InputIn04SessionBoundBuilder, InputIn05ReasoningSeedBuilder,
 };
 mod activity_cards;
 #[cfg(test)]

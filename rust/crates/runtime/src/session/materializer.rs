@@ -1,5 +1,4 @@
 use crate::{ClosureRun, RuntimeError, uses_ephemeral_session_persistence};
-use super::journal;
 use fin_config::RuntimeRetentionConfig;
 use fin_contracts::EventEnvelope;
 use fin_contracts::{

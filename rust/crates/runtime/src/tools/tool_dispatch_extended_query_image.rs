@@ -1,7 +1,6 @@
 use super::tool_dispatch::{
     ToolDispatchInput, ToolDispatchOutcome, failed_record, read_string, short_text,
 };
-use super::tool_dispatch as tool_dispatch;
 use super::tool_dispatch_extended_patch::resolve_workspace_path;
 use fin_contracts::{InputAttachmentSummary, ToolExecutionRecord};
 use serde_json::{Value, json};

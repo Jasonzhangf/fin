@@ -1,8 +1,3 @@
-use super::{
-    tool_dispatch_extended_collab, tool_dispatch_extended_exec, tool_dispatch_extended_patch,
-    tool_dispatch_extended_query, tool_dispatch_extended_task_write,
-};
-use super::tool_dispatch as tool_dispatch;
 use super::tool_dispatch::{ToolDispatchInput, ToolDispatchOutcome};
 use serde_json::Value;
 
