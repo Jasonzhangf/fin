@@ -1,10 +1,11 @@
 use crate::{RuntimeError, tools::tool_semantics};
-#[path = "activity_cards_agents.rs"]
-mod activity_cards_agents;
-#[path = "activity_cards_helpers.rs"]
-mod activity_cards_helpers;
-#[path = "activity_cards_store.rs"]
-mod activity_cards_store;
+mod agents;
+mod helpers;
+mod store;
+#[cfg(test)]
+mod tests;
+#[cfg(test)]
+mod delivery_tests;
 use fin_contracts::{
     ActivityCardsSnapshot, ActivitySourceSummary, ExecutionStateRecord, SourceActivityCardView,
     ToolExecutionRecord, ToolSemanticView, TurnRecord, UserActivityCardView,
@@ -12,13 +13,13 @@ use fin_contracts::{
 use serde::Deserialize;
 use std::{cmp::Reverse, path::Path};
 
-use activity_cards_agents::{AgentPresenceRegistry, build_agent_cards};
-use activity_cards_helpers::{
+use agents::{AgentPresenceRegistry, build_agent_cards};
+use helpers::{
     frontstage_recent_item, frontstage_source_recent_item, latest_failed_action,
     local_now_placeholder, most_recent_actions, peer_activity, peer_state, peer_summary, peer_title,
     shorten, should_promote, source_rank, visibility_for_state,
 };
-use activity_cards_store::{
+use store::{
     pending_inbound_notice, read_json_if_exists, read_last_run_json, read_last_run_value,
     read_last_run_vec, read_session_vec, string_field,
 };
@@ -280,7 +281,7 @@ fn infer_task_id(
     session_id: Option<&str>,
     last_run_session_id: Option<&str>,
     last_run: &serde_json::Value,
-    agents: &[activity_cards_agents::AgentPresenceEntry],
+    agents: &[agents::AgentPresenceEntry],
 ) -> Option<String> {
     if session_id == last_run_session_id {
         return string_field(last_run, "task_id");

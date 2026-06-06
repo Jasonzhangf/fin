@@ -7,7 +7,7 @@ use std::{
     time::{SystemTime, UNIX_EPOCH},
 };
 
-fn temp_runtime_home() -> PathBuf {
+pub(super) fn temp_runtime_home() -> PathBuf {
     static TEMP_SEQ: AtomicU64 = AtomicU64::new(1);
     let seq = TEMP_SEQ.fetch_add(1, Ordering::Relaxed);
     std::env::temp_dir().join(format!(
@@ -108,7 +108,7 @@ fn provider_call_is_not_preferred_over_real_tool_actions_in_recent_items() {
     );
 }
 
-fn write_json(path: &Path, value: &impl serde::Serialize) {
+pub(super) fn write_json(path: &Path, value: &impl serde::Serialize) {
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent).expect("create parent");
     }

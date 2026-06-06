@@ -181,7 +181,7 @@ pub(super) fn peer_activity(peer: &super::PeerRegistryEntry) -> String {
     }
 }
 
-pub(super) fn agent_title(agent: &super::activity_cards_agents::AgentPresenceEntry) -> String {
+pub(super) fn agent_title(agent: &super::agents::AgentPresenceEntry) -> String {
     match agent.agent_kind.as_str() {
         "system_entry" => "System Agent".into(),
         "system_worker" => format!("System Worker {}", agent.agent_name),
@@ -199,7 +199,7 @@ pub(super) fn agent_title(agent: &super::activity_cards_agents::AgentPresenceEnt
     }
 }
 
-pub(super) fn agent_state(agent: &super::activity_cards_agents::AgentPresenceEntry) -> String {
+pub(super) fn agent_state(agent: &super::agents::AgentPresenceEntry) -> String {
     match agent.status.as_str() {
         "busy" => "running".into(),
         "offline" => "idle".into(),
@@ -207,7 +207,7 @@ pub(super) fn agent_state(agent: &super::activity_cards_agents::AgentPresenceEnt
     }
 }
 
-pub(super) fn agent_summary(agent: &super::activity_cards_agents::AgentPresenceEntry) -> String {
+pub(super) fn agent_summary(agent: &super::agents::AgentPresenceEntry) -> String {
     let mut parts = Vec::new();
     if let Some(project_id) = agent
         .project_id
@@ -229,7 +229,7 @@ pub(super) fn agent_summary(agent: &super::activity_cards_agents::AgentPresenceE
     shorten(&parts.join(" · "), 120)
 }
 
-pub(super) fn agent_activity(agent: &super::activity_cards_agents::AgentPresenceEntry) -> String {
+pub(super) fn agent_activity(agent: &super::agents::AgentPresenceEntry) -> String {
     if let Some(reason) = agent
         .waiting_reason
         .as_deref()

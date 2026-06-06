@@ -15,8 +15,6 @@ use crate::pipeline::input::{
     InputIn04SessionBoundBuilder, InputIn05ReasoningSeedBuilder,
 };
 mod activity_cards;
-#[cfg(test)]
-mod activity_cards_tests;
 mod agent;
 mod task;
 mod closure;
