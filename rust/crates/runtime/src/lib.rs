@@ -18,7 +18,6 @@ mod activity_cards;
 #[cfg(test)]
 mod activity_cards_tests;
 mod agent;
-#[cfg(test)]
 mod task;
 mod closure;
 #[cfg(test)]

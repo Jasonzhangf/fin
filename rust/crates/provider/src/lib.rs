@@ -6,7 +6,6 @@ use std::collections::BTreeMap;
 use thiserror::Error;
 
 mod http_client;
-#[cfg(test)]
 mod provider_facade;
 mod provider_static;
 
