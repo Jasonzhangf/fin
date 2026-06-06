@@ -17,7 +17,7 @@
 | 6. Provider hub decision | DONE | `hub_pipeline` deleted; `provider_facade` moved to production (removed `#[cfg(test)]` gate) |
 | 7a. Naming/boundary static tests | DONE | 13/13 pass in `naming_static_tests.rs` |
 | 7b. Extended naming tests | DONE | tools_mod_v4a documented (1 occurrence) |
-| 8. Validation matrix L1-L5 | L1+L2 DONE, L3-L5 DEFERRED | L1: 132+13=145 tests; L2: 13/13 gate; L3-L5: external deps |
+| 8. Validation matrix L1-L5 | L1+L2+L3 DONE, L4-L5 DEFERRED | L1: 132+13=145 tests; L2: 13/13 gate; L3: 4/4 fault injection tests; L4-L5: external deps |
 
 ## L1 Evidence (2026-06-06)
 
@@ -66,7 +66,15 @@ task/           6 files    assignment_queue/board_snapshot/handoff/managed_board
 tools/         34 files    dispatch/catalog/semantics/history_render + extended family + tests
 ```
 
-## L3-L5 Deferred (external deps)
+## L3 Evidence (2026-06-06)
+
+4/4 fault injection tests pass:
+- l3_provider_500_surfaces_as_err ✓
+- l3_unsupported_protocol_surfaces_as_err ✓
+- l3_request_failure_surfaces_as_err ✓
+- l3_missing_credential_surfaces_as_err ✓
+
+## L4-L5 Deferred (external deps)
 
 - L3 fault injection: needs live provider execution paths
 - L4 live provider smoke: needs API key configuration
