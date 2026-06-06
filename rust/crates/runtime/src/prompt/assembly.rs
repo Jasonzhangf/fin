@@ -4,7 +4,7 @@ use crate::{
 };
 use fin_contracts::{DigestRecord, PromptLayerSummary, PromptModuleEntry, RolePromptBlock};
 
-use super::context::view::ContextAssemblyInput;
+use crate::context::view::ContextAssemblyInput;
 
 pub(super) fn build_role_prompt_block(
     worker: &WorkerRuntime,
