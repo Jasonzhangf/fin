@@ -1,7 +1,7 @@
 use crate::{
     WorkerRuntime,
     context::blocks::{build_peer_block, build_project_block},
-    prompt_assembly::build_role_prompt_block,
+    prompt::assembly::build_role_prompt_block,
     tools::tool_catalog_dynamic::{DynamicToolCatalogInput, build_dynamic_tool_catalog_block},
     tools::tool_history_render::render_current_tool_execution_history,
 };

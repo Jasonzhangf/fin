@@ -1,8 +1,8 @@
 use crate::*;
-use crate::model_output::ModelToolCall;
+use crate::model::parser::ModelToolCall;
 use fin_contracts::ToolExecutionRecord;
 use crate::control::feedback::ControlFeedbackBuilder;
-use crate::model_output::ModelOutputParser;
+use crate::model::parser::ModelOutputParser;
 use crate::tools::tool_dispatch;
 
 #[derive(Debug, Clone)]

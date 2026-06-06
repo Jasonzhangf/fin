@@ -1,4 +1,4 @@
-use crate::model_output_shapes::{
+use crate::model::shapes::{
     classify_invalid_tool_calls, extract_tag, partial_tool_signal_present, repair_json_shape,
     strip_json_code_fence, strip_structured_blocks,
 };

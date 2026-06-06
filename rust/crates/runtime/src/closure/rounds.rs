@@ -1,5 +1,5 @@
 use super::*;
-use crate::model_output::ModelToolCall;
+use crate::model::parser::ModelToolCall;
 use serde_json::json;
 use std::{fs, path::PathBuf};
 use crate::pipeline::reason::{

@@ -1,10 +1,10 @@
 use crate::*;
-use crate::model_output::ModelToolCall;
+use crate::model::parser::ModelToolCall;
 use fin_contracts::ControlFeedback;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use crate::model_output::{parse_control_feedback, parse_tool_calls};
-use crate::model_output_shapes::{extract_tag, strip_structured_blocks};
+use crate::model::parser::{parse_control_feedback, parse_tool_calls};
+use crate::model::shapes::{extract_tag, strip_structured_blocks};
 
 pub(crate) const USER_RESPONSE_TAG: &str = "fin_user_response";
 pub(crate) const CONTROL_FEEDBACK_TAG: &str = "fin_control_feedback";

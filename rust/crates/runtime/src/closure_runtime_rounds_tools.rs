@@ -2,7 +2,7 @@ use super::*;
 use serde_json::json;
 use fin_provider::{ProviderToolSpec, ProviderToolCall, ProviderToolResult};
 use fin_contracts::ToolCatalogEntry;
-use crate::model_output::ModelToolCall;
+use crate::model::parser::ModelToolCall;
 use std::path::PathBuf;
 use std::fs;
 
@@ -437,7 +437,7 @@ mod tests {
 use serde_json::json;
 use fin_provider::{ProviderToolSpec, ProviderToolCall, ProviderToolResult};
 use fin_contracts::ToolCatalogEntry;
-use crate::model_output::ModelToolCall;
+use crate::model::parser::ModelToolCall;
 use std::path::PathBuf;
 use std::fs;
     use crate::tools::tool_catalog::build_tool_catalog_block;

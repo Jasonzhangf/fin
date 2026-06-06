@@ -1,5 +1,5 @@
 use crate::{
-    model_output::ModelToolCall,
+    model::parser::ModelToolCall,
 };
 use super::{tool_dispatch_control, tool_dispatch_extended, tool_dispatch_peer};
 use fin_contracts::{EntityRefs, MinimalContextView, ToolExecutionRecord};

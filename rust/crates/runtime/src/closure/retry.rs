@@ -30,7 +30,7 @@ pub(super) fn execute_round_with_contract_retries(
     round_context: &MinimalContextView,
     round_index: u32,
     input: String,
-    prior_tool_calls: &[crate::model_output::ModelToolCall],
+    prior_tool_calls: &[crate::model::parser::ModelToolCall],
     tool_results: &[ToolExecutionRecord],
 ) -> Result<ContractRetriedRound, RuntimeError> {
     let round = execute_round(

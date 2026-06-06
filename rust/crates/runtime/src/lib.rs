@@ -19,7 +19,6 @@ mod activity_cards;
 mod activity_cards_tests;
 mod agent;
 #[cfg(test)]
-mod assembler_tests;
 mod task;
 mod closure;
 #[cfg(test)]
@@ -33,15 +32,9 @@ mod pipeline;
 #[cfg(test)]
 mod execution_checkpoint_tests;
 
-mod model_input_assembler;
-mod model_output;
-mod model_output_shapes;
-#[cfg(test)]
-mod model_output_tests;
+mod model;
 
-mod prompt_assembly;
-#[cfg(test)]
-mod prompt_tests;
+mod prompt;
 mod round_context;
 #[cfg(test)]
 mod round_loop_runtime_tests;
@@ -79,8 +72,8 @@ pub use control::plane::{
     failed_state, interrupted_segment, new_pending_input, paused_state, resumed_state,
     running_state, segment_merge, state_after_run, state_with_pending_count,
 };
-pub use model_input_assembler::ModelInputAssembler;
-pub use model_output::{ModelOutputParser, ParsedModelOutput};
+pub use model::input_assembler::ModelInputAssembler;
+pub use model::parser::{ModelOutputParser, ParsedModelOutput};
 pub use control::owner_loop::derive_owner_loop_action_for_runtime;
 pub use control::scheduler::derive_scheduler_decision;
 pub use session::materializer::{

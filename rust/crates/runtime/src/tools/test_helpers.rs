@@ -5,7 +5,7 @@
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use crate::model_output::ModelToolCall;
+use crate::model::parser::ModelToolCall;
 use fin_contracts::{EntityRefs, MinimalContextView, ProjectContextBlock};
 
 pub(crate) fn temp_runtime_home(prefix: &str) -> PathBuf {

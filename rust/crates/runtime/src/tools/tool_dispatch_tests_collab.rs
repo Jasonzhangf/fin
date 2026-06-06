@@ -1,6 +1,6 @@
 use crate::tools::test_helpers::{context_with_runtime_home, refs, temp_runtime_home};
 use fin_contracts::EntityRefs;
-use crate::model_output::ModelToolCall;
+use crate::model::parser::ModelToolCall;
 use super::tool_dispatch::execute_model_tools;
 use super::tool_dispatch as tool_dispatch;
 use serde_json::json;

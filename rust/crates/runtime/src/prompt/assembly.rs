@@ -6,7 +6,7 @@ use fin_contracts::{DigestRecord, PromptLayerSummary, PromptModuleEntry, RolePro
 
 use crate::context::view::ContextAssemblyInput;
 
-pub(super) fn build_role_prompt_block(
+pub(crate) fn build_role_prompt_block(
     worker: &WorkerRuntime,
     recent_digests: &[DigestRecord],
     input: &ContextAssemblyInput,
