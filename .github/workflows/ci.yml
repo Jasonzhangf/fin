@@ -12,9 +12,14 @@ jobs:
 
       - name: Set up Rust
         uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
 
-      - name: Verify governance skeleton
+      - name: Verify governance (required files + line-limit)
         run: ./scripts/verify-governance.sh
+
+      - name: Check formatting
+        run: cargo fmt --check --manifest-path rust/Cargo.toml
 
       - name: Cargo test
         working-directory: rust
