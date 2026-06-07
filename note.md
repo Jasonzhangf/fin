@@ -7,6 +7,20 @@ Updated: 2026-04-18
 - Current Layer 2 gate evidence: `python3 scripts/check-code-line-limit.py` fails with 12 non-whitelisted files over 500 lines; `./scripts/verify-governance.sh` fails because it runs that gate. `cargo fmt --check --manifest-path rust/Cargo.toml` is invalid for this virtual workspace shape and must use the CI-executable `cargo fmt --all --check --manifest-path rust/Cargo.toml` form.
 - `rust/crates/cli/src/channel_peer_activity_delivery_tests_dev.rs` was not referenced and targeted compilation showed it used removed debug renderer APIs (`QqbotProgressPolicy`, three-argument render calls, heartbeat renderer). Treat as stale dead tests; physical deletion is correct instead of reviving old API.
 
+## 2026-06-07 architecture hardening session results
+
+### Verified fixes (committed)
+- Pipeline source truth: `In03OperationBuilder` now uses `normalized.raw.source` instead of `worker.source`, and `InferenceOperationBuilder` extracts source from `current_input.source` in context. This fixes `suppresses_session_result_history` and `is_hidden_session_source` routing.
+- Hidden session history: `persist_session_messages` and `persist_extended_records` (journal) now gated by `persist_session_history`, so ephemeral control-plane turns don't pollute frontstage session history.
+- Attached cycle ordering: restored to run BEFORE status/local-command dispatch.
+- Governance gate: inventory grep pattern fixed to match markdown table format.
+- Pipeline static gates: all 22 pass. fin-runtime: all 147 pass. fin-cli: 141 pass / 9 fail (pre-existing).
+- Net: +6 tests fixed, 0 regressions (before: 135/15, after: 141/9).
+
+- `operation.source` was still overwritten by `InputIn03OperationBuilder` from request source to `worker.source`, causing hidden framework turns such as `framework.resume_checkpoint.wait` to materialize as normal `cli` history. Fixed the owning pipeline builder to use `normalized.raw.source`; `tests::hidden_framework_resume_turn_does_not_pollute_normal_session_history` now passes.
+- Hidden framework persistence also needed to gate extended session journals (`provider/rounds/steps/turns/routing`), not only messages/digests/reasoning/tools. `SessionMaterializer` now passes its persistence mode into `session::journal` so ephemeral sources do not append frontstage session history.
+- Remaining `fin-cli` failures after this fix are 12 and cluster around attached control-plane ordering, checkpoint consumption, parallel state restoration, and event archive cold-dir creation.
+
 ## 2026-04-21 failed-tool + reasoning.stop closure bug fixed and live E2E re-validated
 
 - runtime 已修复一个真实闭环 bug：

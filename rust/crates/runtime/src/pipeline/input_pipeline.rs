@@ -120,7 +120,7 @@ impl InputIn03OperationBuilder {
             normalized.raw.operation_id.clone(),
             "start_inference",
             normalized.raw.submitted_at.clone(),
-            worker.source.clone(),
+            normalized.raw.source.clone(),
             normalized.raw.trace_id.clone(),
             payload,
         );

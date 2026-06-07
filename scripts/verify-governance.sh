@@ -58,7 +58,7 @@ fi
 
 # 4. Runtime inventory mentions actual domain dirs
 for domain in model prompt; do
-  if grep -q "|\`${domain}\`" docs/architecture/45-runtime-module-inventory.md; then
+  if grep -q " \`$domain\` " docs/architecture/45-runtime-module-inventory.md; then
     echo "OK: inventory includes domain $domain"
   else
     echo "FAIL: inventory missing domain $domain" >&2

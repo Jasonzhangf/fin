@@ -113,7 +113,10 @@ fn ordinary_user_input_runs_as_parallel_inference_while_waiting_external() {
 
     let state_after =
         fs::read_to_string(session_dir.join("control/execution_state.json")).expect("state after");
-    assert!(state_after.contains("\"status\": \"waiting_external\""));
+    assert!(
+        state_after.contains("\"status\": \"waiting_external\""),
+        "state_after should preserve waiting_external after parallel run, got: {state_after}"
+    );
     assert!(state_after.contains("\"resume_checkpoint_ready\": true"));
     let checkpoint_after =
         fs::read_to_string(session_dir.join("control/execution_checkpoint.json"))

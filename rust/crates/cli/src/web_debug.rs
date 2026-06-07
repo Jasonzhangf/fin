@@ -239,8 +239,6 @@ fn followup_supervisor_cycle_source_for_local_command(message: &str) -> Option<&
         Some("resume_run")
     } else if trimmed.starts_with("/tick") {
         Some("manual_tick")
-    } else if trimmed.starts_with("/formalize") {
-        Some("formalize_kickoff")
     } else {
         None
     }

@@ -1,4 +1,4 @@
-use crate::{ClosureRun, RuntimeError, uses_ephemeral_session_persistence};
+use crate::{ClosureRun, RuntimeError, suppresses_session_result_history};
 use fin_config::RuntimeRetentionConfig;
 use fin_contracts::EventEnvelope;
 use fin_contracts::{
@@ -82,10 +82,8 @@ impl SessionMaterializer {
         run: &ClosureRun,
         retention: &RuntimeRetentionConfig,
     ) -> Result<SessionMaterializationReceipt, RuntimeError> {
-        let persistence_mode = if (run.conversation_user_input.is_none()
-            && !run.context_snapshot.input.trim().is_empty())
-            || uses_ephemeral_session_persistence(run.operation.source.as_str())
-        {
+        let suppress_history = suppresses_session_result_history(run.operation.source.as_str());
+        let persistence_mode = if suppress_history {
             SessionPersistenceMode::EphemeralControlPlane
         } else {
             SessionPersistenceMode::Normal
@@ -99,11 +97,7 @@ impl SessionMaterializer {
         let created_at = &run.note.created_at;
         let year = created_at.get(0..4).unwrap_or("unknown");
         let month = created_at.get(5..7).unwrap_or("00");
-        let session_dir = runtime_home
-            .join("sessions")
-            .join(year)
-            .join(month)
-            .join(&session_id);
+        let session_dir = resolve_session_dir(runtime_home, year, month, &session_id);
 
         for relative in [
             "events",
@@ -129,15 +123,17 @@ impl SessionMaterializer {
             create_dir_all(&session_dir.join(relative))?;
         }
 
-        persist_event_stream(
-            runtime_home,
-            &session_dir,
-            year,
-            month,
-            &session_id,
-            &run.events,
-            retention,
-        )?;
+        if !suppress_history {
+            persist_event_stream(
+                runtime_home,
+                &session_dir,
+                year,
+                month,
+                &session_id,
+                &run.events,
+                retention,
+            )?;
+        }
         write_json_file(&session_dir.join("progress/latest.json"), &run.progress)?;
         write_json_file(
             &session_dir.join("control/latest.json"),
@@ -189,6 +185,7 @@ impl SessionMaterializer {
             &session_id,
             run,
             retention,
+            persistence_mode.persist_session_history(),
         )?;
         persist_scheduled_reminders(runtime_home, &run.events, retention)?;
         write_json_file(
@@ -286,13 +283,40 @@ impl SessionMaterializer {
     }
 }
 
+fn resolve_session_dir(runtime_home: &Path, year: &str, month: &str, session_id: &str) -> PathBuf {
+    if let Some(existing) = find_existing_session_dir(runtime_home, session_id) {
+        return existing;
+    }
+    runtime_home
+        .join("sessions")
+        .join(year)
+        .join(month)
+        .join(session_id)
+}
+
+fn find_existing_session_dir(runtime_home: &Path, session_id: &str) -> Option<PathBuf> {
+    let root = runtime_home.join("sessions");
+    let years = fs::read_dir(root).ok()?;
+    for year in years.flatten() {
+        let months = fs::read_dir(year.path()).ok()?;
+        for month in months.flatten() {
+            let dir = month.path().join(session_id);
+            if dir.exists() {
+                return Some(dir);
+            }
+        }
+    }
+    None
+}
+
 pub fn append_framework_events(
     runtime_home: &Path,
     session_dir: &Path,
     events: &[EventEnvelope<Value>],
     retention: &RuntimeRetentionConfig,
 ) -> Result<(), RuntimeError> {
-    let (year, month, session_id) = super::materializer_events::session_archive_coords(session_dir)?;
+    let (year, month, session_id) =
+        super::materializer_events::session_archive_coords(session_dir)?;
     persist_event_stream(
         runtime_home,
         session_dir,

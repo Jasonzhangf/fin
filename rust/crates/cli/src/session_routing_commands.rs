@@ -1,6 +1,5 @@
 use crate::{
     CliError,
-    formalize_planning::enqueue_formalized_planning_kickoff,
     local_command_notice::append_notice_messages,
     routing_prompt_state::{
         load_latest_routing_decision, load_pending_routing_action, resolve_pending_routing_action,
@@ -261,23 +260,12 @@ fn create_and_bind_formal_task(
         recent_contexts_path: rebound.recent_contexts_path,
         recent_digests_path: rebound.recent_digests_path,
     };
-    let kickoff_enqueued = enqueue_formalized_planning_kickoff(
-        runtime_home,
-        system,
-        &rebound_binding,
-        action,
-        &topic_thread_id,
-        &topic_summary,
-        decision
-            .map(|value| value.reason.as_str())
-            .unwrap_or(topic_summary.as_str()),
-        &now,
-    )?;
+    let _ = (system, decision);
     Ok(ChatSendResponse {
         binding: rebound_binding,
         answer: format!("formalized current session: {session_id} / {task_id} / {topic_thread_id}"),
         digest_id: format!("digest-routing-formalize-{task_id}"),
-        events_count: receipt.artifact_refs.len() + usize::from(kickoff_enqueued) + 1,
+        events_count: receipt.artifact_refs.len() + 1,
         response_kind: "system_notice".into(),
         freshness: Some("instant".into()),
         control_feedback: None,

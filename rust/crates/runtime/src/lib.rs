@@ -63,7 +63,7 @@ pub use control::plane::{
 pub use control::scheduler::derive_scheduler_decision;
 pub use model::input_assembler::ModelInputAssembler;
 pub use model::parser::{ModelOutputParser, ParsedModelOutput};
-pub use runtime_home::source_visibility::uses_ephemeral_session_persistence;
+pub use runtime_home::source_visibility::suppresses_session_result_history;
 pub use session::materializer::{
     SessionMaterializationReceipt, SessionMaterializer, SessionMessageRecord,
     append_framework_events,
@@ -170,11 +170,19 @@ impl InferenceOperationBuilder {
         worker: &WorkerRuntime,
         request: InferenceRequest,
     ) -> Result<OperationEnvelope<InferenceOperationPayload>, RuntimeError> {
+        let source = request
+            .context
+            .current_input
+            .as_ref()
+            .map(|input| input.source.trim())
+            .filter(|source| !source.is_empty())
+            .unwrap_or(worker.source.as_str())
+            .to_string();
         let raw = InputIn01ChannelRaw {
             operation_id: request.operation_id.clone(),
             trace_id: request.trace_id.clone(),
             submitted_at: request.submitted_at.clone(),
-            source: worker.source.clone(),
+            source,
             refs: request.refs.clone(),
             raw_input: request.input.clone(),
             raw_context: request.context.clone(),

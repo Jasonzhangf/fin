@@ -30,7 +30,6 @@ mod error;
 mod execution_checkpoint;
 mod execution_segments;
 mod execution_state;
-mod formalize_planning;
 mod fs_utils;
 mod headless_daemon;
 mod headless_daemon_project_resume;

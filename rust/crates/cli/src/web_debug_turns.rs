@@ -432,7 +432,10 @@ impl CliDebugActionHandler {
 }
 
 fn is_parallel_source(source: &str) -> bool {
-    matches!(source, "cli.parallel_user" | "channel.parallel_user")
+    matches!(
+        source,
+        "cli.parallel_user" | "channel.parallel_user" | "parallel_user_input"
+    )
 }
 
 fn reclassify_as_parallel_request(request: &ChatSendRequest) -> ChatSendRequest {

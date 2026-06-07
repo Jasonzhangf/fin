@@ -154,8 +154,10 @@ where
         else {
             break;
         };
-        let stop_after_formalize_planning = next.input_kind == "framework_planning"
+        let stop_after_framework_planning = next.input_kind == "framework_planning"
             && next.source.starts_with("framework.task_kickoff.");
+        let stop_after_parallel_user =
+            next.source == "cli.parallel_user" || next.source == "channel.parallel_user";
         let response = run_next(
             current_binding.clone(),
             next.message,
@@ -167,7 +169,7 @@ where
         merge_segment = None;
         last_response = Some(response);
         drove_count = drove_count.saturating_add(1);
-        if stop_after_formalize_planning {
+        if stop_after_framework_planning || stop_after_parallel_user {
             break;
         }
     }
