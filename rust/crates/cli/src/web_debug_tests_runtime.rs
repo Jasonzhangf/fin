@@ -65,7 +65,7 @@ fn interrupt_request_runs_immediately_and_preserves_open_segment() {
     let system = map_system_config(&sample_user_toml()).expect("system config");
     let handler =
         CliDebugActionHandler::new(sample_user_toml(), system).expect("handler should build");
-    let session_dir = home.join("sessions/2026/04/session-interrupt");
+    let session_dir = home.join("sessions/2026/06/session-interrupt");
     fs::create_dir_all(session_dir.join("conversation")).expect("conversation dir");
     fs::create_dir_all(session_dir.join("control")).expect("control dir");
     fs::create_dir_all(session_dir.join("queue")).expect("queue dir");
@@ -114,11 +114,11 @@ fn interrupt_request_runs_immediately_and_preserves_open_segment() {
             br#"{
   "session_id":"session-interrupt",
   "task_id":"task-interrupt",
-  "session_messages_path":"sessions/2026/04/session-interrupt/conversation/messages.json",
-  "session_recent_contexts_path":"sessions/2026/04/session-interrupt/context/recent_contexts.json",
-  "session_recent_digests_path":"sessions/2026/04/session-interrupt/digests/recent_digests.json",
-  "session_recent_reasoning_path":"sessions/2026/04/session-interrupt/reasoning/recent_reasoning_views.json",
-  "session_recent_tool_records_path":"sessions/2026/04/session-interrupt/tools/recent_tool_records.json"
+  "session_messages_path":"sessions/2026/06/session-interrupt/conversation/messages.json",
+  "session_recent_contexts_path":"sessions/2026/06/session-interrupt/context/recent_contexts.json",
+  "session_recent_digests_path":"sessions/2026/06/session-interrupt/digests/recent_digests.json",
+  "session_recent_reasoning_path":"sessions/2026/06/session-interrupt/reasoning/recent_reasoning_views.json",
+  "session_recent_tool_records_path":"sessions/2026/06/session-interrupt/tools/recent_tool_records.json"
 }"#,
         )
         .expect("last_run");
@@ -161,7 +161,7 @@ fn resume_run_auto_drains_multiple_pending_inputs_until_queue_empty() {
     let system = map_system_config(&sample_user_toml()).expect("system config");
     let handler =
         CliDebugActionHandler::new(sample_user_toml(), system).expect("handler should build");
-    let session_dir = home.join("sessions/2026/04/session-resume-drain");
+    let session_dir = home.join("sessions/2026/06/session-resume-drain");
     fs::create_dir_all(session_dir.join("conversation")).expect("conversation dir");
     fs::create_dir_all(session_dir.join("control")).expect("control dir");
     fs::create_dir_all(session_dir.join("queue")).expect("queue dir");
@@ -214,11 +214,11 @@ fn resume_run_auto_drains_multiple_pending_inputs_until_queue_empty() {
             br#"{
   "session_id":"session-resume-drain",
   "task_id":"task-resume-drain",
-  "session_messages_path":"sessions/2026/04/session-resume-drain/conversation/messages.json",
-  "session_recent_contexts_path":"sessions/2026/04/session-resume-drain/context/recent_contexts.json",
-  "session_recent_digests_path":"sessions/2026/04/session-resume-drain/digests/recent_digests.json",
-  "session_recent_reasoning_path":"sessions/2026/04/session-resume-drain/reasoning/recent_reasoning_views.json",
-  "session_recent_tool_records_path":"sessions/2026/04/session-resume-drain/tools/recent_tool_records.json"
+  "session_messages_path":"sessions/2026/06/session-resume-drain/conversation/messages.json",
+  "session_recent_contexts_path":"sessions/2026/06/session-resume-drain/context/recent_contexts.json",
+  "session_recent_digests_path":"sessions/2026/06/session-resume-drain/digests/recent_digests.json",
+  "session_recent_reasoning_path":"sessions/2026/06/session-resume-drain/reasoning/recent_reasoning_views.json",
+  "session_recent_tool_records_path":"sessions/2026/06/session-resume-drain/tools/recent_tool_records.json"
 }"#,
         )
         .expect("last_run");
@@ -260,7 +260,7 @@ fn tick_command_drives_pending_queue_when_scheduler_allows() {
     let system = map_system_config(&sample_user_toml()).expect("system config");
     let handler =
         CliDebugActionHandler::new(sample_user_toml(), system).expect("handler should build");
-    let session_dir = home.join("sessions/2026/04/session-tick");
+    let session_dir = home.join("sessions/2026/06/session-tick");
     fs::create_dir_all(session_dir.join("conversation")).expect("conversation dir");
     fs::create_dir_all(session_dir.join("control")).expect("control dir");
     fs::create_dir_all(session_dir.join("queue")).expect("queue dir");
@@ -312,11 +312,11 @@ fn tick_command_drives_pending_queue_when_scheduler_allows() {
             br#"{
   "session_id":"session-tick",
   "task_id":"task-tick",
-  "session_messages_path":"sessions/2026/04/session-tick/conversation/messages.json",
-  "session_recent_contexts_path":"sessions/2026/04/session-tick/context/recent_contexts.json",
-  "session_recent_digests_path":"sessions/2026/04/session-tick/digests/recent_digests.json",
-  "session_recent_reasoning_path":"sessions/2026/04/session-tick/reasoning/recent_reasoning_views.json",
-  "session_recent_tool_records_path":"sessions/2026/04/session-tick/tools/recent_tool_records.json"
+  "session_messages_path":"sessions/2026/06/session-tick/conversation/messages.json",
+  "session_recent_contexts_path":"sessions/2026/06/session-tick/context/recent_contexts.json",
+  "session_recent_digests_path":"sessions/2026/06/session-tick/digests/recent_digests.json",
+  "session_recent_reasoning_path":"sessions/2026/06/session-tick/reasoning/recent_reasoning_views.json",
+  "session_recent_tool_records_path":"sessions/2026/06/session-tick/tools/recent_tool_records.json"
 }"#,
         )
         .expect("last_run");

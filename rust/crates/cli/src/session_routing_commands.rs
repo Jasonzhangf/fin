@@ -12,7 +12,8 @@ use crate::{
 use chrono::Local;
 use fin_config::SystemConfig;
 use fin_debug_server::{ChatSendResponse, DebugBinding};
-use fin_runtime::{StoredTaskRecord, create_task_record, load_task_record};
+use fin_contracts::{DebugVisibility, EntityRefs, EventEnvelope, Severity};
+use fin_runtime::{StoredTaskRecord, create_task_record, load_task_record, append_framework_events};
 use serde_json::json;
 use std::path::Path;
 
@@ -242,6 +243,37 @@ fn create_and_bind_formal_task(
         format!("user confirmed formalization into {task_id}/{topic_thread_id}").as_str(),
         &now,
     )?;
+    // Emit session.formalized event
+    let formalized_event = {
+        let mut event = EventEnvelope::new(
+            format!("formalize-{}-evt-01", task_id),
+            "session.formalized",
+            now.clone(),
+            "cli.formalize",
+            task_id.clone(),
+            1,
+            serde_json::json!({
+                "task_id": task_id,
+                "topic_thread_id": topic_thread_id,
+                "session_id": session_id,
+                "resolution_kind": resolution_kind,
+            }),
+        );
+        event.refs = EntityRefs {
+            session_id: Some(session_id.to_string()),
+            task_id: Some(task_id.clone()),
+            ..EntityRefs::default()
+        };
+        event.severity = Severity::Info;
+        event.debug_visibility = DebugVisibility::Important;
+        event
+    };
+    let _ = append_framework_events(
+        runtime_home,
+        &session_dir,
+        &[formalized_event],
+        &system.runtime.retention,
+    );
     let _ = append_notice_messages(
         &session_dir.join("conversation/messages.json"),
         session_id,

@@ -150,7 +150,7 @@ fn formalize_stops_after_bind_without_hidden_followup_turn() {
     assert!(current_task_board.contains(&format!("\"task_id\": \"{task_id}\"")));
 
     let events = fs::read_to_string(session_dir.join("events/stream.jsonl")).expect("events");
-    assert!(!events.contains("session.formalized"));
+    assert!(events.contains("session.formalized"));
     assert_no_removed_hidden_formalize_event(&events);
     assert!(!events.contains("scheduler.tick_started"));
     assert!(!events.contains("scheduler.tick_completed"));
@@ -229,7 +229,7 @@ fn formalize_does_not_write_plan_or_managed_tasks_without_explicit_next_turn() {
     assert!(current_task_board.contains(&format!("\"task_id\": \"{task_id}\"")));
 
     let events = fs::read_to_string(session_dir.join("events/stream.jsonl")).expect("events");
-    assert!(!events.contains("session.formalized"));
+    assert!(events.contains("session.formalized"));
     assert_no_removed_hidden_formalize_event(&events);
     assert!(!events.contains("plan.updated"));
 }
