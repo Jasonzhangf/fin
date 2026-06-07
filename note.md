@@ -5188,3 +5188,9 @@ per 原则 "新规则若无法被 gate 验证，默认不算硬边界"）这是�
 - All 11 activity_cards tests pass
 - No root-level activity_cards_*.rs files exist
 - No #[path] bridges referencing activity_cards
+
+## 2026-06-07 Layer 3 push attempt
+
+- Commit: 889ca78 docs(inventory): activity_cards migrated to domain dir, update inventory map (Layer 3)
+- Push failed: same LibreSSL SSL_connect: SSL_ERROR_SYSCALL in connection to github.com:443
+- This is the 3rd consecutive push failure on same TLS error

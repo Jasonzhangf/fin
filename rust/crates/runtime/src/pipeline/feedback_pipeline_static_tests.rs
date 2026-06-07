@@ -37,7 +37,12 @@ fn feedback_pipeline_rejects_silent_invalid_and_no_fallback_truth() {
         !pipeline.contains("impl From<"),
         "Feedback chain must use owning parsers/builders, not From conversions"
     );
-    for forbidden in ["FeedbackResp03a", "FeedbackResp04_", "FeedbackResp04.", "FeedbackRespV2"] {
+    for forbidden in [
+        "FeedbackResp03a",
+        "FeedbackResp04_",
+        "FeedbackResp04.",
+        "FeedbackRespV2",
+    ] {
         assert!(
             !pipeline.contains(forbidden),
             "forbidden feedback chain numbering {forbidden}"

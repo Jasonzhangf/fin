@@ -56,7 +56,7 @@ pub fn derive_scheduler_decision(
                     "closure is still running".into(),
                 )
             }
-        },
+        }
         "waiting_external" => {
             if parallel_pending_count > 0 {
                 (
@@ -292,7 +292,7 @@ mod tests {
                 refs: refs(),
                 status: "idle".into(),
                 active_turn_id: Some("turn-op-1".into()),
-                active_step_id: Some("step-op-1-04-tool_dispatch".into()),
+                active_step_id: Some("step-op-1-04-dispatch".into()),
                 pending_input_count: 2,
                 accepts_user_input: true,
                 reason: Some("checkpoint ready".into()),

@@ -14,19 +14,16 @@ pub struct RequestFailure {
     pub retryable: bool,
 }
 
-pub fn build_client(
-    resolve_overrides: &BTreeMap<String, IpAddr>,
-) -> Result<Client, ProviderError> {
+pub fn build_client(resolve_overrides: &BTreeMap<String, IpAddr>) -> Result<Client, ProviderError> {
     let mut builder = Client::builder()
         .connect_timeout(Duration::from_secs(CONNECT_TIMEOUT_SECS))
         .timeout(Duration::from_secs(REQUEST_TIMEOUT_SECS));
     for (host, ip) in resolve_overrides {
         builder = builder.resolve(host, SocketAddr::new(*ip, 0));
     }
-    builder.build()
-        .map_err(|err| ProviderError::Request {
-            message: format!("client build failed: {}", summarize_error_chain(&err)),
-        })
+    builder.build().map_err(|err| ProviderError::Request {
+        message: format!("client build failed: {}", summarize_error_chain(&err)),
+    })
 }
 
 pub fn classify_reqwest_error(
@@ -72,7 +69,6 @@ pub fn classify_http_status(
     );
     RequestFailure { message, retryable }
 }
-
 
 fn summarize_error_chain(err: &dyn std::error::Error) -> String {
     let mut parts = vec![err.to_string()];

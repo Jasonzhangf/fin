@@ -72,7 +72,7 @@ prompt / model 两组模块存在大量跨域引用，bridge approach 多次失�
 | `feedback_chain` | `pipeline::feedback` | `FeedbackResp01..04` | 唯一入口：`pipeline::feedback::run_feedback_pipeline` | model 不得伪造 success-from-error |
 | `error_center` | `pipeline::error` | `ErrorErr01..05` | 唯一入口：`closure_runtime::map_runtime_error_through_error_pipeline` | 禁止 fallback / silent salvage |
 | `closure_orchestration` | `closure_runtime` + `closure::*` | `M1Runtime`, `ClosureRun` | 唯一入口：`M1Runtime::run_closure` | closure 不得绕过 `run_closure_inner` |
-| `tool_dispatch` | `tools::tool_dispatch` | `ToolDispatchInput`, `ToolDispatchOutcome` | 唯一入口：`tools::tool_dispatch::execute_model_tools` | tool 不得写 event / ledger（属 runtime） |
+| `dispatch` | `tools::dispatch` | `ToolDispatchInput`, `ToolDispatchOutcome` | 唯一入口：`tools::dispatch::execute_model_tools` | tool 不得写 event / ledger（属 runtime） |
 | `context_assembly` | `context::view` | `MinimalContextView`, `ContextViewBuilder` | 唯一入口：`context::view::ContextViewBuilder::build` | control 不得重排 context block |
 | `session_materialize` | `session::materializer` | `SessionMaterializer`, `SessionMessageRecord` | 唯一入口：`session::materializer::SessionMaterializer::materialize` | tool 不得直接写 session 目录 |
 | `task_orchestration` | `task::store` + `task::handoff` | `StoredTaskRecord`, `TaskHandoffReceipt` | 唯一入口：`task::store::*` / `task::handoff::handoff_project_task` | control 不得直接修改 task status |
@@ -89,7 +89,7 @@ prompt / model 两组模块存在大量跨域引用，bridge approach 多次失�
 | `feedback_chain` | `prompt_tests_role_policy` | `pipeline::feedback_static_tests` | `feedback_pipeline_rejects_silent_invalid` | `cargo test -p fin-runtime` |
 | `error_center` | `run_closure_error_center_tests` | `pipeline::error_static_tests` | `error_pipeline_classifies_source_and_runtime_decision` | `cargo test -p fin-runtime` |
 | `closure_orchestration` | `tests::mainline`, `round_loop_runtime_tests` | `pipeline::naming_static_tests::lib_rs_no_helpers_or_support_mod_declarations` | `runtime_closure_uses_structured_user_response_for_session_visible_output` | `cargo test -p fin-runtime` |
-| `tool_dispatch` | `tools::tool_dispatch_query_tests`, `tools::tool_dispatch_task_write_tests` | `tools::tool_dispatch_tests_*` | `tool_dispatch_*` 集成路径 | `cargo test -p fin-runtime` |
+| `dispatch` | `tools::dispatch_query_tests`, `tools::dispatch_task_write_tests` | `tools::dispatch_tests_*` | `dispatch_*` 集成路径 | `cargo test -p fin-runtime` |
 | `context_assembly` | `context::view_tests` | `pipeline::input_static_tests` | `context_view_builder_exposes_loaded_global_skills` | `cargo test -p fin-runtime` |
 | `session_materialize` | `session::materializer` + `closure::*` | `pipeline::naming_static_tests::pipeline_modules_use_crate_path_not_legacy` | `session_materializer_persists_retry_attempt_provider_truth` | `cargo test -p fin-runtime` |
 | `task_orchestration` | `task::store`, `task::managed_board` | `pipeline::naming_static_tests::tools_mod_v4a_mod_declarations_count_is_documented` | `system_owner_can_assign_worker_and_close_managed_task_loop` | `cargo test -p fin-runtime` |

@@ -1,9 +1,9 @@
-use crate::*;
-use crate::model::parser::ModelToolCall;
-use fin_contracts::ToolExecutionRecord;
 use crate::control::feedback::ControlFeedbackBuilder;
 use crate::model::parser::ModelOutputParser;
-use crate::tools::tool_dispatch;
+use crate::model::parser::ModelToolCall;
+use crate::tools::dispatch;
+use crate::*;
+use fin_contracts::ToolExecutionRecord;
 
 #[derive(Debug, Clone)]
 pub(crate) struct ReasonReq01Seed {
@@ -56,7 +56,7 @@ pub(crate) struct ReasonResp07ParsedContract {
 #[derive(Debug, Clone)]
 pub(crate) struct ReasonResp08RuntimeDecision {
     pub(crate) parsed_contract: ReasonResp07ParsedContract,
-    pub(crate) dispatched_tools: tool_dispatch::ToolDispatchOutcome,
+    pub(crate) dispatched_tools: dispatch::ToolDispatchOutcome,
     pub(crate) control_feedback: ControlFeedback,
 }
 
@@ -66,7 +66,7 @@ pub(crate) struct ReasonResp09Closure {
     pub(crate) provider_response: ProviderResponse,
     pub(crate) provider_debug: SanitizedProviderDebug,
     pub(crate) parsed_output: ParsedModelOutput,
-    pub(crate) dispatched_tools: tool_dispatch::ToolDispatchOutcome,
+    pub(crate) dispatched_tools: dispatch::ToolDispatchOutcome,
     pub(crate) assistant_response_text: String,
     pub(crate) control_feedback: ControlFeedback,
 }
@@ -85,7 +85,15 @@ impl ReasonReq01SeedBuilder {
         prior_tool_calls: Vec<ModelToolCall>,
         tool_results: Vec<ToolExecutionRecord>,
     ) -> ReasonReq01Seed {
-        ReasonReq01Seed { operation, refs, round_index, input, context, prior_tool_calls, tool_results }
+        ReasonReq01Seed {
+            operation,
+            refs,
+            round_index,
+            input,
+            context,
+            prior_tool_calls,
+            tool_results,
+        }
     }
 }
 
@@ -94,7 +102,10 @@ pub(crate) struct ReasonReq02ContextPlanBuilder;
 impl ReasonReq02ContextPlanBuilder {
     pub(crate) fn build(&self, seed: ReasonReq01Seed) -> ReasonReq02ContextPlan {
         let rendered_input = ModelInputAssembler::default().assemble(&seed.input, &seed.context);
-        ReasonReq02ContextPlan { seed, rendered_input }
+        ReasonReq02ContextPlan {
+            seed,
+            rendered_input,
+        }
     }
 }
 
@@ -110,7 +121,9 @@ impl ReasonReq03BudgetedContextBuilder {
 pub(crate) struct ReasonReq04RenderedInputBuilder;
 impl ReasonReq04RenderedInputBuilder {
     pub(crate) fn build(&self, budgeted: ReasonReq03BudgetedContext) -> ReasonReq04RenderedInput {
-        ReasonReq04RenderedInput { budgeted_context: budgeted }
+        ReasonReq04RenderedInput {
+            budgeted_context: budgeted,
+        }
     }
 }
 
@@ -129,7 +142,10 @@ impl ReasonReq05ProviderCallBuilder {
             prior_tool_calls: seed.prior_tool_calls.iter().map(crate::closure::closure_runtime_rounds_tools::model_tool_call_to_provider_tool_call).collect(),
             tool_results: crate::closure::closure_runtime_rounds_tools::build_provider_tool_results(&seed.context, &seed.tool_results),
         };
-        ReasonReq05ProviderCall { rendered_input: rendered, provider_request }
+        ReasonReq05ProviderCall {
+            rendered_input: rendered,
+            provider_request,
+        }
     }
 }
 
@@ -147,30 +163,58 @@ impl ReasonResp06ModelOutputParser {
             user_agent: prepared_request.user_agent.clone(),
             request_headers: prepared_request.sanitized_headers.clone(),
         };
-        Ok(ReasonResp06ModelOutput { provider_call, prepared_request, provider_response, provider_debug })
+        Ok(ReasonResp06ModelOutput {
+            provider_call,
+            prepared_request,
+            provider_response,
+            provider_debug,
+        })
     }
 }
 
 #[derive(Default)]
 pub(crate) struct ReasonResp07ParsedContractParser;
 impl ReasonResp07ParsedContractParser {
-    pub(crate) fn parse(&self, model_output: ReasonResp06ModelOutput) -> ReasonResp07ParsedContract {
+    pub(crate) fn parse(
+        &self,
+        model_output: ReasonResp06ModelOutput,
+    ) -> ReasonResp07ParsedContract {
         let parsed_output = ModelOutputParser::default().parse(
-            &model_output.provider_call.rendered_input.budgeted_context.context_plan.seed.operation.payload,
+            &model_output
+                .provider_call
+                .rendered_input
+                .budgeted_context
+                .context_plan
+                .seed
+                .operation
+                .payload,
             &model_output.prepared_request,
             &model_output.provider_response,
         );
         let assistant_response_text = parsed_output.user_response.clone();
-        ReasonResp07ParsedContract { model_output, parsed_output, assistant_response_text }
+        ReasonResp07ParsedContract {
+            model_output,
+            parsed_output,
+            assistant_response_text,
+        }
     }
 }
 
 #[derive(Default)]
 pub(crate) struct ReasonResp08RuntimeDecisionBuilder;
 impl ReasonResp08RuntimeDecisionBuilder {
-    pub(crate) fn build(&self, parsed_contract: ReasonResp07ParsedContract) -> ReasonResp08RuntimeDecision {
-        let seed = &parsed_contract.model_output.provider_call.rendered_input.budgeted_context.context_plan.seed;
-        let dispatched_tools = tool_dispatch::execute_model_tools(
+    pub(crate) fn build(
+        &self,
+        parsed_contract: ReasonResp07ParsedContract,
+    ) -> ReasonResp08RuntimeDecision {
+        let seed = &parsed_contract
+            .model_output
+            .provider_call
+            .rendered_input
+            .budgeted_context
+            .context_plan
+            .seed;
+        let dispatched_tools = dispatch::execute_model_tools(
             &seed.operation.operation_id,
             &seed.operation.trace_id,
             &seed.refs,
@@ -194,7 +238,11 @@ impl ReasonResp08RuntimeDecisionBuilder {
             &parsed_contract.model_output.provider_response,
             parsed_contract.assistant_response_text.as_str(),
         );
-        ReasonResp08RuntimeDecision { parsed_contract, dispatched_tools, control_feedback }
+        ReasonResp08RuntimeDecision {
+            parsed_contract,
+            dispatched_tools,
+            control_feedback,
+        }
     }
 }
 
@@ -226,7 +274,15 @@ pub(crate) fn reason_pipeline(
     prior_tool_calls: Vec<ModelToolCall>,
     tool_results: Vec<ToolExecutionRecord>,
 ) -> Result<ReasonResp09Closure, RuntimeError> {
-    let seed = ReasonReq01SeedBuilder.build(operation, refs, round_index, input, context, prior_tool_calls, tool_results);
+    let seed = ReasonReq01SeedBuilder.build(
+        operation,
+        refs,
+        round_index,
+        input,
+        context,
+        prior_tool_calls,
+        tool_results,
+    );
     let plan = ReasonReq02ContextPlanBuilder.build(seed);
     let budgeted = ReasonReq03BudgetedContextBuilder.build(plan);
     let rendered = ReasonReq04RenderedInputBuilder.build(budgeted);
@@ -238,5 +294,7 @@ pub(crate) fn reason_pipeline(
 }
 
 impl ReasonResp06ModelOutputParser {
-    fn build_parser() -> Self { Self }
+    fn build_parser() -> Self {
+        Self
+    }
 }

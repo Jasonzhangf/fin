@@ -99,9 +99,7 @@ fn load_authoritative_receipt(
 }
 
 fn is_authoritative_receipt_ref(artifact_ref: &str) -> bool {
-    artifact_ref.contains("/exec_receipts/")
-        || artifact_ref.contains("/write_stdin_receipts/")
-        || artifact_ref.contains("/patch_receipts/")
+    super::dispatch::authoritative_receipt_ref(artifact_ref)
 }
 
 fn resolve_artifact_path(context: &MinimalContextView, artifact_ref: &str) -> Option<PathBuf> {

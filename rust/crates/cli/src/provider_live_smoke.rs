@@ -352,7 +352,6 @@ fn live_transcript_ids(scenario: &TranscriptScenario) -> LiveTranscriptIds {
     }
 }
 
-
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub(crate) struct ProviderLiveSmokeConformance {
     pub(crate) policy: String,

@@ -1,7 +1,8 @@
-use crate::{
-    model::parser::ModelToolCall,
+use super::{
+    dispatch_collab, dispatch_control, dispatch_exec, dispatch_patch, dispatch_peer,
+    dispatch_query, dispatch_task_write,
 };
-use super::{tool_dispatch_control, tool_dispatch_extended, tool_dispatch_peer};
+use crate::model::parser::ModelToolCall;
 use fin_contracts::{EntityRefs, MinimalContextView, ToolExecutionRecord};
 use serde_json::Value;
 use std::path::PathBuf;
@@ -45,145 +46,145 @@ pub(crate) fn execute_model_tools(
     for (index, call) in tool_calls.iter().enumerate() {
         let tool_call_id = format!("tool-model-{operation_id}-r{round_index:02}-{index:02}");
         let handled = match call.tool_name.as_str() {
-            "update_plan" => tool_dispatch_control::handle_update_plan(
+            "update_plan" => dispatch_control::handle_update_plan(
                 &mut outcome,
                 &dispatch_input,
                 &tool_call_id,
                 &call.arguments,
             ),
-            "session.list" => tool_dispatch_control::handle_session_list(
+            "session.list" => dispatch_control::handle_session_list(
                 &mut outcome,
                 &dispatch_input,
                 &tool_call_id,
                 &call.arguments,
             ),
-            "peer.list" => tool_dispatch_peer::handle_peer_list(
+            "peer.list" => dispatch_peer::handle_peer_list(
                 &mut outcome,
                 &dispatch_input,
                 &tool_call_id,
                 &call.arguments,
             ),
-            "peer.describe" => tool_dispatch_peer::handle_peer_describe(
+            "peer.describe" => dispatch_peer::handle_peer_describe(
                 &mut outcome,
                 &dispatch_input,
                 &tool_call_id,
                 &call.arguments,
             ),
-            "daemon.ensure_peer" => tool_dispatch_peer::handle_daemon_ensure_peer(
+            "daemon.ensure_peer" => dispatch_peer::handle_daemon_ensure_peer(
                 &mut outcome,
                 &dispatch_input,
                 &tool_call_id,
                 &call.arguments,
             ),
-            "wait.remind" => tool_dispatch_control::handle_wait_remind(
+            "wait.remind" => dispatch_control::handle_wait_remind(
                 &mut outcome,
                 &dispatch_input,
                 &tool_call_id,
                 &call.arguments,
             ),
-            "reasoning.stop" => tool_dispatch_control::handle_reasoning_stop(
+            "reasoning.stop" => dispatch_control::handle_reasoning_stop(
                 &mut outcome,
                 &dispatch_input,
                 &tool_call_id,
                 &call.arguments,
             ),
-            "apply_patch" => tool_dispatch_extended::handle_apply_patch(
+            "apply_patch" => dispatch_patch::handle_apply_patch(
                 &mut outcome,
                 &dispatch_input,
                 &tool_call_id,
                 &call.arguments,
             ),
-            "view_image" => tool_dispatch_extended::handle_view_image(
+            "view_image" => dispatch_query::handle_view_image(
                 &mut outcome,
                 &dispatch_input,
                 &tool_call_id,
                 &call.arguments,
             ),
-            "context_history.rebuild" => tool_dispatch_extended::handle_context_history_rebuild(
+            "context_history.rebuild" => dispatch_query::handle_context_history_rebuild(
                 &mut outcome,
                 &dispatch_input,
                 &tool_call_id,
                 &call.arguments,
             ),
-            "project.task.status" => tool_dispatch_extended::handle_project_task_status(
+            "project.task.status" => dispatch_query::handle_project_task_status(
                 &mut outcome,
                 &dispatch_input,
                 &tool_call_id,
                 &call.arguments,
             ),
-            "project.task.list" => tool_dispatch_extended::handle_project_task_list(
+            "project.task.list" => dispatch_query::handle_project_task_list(
                 &mut outcome,
                 &dispatch_input,
                 &tool_call_id,
                 &call.arguments,
             ),
-            "project.task.create" => tool_dispatch_extended::handle_project_task_create(
+            "project.task.create" => dispatch_task_write::handle_project_task_create(
                 &mut outcome,
                 &dispatch_input,
                 &tool_call_id,
                 &call.arguments,
             ),
-            "project.task.claim" => tool_dispatch_extended::handle_project_task_claim(
+            "project.task.claim" => dispatch_task_write::handle_project_task_claim(
                 &mut outcome,
                 &dispatch_input,
                 &tool_call_id,
                 &call.arguments,
             ),
-            "project.task.submit" => tool_dispatch_extended::handle_project_task_submit(
+            "project.task.submit" => dispatch_task_write::handle_project_task_submit(
                 &mut outcome,
                 &dispatch_input,
                 &tool_call_id,
                 &call.arguments,
             ),
-            "project.task.review" => tool_dispatch_extended::handle_project_task_review(
+            "project.task.review" => dispatch_task_write::handle_project_task_review(
                 &mut outcome,
                 &dispatch_input,
                 &tool_call_id,
                 &call.arguments,
             ),
-            "agent.presence.list" => tool_dispatch_extended::handle_agent_presence_list(
+            "agent.presence.list" => dispatch_query::handle_agent_presence_list(
                 &mut outcome,
                 &dispatch_input,
                 &tool_call_id,
                 &call.arguments,
             ),
-            "project.supervision.list" => tool_dispatch_extended::handle_project_supervision_list(
+            "project.supervision.list" => dispatch_query::handle_project_supervision_list(
                 &mut outcome,
                 &dispatch_input,
                 &tool_call_id,
                 &call.arguments,
             ),
-            "exec_command" => tool_dispatch_extended::handle_exec_command(
+            "exec_command" => dispatch_exec::handle_exec_command(
                 &mut outcome,
                 &dispatch_input,
                 &tool_call_id,
                 &call.arguments,
             ),
-            "write_stdin" => tool_dispatch_extended::handle_write_stdin(
+            "write_stdin" => dispatch_exec::handle_write_stdin(
                 &mut outcome,
                 &dispatch_input,
                 &tool_call_id,
                 &call.arguments,
             ),
-            "mailbox.send" => tool_dispatch_extended::handle_mailbox_send(
+            "mailbox.send" => dispatch_collab::handle_mailbox_send(
                 &mut outcome,
                 &dispatch_input,
                 &tool_call_id,
                 &call.arguments,
             ),
-            "mailbox.poll" => tool_dispatch_extended::handle_mailbox_poll(
+            "mailbox.poll" => dispatch_collab::handle_mailbox_poll(
                 &mut outcome,
                 &dispatch_input,
                 &tool_call_id,
                 &call.arguments,
             ),
-            "agent.assign" => tool_dispatch_extended::handle_agent_assign(
+            "agent.assign" => dispatch_collab::handle_agent_assign(
                 &mut outcome,
                 &dispatch_input,
                 &tool_call_id,
                 &call.arguments,
             ),
-            "capability.invoke" => tool_dispatch_extended::handle_capability_invoke(
+            "capability.invoke" => dispatch_collab::handle_capability_invoke(
                 &mut outcome,
                 &dispatch_input,
                 &tool_call_id,
@@ -289,5 +290,7 @@ pub(crate) fn short_text(value: &str, limit: usize) -> String {
 }
 
 pub fn authoritative_receipt_ref(artifact_ref: &str) -> bool {
-    artifact_ref.ends_with(".receipt.md") || artifact_ref.ends_with(".receipt.json") || artifact_ref.contains("/receipts/")
+    artifact_ref.ends_with(".receipt.md")
+        || artifact_ref.ends_with(".receipt.json")
+        || artifact_ref.contains("/receipts/")
 }

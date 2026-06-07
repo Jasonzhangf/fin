@@ -1,4 +1,4 @@
-use super::tool_catalog::model_tool;
+use super::catalog::model_tool;
 use fin_contracts::ToolCatalogEntry;
 
 pub(super) fn build_project_task_model_tools() -> Vec<ToolCatalogEntry> {

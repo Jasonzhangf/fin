@@ -2,8 +2,8 @@ use crate::{
     WorkerRuntime,
     context::blocks::{build_peer_block, build_project_block},
     prompt::assembly::build_role_prompt_block,
-    tools::tool_catalog_dynamic::{DynamicToolCatalogInput, build_dynamic_tool_catalog_block},
-    tools::tool_history_render::render_current_tool_execution_history,
+    tools::catalog_dynamic::{DynamicToolCatalogInput, build_dynamic_catalog_block},
+    tools::history_render::render_current_tool_execution_history,
 };
 use fin_contracts::{
     ContextControlBlock, CurrentInputBlock, DigestRecord, EntityRefs, HistoryBlock,
@@ -102,7 +102,7 @@ impl ContextViewBuilder {
             history.recent_tool_activity = rendered_tool_history;
         }
         let tool_context = context.clone();
-        context.tools = Some(build_dynamic_tool_catalog_block(&DynamicToolCatalogInput {
+        context.tools = Some(build_dynamic_catalog_block(&DynamicToolCatalogInput {
             role_id: Some(worker.policy.role.role_id.as_str()),
             context: &tool_context,
             recent_tool_records: &input.recent_tool_records,

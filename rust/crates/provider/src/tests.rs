@@ -425,9 +425,8 @@ fn execute_prepared_covers_every_registered_provider_protocol() {
     }
 
     // Negative invariant: no wildcard catch-all (silent drop) is allowed.
-    let has_wildcard = body.contains("protocol =>")
-        || body.contains("_, =>")
-        || body.contains("_, =>");
+    let has_wildcard =
+        body.contains("protocol =>") || body.contains("_, =>") || body.contains("_, =>");
     assert!(
         !has_wildcard,
         "execute_prepared must not use a wildcard catch-all; got:\n{body}",
@@ -436,15 +435,11 @@ fn execute_prepared_covers_every_registered_provider_protocol() {
     // The protocol enum itself must enumerate every variant we expect;
     // if a new variant is added, this test must be updated to assert it.
     let protocol_enum_source = std::fs::read_to_string(
-        std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("../config/src/lib.rs"),
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../config/src/lib.rs"),
     )
     .ok();
     if let Some(src) = protocol_enum_source {
-        for variant in [
-            "OpenAiCompatible",
-            "AnthropicWire",
-        ] {
+        for variant in ["OpenAiCompatible", "AnthropicWire"] {
             assert!(
                 src.contains(&format!("    {variant},")),
                 "ProviderProtocol variant {variant} must be declared; update this test if you add a new variant",
@@ -455,9 +450,7 @@ fn execute_prepared_covers_every_registered_provider_protocol() {
         let enum_block_start = src
             .find("pub enum ProviderProtocol")
             .expect("ProviderProtocol enum");
-        let enum_block_end = src
-            .rfind('}')
-            .expect("ProviderProtocol enum end");
+        let enum_block_end = src.rfind('}').expect("ProviderProtocol enum end");
         let enum_block = &src[enum_block_start..enum_block_end];
         let declared_variants: Vec<String> = enum_block
             .lines()

@@ -1,5 +1,8 @@
-use super::{running_state, paused_state, new_pending_input, dequeue_pending_input, interrupted_segment, state_after_run, state_with_pending_count};
 use super::{PendingInputDequeue, apply_segment_merge, segment_merge};
+use super::{
+    dequeue_pending_input, interrupted_segment, new_pending_input, paused_state, running_state,
+    state_after_run, state_with_pending_count,
+};
 use crate::ClosureRun;
 use crate::{InferenceOperationBuilder, InferenceRequest, M1Runtime, WorkerRuntime};
 use fin_config::{
@@ -174,8 +177,8 @@ fn interrupted_segment_id_is_unique_by_pause_timestamp() {
         checkpoint_id: "pause-1".into(),
         refs: refs(),
         turn_id: Some("turn-op-1".into()),
-        active_step_id: Some("step-op-1-05-tool_dispatch".into()),
-        resume_from_step_id: Some("step-op-1-05-tool_dispatch".into()),
+        active_step_id: Some("step-op-1-05-dispatch".into()),
+        resume_from_step_id: Some("step-op-1-05-dispatch".into()),
         resume_checkpoint_id: None,
         reason: Some("manual pause".into()),
         paused_at: "2026-04-19T20:00:01+08:00".into(),

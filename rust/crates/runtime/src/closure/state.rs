@@ -1,5 +1,5 @@
 use super::retry::ContractRetrySummary;
-use crate::tools::tool_dispatch::ToolDispatchOutcome;
+use crate::tools::dispatch::ToolDispatchOutcome;
 use fin_contracts::ControlFeedback;
 
 pub(super) fn merge_dispatch_outcome(

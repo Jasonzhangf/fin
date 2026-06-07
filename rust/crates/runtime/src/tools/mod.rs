@@ -4,45 +4,46 @@
 //! All tool modules are co-located in this directory and re-exported
 //! as `crate::tools::tool_X`.
 
-pub(crate) mod tool_catalog;
-pub(crate) mod tool_catalog_dynamic;
-pub(crate) mod tool_catalog_task_tools;
+pub(crate) mod catalog;
+pub(crate) mod catalog_dynamic;
+pub(crate) mod catalog_task_tools;
 
-pub(crate) mod tool_dispatch;
-pub(crate) mod tool_dispatch_assignment;
-pub(crate) mod tool_dispatch_control;
-pub(crate) mod tool_dispatch_control_support;
+pub(crate) mod dispatch;
+pub(crate) mod dispatch_assignment;
+pub(crate) mod dispatch_control;
+pub(crate) mod dispatch_control_args;
 
-pub(crate) mod tool_dispatch_extended;
-pub(crate) mod tool_dispatch_extended_collab;
-pub(crate) mod tool_dispatch_extended_collab_coordination;
-pub(crate) mod tool_dispatch_extended_collab_mailbox;
-pub(crate) mod tool_dispatch_extended_exec;
-pub(crate) mod tool_dispatch_extended_exec_receipts;
-pub(crate) mod tool_dispatch_extended_patch;
-pub(crate) mod tool_dispatch_extended_patch_v4a;
-pub(crate) mod tool_dispatch_extended_query;
-pub(crate) mod tool_dispatch_extended_query_control;
-pub(crate) mod tool_dispatch_extended_query_history;
-pub(crate) mod tool_dispatch_extended_query_image;
-pub(crate) mod tool_dispatch_extended_query_task;
-pub(crate) mod tool_dispatch_extended_task_write;
+pub(crate) mod dispatch_collab;
+pub(crate) mod dispatch_collab_coordination;
+pub(crate) mod dispatch_collab_mailbox;
+pub(crate) mod dispatch_exec;
+pub(crate) mod dispatch_exec_receipts;
+pub(crate) mod dispatch_patch;
+pub(crate) mod dispatch_patch_apply;
+pub(crate) mod dispatch_query;
+pub(crate) mod dispatch_query_control;
+pub(crate) mod dispatch_query_history;
+pub(crate) mod dispatch_query_image;
+pub(crate) mod dispatch_query_task;
+pub(crate) mod dispatch_task_write;
 
-pub(crate) mod tool_dispatch_peer;
-pub(crate) mod tool_dispatch_peer_support;
-pub(crate) mod tool_dispatch_result_receipts;
-pub(crate) mod tool_history_render;
-pub(crate) mod tool_semantics;
+pub(crate) mod dispatch_peer;
+pub(crate) mod dispatch_peer_records;
+pub(crate) mod dispatch_result_receipts;
+pub(crate) mod history_render;
+pub(crate) mod semantics;
 
 #[cfg(test)]
-mod tool_dispatch_query_tests;
+mod dispatch_query_tests;
 #[cfg(test)]
-mod tool_dispatch_task_write_tests;
+mod dispatch_task_write_tests;
 #[cfg(test)]
-mod tool_dispatch_tests;
+mod dispatch_tests;
 #[cfg(test)]
+mod dispatch_tests_collab;
 #[cfg(test)]
+mod dispatch_tests_exec_patch;
 #[cfg(test)]
-#[cfg(test)]
+mod dispatch_tests_stateful;
 #[cfg(test)]
 mod test_helpers;

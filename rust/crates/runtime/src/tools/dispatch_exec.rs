@@ -1,8 +1,8 @@
-use super::tool_dispatch::{
+use super::dispatch;
+use super::dispatch::{
     ToolDispatchInput, ToolDispatchOutcome, failed_record, read_bool, read_string,
     runtime_home_from_context, short_text,
 };
-use super::tool_dispatch as tool_dispatch;
 use fin_contracts::ToolExecutionRecord;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
@@ -14,9 +14,9 @@ use std::{
     time::Instant,
 };
 
-#[path = "tool_dispatch_extended_exec_receipts.rs"]
-mod tool_dispatch_extended_exec_receipts;
-use super::tool_dispatch_extended_exec_receipts::{
+#[path = "dispatch_exec_receipts.rs"]
+mod dispatch_exec_receipts;
+use super::dispatch_exec_receipts::{
     ExecCommandReceipt, WriteStdinReceipt, persist_exec_receipt, persist_write_stdin_receipt,
 };
 

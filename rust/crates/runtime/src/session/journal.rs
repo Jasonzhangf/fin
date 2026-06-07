@@ -1,5 +1,5 @@
-use crate::{ClosureRun, RuntimeError};
 use super::materializer::{read_json_or_empty, trim_head, write_json_file};
+use crate::{ClosureRun, RuntimeError};
 use fin_config::RuntimeRetentionConfig;
 use std::path::Path;
 

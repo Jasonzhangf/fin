@@ -1,10 +1,10 @@
 use super::*;
-use serde_json::json;
-use fin_provider::{ProviderToolSpec, ProviderToolCall, ProviderToolResult};
-use fin_contracts::ToolCatalogEntry;
 use crate::model::parser::ModelToolCall;
-use std::path::PathBuf;
+use fin_contracts::ToolCatalogEntry;
+use fin_provider::{ProviderToolCall, ProviderToolResult, ProviderToolSpec};
+use serde_json::json;
 use std::fs;
+use std::path::PathBuf;
 
 pub(crate) fn build_provider_tool_specs(context: &MinimalContextView) -> Vec<ProviderToolSpec> {
     context
@@ -415,7 +415,7 @@ fn load_authoritative_receipt(
 }
 
 fn is_authoritative_receipt_ref(artifact_ref: &str) -> bool {
-    crate::tools::tool_dispatch::authoritative_receipt_ref(artifact_ref)
+    crate::tools::dispatch::authoritative_receipt_ref(artifact_ref)
 }
 
 fn resolve_artifact_path(context: &MinimalContextView, artifact_ref: &str) -> Option<PathBuf> {
@@ -434,18 +434,18 @@ fn resolve_artifact_path(context: &MinimalContextView, artifact_ref: &str) -> Op
 #[cfg(test)]
 mod tests {
     use super::*;
-use serde_json::json;
-use fin_provider::{ProviderToolSpec, ProviderToolCall, ProviderToolResult};
-use fin_contracts::ToolCatalogEntry;
-use crate::model::parser::ModelToolCall;
-use std::path::PathBuf;
-use std::fs;
-    use crate::tools::tool_catalog::build_tool_catalog_block;
+    use crate::model::parser::ModelToolCall;
+    use crate::tools::catalog::build_catalog_block;
+    use fin_contracts::ToolCatalogEntry;
+    use fin_provider::{ProviderToolCall, ProviderToolResult, ProviderToolSpec};
+    use serde_json::json;
+    use std::fs;
+    use std::path::PathBuf;
 
     #[test]
     fn provider_tool_specs_include_required_fields_for_managed_task_tools() {
         let context = MinimalContextView {
-            tools: Some(build_tool_catalog_block()),
+            tools: Some(build_catalog_block()),
             ..MinimalContextView::default()
         };
         let specs = build_provider_tool_specs(&context);

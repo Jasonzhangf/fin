@@ -1,6 +1,6 @@
-use super::*;
-use crate::tools::tool_dispatch;
 use super::state::next_step;
+use super::*;
+use crate::tools::dispatch;
 
 pub(super) struct ClosureRecordsBundle {
     pub(super) progress: ProgressBlock,
@@ -17,7 +17,7 @@ pub(super) fn build_closure_records(
     refs: &EntityRefs,
     prepared_request: &PreparedRequest,
     assistant_response_text: &str,
-    dispatched_tools: &tool_dispatch::ToolDispatchOutcome,
+    dispatched_tools: &dispatch::ToolDispatchOutcome,
     closure_waiting_external: bool,
     closure_finished: bool,
     control_exit_channel: Option<&'static str>,

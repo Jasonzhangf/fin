@@ -1,8 +1,8 @@
-use std::fs;
 use super::*;
+use std::fs;
 
 #[test]
-fn context_tool_catalog_exposes_rich_apply_patch_and_query_tool_metadata() {
+fn context_catalog_exposes_rich_apply_patch_and_query_tool_metadata() {
     let worker = worker_runtime();
     let context = ContextViewBuilder.build(&worker, ContextAssemblyInput::default());
     let tools = context.tools.expect("tool catalog");
@@ -70,9 +70,9 @@ fn context_tool_catalog_exposes_rich_apply_patch_and_query_tool_metadata() {
 }
 
 #[test]
-fn dynamic_tool_catalog_marks_runtime_and_peer_dependent_tools_when_context_is_missing() {
-    let tools = crate::tools::tool_catalog_dynamic::build_dynamic_tool_catalog_block(
-        &crate::tools::tool_catalog_dynamic::DynamicToolCatalogInput {
+fn dynamic_catalog_marks_runtime_and_peer_dependent_tools_when_context_is_missing() {
+    let tools = crate::tools::catalog_dynamic::build_dynamic_catalog_block(
+        &crate::tools::catalog_dynamic::DynamicToolCatalogInput {
             role_id: None,
             context: &MinimalContextView::default(),
             recent_tool_records: &Vec::<ToolExecutionRecord>::new(),
@@ -103,7 +103,7 @@ fn dynamic_tool_catalog_marks_runtime_and_peer_dependent_tools_when_context_is_m
 }
 
 #[test]
-fn dynamic_tool_catalog_promotes_write_stdin_when_exec_session_exists() {
+fn dynamic_catalog_promotes_write_stdin_when_exec_session_exists() {
     let worker = worker_runtime();
     let runtime_home = std::env::temp_dir().join("fin-runtime-dynamic-tool-catalog");
     fs::create_dir_all(runtime_home.join("runtime/tools/exec_sessions")).expect("exec session dir");

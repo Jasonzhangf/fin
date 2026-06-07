@@ -143,12 +143,12 @@ fn run_bridge_once(
             "requestId": start_request_id,
         });
         let line = serde_json::to_string(&request).map_err(CliError::Serialize)?;
-        let mut stdin = stdin_slot
-            .lock()
-            .map_err(|_| CliError::ChannelConnectivity("qqbot bridge stdin lock poisoned".into()))?;
-        let stdin = stdin
-            .as_mut()
-            .ok_or_else(|| CliError::ChannelConnectivity("qqbot bridge stdin unavailable".into()))?;
+        let mut stdin = stdin_slot.lock().map_err(|_| {
+            CliError::ChannelConnectivity("qqbot bridge stdin lock poisoned".into())
+        })?;
+        let stdin = stdin.as_mut().ok_or_else(|| {
+            CliError::ChannelConnectivity("qqbot bridge stdin unavailable".into())
+        })?;
         use std::io::Write;
         stdin
             .write_all(line.as_bytes())
@@ -192,12 +192,12 @@ fn run_bridge_once(
             Some(Err(err)) => {
                 break Err(CliError::ChannelConnectivity(format!(
                     "qqbot runner stdout read error during ready wait: {err}"
-                )))
+                )));
             }
             None => {
                 break Err(CliError::ChannelConnectivity(
                     "qqbot runner stdout closed before ready event".into(),
-                ))
+                ));
             }
         };
         if line.trim().is_empty() {

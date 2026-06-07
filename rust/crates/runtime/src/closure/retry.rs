@@ -1,6 +1,6 @@
 use super::rounds::{ReasonRoundExecution, execute_round};
-use crate::tools::tool_dispatch;
 use super::*;
+use crate::tools::dispatch;
 
 pub(super) const MAX_OUTPUT_CONTRACT_RETRIES: usize = 3;
 
@@ -118,7 +118,7 @@ pub(super) fn execute_round_with_contract_retries(
 }
 
 fn append_contract_retry_summary(
-    outcome: &mut tool_dispatch::ToolDispatchOutcome,
+    outcome: &mut dispatch::ToolDispatchOutcome,
     round_index: u32,
     summary: &ContractRetrySummary,
     mut retry_events: Vec<(String, Value)>,
@@ -181,9 +181,7 @@ fn validate_model_output_contract(
         .any(|tc| tc.tool_name == "reasoning.stop");
     if has_reasoning_stop {
         let completed_with_evidence = fb.map_or(false, |f| {
-            f.task_completed
-                && !f.completion_evidence.is_empty()
-                && !f.final_conclusions.is_empty()
+            f.task_completed && !f.completion_evidence.is_empty() && !f.final_conclusions.is_empty()
         });
         let simple_chat = fb.map_or(false, |f| f.is_simple_chat);
         let blocked_user = fb.map_or(false, |f| {
@@ -210,7 +208,8 @@ fn validate_model_output_contract(
                 errors.push("blocked is true but needs_user_involve is not set".into());
             }
             if fb.map_or(false, |f| {
-                f.blocked && f.needs_user_involve
+                f.blocked
+                    && f.needs_user_involve
                     && f.blocked_reason
                         .as_ref()
                         .map_or(true, |s| s.trim().is_empty())
@@ -218,14 +217,13 @@ fn validate_model_output_contract(
                 errors.push("blocked is true but blocked_reason is empty".into());
             }
             if fb.map_or(false, |f| {
-                f.blocked && f.needs_user_involve
+                f.blocked
+                    && f.needs_user_involve
                     && f.what_needs_to_be_done_by_user
                         .as_ref()
                         .map_or(true, |s| s.trim().is_empty())
             }) {
-                errors.push(
-                    "blocked is true but what_needs_to_be_done_by_user is empty".into(),
-                );
+                errors.push("blocked is true but what_needs_to_be_done_by_user is empty".into());
             }
             errors.push(
                 "reasoning.stop was requested, but the control feedback still lacks a valid closure channel"

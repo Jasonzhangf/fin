@@ -1,9 +1,9 @@
-use crate::task::assignment_queue::{read_assignment_queue, update_assignment_record};
-use super::tool_dispatch::{
+use super::dispatch::{
     ToolDispatchInput, ToolDispatchOutcome, failed_record, read_string, read_u64,
     runtime_home_from_context, short_text,
 };
-use super::tool_dispatch_result_receipts::persist_tool_result_receipt;
+use super::dispatch_result_receipts::persist_tool_result_receipt;
+use crate::task::assignment_queue::{read_assignment_queue, update_assignment_record};
 use fin_contracts::ToolExecutionRecord;
 use serde_json::{Value, json};
 
@@ -23,8 +23,7 @@ pub(super) fn handle_assignment_list(
         return true;
     };
     let limit = read_u64(arguments, "limit").unwrap_or(20).clamp(1, 100) as usize;
-    let status_filter = read_string(arguments, "status")
-        .unwrap_or_else(|| "pending".into());
+    let status_filter = read_string(arguments, "status").unwrap_or_else(|| "pending".into());
     let assignments = match read_assignment_queue(&runtime_home) {
         Ok(items) => items,
         Err(err) => {
@@ -102,8 +101,7 @@ pub(super) fn handle_assignment_list(
         "output_summary": output_summary,
         "next_action_hint": next_action_hint,
     });
-    if let Ok(Some(receipt_ref)) = persist_tool_result_receipt(input, tool_call_id, &receipt)
-    {
+    if let Ok(Some(receipt_ref)) = persist_tool_result_receipt(input, tool_call_id, &receipt) {
         artifact_refs.push(receipt_ref);
     }
     outcome.tool_records.push(ToolExecutionRecord {
@@ -179,7 +177,9 @@ pub(super) fn handle_assignment_resume(
             return true;
         }
     };
-    let target = assignments.iter().find(|a| a.assignment_id == assignment_id);
+    let target = assignments
+        .iter()
+        .find(|a| a.assignment_id == assignment_id);
     let Some(target) = target else {
         outcome.tool_records.push(failed_record(
             input,
@@ -203,17 +203,12 @@ pub(super) fn handle_assignment_resume(
         return true;
     }
     let now = input.occurred_at;
-    if let Err(err) = update_assignment_record(
-        &runtime_home,
-        &assignment_id,
-        |record| {
-            record.status = "resume_requested".into();
-            record.updated_at = Some(now.to_string());
-            record.result_summary = Some(
-                "resume requested by system agent via assignment.resume tool".into(),
-            );
-        },
-    ) {
+    if let Err(err) = update_assignment_record(&runtime_home, &assignment_id, |record| {
+        record.status = "resume_requested".into();
+        record.updated_at = Some(now.to_string());
+        record.result_summary =
+            Some("resume requested by system agent via assignment.resume tool".into());
+    }) {
         outcome.tool_records.push(failed_record(
             input,
             tool_call_id.into(),
@@ -238,8 +233,7 @@ pub(super) fn handle_assignment_resume(
         "output_summary": output_summary,
         "next_action_hint": "daemon will observe resume_requested status and drive the bound worker session on the next cycle",
     });
-    if let Ok(Some(receipt_ref)) = persist_tool_result_receipt(input, tool_call_id, &receipt)
-    {
+    if let Ok(Some(receipt_ref)) = persist_tool_result_receipt(input, tool_call_id, &receipt) {
         artifact_refs.push(receipt_ref);
     }
     outcome.tool_records.push(ToolExecutionRecord {
@@ -252,7 +246,10 @@ pub(super) fn handle_assignment_resume(
         title: "Assignment Resume".into(),
         purpose: "mark a pending assignment for resume so daemon drives the worker".into(),
         target_kind: Some("assignment_queue".into()),
-        target_ref: Some(format!("runtime/assignments/pending.json#{}", assignment_id)),
+        target_ref: Some(format!(
+            "runtime/assignments/pending.json#{}",
+            assignment_id
+        )),
         input_summary: Some(format!("assignment_id={}", assignment_id)),
         output_summary: Some(output_summary.clone()),
         status: "resume_requested".into(),

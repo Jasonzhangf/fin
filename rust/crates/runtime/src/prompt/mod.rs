@@ -2,24 +2,24 @@
 //! Owning layer: runtime.
 pub mod assembly;
 #[cfg(test)]
-mod tests;
-#[cfg(test)]
 mod basics;
 #[cfg(test)]
 mod catalog;
 #[cfg(test)]
 mod role_policy;
+#[cfg(test)]
+mod tests;
 
 // Shared test helpers + imports — visible to all `#[path]` sub-modules via `use super::*`.
+#[cfg(test)]
+pub(crate) use crate::{
+    WorkerRuntime,
+    context::view::{ContextAssemblyInput, ContextViewBuilder},
+};
 #[cfg(test)]
 pub(crate) use fin_config::{ConfigMapper, ProviderProtocol, UserConfig, UserProviderConfig};
 #[cfg(test)]
 pub(crate) use fin_contracts::{MinimalContextView, ToolExecutionRecord};
-#[cfg(test)]
-pub(crate) use crate::{
-    context::view::{ContextAssemblyInput, ContextViewBuilder},
-    WorkerRuntime,
-};
 #[cfg(test)]
 use std::collections::BTreeMap;
 

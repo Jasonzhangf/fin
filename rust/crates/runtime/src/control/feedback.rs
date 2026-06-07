@@ -105,9 +105,7 @@ impl ControlFeedbackBuilder {
             } else {
                 parsed.final_conclusions
             },
-            blocked_reason: parsed
-                .blocked_reason
-                .or(runtime_observation.blocked_reason),
+            blocked_reason: parsed.blocked_reason.or(runtime_observation.blocked_reason),
             what_needs_to_be_done_by_user: parsed
                 .what_needs_to_be_done_by_user
                 .or(runtime_observation.what_needs_to_be_done_by_user),

@@ -1,7 +1,9 @@
-use super::test_helpers::{context_with_runtime_home, context_with_runtime_home_and_cwd, refs, temp_runtime_home};
+use super::dispatch;
+use super::dispatch::execute_model_tools;
+use super::test_helpers::{
+    context_with_runtime_home, context_with_runtime_home_and_cwd, refs, temp_runtime_home,
+};
 use crate::model::parser::ModelToolCall;
-use super::tool_dispatch::execute_model_tools;
-use super::tool_dispatch as tool_dispatch;
 use serde_json::json;
 use std::{
     fs,

@@ -166,7 +166,10 @@ pub(crate) fn run_headless_daemon_with_provider(
     let _ = ensure_entry_agent_presence(system, &runtime_home, &started_at)?;
     let _qqbot_bridge = match maybe_start_builtin_qqbot_bridge(&runtime_home, &handler) {
         Ok(bridge) => bridge,
-        Err(e) => { eprintln!("[daemon] qqbot bridge start failed: {e}"); None }
+        Err(e) => {
+            eprintln!("[daemon] qqbot bridge start failed: {e}");
+            None
+        }
     };
     let mut cycles_completed = 0usize;
     let mut processed_sessions = 0usize;

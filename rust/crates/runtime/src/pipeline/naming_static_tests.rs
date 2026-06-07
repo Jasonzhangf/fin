@@ -30,7 +30,10 @@ fn error_pipeline_no_forbidden_numbering() {
 #[test]
 fn feedback_pipeline_no_from_no_fallback() {
     let src = read_crate_file("src/pipeline/feedback_pipeline.rs");
-    assert!(!src.contains("impl From<"), "feedback chain: no From conversions");
+    assert!(
+        !src.contains("impl From<"),
+        "feedback chain: no From conversions"
+    );
     for bad in ["FeedbackResp03a", "FeedbackResp04_", "FeedbackRespV2"] {
         assert!(!src.contains(bad), "forbidden numbering: {bad}");
     }
@@ -66,52 +69,41 @@ fn provider_hub_pipeline_fully_deleted() {
     );
 }
 
-// Phase 7b: extended naming boundary tests
-// The `extended` / `v4a` naming family is forbidden in lib.rs mod declarations
-// because the per-domain split plan requires consolidating these into single
-// `tools::dispatch_X` modules (see docs/architecture/45-runtime-module-inventory.md).
-//
-// These tests do NOT prevent the underlying files from existing (Phase 5d/5e
-// was deferred due to bridge approach failures), but they prevent NEW
-// `mod ..._extended_...` declarations from creeping in via lib.rs.
+// Tools naming boundary tests (Layer 4 closeout).
+// The `extended` / `router` / `v4a` / generic `support` naming is forbidden
+// in tools/mod.rs and lib.rs. All tool dispatch modules use stable
+// `dispatch_*` names (see docs/architecture/45-runtime-module-inventory.md).
 
 #[test]
-fn lib_rs_extended_mod_declarations_count_is_documented() {
-    // Phase 5d completed: all `mod tool_dispatch_extended_*` declarations moved
-    // out of lib.rs into tools/mod.rs.
-    let lib = read_crate_file("src/lib.rs");
-    let lib_lines: std::collections::HashSet<&str> = lib
-        .lines()
-        .filter(|l| l.trim().starts_with("mod tool_dispatch_extended"))
-        .collect();
-    assert_eq!(
-        lib_lines.len(),
-        0,
-        "lib.rs must not declare tool_dispatch_extended_* modules; move to tools/mod.rs"
-    );
+fn tools_mod_no_extended_v4a_router_support_declarations() {
     let tools_mod = read_crate_file("src/tools/mod.rs");
-    let tools_lines: std::collections::HashSet<&str> = tools_mod
-        .lines()
-        .filter(|l| l.trim().starts_with("pub(crate) mod tool_dispatch_extended")
-                || l.trim().starts_with("mod tool_dispatch_extended"))
-        .collect();
-    assert!(
-        !tools_lines.is_empty(),
-        "expected at least one tool_dispatch_extended_* submodule in tools/mod.rs"
-    );
+    for forbidden in ["extended", "router", "_v4a", "support"] {
+        let hits: Vec<&str> = tools_mod
+            .lines()
+            .filter(|l| l.contains(forbidden) && l.contains("mod "))
+            .collect();
+        assert!(
+            hits.is_empty(),
+            "tools/mod.rs must not declare modules containing '{forbidden}': {:?}",
+            hits
+        );
+    }
 }
 
 #[test]
-fn tools_mod_v4a_mod_declarations_count_is_documented() {
-    // v4a is a temp version marker. Target state: zero occurrences.
-    // Current state: 1 (tool_dispatch_extended_patch_v4a) in tools/mod.rs.
-    let tools_mod = read_crate_file("src/tools/mod.rs");
-    let count = tools_mod.matches("_v4a").count();
-    assert_eq!(
-        count, 1,
-        "expected 1 _v4a declaration (Phase 5d backlog), found {}",
-        count
-    );
+fn lib_rs_no_extended_v4a_router_support_mod_declarations() {
+    let lib = read_crate_file("src/lib.rs");
+    for forbidden in ["extended", "router", "_v4a", "support"] {
+        let hits: Vec<&str> = lib
+            .lines()
+            .filter(|l| l.contains(forbidden) && l.contains("mod "))
+            .collect();
+        assert!(
+            hits.is_empty(),
+            "lib.rs must not declare modules containing '{forbidden}': {:?}",
+            hits
+        );
+    }
 }
 
 #[test]
@@ -121,8 +113,8 @@ fn lib_rs_no_helpers_or_support_mod_declarations() {
     for bad in [
         "mod activity_cards_helpers;",
         "mod session_materializer_support;",
-        "mod tool_dispatch_control_support;",
-        "mod tool_dispatch_peer_support;",
+        "mod dispatch_control_args;",
+        "mod dispatch_peer_records;",
     ] {
         assert!(
             !lib.contains(bad),
@@ -155,9 +147,17 @@ fn lib_rs_domain_dirs_have_mod_entries() {
     // After Phase 5 splits, these subdirectories must exist and have mod.rs.
     let lib = read_crate_file("src/lib.rs");
     for domain in [
-        "pipeline", "closure", "context", "tools",
-        "session", "control", "task", "agent", "runtime_home",
-        "model", "prompt",
+        "pipeline",
+        "closure",
+        "context",
+        "tools",
+        "session",
+        "control",
+        "task",
+        "agent",
+        "runtime_home",
+        "model",
+        "prompt",
     ] {
         assert!(
             lib.contains(&format!("mod {domain};")),
@@ -197,12 +197,19 @@ fn domain_dirs_have_no_fallback_or_salvage() {
     // Verify each domain mod.rs does not import or contain fallback patterns.
     use std::path::PathBuf;
     for domain in [
-        "pipeline", "closure", "context", "tools",
-        "session", "control", "task", "agent", "runtime_home",
-        "model", "prompt",
+        "pipeline",
+        "closure",
+        "context",
+        "tools",
+        "session",
+        "control",
+        "task",
+        "agent",
+        "runtime_home",
+        "model",
+        "prompt",
     ] {
-        let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .join(format!("src/{domain}/mod.rs"));
+        let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(format!("src/{domain}/mod.rs"));
         if path.exists() {
             let content = std::fs::read_to_string(&path)
                 .unwrap_or_else(|e| panic!("read {domain}/mod.rs: {e}"));
@@ -229,9 +236,10 @@ fn cross_domain_no_direct_crate_file_imports() {
     ];
     for (file, old_name) in &migrated {
         let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(file);
-        if !path.exists() { continue; }
-        let content = std::fs::read_to_string(&path)
-            .unwrap_or_else(|e| panic!("read {file}: {e}"));
+        if !path.exists() {
+            continue;
+        }
+        let content = std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("read {file}: {e}"));
         assert!(
             !content.contains(&format!("use crate::{old_name}")),
             "{file}: must not use legacy crate::{old_name} — use crate::<domain>::<module>"

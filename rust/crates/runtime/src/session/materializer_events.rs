@@ -1,11 +1,11 @@
-use crate::RuntimeError;
 use super::materializer::{create_dir_all, write_json_file};
-use std::fs;
+use crate::RuntimeError;
+use fin_config::RuntimeRetentionConfig;
 use fin_contracts::EventEnvelope;
 use serde_json::Value;
-use std::path::{Path, PathBuf};
-use fin_config::RuntimeRetentionConfig;
+use std::fs;
 use std::io::Write;
+use std::path::{Path, PathBuf};
 
 pub(crate) fn persist_event_stream(
     runtime_home: &Path,

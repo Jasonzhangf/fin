@@ -180,10 +180,7 @@ impl InferenceProvider for TwoRoundProvider {
         &self,
         request: &PreparedRequest,
     ) -> Result<ProviderResponse, fin_provider::ProviderError> {
-        let output_text = if request
-            .input
-            .starts_with("Continue the same turn.")
-        {
+        let output_text = if request.input.starts_with("Continue the same turn.") {
             "<fin_user_response>工具结果已确认，现在收口。</fin_user_response>\n<fin_control_feedback>{\"origin\":\"model_output_contract_v1\",\"is_continuation\":true,\"is_simple_query\":false,\"candidate_task_id\":\"task-two-round\",\"candidate_topic_thread_id\":\"topic-two-round\",\"continuity_confidence\":90,\"topic_shift_confidence\":10,\"simple_query_confidence\":5,\"previous_topic_summary\":\"tool loop\",\"current_topic_summary\":\"tool loop\",\"note_candidate\":\"tool followup done\",\"digest_candidate\":\"tool followup done\",\"reason\":\"tool result inspected\",\"task_completed\":true,\"completion_evidence\":[\"tool results confirmed\"],\"final_conclusions\":[\"turn complete\"]}</fin_control_feedback>\n<fin_tool_calls>[{\"tool_name\":\"reasoning.stop\",\"arguments\":{\"summary\":\"tool-backed followup finished\"}}]</fin_tool_calls>"
         } else {
             "<fin_user_response>先查看 peer 列表。</fin_user_response>\n<fin_control_feedback>{\"origin\":\"model_output_contract_v1\",\"is_continuation\":true,\"is_simple_query\":false,\"candidate_task_id\":\"task-two-round\",\"candidate_topic_thread_id\":\"topic-two-round\",\"continuity_confidence\":88,\"topic_shift_confidence\":12,\"simple_query_confidence\":6,\"previous_topic_summary\":\"tool loop\",\"current_topic_summary\":\"tool loop\",\"note_candidate\":\"need peer list\",\"digest_candidate\":\"need peer list\",\"reason\":\"inspect peers before stopping\"}</fin_control_feedback>\n<fin_tool_calls>[{\"tool_name\":\"peer.list\",\"arguments\":{}}]</fin_tool_calls>"
@@ -423,7 +420,7 @@ fn runtime_closure_records_round_level_events_for_multi_round_tool_loop() {
             .iter()
             .filter(|step| matches!(
                 step.step_kind.as_str(),
-                "provider_request" | "model_parse" | "control_feedback" | "tool_dispatch"
+                "provider_request" | "model_parse" | "control_feedback" | "dispatch"
             ))
             .all(|step| !step.event_ids.is_empty())
     );

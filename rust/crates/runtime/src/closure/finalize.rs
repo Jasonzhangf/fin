@@ -1,5 +1,5 @@
-use super::*;
 use super::rounds::allocate_step;
+use super::*;
 
 pub(super) fn build_partial_run(
     operation: &OperationEnvelope<InferenceOperationPayload>,

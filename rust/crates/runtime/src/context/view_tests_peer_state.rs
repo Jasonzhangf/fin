@@ -26,7 +26,6 @@ fn worker_runtime() -> WorkerRuntime {
         .expect("worker runtime")
 }
 
-
 #[test]
 fn context_view_builder_loads_ensured_local_worker_peers_from_runtime_state() {
     let worker = worker_runtime();

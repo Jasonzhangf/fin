@@ -2,16 +2,16 @@ use super::*;
 
 #[test]
 fn system_and_project_roles_share_runtime_but_receive_different_tool_policies() {
-    let system_tools = crate::tools::tool_catalog_dynamic::build_dynamic_tool_catalog_block(
-        &crate::tools::tool_catalog_dynamic::DynamicToolCatalogInput {
+    let system_tools = crate::tools::catalog_dynamic::build_dynamic_catalog_block(
+        &crate::tools::catalog_dynamic::DynamicToolCatalogInput {
             role_id: Some("system"),
             context: &MinimalContextView::default(),
             recent_tool_records: &[],
             round_index: 1,
         },
     );
-    let project_tools = crate::tools::tool_catalog_dynamic::build_dynamic_tool_catalog_block(
-        &crate::tools::tool_catalog_dynamic::DynamicToolCatalogInput {
+    let project_tools = crate::tools::catalog_dynamic::build_dynamic_catalog_block(
+        &crate::tools::catalog_dynamic::DynamicToolCatalogInput {
             role_id: Some("project"),
             context: &MinimalContextView::default(),
             recent_tool_records: &[],
@@ -65,8 +65,8 @@ fn system_and_project_roles_share_runtime_but_receive_different_tool_policies() 
         assert!(tool.when_to_use.iter().any(|item| item.contains(expected)));
     }
 
-    let default_tools = crate::tools::tool_catalog_dynamic::build_dynamic_tool_catalog_block(
-        &crate::tools::tool_catalog_dynamic::DynamicToolCatalogInput {
+    let default_tools = crate::tools::catalog_dynamic::build_dynamic_catalog_block(
+        &crate::tools::catalog_dynamic::DynamicToolCatalogInput {
             role_id: Some("default"),
             context: &MinimalContextView::default(),
             recent_tool_records: &[],
@@ -83,8 +83,8 @@ fn system_and_project_roles_share_runtime_but_receive_different_tool_policies() 
 
 #[test]
 fn owner_loop_truth_biases_review_before_dispatch_and_ready_before_new_work() {
-    let system_tools = crate::tools::tool_catalog_dynamic::build_dynamic_tool_catalog_block(
-        &crate::tools::tool_catalog_dynamic::DynamicToolCatalogInput {
+    let system_tools = crate::tools::catalog_dynamic::build_dynamic_catalog_block(
+        &crate::tools::catalog_dynamic::DynamicToolCatalogInput {
             role_id: Some("system"),
             context: &MinimalContextView {
                 project: Some(fin_contracts::ProjectContextBlock {
@@ -112,8 +112,8 @@ fn owner_loop_truth_biases_review_before_dispatch_and_ready_before_new_work() {
                 .any(|item| item.contains("waiting for review owner decision")))
     );
 
-    let project_tools = crate::tools::tool_catalog_dynamic::build_dynamic_tool_catalog_block(
-        &crate::tools::tool_catalog_dynamic::DynamicToolCatalogInput {
+    let project_tools = crate::tools::catalog_dynamic::build_dynamic_catalog_block(
+        &crate::tools::catalog_dynamic::DynamicToolCatalogInput {
             role_id: Some("project"),
             context: &MinimalContextView {
                 project: Some(fin_contracts::ProjectContextBlock {

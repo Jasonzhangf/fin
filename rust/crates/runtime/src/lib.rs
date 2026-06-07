@@ -1,33 +1,33 @@
+use crate::pipeline::input::{
+    ChannelMetadata, InputIn01ChannelRaw, InputIn02NormalizedBuilder, InputIn03OperationBuilder,
+    InputIn04SessionBoundBuilder, InputIn05ReasoningSeedBuilder,
+};
 use fin_contracts::{
     AgentId, ClosureTraceRecord, ContextSnapshotRecord, ControlFeedback, DigestRecord, EntityRefs,
-    EventEnvelope, ExecutionNote, InferenceOperationPayload,
-    MinimalContextView, OperationEnvelope, ProgressBlock, ProviderEventPayload, ProviderPath,
-    ProviderRequestRecord, ProviderResponseRecord, ProviderStrategy, ReasoningViewRecord,
-    RoleProfileRef, RoundRecord, RoutingActionRecord, RoutingDecisionRecord,
-    SanitizedProviderDebug, StepRecord, ToolExecutionRecord, ToolSnapshot, TurnRecord,
+    EventEnvelope, ExecutionNote, InferenceOperationPayload, MinimalContextView, OperationEnvelope,
+    ProgressBlock, ProviderEventPayload, ProviderPath, ProviderRequestRecord,
+    ProviderResponseRecord, ProviderStrategy, ReasoningViewRecord, RoleProfileRef, RoundRecord,
+    RoutingActionRecord, RoutingDecisionRecord, SanitizedProviderDebug, StepRecord,
+    ToolExecutionRecord, ToolSnapshot, TurnRecord,
 };
 use fin_provider::{InferenceProvider, PreparedRequest, ProviderRequest, ProviderResponse};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use thiserror::Error;
-use crate::pipeline::input::{
-    ChannelMetadata, InputIn01ChannelRaw, InputIn02NormalizedBuilder, InputIn03OperationBuilder,
-    InputIn04SessionBoundBuilder, InputIn05ReasoningSeedBuilder,
-};
 mod activity_cards;
 mod agent;
-mod task;
 mod closure;
-#[cfg(test)]
-mod run_closure_error_center_tests;
-#[cfg(test)]
-mod fault_injection_tests;
 mod context;
 mod control;
+#[cfg(test)]
+mod fault_injection_tests;
+#[cfg(test)]
+mod run_closure_error_center_tests;
+mod task;
 
-mod pipeline;
 #[cfg(test)]
 mod execution_checkpoint_tests;
+mod pipeline;
 
 mod model;
 
@@ -40,16 +40,11 @@ mod round_loop_runtime_tests_contract_retry;
 #[cfg(test)]
 mod round_loop_runtime_tests_full_history;
 
-
 mod session;
 
 mod runtime_home;
 
-
-
 mod tools;
-
-
 
 pub use activity_cards::{build_activity_cards, build_activity_cards_for_session};
 pub use agent::naming::{
@@ -57,25 +52,25 @@ pub use agent::naming::{
     create_named_local_worker, persist_assignment_summary, read_assignment_summary,
     resolve_agent_identity_by_worker_id, resolve_device_name,
 };
-pub use task::assignment_queue::{
-    AssignmentRecord, append_assignment_record, read_assignment_queue,
-    target_agent_name_from_worker_id, update_assignment_record,
-};
 pub use context::view::{ContextAssemblyInput, ContextViewBuilder};
-pub use runtime_home::source_visibility::uses_ephemeral_session_persistence;
 pub use control::feedback::ControlFeedbackBuilder;
+pub use control::owner_loop::derive_owner_loop_action_for_runtime;
 pub use control::plane::{
     PendingInputDequeue, apply_segment_merge, clear_waiting_state_if_due, dequeue_pending_input,
     failed_state, interrupted_segment, new_pending_input, paused_state, resumed_state,
     running_state, segment_merge, state_after_run, state_with_pending_count,
 };
+pub use control::scheduler::derive_scheduler_decision;
 pub use model::input_assembler::ModelInputAssembler;
 pub use model::parser::{ModelOutputParser, ParsedModelOutput};
-pub use control::owner_loop::derive_owner_loop_action_for_runtime;
-pub use control::scheduler::derive_scheduler_decision;
+pub use runtime_home::source_visibility::uses_ephemeral_session_persistence;
 pub use session::materializer::{
     SessionMaterializationReceipt, SessionMaterializer, SessionMessageRecord,
     append_framework_events,
+};
+pub use task::assignment_queue::{
+    AssignmentRecord, append_assignment_record, read_assignment_queue,
+    target_agent_name_from_worker_id, update_assignment_record,
 };
 pub use task::board_snapshot::TaskSummary;
 pub use task::handoff::{TaskHandoffReceipt, handoff_project_task};
@@ -184,7 +179,11 @@ impl InferenceOperationBuilder {
             raw_input: request.input.clone(),
             raw_context: request.context.clone(),
             raw_attachments: Vec::new(),
-            channel_metadata: ChannelMetadata { channel: String::new(), origin: worker.source.clone(), received_at: request.submitted_at.clone() },
+            channel_metadata: ChannelMetadata {
+                channel: String::new(),
+                origin: worker.source.clone(),
+                received_at: request.submitted_at.clone(),
+            },
         };
         let normalized = InputIn02NormalizedBuilder.build(raw)?;
         let operation_node = InputIn03OperationBuilder.build(normalized, worker)?;

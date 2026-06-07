@@ -1,6 +1,6 @@
 use super::rounds::append_step_event_id;
-use crate::tools::tool_dispatch;
 use super::*;
+use crate::tools::dispatch;
 
 pub(super) struct EventEmissionInput<'a> {
     pub(super) operation: &'a OperationEnvelope<InferenceOperationPayload>,
@@ -14,7 +14,7 @@ pub(super) struct EventEmissionInput<'a> {
     pub(super) round_records: &'a [RoundRecord],
     pub(super) step_records: &'a mut Vec<StepRecord>,
     pub(super) tool_records: &'a [ToolExecutionRecord],
-    pub(super) dispatched_tools: &'a tool_dispatch::ToolDispatchOutcome,
+    pub(super) dispatched_tools: &'a dispatch::ToolDispatchOutcome,
     pub(super) round_count: usize,
     pub(super) closure_stopped: bool,
     pub(super) progress: &'a ProgressBlock,

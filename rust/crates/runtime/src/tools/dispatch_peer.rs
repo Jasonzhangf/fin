@@ -1,4 +1,4 @@
-use super::tool_dispatch::{
+use super::dispatch::{
     ToolDispatchInput, ToolDispatchOutcome, failed_record, read_string, read_u64,
     runtime_home_from_context,
 };

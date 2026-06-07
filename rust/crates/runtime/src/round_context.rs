@@ -1,5 +1,5 @@
-use crate::tools::tool_catalog_dynamic::{DynamicToolCatalogInput, build_dynamic_tool_catalog_block};
-use crate::tools::tool_history_render::render_current_tool_execution_history;
+use crate::tools::catalog_dynamic::{DynamicToolCatalogInput, build_dynamic_catalog_block};
+use crate::tools::history_render::render_current_tool_execution_history;
 use fin_contracts::{
     CurrentInputBlock, KnowledgeArtifactBlock, MinimalContextView, ToolExecutionRecord,
 };
@@ -76,7 +76,7 @@ pub(super) fn build_round_context(input: DynamicRoundContextInput<'_>) -> Minima
     });
 
     let tool_context = context.clone();
-    context.tools = Some(build_dynamic_tool_catalog_block(&DynamicToolCatalogInput {
+    context.tools = Some(build_dynamic_catalog_block(&DynamicToolCatalogInput {
         role_id: Some(input.role_id),
         context: &tool_context,
         recent_tool_records: input.recent_tool_records,

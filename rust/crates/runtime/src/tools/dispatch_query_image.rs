@@ -1,7 +1,7 @@
-use super::tool_dispatch::{
+use super::dispatch::{
     ToolDispatchInput, ToolDispatchOutcome, failed_record, read_string, short_text,
 };
-use super::tool_dispatch_extended_patch::resolve_workspace_path;
+use super::dispatch_patch::resolve_workspace_path;
 use fin_contracts::{InputAttachmentSummary, ToolExecutionRecord};
 use serde_json::{Value, json};
 use std::{fs, path::Path};

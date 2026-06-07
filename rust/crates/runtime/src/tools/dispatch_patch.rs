@@ -1,8 +1,8 @@
-use super::tool_dispatch::{
+use super::dispatch::{
     ToolDispatchInput, ToolDispatchOutcome, failed_record, read_bool, read_string,
     runtime_home_from_context, short_text,
 };
-use super::tool_dispatch_extended_patch_v4a;
+use super::dispatch_patch_apply;
 use fin_contracts::ToolExecutionRecord;
 use serde::Serialize;
 use serde_json::{Value, json};
@@ -41,7 +41,7 @@ pub(super) fn handle_apply_patch(
     let mode = patch_mode(arguments);
     let result = match mode.as_str() {
         "replace" => apply_replace_mode(input, arguments),
-        "patch" => tool_dispatch_extended_patch_v4a::apply_v4a_mode(input, arguments),
+        "patch" => dispatch_patch_apply::apply_patch_mode(input, arguments),
         other => Err(format!("unsupported apply_patch mode: {other}")),
     };
 

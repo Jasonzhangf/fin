@@ -26,8 +26,7 @@ fn error_pipeline_uses_unique_node_type_names_and_no_swallow() {
         );
     }
     assert!(
-        !pipeline.contains("treat_invalid_as_success")
-            && !pipeline.contains("fallback_ok"),
+        !pipeline.contains("treat_invalid_as_success") && !pipeline.contains("fallback_ok"),
         "error chain must not silently swallow or fall back to success"
     );
 }

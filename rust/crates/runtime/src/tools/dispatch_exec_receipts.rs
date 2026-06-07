@@ -1,4 +1,4 @@
-use super::tool_dispatch::{ToolDispatchInput, runtime_home_from_context};
+use super::dispatch::{ToolDispatchInput, runtime_home_from_context};
 use serde::{Deserialize, Serialize};
 use std::{
     fs,

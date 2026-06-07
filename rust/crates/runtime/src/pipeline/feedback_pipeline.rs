@@ -1,18 +1,14 @@
 use crate::model::parser::ModelToolCall;
+use crate::model::parser::{parse_control_feedback, parse_tool_calls};
+use crate::model::shapes::{extract_tag, strip_structured_blocks};
 use fin_contracts::ControlFeedback;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use crate::model::parser::{parse_control_feedback, parse_tool_calls};
-use crate::model::shapes::{extract_tag, strip_structured_blocks};
 
 pub(crate) const USER_RESPONSE_TAG: &str = "fin_user_response";
 pub(crate) const CONTROL_FEEDBACK_TAG: &str = "fin_control_feedback";
 pub(crate) const TOOL_CALLS_TAG: &str = "fin_tool_calls";
-pub(crate) const KNOWN_TAGS: &[&str] = &[
-    USER_RESPONSE_TAG,
-    CONTROL_FEEDBACK_TAG,
-    TOOL_CALLS_TAG,
-];
+pub(crate) const KNOWN_TAGS: &[&str] = &[USER_RESPONSE_TAG, CONTROL_FEEDBACK_TAG, TOOL_CALLS_TAG];
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct FeedbackResp01ModelRaw {
@@ -73,8 +69,7 @@ impl FeedbackResp02TaggedBlocksParser {
     pub fn parse(&self, raw: FeedbackResp01ModelRaw) -> FeedbackResp02TaggedBlocks {
         let text = raw.raw_text.clone();
         let (user_resp, user_repaired) = extract_tag_full(&text, "fin_user_response");
-        let (control_block, control_repaired) =
-            extract_tag_full(&text, "fin_control_feedback");
+        let (control_block, control_repaired) = extract_tag_full(&text, "fin_control_feedback");
         let (tool_block, tool_repaired) = extract_tag_full(&text, "fin_tool_calls");
         FeedbackResp02TaggedBlocks {
             raw,
@@ -92,10 +87,7 @@ impl FeedbackResp02TaggedBlocksParser {
 pub struct FeedbackResp03UserVisibleBuilder;
 
 impl FeedbackResp03UserVisibleBuilder {
-    pub fn build(
-        &self,
-        tagged: FeedbackResp02TaggedBlocks,
-    ) -> FeedbackResp03UserVisible {
+    pub fn build(&self, tagged: FeedbackResp02TaggedBlocks) -> FeedbackResp03UserVisible {
         let stripped = strip_known_blocks(&tagged.raw.raw_text);
         let text = tagged
             .user_response_block
@@ -114,10 +106,7 @@ impl FeedbackResp03UserVisibleBuilder {
 pub struct FeedbackResp04ControlFeedbackParser;
 
 impl FeedbackResp04ControlFeedbackParser {
-    pub fn parse(
-        &self,
-        tagged: FeedbackResp02TaggedBlocks,
-    ) -> FeedbackResp04ControlFeedback {
+    pub fn parse(&self, tagged: FeedbackResp02TaggedBlocks) -> FeedbackResp04ControlFeedback {
         let parsed = tagged
             .control_feedback_block
             .as_deref()
@@ -205,13 +194,9 @@ fn extract_tag_full(raw: &str, tag: &str) -> (Option<String>, bool) {
 }
 
 fn strip_known_blocks(raw: &str) -> String {
-    strip_structured_blocks(
-        raw,
-        &["fin_control_feedback", "fin_tool_calls"],
-        KNOWN_TAGS,
-    )
-    .trim()
-    .to_string()
+    strip_structured_blocks(raw, &["fin_control_feedback", "fin_tool_calls"], KNOWN_TAGS)
+        .trim()
+        .to_string()
 }
 
 #[derive(Debug, Clone)]
@@ -221,11 +206,10 @@ struct ParsedControlFeedbackBlock {
 }
 
 fn parse_control_feedback_block(content: &str) -> Option<ParsedControlFeedbackBlock> {
-    parse_control_feedback(content)
-        .map(|result| ParsedControlFeedbackBlock {
-            feedback: result.feedback,
-            salvaged: result.salvaged,
-        })
+    parse_control_feedback(content).map(|result| ParsedControlFeedbackBlock {
+        feedback: result.feedback,
+        salvaged: result.salvaged,
+    })
 }
 
 #[derive(Debug, Clone)]

@@ -1,4 +1,4 @@
-use super::tool_dispatch::runtime_home_from_context;
+use super::dispatch::runtime_home_from_context;
 use fin_contracts::DaemonEnsurePeerRequestRecord;
 use serde::{Deserialize, Serialize};
 use std::{

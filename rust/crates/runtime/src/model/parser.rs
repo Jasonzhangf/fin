@@ -93,22 +93,21 @@ impl ModelOutputParser {
 
         // When the text output has no <fin_tool_calls> block, check native
         // provider tool_calls (provider-native function calling protocol).
-        let parsed_tool_calls = if parsed_tool_calls.calls.is_empty()
-            && !response.tool_calls.is_empty()
-        {
-            let native_calls: Vec<ModelToolCall> = response
-                .tool_calls
-                .iter()
-                .map(|tc| ModelToolCall {
-                    tool_name: tc.name.clone(),
-                    tool_call_id: Some(tc.tool_call_id.clone()),
-                    arguments: tc.arguments.clone(),
-                })
-                .collect();
-            ParsedToolCalls::native(parsed_tool_calls, native_calls)
-        } else {
-            parsed_tool_calls
-        };
+        let parsed_tool_calls =
+            if parsed_tool_calls.calls.is_empty() && !response.tool_calls.is_empty() {
+                let native_calls: Vec<ModelToolCall> = response
+                    .tool_calls
+                    .iter()
+                    .map(|tc| ModelToolCall {
+                        tool_name: tc.name.clone(),
+                        tool_call_id: Some(tc.tool_call_id.clone()),
+                        arguments: tc.arguments.clone(),
+                    })
+                    .collect();
+                ParsedToolCalls::native(parsed_tool_calls, native_calls)
+            } else {
+                parsed_tool_calls
+            };
 
         ParsedModelOutput {
             user_response: if user_response.is_empty() {

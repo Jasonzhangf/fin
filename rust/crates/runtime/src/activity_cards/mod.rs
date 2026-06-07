@@ -1,4 +1,4 @@
-use crate::{RuntimeError, tools::tool_semantics};
+use crate::{RuntimeError, tools::semantics};
 mod agents;
 #[cfg(test)]
 mod delivery_tests;
@@ -104,7 +104,7 @@ pub fn build_activity_cards_for_session(
         tool_records.retain(|record| record.operation_id == operation_id);
     }
 
-    let semantics = tool_semantics::semantic_views(&tool_records);
+    let semantics = semantics::semantic_views(&tool_records);
     let mut system_card = build_system_card(
         session_id.as_deref(),
         task_id.as_deref(),

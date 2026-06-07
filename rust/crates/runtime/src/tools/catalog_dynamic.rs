@@ -1,4 +1,4 @@
-use super::tool_catalog::build_tool_catalog_block;
+use super::catalog::build_catalog_block;
 use fin_contracts::{MinimalContextView, ToolCatalogBlock, ToolCatalogEntry, ToolExecutionRecord};
 use std::fs;
 
@@ -9,10 +9,8 @@ pub(crate) struct DynamicToolCatalogInput<'a> {
     pub(crate) round_index: u32,
 }
 
-pub(crate) fn build_dynamic_tool_catalog_block(
-    input: &DynamicToolCatalogInput<'_>,
-) -> ToolCatalogBlock {
-    let mut block = build_tool_catalog_block();
+pub(crate) fn build_dynamic_catalog_block(input: &DynamicToolCatalogInput<'_>) -> ToolCatalogBlock {
+    let mut block = build_catalog_block();
     let has_runtime_home = input
         .context
         .project

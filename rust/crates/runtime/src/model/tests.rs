@@ -120,7 +120,8 @@ fn control_feedback_builder_uses_runtime_observation_when_no_structured_output_e
     let response = provider_response("plain answer", "resp-2", "end_turn");
 
     let parsed = ModelOutputParser::default().parse(&payload, &request, &response);
-    let runtime_observation = ControlFeedbackBuilder::default().build(&payload, &request, &response);
+    let runtime_observation =
+        ControlFeedbackBuilder::default().build(&payload, &request, &response);
     let merged = ControlFeedbackBuilder::default().merge_with_runtime_observation(
         parsed.control_feedback.clone(),
         runtime_observation.clone(),

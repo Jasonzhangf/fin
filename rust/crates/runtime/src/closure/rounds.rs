@@ -6,8 +6,8 @@ use crate::pipeline::reason::{
     ReasonResp07ParsedContractParser, ReasonResp08RuntimeDecisionBuilder, ReasonResp09Closure,
     ReasonResp09ClosureBuilder,
 };
-use crate::tools::tool_history_render::render_current_tool_execution_history;
-use crate::tools::tool_dispatch;
+use crate::tools::dispatch;
+use crate::tools::history_render::render_current_tool_execution_history;
 
 pub(super) struct StepAllocation {
     pub(super) step_id: String,
@@ -128,7 +128,7 @@ pub(super) fn record_round(
     response: &ProviderResponse,
     parsed: &ParsedModelOutput,
     feedback: &ControlFeedback,
-    dispatched: &tool_dispatch::ToolDispatchOutcome,
+    dispatched: &dispatch::ToolDispatchOutcome,
     assistant_text: &str,
     validation_errors: &[String],
     provider_request_records: &mut Vec<ProviderRequestRecord>,
@@ -163,7 +163,7 @@ pub(super) fn record_round(
     let model_parse_step = allocate_step(step_index, &operation.operation_id, "model_parse");
     let control_feedback_step =
         allocate_step(step_index, &operation.operation_id, "control_feedback");
-    let tool_dispatch_step = allocate_step(step_index, &operation.operation_id, "tool_dispatch");
+    let dispatch_step = allocate_step(step_index, &operation.operation_id, "dispatch");
 
     provider_request_records.push(request_record.clone());
     provider_response_records.push(response_record.clone());
@@ -260,16 +260,16 @@ pub(super) fn record_round(
             "tasks/routing/recent_decisions.json#operation_id={}",
             operation.operation_id
         )),
-        Some("tool_dispatch".into()),
+        Some("dispatch".into()),
     ));
     step_records.push(session::turn::step_record(
-        tool_dispatch_step.step_id.clone(),
+        dispatch_step.step_id.clone(),
         turn_id,
         &operation.operation_id,
         &operation.trace_id,
         refs,
-        tool_dispatch_step.step_index,
-        "tool_dispatch",
+        dispatch_step.step_index,
+        "dispatch",
         if parsed.tool_calls.is_empty() && parsed.tool_calls_block_present {
             "failed"
         } else if parsed.tool_calls.is_empty() {
@@ -320,7 +320,7 @@ pub(super) fn record_round(
             provider_step_id: provider_step.step_id,
             model_parse_step_id: model_parse_step.step_id,
             control_feedback_step_id: control_feedback_step.step_id,
-            tool_dispatch_step_id: tool_dispatch_step.step_id,
+            tool_dispatch_step_id: dispatch_step.step_id,
             request_id: request_record.request_id,
             response_record_id: response_record.response_record_id,
             contract_detected: parsed.contract_detected,

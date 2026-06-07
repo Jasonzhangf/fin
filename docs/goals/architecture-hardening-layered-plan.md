@@ -65,7 +65,7 @@ Implementation:
 2. Update `docs/architecture/45-runtime-module-inventory.md`:
    - Include actual domains: `pipeline`, `closure`, `context`, `tools`, `session`, `control`, `task`, `agent`, `runtime_home`, `model`, `prompt`, and planned `activity_cards`.
    - Reconcile root-level debt list with current code.
-   - Update function map and verification map for `model_output_parse`, `prompt_assembly`, `activity_cards`, and `tool_dispatch_capabilities`.
+   - Update function map and verification map for `model_output_parse`, `prompt_assembly`, `activity_cards`, and `dispatch_capabilities`.
 3. Add a short closeout note in `docs/closeout/` when this layer is complete.
 
 Files:
@@ -225,9 +225,9 @@ Purpose: remove migration names from the main runtime path.
 
 Current gaps:
 
-- `tools/mod.rs` still declares `tool_dispatch_extended_*`.
-- `tool_dispatch_extended_patch_v4a.rs` remains.
-- `tool_dispatch_control_support.rs` and `tool_dispatch_peer_support.rs` use generic support naming.
+- `tools/mod.rs` still declares `dispatch_router_*`.
+- `dispatch_patch_apply.rs` remains.
+- `dispatch_control_args.rs` and `dispatch_peer_records.rs` use generic support naming.
 
 Target layout:
 
@@ -267,7 +267,7 @@ Implementation:
 3. Update all imports.
 4. Change naming static gate:
    - `_v4a` count must be zero.
-   - `tool_dispatch_extended` declarations must be zero in `tools/mod.rs`, not only in `lib.rs`.
+   - `dispatch_router` declarations must be zero in `tools/mod.rs`, not only in `lib.rs`.
    - generic `support` names are forbidden unless listed as temporary with a closeout date.
 5. Remove old file names physically.
 
@@ -275,7 +275,7 @@ Verification:
 
 - `cargo test -p fin-runtime tools --manifest-path rust/Cargo.toml`
 - `cargo test -p fin-runtime pipeline::naming_static_tests --manifest-path rust/Cargo.toml`
-- `rg -n "tool_dispatch_extended|_v4a|tool_dispatch_.*_support" rust/crates/runtime/src/tools`
+- `rg -n "dispatch_router|_v4a|dispatch_.*_support" rust/crates/runtime/src/tools`
 
 ### Layer 5: Pipeline Unique-Type Gate Closeout
 

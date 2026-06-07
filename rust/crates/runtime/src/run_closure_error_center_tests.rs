@@ -44,8 +44,7 @@ impl fin_provider::InferenceProvider for NoopProvider {
 fn run_closure_routes_failure_to_error_pipeline_and_emits_events() {
     let mut runtime = M1Runtime::new("test");
     let operation = invalid_payload();
-    let result: Result<ClosureRun, RuntimeError> =
-        runtime.run_closure(operation, &NoopProvider);
+    let result: Result<ClosureRun, RuntimeError> = runtime.run_closure(operation, &NoopProvider);
     assert!(result.is_err(), "validate failure must surface");
     assert!(
         !runtime.last_error_events.is_empty(),

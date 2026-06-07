@@ -124,7 +124,7 @@ fn model_input_assembler_renders_role_tools_history_and_project_scope() {
 }
 
 #[test]
-fn model_input_assembler_renders_apply_patch_guidance_verbatim_in_tool_catalog() {
+fn model_input_assembler_renders_apply_patch_guidance_verbatim_in_catalog() {
     let rendered = ModelInputAssembler::default().assemble(
         "patch the file",
         &MinimalContextView {

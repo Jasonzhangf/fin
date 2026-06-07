@@ -1,7 +1,7 @@
-use super::tool_catalog_task_tools::build_project_task_model_tools;
+use super::catalog_task_tools::build_project_task_model_tools;
 use fin_contracts::{ToolCatalogBlock, ToolCatalogEntry};
 
-pub(crate) fn build_tool_catalog_block() -> ToolCatalogBlock {
+pub(crate) fn build_catalog_block() -> ToolCatalogBlock {
     ToolCatalogBlock {
         model_tools: vec![
             model_tool(

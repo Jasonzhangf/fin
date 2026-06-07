@@ -1,4 +1,4 @@
-use super::tool_dispatch::{ToolDispatchInput, ToolDispatchOutcome};
+use super::dispatch::{ToolDispatchInput, ToolDispatchOutcome};
 use serde_json::Value;
 
 pub(super) fn handle_mailbox_send(
@@ -7,12 +7,7 @@ pub(super) fn handle_mailbox_send(
     tool_call_id: &str,
     arguments: &Value,
 ) -> bool {
-    super::tool_dispatch_extended_collab_mailbox::handle_mailbox_send(
-        outcome,
-        input,
-        tool_call_id,
-        arguments,
-    )
+    super::dispatch_collab_mailbox::handle_mailbox_send(outcome, input, tool_call_id, arguments)
 }
 
 pub(super) fn handle_mailbox_poll(
@@ -21,12 +16,7 @@ pub(super) fn handle_mailbox_poll(
     tool_call_id: &str,
     arguments: &Value,
 ) -> bool {
-    super::tool_dispatch_extended_collab_mailbox::handle_mailbox_poll(
-        outcome,
-        input,
-        tool_call_id,
-        arguments,
-    )
+    super::dispatch_collab_mailbox::handle_mailbox_poll(outcome, input, tool_call_id, arguments)
 }
 
 pub(super) fn handle_agent_assign(
@@ -35,7 +25,7 @@ pub(super) fn handle_agent_assign(
     tool_call_id: &str,
     arguments: &Value,
 ) -> bool {
-    super::tool_dispatch_extended_collab_coordination::handle_agent_assign(
+    super::dispatch_collab_coordination::handle_agent_assign(
         outcome,
         input,
         tool_call_id,
@@ -49,7 +39,7 @@ pub(super) fn handle_capability_invoke(
     tool_call_id: &str,
     arguments: &Value,
 ) -> bool {
-    super::tool_dispatch_extended_collab_coordination::handle_capability_invoke(
+    super::dispatch_collab_coordination::handle_capability_invoke(
         outcome,
         input,
         tool_call_id,
