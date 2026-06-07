@@ -1,9 +1,8 @@
 use crate::{
-    CliError, agent_presence::ensure_entry_agent_presence,
+    CliError, agent_presence::ensure_entry_agent_presence, execution_state::clear_waiting_if_due,
     headless_daemon_bridge::maybe_start_builtin_qqbot_bridge,
     headless_daemon_project_resume::drive_headless_project_runtime_resumes,
     reminder_scheduler::inject_due_reminders, runtime_home::init_runtime_home,
-    execution_state::clear_waiting_if_due,
     startup_control_summary::read_startup_control_summary,
     startup_wakeup::refresh_startup_control_plane, supervisor_cycle::run_supervisor_cycle,
     web_debug::CliDebugActionHandler,
@@ -296,7 +295,11 @@ fn run_headless_cycle(
     for session in sessions {
         let fired = inject_due_reminders(runtime_home, &session.binding)?;
         if fired > 0 {
-            clear_waiting_if_due(runtime_home, &session.binding, &crate::time::local_timestamp_now())?;
+            clear_waiting_if_due(
+                runtime_home,
+                &session.binding,
+                &crate::time::local_timestamp_now(),
+            )?;
         }
         let outcome = run_supervisor_cycle(
             runtime_home,

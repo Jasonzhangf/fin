@@ -371,7 +371,11 @@ fn event_stream_rotation_moves_old_segments_into_archive_without_losing_truth() 
         let parts: Vec<&str> = session_dir_str.split('/').collect();
         let year = parts.get(parts.len().wrapping_sub(3)).unwrap_or(&"2026");
         let month = parts.get(parts.len().wrapping_sub(2)).unwrap_or(&"06");
-        home.join("archive/sessions").join(year).join(month).join("session-event-archive").join("events")
+        home.join("archive/sessions")
+            .join(year)
+            .join(month)
+            .join("session-event-archive")
+            .join("events")
     };
     let live_event_count = fs::read_to_string(&live_stream_path)
         .expect("live stream")

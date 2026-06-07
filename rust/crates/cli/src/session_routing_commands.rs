@@ -11,9 +11,11 @@ use crate::{
 };
 use chrono::Local;
 use fin_config::SystemConfig;
-use fin_debug_server::{ChatSendResponse, DebugBinding};
 use fin_contracts::{DebugVisibility, EntityRefs, EventEnvelope, Severity};
-use fin_runtime::{StoredTaskRecord, create_task_record, load_task_record, append_framework_events};
+use fin_debug_server::{ChatSendResponse, DebugBinding};
+use fin_runtime::{
+    StoredTaskRecord, append_framework_events, create_task_record, load_task_record,
+};
 use serde_json::json;
 use std::path::Path;
 

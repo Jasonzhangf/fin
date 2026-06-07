@@ -73,7 +73,12 @@ impl CliDebugActionHandler {
             )?;
             if let Some(response) = cycle.tick.drive.last_response {
                 if let Some(base_state) = preserved_state.as_ref() {
-                    restore_execution_state(runtime_home, &binding, base_state, &local_timestamp_now())?;
+                    restore_execution_state(
+                        runtime_home,
+                        &binding,
+                        base_state,
+                        &local_timestamp_now(),
+                    )?;
                 }
                 if let Some(checkpoint) = preserved_checkpoint.as_ref() {
                     restore_execution_checkpoint(runtime_home, &binding, checkpoint)?;
