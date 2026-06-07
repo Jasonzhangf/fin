@@ -293,4 +293,8 @@ pub fn authoritative_receipt_ref(artifact_ref: &str) -> bool {
     artifact_ref.ends_with(".receipt.md")
         || artifact_ref.ends_with(".receipt.json")
         || artifact_ref.contains("/receipts/")
+        || artifact_ref.contains("exec_receipts/")
+        || artifact_ref.contains("write_stdin_receipts/")
+        || artifact_ref.contains("patch_receipts/")
+        || artifact_ref.contains("tool_receipts/")
 }
