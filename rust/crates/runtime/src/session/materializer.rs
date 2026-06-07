@@ -129,17 +129,15 @@ impl SessionMaterializer {
             create_dir_all(&session_dir.join(relative))?;
         }
 
-        if persistence_mode.persist_session_history() {
-            persist_event_stream(
-                runtime_home,
-                &session_dir,
-                year,
-                month,
-                &session_id,
-                &run.events,
-                retention,
-            )?;
-        }
+        persist_event_stream(
+            runtime_home,
+            &session_dir,
+            year,
+            month,
+            &session_id,
+            &run.events,
+            retention,
+        )?;
         write_json_file(&session_dir.join("progress/latest.json"), &run.progress)?;
         write_json_file(
             &session_dir.join("control/latest.json"),
