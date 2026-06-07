@@ -245,12 +245,15 @@ fn scheduler_decision_for_binding(
     let state = load_execution_state(runtime_home, binding)?;
     let pending = load_pending_inputs(runtime_home, binding)?;
     let routing_action = load_latest_routing_action(runtime_home, binding)?;
+    let has_checkpoint = load_open_execution_checkpoint(runtime_home, binding)?
+        .map_or(false, |_| true);
     Ok(derive_scheduler_decision(
         &entity_refs(binding),
         state.as_ref(),
         pending.as_slice(),
         routing_action.as_ref(),
         Some(owner_loop_action),
+        has_checkpoint,
         &local_timestamp_now(),
     ))
 }

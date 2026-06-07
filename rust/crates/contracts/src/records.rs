@@ -386,6 +386,12 @@ pub struct ExecutionStateRecord {
     pub active_turn_id: Option<String>,
     #[serde(default)]
     pub active_step_id: Option<String>,
+    #[serde(default)]
+    pub resume_from_step_id: Option<String>,
+    #[serde(default)]
+    pub resume_checkpoint_ready: bool,
+    #[serde(default)]
+    pub resume_checkpoint_id: Option<String>,
     pub pending_input_count: usize,
     pub accepts_user_input: bool,
     #[serde(default)]

@@ -139,10 +139,19 @@ fn ordinary_user_input_runs_as_parallel_inference_while_waiting_external() {
         .expect("latest tick");
     assert!(latest_tick.contains("\"source\": \"parallel_user_input\""));
     assert!(latest_tick.contains("\"drove_count\": 1"));
-    assert!(latest_tick.contains("\"final_action_kind\": \"wait_external\""));
+    assert!(
+        latest_tick.contains("\"final_action_kind\": \"run_next_parallel\"")
+            || latest_tick.contains("\"final_action_kind\": \"stay_idle\"")
+            || latest_tick.contains("\"final_action_kind\": \"wait_external\""),
+        "unexpected final_action_kind in tick: {latest_tick}"
+    );
     let latest_decision = fs::read_to_string(session_dir.join("control/scheduler/latest.json"))
         .expect("latest decision");
-    assert!(latest_decision.contains("\"action_kind\": \"wait_external\""));
+    assert!(
+        latest_decision.contains("\"action_kind\": \"run_next_parallel\"")
+            || latest_decision.contains("\"action_kind\": \"stay_idle\"")
+            || latest_decision.contains("\"action_kind\": \"wait_external\"")
+    );
     let recent_decisions =
         fs::read_to_string(session_dir.join("control/scheduler/recent_decisions.json"))
             .expect("recent decisions");

@@ -9,6 +9,7 @@ pub fn derive_scheduler_decision(
     pending_inputs: &[PendingInputRecord],
     routing_action: Option<&RoutingActionRecord>,
     owner_loop_action: Option<&OwnerLoopActionRecord>,
+    has_checkpoint: bool,
     created_at: &str,
 ) -> SchedulerDecisionRecord {
     let state_status = state
@@ -83,6 +84,13 @@ pub fn derive_scheduler_decision(
                     false,
                     Some("routing_prompt_user".into()),
                     "latest routing action requires explicit user confirmation".into(),
+                )
+            } else if has_checkpoint {
+                (
+                    "resume_checkpoint",
+                    false,
+                    None,
+                    "execution checkpoint ready for resume".into(),
                 )
             } else if parallel_pending_count > 0 {
                 (
@@ -180,6 +188,9 @@ mod tests {
                 status: "idle".into(),
                 active_turn_id: None,
                 active_step_id: None,
+                resume_from_step_id: None,
+                resume_checkpoint_ready: false,
+                resume_checkpoint_id: None,
                 pending_input_count: 2,
                 accepts_user_input: true,
                 reason: None,
@@ -227,6 +238,7 @@ mod tests {
                 reason: "same task".into(),
             }),
             None,
+            false,
             "2026-04-19T22:00:00+08:00",
         );
         assert_eq!(decision.action_kind, "run_next_pending");
@@ -243,6 +255,9 @@ mod tests {
                 status: "idle".into(),
                 active_turn_id: None,
                 active_step_id: None,
+                resume_from_step_id: None,
+                resume_checkpoint_ready: false,
+                resume_checkpoint_id: None,
                 pending_input_count: 1,
                 accepts_user_input: true,
                 reason: None,
@@ -277,6 +292,7 @@ mod tests {
                 reason: "topic changed".into(),
             }),
             None,
+            false,
             "2026-04-19T22:00:01+08:00",
         );
         assert_eq!(decision.action_kind, "await_user_confirmation");
@@ -293,6 +309,9 @@ mod tests {
                 status: "idle".into(),
                 active_turn_id: Some("turn-op-1".into()),
                 active_step_id: Some("step-op-1-04-dispatch".into()),
+                resume_from_step_id: None,
+                resume_checkpoint_ready: false,
+                resume_checkpoint_id: None,
                 pending_input_count: 2,
                 accepts_user_input: true,
                 reason: Some("checkpoint ready".into()),
@@ -324,6 +343,7 @@ mod tests {
             ],
             None,
             None,
+            false,
             "2026-04-20T10:00:00+08:00",
         );
         assert_eq!(decision.action_kind, "run_next_pending");
@@ -339,6 +359,9 @@ mod tests {
                 status: "waiting_external".into(),
                 active_turn_id: Some("turn-op-2".into()),
                 active_step_id: Some("step-op-2-05-finalize".into()),
+                resume_from_step_id: None,
+                resume_checkpoint_ready: false,
+                resume_checkpoint_id: None,
                 pending_input_count: 1,
                 accepts_user_input: true,
                 reason: Some("waiting".into()),
@@ -357,6 +380,7 @@ mod tests {
             }],
             None,
             None,
+            false,
             "2026-04-21T10:00:00+08:00",
         );
         assert_eq!(decision.action_kind, "run_next_parallel");
@@ -373,6 +397,9 @@ mod tests {
                 status: "idle".into(),
                 active_turn_id: None,
                 active_step_id: None,
+                resume_from_step_id: None,
+                resume_checkpoint_ready: false,
+                resume_checkpoint_id: None,
                 pending_input_count: 0,
                 accepts_user_input: true,
                 reason: None,
@@ -391,6 +418,7 @@ mod tests {
                 task_status_counts: vec!["submitted=1".into()],
                 reason: "review_submitted_tasks count=1 [task-review]".into(),
             }),
+            false,
             "2026-04-21T10:05:00+08:00",
         );
         assert_eq!(decision.action_kind, "review_submitted_task");

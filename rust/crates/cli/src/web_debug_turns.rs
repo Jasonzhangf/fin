@@ -39,6 +39,18 @@ impl CliDebugActionHandler {
             &local_timestamp_now(),
             reason,
         )?;
+        let preserved_state = if parallel_candidate {
+            state
+                .filter(|value| matches!(value.status.as_str(), "paused" | "waiting_external"))
+                .cloned()
+        } else {
+            None
+        };
+        let preserved_checkpoint = if preserved_state.is_some() {
+            load_open_execution_checkpoint(runtime_home, &binding)?
+        } else {
+            None
+        };
         if parallel_candidate {
             let cycle = run_supervisor_cycle(
                 runtime_home,
@@ -60,6 +72,12 @@ impl CliDebugActionHandler {
                 },
             )?;
             if let Some(response) = cycle.tick.drive.last_response {
+                if let Some(base_state) = preserved_state.as_ref() {
+                    restore_execution_state(runtime_home, &binding, base_state, &local_timestamp_now())?;
+                }
+                if let Some(checkpoint) = preserved_checkpoint.as_ref() {
+                    restore_execution_checkpoint(runtime_home, &binding, checkpoint)?;
+                }
                 return Ok(response);
             }
         }

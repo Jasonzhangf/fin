@@ -366,7 +366,13 @@ fn event_stream_rotation_moves_old_segments_into_archive_without_losing_truth() 
     let session_dir = last_session_dir.expect("session dir should exist");
     let live_stream_path = session_dir.join("events/stream.jsonl");
     let local_archive_dir = session_dir.join("events/archive");
-    let cold_archive_dir = home.join("archive/sessions/2026/04/session-event-archive/events");
+    let cold_archive_dir = {
+        let session_dir_str = session_dir.display().to_string();
+        let parts: Vec<&str> = session_dir_str.split('/').collect();
+        let year = parts.get(parts.len().wrapping_sub(3)).unwrap_or(&"2026");
+        let month = parts.get(parts.len().wrapping_sub(2)).unwrap_or(&"06");
+        home.join("archive/sessions").join(year).join(month).join("session-event-archive").join("events")
+    };
     let live_event_count = fs::read_to_string(&live_stream_path)
         .expect("live stream")
         .lines()
