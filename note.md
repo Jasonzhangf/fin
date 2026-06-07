@@ -5175,3 +5175,16 @@ per 原则 "新规则若无法被 gate 验证，默认不算硬边界"）这是�
 - Push attempted: git push origin main
 - Result: failed, `LibreSSL SSL_connect: SSL_ERROR_SYSCALL in connection to github.com:443`
 - External research after repeated error: common fixes are git proxy correction/unset, route via working SOCKS/HTTP proxy, switch remote to SSH, or change network/VPN/curl SSL backend. No global network/proxy config changed in this task.
+
+## 2026-06-07 Layer 3 inventory update
+
+- Updated docs/architecture/45-runtime-module-inventory.md:
+  - activity_cards added to domain table (section 1)
+  - activity_cards added to inventory table with full file list (section 2)
+  - activity_cards removed from Phase 5 backlog (section 3.2)
+  - activity_cards added to function map (section 4)
+  - activity_cards added to verification map (section 5)
+- Layer 3 file形态已满足: activity_cards/ is domain dir, no root-level files, no #[path] bridges
+- All 11 activity_cards tests pass
+- No root-level activity_cards_*.rs files exist
+- No #[path] bridges referencing activity_cards

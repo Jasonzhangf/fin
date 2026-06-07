@@ -20,6 +20,7 @@
 | `runtime_home` | `src/runtime_home/` | `mod.rs` | skill_loader / source_visibility（`~/.fin` 持久化辅助） |
 | `model` | `src/model/` | `mod.rs` | input assembler / parser / shapes + model tests |
 | `prompt` | `src/prompt/` | `mod.rs` | assembly / basics / catalog / role_policy + prompt tests |
+| `activity_cards` | `src/activity_cards/` | `mod.rs` | build_activity_cards / build_system_card / peer/user/frontstage card rendering |
 
 每个 domain 的 `mod.rs` 是该 domain 的唯一入口；上层模块通过 `crate::<domain>::<module>` 引用，禁止跨 domain 短路。
 
@@ -39,6 +40,7 @@
 | `task` | `task/{mod,assignment_queue,board_snapshot,handoff,managed_board,store}.rs` | 已落地 |
 | `agent` | `agent/{mod,naming,naming_tests}.rs` | 已落地 |
 | `runtime_home` | `runtime_home/{mod,skill_loader,source_visibility}.rs` | 已落地 |
+| `activity_cards` | `activity_cards/{mod,agents,helpers,records,store,peers,user_card,delivery_tests,tests}.rs` | 已落地 |
 
 ## 3. 仍位于根目录的模块（剩余 debt）
 
@@ -51,11 +53,10 @@
 - `tests.rs` / `tests_mainline.rs` / `tests_role_runtime.rs` / `tests_context_render.rs` — 顶层 mainline 红测
 - `run_closure_error_center_tests.rs` — 错误中心红测
 
-### 3.2 prompt / model / activity_cards（Phase 5 待落地）
-prompt / model / activity_cards 三组模块存在大量跨域引用，bridge approach 多次失败，按 `note.md` 已知模式列入 Phase 5b/c/d 后续分批处理：
+### 3.2 prompt / model（Phase 5 待落地）
+prompt / model 两组模块存在大量跨域引用，bridge approach 多次失败，按 `note.md` 已知模式列入 Phase 5b/c 后续分批处理：
 - `prompt_assembly.rs` + `prompt_tests*.rs` — 被 `context/view` + `model_input_assembler` 双向引用
 - `model_output*.rs` / `model_input_assembler.rs` — 与 closure/retry / prompt_assembly 多向耦合
-- `activity_cards*.rs` — 含 4 个 `#[path]` 子桥，迁入子目录需同步桥接
 - `assembler_tests.rs` — 跨 prompt/model 测试
 - `round_context.rs` — closure 跨 model 桥
 - `round_loop_runtime_tests*.rs` — closure loop 回归测试
@@ -78,6 +79,7 @@ prompt / model / activity_cards 三组模块存在大量跨域引用，bridge ap
 | `agent_identity` | `agent::naming` | `AllocatedAgentIdentity`, `AgentAssignmentSummary` | 唯一入口：`agent::naming::allocate_local_agent_identity` | tool 不得伪造 agent name |
 | `control_plane` | `control::plane` | `ExecutionStateRecord`, `PendingInputDequeue` | 唯一入口：`control::plane::*` | session 不得修改 state machine |
 | `runtime_home_persistence` | `runtime_home::skill_loader` + `runtime_home::source_visibility` | `LoadedSkill`, `uses_ephemeral_session_persistence` | 唯一入口：`runtime_home::skill_loader::load_global_skills` | 禁止 fallback 到默认 skill |
+| `activity_cards` | `activity_cards` | `ActivityCardsSnapshot`, `UserActivityCardView`, `SourceActivityCardView` | 唯一入口：`activity_cards::build_activity_cards_for_session` | tools 不得重写卡片渲染逻辑；session 不得直接写卡片 |
 
 ## 5. verification map（feature -> test gates）
 
@@ -94,6 +96,7 @@ prompt / model / activity_cards 三组模块存在大量跨域引用，bridge ap
 | `agent_identity` | `agent::naming_tests` | `pipeline::naming_static_tests` | `persist_and_read_assignment_summary_round_trip` | `cargo test -p fin-runtime` |
 | `control_plane` | `control::plane_tests` | `pipeline::naming_static_tests` | `dequeue_pending_input_marks_first_item_dequeued` | `cargo test -p fin-runtime` |
 | `runtime_home_persistence` | `runtime_home::*` | `prompt_tests_basics::context_view_builder_exposes_loaded_global_skills` | n/a | `cargo test -p fin-runtime` |
+| `activity_cards` | `activity_cards::tests`, `activity_cards::delivery_tests` | `pipeline::naming_static_tests` | `build_activity_cards_collects_system_and_peer_views` | `cargo test -p fin-runtime activity_cards` |
 
 ## 6. 命名 / 边界 gate（参见 `pipeline/naming_static_tests.rs`）
 
@@ -106,7 +109,7 @@ prompt / model / activity_cards 三组模块存在大量跨域引用，bridge ap
 ## 7. Dead code 标记与回收
 
 - `hub_pipeline` 已物理删除（commit a34766a），provider hub 19 个 dead_code warning 清零
-- 5d/5e/5g 三个 prompt/model/activity_cards 迁移尝试因 cross-domain 桥接复杂度均已 revert；保留为 Phase 5b/c/d backlog
+- 5d/5e 两个 prompt/model 迁移尝试因 cross-domain 桥接复杂度均已 revert；保留为 Phase 5b/c backlog
 - `model_input_assembler.rs` 因 `prompt_assembly` / `context/view` 双向引用暂留根目录，标记为 Phase 5c backlog
 
 ## 8. 历史 lessons（promote 进全局 skill）
