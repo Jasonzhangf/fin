@@ -8,6 +8,8 @@
 pub use crate::*;
 
 mod checkpoint;
+mod error_events;
+mod error_pipeline;
 mod events;
 mod finalize;
 mod records;

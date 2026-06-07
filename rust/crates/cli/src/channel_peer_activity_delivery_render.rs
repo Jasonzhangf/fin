@@ -28,6 +28,9 @@ pub(super) fn render_compact_text(snapshot: &ActivityCardsSnapshot) -> String {
             push_unique_line(&mut lines, line);
         }
     }
+    for line in render_task_list_lines(snapshot) {
+        push_unique_line(&mut lines, line);
+    }
     lines.retain(|line| !line.trim().is_empty());
     lines.join(
         "
@@ -239,9 +242,41 @@ fn render_focus_action_lines(
         .iter()
         .take(2)
         .map(render_recent_action)
+        .filter(|item| !item.trim().is_empty())
         .filter(|item| !same_semantic_text(item.as_str(), stage.as_str()))
         .map(|action| format!("✅ {}", short_text(action.as_str(), 48)))
         .collect()
+}
+
+fn render_task_list_lines(snapshot: &ActivityCardsSnapshot) -> Vec<String> {
+    snapshot
+        .tool_semantics
+        .iter()
+        .filter(|action| action.tool_name == "project.task.list")
+        .take(1)
+        .filter_map(render_task_list_action)
+        .map(|line| format!("✅ {}", short_text(line.as_str(), 48)))
+        .collect()
+}
+
+fn render_task_list_action(action: &ToolSemanticView) -> Option<String> {
+    let detail = action
+        .detail
+        .as_deref()
+        .unwrap_or(action.object_label.as_str());
+    let raw = detail
+        .rsplit('[')
+        .next()
+        .and_then(|tail| tail.split(']').next())
+        .unwrap_or(detail);
+    let tasks = raw
+        .split(',')
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(|value| value.split('@').next().unwrap_or(value).trim().to_string())
+        .filter(|value| !value.is_empty())
+        .collect::<Vec<_>>();
+    (!tasks.is_empty()).then(|| format!("查看: 任务 {} 条：{}", tasks.len(), tasks.join(", ")))
 }
 
 fn humanize_stage(value: &str) -> String {
@@ -280,6 +315,9 @@ pub(super) fn render_recent_action(action: &ToolSemanticView) -> String {
         .detail
         .as_deref()
         .unwrap_or(action.object_label.as_str());
+    if should_suppress_compact_action(action, detail) {
+        return String::new();
+    }
     match action.category.as_str() {
         "search" => format!("搜索: {}", short_text(detail, 40)),
         "read" => format!("查看: {}", short_text(detail, 40)),
@@ -292,6 +330,11 @@ pub(super) fn render_recent_action(action: &ToolSemanticView) -> String {
         }
         _ => short_text(action.summary.as_str(), 40),
     }
+}
+
+fn should_suppress_compact_action(action: &ToolSemanticView, detail: &str) -> bool {
+    let _ = detail;
+    action.tool_name == "mailbox.poll" && action.status != "failed"
 }
 
 fn short_text(value: &str, limit: usize) -> String {

@@ -2,6 +2,11 @@
 
 Updated: 2026-04-18
 
+## 2026-06-06 architecture hardening continuation
+
+- Current Layer 2 gate evidence: `python3 scripts/check-code-line-limit.py` fails with 12 non-whitelisted files over 500 lines; `./scripts/verify-governance.sh` fails because it runs that gate. `cargo fmt --check --manifest-path rust/Cargo.toml` is invalid for this virtual workspace shape and must use the CI-executable `cargo fmt --all --check --manifest-path rust/Cargo.toml` form.
+- `rust/crates/cli/src/channel_peer_activity_delivery_tests_dev.rs` was not referenced and targeted compilation showed it used removed debug renderer APIs (`QqbotProgressPolicy`, three-argument render calls, heartbeat renderer). Treat as stale dead tests; physical deletion is correct instead of reviving old API.
+
 ## 2026-04-21 failed-tool + reasoning.stop closure bug fixed and live E2E re-validated
 
 - runtime 已修复一个真实闭环 bug：
@@ -5136,3 +5141,37 @@ per 原则 "新规则若无法被 gate 验证，默认不算硬边界"）这是�
 - Runtime module gap: `docs/architecture/45-runtime-module-inventory.md` is stale/incomplete after model/prompt split and still omits `model`/`prompt` as domains; `activity_cards` remains root-level with `#[path]` bridges; `tools` still has `extended`/`v4a`/`support` naming debt.
 - Pipeline truth gap: `skills/fin-general-dev/SKILL.md` references missing `docs/architecture/44-pipeline-unique-type-and-error-chain.md`; current 44 is runtime error center, so pipeline unique-type design routing is broken.
 - Error center status: `M1Runtime::run_closure` maps runtime errors into `ErrorErr*` and emits two error events, but still returns `Err(RuntimeError)` and does not persist full ErrorErr ledger chain; current status is "wired skeleton, not full unique error center".
+
+## 2026-06-07 Layer 2 line-limit cleanup complete
+
+### Changes
+- activity_cards/mod.rs: 590→346 (extracted records.rs/peers.rs/user_card.rs)
+- closure_runtime.rs: 549→497 (extracted error_events.rs/error_pipeline.rs via closure/ dir)
+- session/materializer.rs: 546→429 (extracted materializer_messages.rs)
+- Deleted dead test files: model_output_runtime_tests_basic.rs, model_output_runtime_tests_rounds.rs
+- Fixed qqbot e2e mock response: missing contract fields caused runtime retry → connection refused
+
+### Verification
+- python3 scripts/check-code-line-limit.py: OK (limit=500, whitelist_entries=1)
+- cargo test -p fin-runtime activity_cards: 11/11 OK
+- cargo test -p fin-runtime run_closure: 3/3 OK
+- cargo test -p fin-cli channel_peer_qqbot_bridge: 9/9 OK
+- cargo test -p fin-provider: 13/13 OK
+- cargo fmt: OK
+
+### Key learnings
+- error_events.rs pattern: free function returning Vec<EventEnvelope> + M1Runtime impl calling it, avoids borrow conflict
+- activity_cards DTO split: records.rs holds all Deserialized structs, mod.rs re-exports via use
+- closure/ directory pattern: #[path="../closure_runtime.rs"] in mod.rs + actual sub-modules in closure/ dir
+- mock provider e2e tests need full control_feedback contract fields or runtime retries
+
+### Next
+- Layer 2 commit + push
+- Layer 3: activity_cards domain directory alignment with runtime inventory
+
+## 2026-06-07 Layer 2 push attempt
+
+- Commit: 7a989be refactor(runtime): split oversized modules to pass line-limit gate (Layer 2)
+- Push attempted: git push origin main
+- Result: failed, `LibreSSL SSL_connect: SSL_ERROR_SYSCALL in connection to github.com:443`
+- External research after repeated error: common fixes are git proxy correction/unset, route via working SOCKS/HTTP proxy, switch remote to SSH, or change network/VPN/curl SSL backend. No global network/proxy config changed in this task.

@@ -1,12 +1,9 @@
-use super::*;
 use super::checkpoint::build_resume_checkpoint;
-use super::retry::{
-    MAX_OUTPUT_CONTRACT_RETRIES, execute_round_with_contract_retries,
-};
 use super::events::{EventEmissionInput, emit_runtime_events};
 use super::finalize::{
     append_checkpoint_recorded_event, append_finalize_step, build_final_run, build_partial_run,
 };
+use super::retry::{MAX_OUTPUT_CONTRACT_RETRIES, execute_round_with_contract_retries};
 use super::rounds::{
     allocate_step, build_context_build_step_record, build_context_snapshot, build_followup_input,
     record_round,
@@ -15,8 +12,8 @@ use super::state::{
     merge_dispatch_outcome, next_step, operation_status, record_auto_tool_round_limit,
     record_output_contract_retry_limit, stop_source,
 };
+use super::*;
 use round_context::{DynamicRoundContextInput, build_round_context};
-
 
 #[derive(Debug, Clone)]
 pub struct M1Runtime {
@@ -48,7 +45,9 @@ impl M1Runtime {
         match self.run_closure_inner(operation.clone(), provider) {
             Ok(run) => Ok(run),
             Err(err) => {
-                let user_visible = map_runtime_error_through_error_pipeline(&operation, &err);
+                let user_visible = super::error_pipeline::map_runtime_error_through_error_pipeline(
+                    &operation, &err,
+                );
                 self.emit_error_events(&operation, &user_visible, &err);
                 Err(err)
             }
@@ -445,12 +444,7 @@ impl M1Runtime {
                 "answer": assistant_response_text.clone(),
             }),
         )?);
-        append_checkpoint_recorded_event(
-            self,
-            &mut events,
-            &operation,
-            &refs,
-        )?;
+        append_checkpoint_recorded_event(self, &mut events, &operation, &refs)?;
 
         Ok(build_final_run(
             operation,
@@ -500,88 +494,4 @@ impl M1Runtime {
         event.validate()?;
         Ok(event)
     }
-
-    pub(super) fn emit_error_events(
-        &mut self,
-        operation: &OperationEnvelope<InferenceOperationPayload>,
-        user_visible: &crate::pipeline::error::ErrorErr05UserVisible,
-        err: &RuntimeError,
-    ) {
-        let refs = operation.refs.clone();
-        let trace_id = operation.trace_id.clone();
-        let operation_id = operation.operation_id.clone();
-        let submitted_at = operation.submitted_at.clone();
-        let detected = &user_visible.recorded.classified.classified.detected;
-        let source_class_json = serde_json::to_value(&user_visible.recorded.classified.classified.source_class)
-            .ok()
-            .and_then(|v| v.as_str().map(|s| s.to_string()))
-            .unwrap_or_else(|| "Runtime".to_string());
-        let decision_json = serde_json::to_value(&user_visible.recorded.classified.decision).ok();
-        let payload_detected = serde_json::json!({
-            "source_node": detected.source_node,
-            "fact": detected.fact,
-            "captured_at": detected.captured_at,
-            "source_class": source_class_json,
-            "decision": decision_json,
-            "error_message": err.to_string(),
-            "ledger_path": user_visible.recorded.ledger_path,
-            "recorded_event_id": user_visible.recorded.recorded_event_id,
-        });
-        if let Ok(ev) = self.event(
-            "error.detected",
-            &trace_id,
-            &submitted_at,
-            &refs,
-            Some(operation_id.clone()),
-            payload_detected,
-        ) {
-            self.last_error_events.push(ev);
-        }
-        let payload_user = serde_json::json!({
-            "user_message": user_visible.user_message,
-            "safe_for_channel": user_visible.safe_for_channel,
-        });
-        if let Ok(ev) = self.event(
-            "error.user_visible_prepared",
-            &trace_id,
-            &submitted_at,
-            &refs,
-            Some(operation_id),
-            payload_user,
-        ) {
-            self.last_error_events.push(ev);
-        }
-    }
-}
-
-pub fn map_runtime_error_through_error_pipeline(
-    operation: &OperationEnvelope<InferenceOperationPayload>,
-    err: &RuntimeError,
-) -> crate::pipeline::error::ErrorErr05UserVisible {
-    use crate::pipeline::error::{
-        ErrorErr01DetectedBuilder, ErrorErr02SourceClassifiedBuilder,
-        ErrorErr03RuntimeClassifiedBuilder, ErrorErr04SessionRecordedBuilder,
-        ErrorErr05UserVisibleBuilder,
-        classify_runtime_error,
-    };
-    let detected = ErrorErr01DetectedBuilder
-        .build(
-            "M1Runtime::run_closure",
-            err.to_string(),
-            operation.submitted_at.clone(),
-        )
-        .expect("error fact non-empty");
-    let (source_class, decision) = classify_runtime_error(err);
-    let classified = ErrorErr02SourceClassifiedBuilder.build(detected, source_class);
-    let runtime_classified = ErrorErr03RuntimeClassifiedBuilder.build(classified, decision);
-    let recorded = ErrorErr04SessionRecordedBuilder
-        .build(
-            runtime_classified,
-            format!("err-{}", operation.operation_id),
-            format!("sessions/ledger/{}.jsonl", operation.operation_id),
-        )
-        .expect("error record ids non-empty");
-    ErrorErr05UserVisibleBuilder
-        .build(recorded, "runtime failure: see session ledger for trace")
-        .expect("user message non-empty")
 }

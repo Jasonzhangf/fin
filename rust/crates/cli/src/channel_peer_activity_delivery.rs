@@ -77,7 +77,7 @@ pub(crate) fn prepare_periodic_delivery(
         clear_target(runtime_home)?;
         return Ok(None);
     }
-    let snapshot = build_activity_cards(runtime_home)?;
+    let snapshot = build_activity_cards_for_session(runtime_home, Some(&session_id))?;
     if snapshot
         .session_id
         .as_deref()
@@ -208,5 +208,5 @@ struct ChannelConversationRecord {
 }
 
 #[cfg(test)]
-#[path = "channel_peer_activity_delivery_tests.rs"]
+#[path = "channel_peer_activity_delivery_tests/mod.rs"]
 mod tests;

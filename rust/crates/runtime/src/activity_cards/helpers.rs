@@ -114,7 +114,7 @@ pub(super) fn should_promote(
         || matches!(state, "running" | "failed" | "waiting" | "paused")
 }
 
-pub(super) fn peer_title(peer: &super::PeerRegistryEntry) -> String {
+pub(super) fn peer_title(peer: &super::records::PeerRegistryEntry) -> String {
     if let Some(alias) = peer
         .alias
         .as_deref()
@@ -130,7 +130,7 @@ pub(super) fn peer_title(peer: &super::PeerRegistryEntry) -> String {
     }
 }
 
-pub(super) fn peer_state(peer: &super::PeerRegistryEntry) -> String {
+pub(super) fn peer_state(peer: &super::records::PeerRegistryEntry) -> String {
     if peer.connectivity_state.as_deref() == Some("degraded")
         || peer.connectivity_state.as_deref() == Some("failed")
     {
@@ -144,7 +144,7 @@ pub(super) fn peer_state(peer: &super::PeerRegistryEntry) -> String {
     }
 }
 
-pub(super) fn peer_summary(peer: &super::PeerRegistryEntry) -> String {
+pub(super) fn peer_summary(peer: &super::records::PeerRegistryEntry) -> String {
     let mut parts = vec![format!("presence {}", peer.presence_state)];
     if let Some(connectivity) = peer
         .connectivity_state
@@ -166,7 +166,7 @@ pub(super) fn peer_summary(peer: &super::PeerRegistryEntry) -> String {
     shorten(&parts.join(" · "), 120)
 }
 
-pub(super) fn peer_activity(peer: &super::PeerRegistryEntry) -> String {
+pub(super) fn peer_activity(peer: &super::records::PeerRegistryEntry) -> String {
     if peer.binding_state.as_deref() == Some("invalidated") {
         "binding invalidated".into()
     } else if peer.session_valid == Some(true) {

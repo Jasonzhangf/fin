@@ -1,26 +1,19 @@
 use crate::{
     CliError,
     channel_peer::record_builtin_qqbot_runtime_event,
-    channel_peer_activity_delivery::{
-        current_delivery_signature_if_deliverable, mark_delivered, prepare_periodic_delivery,
-    },
-    channel_peer_conversations::{
-        list_conversations, mark_delivered_message, pending_outbound_messages,
-    },
+    channel_peer_conversations::{mark_delivered_message, pending_outbound_messages},
 };
+#[path = "channel_peer_qqbot_bridge_activity_loop.rs"]
+mod activity_loop;
+pub(super) use activity_loop::spawn_activity_delivery_loop;
 use fin_contracts::InputAttachmentSummary;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use std::{
     io::Write,
-    path::PathBuf,
     process::ChildStdin,
-    sync::{
-        Arc, Mutex,
-        atomic::{AtomicBool, Ordering},
-    },
-    thread::{self, JoinHandle},
-    time::{Duration, SystemTime, UNIX_EPOCH},
+    sync::{Arc, Mutex},
+    time::{SystemTime, UNIX_EPOCH},
 };
 
 #[derive(Debug, Clone, Deserialize)]
@@ -332,186 +325,6 @@ pub(super) fn deliver_pending_messages_for_target(
     Ok(delivered)
 }
 
-pub(super) fn spawn_activity_delivery_loop(
-    runtime_home: PathBuf,
-    stdin: Arc<Mutex<Option<ChildStdin>>>,
-    stop_signal: Arc<AtomicBool>,
-    ready_signal: Arc<AtomicBool>,
-) -> JoinHandle<()> {
-    thread::spawn(move || {
-        let mut was_ready = false;
-        let mut last_progress_notice: std::collections::HashMap<String, u64> =
-            std::collections::HashMap::new();
-        while !stop_signal.load(Ordering::SeqCst) {
-            let is_ready = ready_signal.load(Ordering::SeqCst);
-            let reconnected = is_ready && !was_ready;
-            was_ready = is_ready;
-
-            if !is_ready {
-                thread::sleep(Duration::from_secs(5));
-                continue;
-            }
-            if stop_signal.load(Ordering::SeqCst) {
-                break;
-            }
-
-            // On reconnect: send reconnect notice + immediate delivery.
-            if reconnected {
-                if let Ok(conversations) = list_conversations(&runtime_home) {
-                    for conv in &conversations {
-                        if conv.session_id.is_some() {
-                            let _ = write_bridge_request(
-                                &stdin,
-                                "send",
-                                Some(json!({
-                                    "to": conv.target,
-                                    "text": "重新连接成功，正在恢复上下文。",
-                                })),
-                            );
-                        }
-                    }
-                }
-            }
-
-            // Deliver pending messages for all conversations.
-            if let Err(err) = deliver_pending_messages_for_all(&runtime_home, &stdin) {
-                let _ = record_builtin_qqbot_runtime_event(
-                    &runtime_home,
-                    "channel.peer.pending_delivery_failed",
-                    Some("bridge_degraded"),
-                    None,
-                    None,
-                    json!({ "error": err.to_string() }),
-                );
-            }
-
-            // Periodic progress notices: send "still processing" updates
-            // for conversations with pending inbound but no response yet.
-            let now_secs = std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .map(|d| d.as_secs())
-                .unwrap_or(0);
-            if let Ok(conversations) = list_conversations(&runtime_home) {
-                for conv in &conversations {
-                    if conv.session_id.is_none() {
-                        continue;
-                    }
-                    let inbound_after_delivery = match (&conv.last_inbound_at, &conv.last_delivery_at) {
-                        (Some(inbound_at), Some(delivery_at)) => {
-                            inbound_at.as_str() > delivery_at.as_str()
-                        }
-                        (Some(_), None) => true,
-                        _ => false,
-                    };
-                    if !inbound_after_delivery {
-                        last_progress_notice.remove(&conv.target);
-                        continue;
-                    }
-                    let has_pending_outbound = pending_outbound_messages(&runtime_home, &conv.target)
-                        .ok()
-                        .flatten()
-                        .is_some_and(|(_, pending)| !pending.is_empty());
-                    if has_pending_outbound {
-                        last_progress_notice.remove(&conv.target);
-                        continue;
-                    }
-                    let last_notice = last_progress_notice
-                        .get(&conv.target)
-                        .copied()
-                        .unwrap_or(0);
-                    if now_secs.saturating_sub(last_notice) >= 15 {
-                        let _ = write_bridge_request(
-                            &stdin,
-                            "send",
-                            Some(json!({"to": conv.target, "text": "仍在处理中，请稍候…"})),
-                        );
-                        let _ = record_builtin_qqbot_runtime_event(
-                            &runtime_home,
-                            "channel.peer.progress_notice_sent",
-                            None,
-                            None,
-                            None,
-                            json!({"target": conv.target, "session_id": conv.session_id}),
-                        );
-                        last_progress_notice.insert(conv.target.clone(), now_secs);
-                    }
-                }
-            }
-
-            match prepare_periodic_delivery(&runtime_home) {
-                Ok(Some(prepared)) => {
-                    let still_current = current_delivery_signature_if_deliverable(&runtime_home)
-                        .ok()
-                        .flatten()
-                        .is_some_and(|signature| signature == prepared.signature);
-                    if !still_current {
-                        let _ = record_builtin_qqbot_runtime_event(
-                            &runtime_home,
-                            "channel.peer.activity_card_send_skipped_stale",
-                            None,
-                            None,
-                            None,
-                            json!({
-                                "target": prepared.target,
-                                "reason": prepared.reason,
-                            }),
-                        );
-                        continue;
-                    }
-                    let payload = json!({
-                        "to": prepared.target,
-                        "text": prepared.text,
-                    });
-                    if let Err(err) = write_bridge_request(&stdin, "send", Some(payload)) {
-                        let _ = record_builtin_qqbot_runtime_event(
-                            &runtime_home,
-                            "channel.peer.activity_card_send_failed",
-                            Some("bridge_degraded"),
-                            None,
-                            None,
-                            json!({
-                                "reason": prepared.reason,
-                                "error": err.to_string(),
-                            }),
-                        );
-                        continue;
-                    }
-                    let _ = mark_delivered(
-                        &runtime_home,
-                        &prepared.signature,
-                        &prepared.text,
-                        &prepared.reason,
-                    );
-                    let _ = record_builtin_qqbot_runtime_event(
-                        &runtime_home,
-                        "channel.peer.activity_card_send_requested",
-                        None,
-                        None,
-                        None,
-                        json!({
-                            "target": prepared.target,
-                            "reason": prepared.reason,
-                            "text_preview": shorten(&prepared.text, 180),
-                        }),
-                    );
-                }
-                Ok(None) => {}
-                Err(err) => {
-                    let _ = record_builtin_qqbot_runtime_event(
-                        &runtime_home,
-                        "channel.peer.activity_card_prepare_failed",
-                        Some("bridge_degraded"),
-                        None,
-                        None,
-                        json!({ "error": err.to_string() }),
-                    );
-                }
-            }
-            thread::sleep(Duration::from_secs(5));
-        }
-    })
-}
-
 fn string_field(value: &Value, keys: &[&str]) -> Option<String> {
     keys.iter().find_map(|key| {
         value
@@ -535,22 +348,6 @@ fn u64_field(value: &Value, keys: &[&str]) -> Option<u64> {
 
 fn u32_field(value: &Value, keys: &[&str]) -> Option<u32> {
     u64_field(value, keys).and_then(|value| u32::try_from(value).ok())
-}
-
-fn deliver_pending_messages_for_all(
-    runtime_home: &std::path::Path,
-    stdin: &Arc<Mutex<Option<ChildStdin>>>,
-) -> Result<(), CliError> {
-    for conversation in list_conversations(runtime_home)? {
-        let _ = deliver_pending_messages_for_target(
-            runtime_home,
-            stdin,
-            &conversation.target,
-            None,
-            "periodic_scan",
-        )?;
-    }
-    Ok(())
 }
 
 fn remove_tag_block(input: &str, tag: &str) -> String {

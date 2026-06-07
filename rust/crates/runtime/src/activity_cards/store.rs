@@ -71,7 +71,7 @@ pub(super) fn pending_inbound_notice(
     let Some(session_id) = session_id else {
         return Ok(None);
     };
-    let registry = read_json_if_exists::<super::ChannelConversationRegistry>(
+    let registry = read_json_if_exists::<super::records::ChannelConversationRegistry>(
         &runtime_home.join("runtime/channels/qqbot/conversations.json"),
     )?
     .unwrap_or_default();
@@ -89,7 +89,6 @@ pub(super) fn pending_inbound_notice(
     });
     Ok(pending.then(|| super::PENDING_INBOUND_NOTICE.into()))
 }
-
 
 pub(super) fn read_session_vec<T: for<'de> Deserialize<'de>>(
     runtime_home: &Path,

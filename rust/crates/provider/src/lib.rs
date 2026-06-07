@@ -8,6 +8,7 @@ use thiserror::Error;
 mod http_client;
 mod provider_facade;
 mod provider_static;
+mod provider_wire;
 
 const DEFAULT_USER_AGENT: &str = "fin-coding-agent/0.1";
 const MAX_REQUEST_ATTEMPTS: usize = 5;
