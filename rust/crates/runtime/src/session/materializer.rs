@@ -292,8 +292,16 @@ pub fn append_framework_events(
     events: &[EventEnvelope<Value>],
     retention: &RuntimeRetentionConfig,
 ) -> Result<(), RuntimeError> {
-    let _ = (runtime_home, session_dir, events, retention);
-    Ok(())
+    let (year, month, session_id) = super::materializer_events::session_archive_coords(session_dir)?;
+    persist_event_stream(
+        runtime_home,
+        session_dir,
+        &year,
+        &month,
+        &session_id,
+        events,
+        retention,
+    )
 }
 
 fn persist_context_snapshots(

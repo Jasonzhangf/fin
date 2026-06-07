@@ -92,8 +92,14 @@ fn runtime_demo_persists_home_artifacts() {
     let home = temp_runtime_home();
     let run =
         run_demo(&system, &static_provider(&system), "hello").expect("runtime demo should run");
-    persist_runtime_demo(&user_toml, &system, &run, Some(home.as_path()))
+    let artifacts = persist_runtime_demo(&user_toml, &system, &run, Some(home.as_path()))
         .expect("artifacts should persist");
+    let session_prefix = artifacts
+        .session_dir
+        .strip_prefix(&home)
+        .expect("session dir should live under runtime home")
+        .to_string_lossy()
+        .to_string();
 
     assert!(home.join("config/user.toml").exists());
     let system_template =
@@ -103,19 +109,19 @@ fn runtime_demo_persists_home_artifacts() {
     assert!(system_template.contains("default_role = \"project\""));
     for relative in [
         "runtime/projections/current_projection.json",
-        "sessions/2026/04/session-cli-demo/events/stream.jsonl",
-        "sessions/2026/04/session-cli-demo/conversation/messages.json",
-        "sessions/2026/04/session-cli-demo/digests/recent_digests.json",
-        "sessions/2026/04/session-cli-demo/control/latest.json",
-        "sessions/2026/04/session-cli-demo/reasoning/latest.json",
-        "sessions/2026/04/session-cli-demo/tools/latest.json",
-        "sessions/2026/04/session-cli-demo/provider/latest_requests.json",
-        "sessions/2026/04/session-cli-demo/provider/latest_responses.json",
-        "sessions/2026/04/session-cli-demo/rounds/latest.json",
-        "sessions/2026/04/session-cli-demo/steps/latest.json",
-        "sessions/2026/04/session-cli-demo/turns/latest.json",
-        "sessions/2026/04/session-cli-demo/tasks/routing/latest.json",
-        "sessions/2026/04/session-cli-demo/closures/latest.json",
+        "events/stream.jsonl",
+        "conversation/messages.json",
+        "digests/recent_digests.json",
+        "control/latest.json",
+        "reasoning/latest.json",
+        "tools/latest.json",
+        "provider/latest_requests.json",
+        "provider/latest_responses.json",
+        "rounds/latest.json",
+        "steps/latest.json",
+        "turns/latest.json",
+        "tasks/routing/latest.json",
+        "closures/latest.json",
         "runtime/current/current_control_feedback.json",
         "runtime/current/current_reasoning_view.json",
         "runtime/current/current_provider_requests.json",
@@ -126,7 +132,12 @@ fn runtime_demo_persists_home_artifacts() {
         "runtime/current/current_routing_decision.json",
         "runtime/current/current_closure_trace.json",
     ] {
-        assert!(home.join(relative).exists(), "missing {relative}");
+        let path = if relative.starts_with("runtime/") {
+            home.join(relative)
+        } else {
+            home.join(&session_prefix).join(relative)
+        };
+        assert!(path.exists(), "missing {}", path.display());
     }
 
     let control_feedback: ControlFeedback = serde_json::from_str(
