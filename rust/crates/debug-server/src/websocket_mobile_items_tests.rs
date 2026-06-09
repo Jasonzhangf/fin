@@ -1,4 +1,4 @@
-use super::mobile_items::{mobile_tool_item_frame, mobile_tool_records};
+use super::mobile_items::{mobile_history_turns, mobile_tool_item_frame, mobile_tool_records};
 use crate::{ChatSendResponse, DebugBinding};
 use serde_json::json;
 use std::{
@@ -133,6 +133,40 @@ fn render_user_input_result_does_not_project_old_tool_records_on_failure() {
     assert!(frames[1].contains("\"type\":\"turn.rendered\""));
     assert!(!frames.iter().any(|frame| frame.contains("turn.item.")));
     assert!(!frames.iter().any(|frame| frame.contains("tool-old")));
+}
+
+#[test]
+fn mobile_history_turns_project_runtime_turn_schema_to_mobile_render_contract() {
+    let turns = mobile_history_turns(vec![json!({
+        "turn_id": "turn-op-1",
+        "operation_id": "op-1",
+        "user_input": "PING-HISTORY",
+        "assistant_visible_output": "PONG-HISTORY",
+        "tool_record_refs": [
+            "tools/recent_tool_records.json#tool_call_id=tool-provider-call-op-1"
+        ]
+    })]);
+
+    assert_eq!(turns.len(), 1);
+    assert_eq!(turns[0]["user_input"].as_str(), Some("PING-HISTORY"));
+    assert_eq!(
+        turns[0]["assistant_response"].as_str(),
+        Some("PONG-HISTORY")
+    );
+    assert_eq!(
+        turns[0]["tool_execution_records"]
+            .as_array()
+            .expect("tool records")
+            .len(),
+        0
+    );
+    assert_eq!(
+        turns[0]["error_records"]
+            .as_array()
+            .expect("error records")
+            .len(),
+        0
+    );
 }
 
 fn binding(runtime_home: &Path) -> DebugBinding {

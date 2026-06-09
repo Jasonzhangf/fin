@@ -216,6 +216,10 @@ fn websocket_user_input_sends_progress_before_chat_handler_finishes() {
     assert!(accepted.contains("\"type\":\"input.accepted\""));
     assert!(started.contains("\"type\":\"turn.started\""));
     assert!(progress.contains("\"type\":\"turn.progress\""));
+    let provider_item = read_unmasked_text_frame(&mut client);
+    assert!(provider_item.contains("\"type\":\"turn.item.started\""));
+    assert!(provider_item.contains("\"label\":\"provider.call\""));
+    assert!(provider_item.contains("\"status\":\"running\""));
 
     let mut terminal = Vec::new();
     for _ in 0..8 {
@@ -268,7 +272,7 @@ fn websocket_user_input_accepts_android_content_field() {
     let frames = ws_roundtrip_frames(
         &EchoHandler,
         br#"{"type":"session.user_input","content":"android hi","client_message_id":"m-content"}"#,
-        5,
+        6,
     );
     assert!(
         frames

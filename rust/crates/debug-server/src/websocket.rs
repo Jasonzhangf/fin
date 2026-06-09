@@ -11,7 +11,10 @@ mod frame;
 use frame::{read_frame, write_close_frame, write_text_frame};
 #[path = "websocket_mobile_items.rs"]
 mod mobile_items;
-use mobile_items::{mobile_tool_item_frame, mobile_tool_records};
+use mobile_items::{
+    mobile_history_turns, mobile_provider_item_started_frame, mobile_tool_item_frame,
+    mobile_tool_records,
+};
 
 const WS_GUID: &str = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11";
 
@@ -138,7 +141,7 @@ fn session_snapshot(
         .as_ref()
         .map(|id| vec![json!({"session_id":id,"title":id,"project":"fin","archived":false})])
         .unwrap_or_default();
-    let history = read_session_history(runtime_home).unwrap_or_default();
+    let history = mobile_history_turns(read_session_history(runtime_home).unwrap_or_default());
     let config_snapshot = handler
         .read_config_snapshot(runtime_home)
         .unwrap_or_else(|reason| {
@@ -224,6 +227,10 @@ fn handle_user_input_streaming(
     write_text_frame(stream, &accepted.to_string())?;
     write_text_frame(stream, &started.to_string())?;
     write_text_frame(stream, &progress.to_string())?;
+    write_text_frame(
+        stream,
+        &mobile_provider_item_started_frame(&parsed.client_message_id, &turn_id),
+    )?;
 
     let runtime_home = runtime_home.to_path_buf();
     let payload = parsed.payload.clone();

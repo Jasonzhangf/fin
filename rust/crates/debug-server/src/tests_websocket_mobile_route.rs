@@ -13,16 +13,24 @@ fn websocket_user_input_streams_tool_item_before_final_render() {
     let frames = ws_roundtrip_frames(
         &ToolHandler,
         br#"{"type":"session.user_input","payload":"tool render hi","client_message_id":"m-tools"}"#,
-        6,
+        7,
     );
     let item_index = frames
         .iter()
         .position(|frame| frame.contains("\"type\":\"turn.item.completed\""))
         .expect("turn item frame");
+    let provider_started_index = frames
+        .iter()
+        .position(|frame| {
+            frame.contains("\"type\":\"turn.item.started\"")
+                && frame.contains("\"label\":\"provider.call\"")
+        })
+        .expect("provider started item frame");
     let rendered_index = frames
         .iter()
         .position(|frame| frame.contains("\"type\":\"turn.rendered\""))
         .expect("rendered frame");
+    assert!(provider_started_index < item_index);
     assert!(item_index < rendered_index);
     assert!(frames[item_index].contains("\"item_id\":\"tool-ws-item\""));
     assert!(frames[rendered_index].contains("\"tool_execution_records\""));
