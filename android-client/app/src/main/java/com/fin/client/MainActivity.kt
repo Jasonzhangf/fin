@@ -208,7 +208,7 @@ class MainActivity : ComponentActivity() {
             background = rounded(Color.rgb(39, 44, 55), 18)
         }
         actionRow.addView(chip("Build⌄"), LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, dp(36)).apply { leftMargin = dp(8) })
-        actionRow.addView(chip("Mimo⌄"), LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, dp(36)).apply { leftMargin = dp(6) })
+        actionRow.addView(chip("模型⌄"), LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, dp(36)).apply { leftMargin = dp(6) })
         actionRow.addView(chip("默认⌄"), LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, dp(36)).apply { leftMargin = dp(6) })
 
         val spacer = android.view.View(this)

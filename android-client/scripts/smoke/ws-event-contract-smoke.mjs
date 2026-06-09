@@ -1,11 +1,14 @@
 #!/usr/bin/env node
 const S={conn:'idle',turns:[],pendingById:{},traceByClientId:{},itemByClientId:{},turnStateByClientId:{},runtimeHealth:'schema_error:runtime.health',providerHealth:'schema_error:provider.health',cache:'',activityCards:null,expandedAgentCards:{},sessions:[],selectedSessions:new Set(),pendingNewSession:false,renderedTurnCount:0};
 const nativeSent=[];
+let activeProvider='';
+let activeModel='';
 function schema(v,field){const s=(v&&v[field]!=null)?String(v[field]).trim():'';return s?s:'schema_error:'+field}
 function setConn(s){S.conn=s}
 function setRuntimeState(s){S.runtimeHealth=s}
 function setProviderState(s){S.providerHealth=s}
 function persistProviderConfigCache(v){S.cache=JSON.stringify(v||{})}
+function renderActiveConfig(m){const profiles=Array.isArray(m&&m.profiles)?m.profiles:[];const def=String((m&&m.default_profile)||'').trim();let active=profiles.find(p=>p&&p.active);if(!active&&def)active=profiles.find(p=>String((p&&p.profile_name)||p?.provider||'')===def);if(active){activeProvider=String(active.provider||active.profile_name||def||'');activeModel=String(active.model||'')}else{activeProvider=def;activeModel='schema_error:model'}}
 function itemFromRecord(rec){return {item_id:schema(rec,'tool_call_id'),label:schema(rec,'tool_name'),title:schema(rec,'title'),purpose:schema(rec,'purpose'),status:schema(rec,'status'),duration_ms:rec?.duration_ms??0,output_summary:rec?.output_summary||'',error_summary:rec?.error_summary||'',item_kind:rec?.tool_kind||'schema_error:item_kind',target_kind:rec?.target_kind||''}}
 function normalizeToolRecord(rec){return itemFromRecord(rec||{})}
 function normalizeErrorRecord(e){const item=itemFromRecord(e||{});item.status='failed';item.error_summary=schema(e||{},'error_summary');return item}
@@ -39,7 +42,7 @@ function onWs(m){
     case 'session.list': S.sessions=m.sessions||[]; reconcileCurrentSession(); return;
     case 'session.operation.ok': if(m.operation==='delete'&&Array.isArray(m.session_ids)&&S.currentSessionId&&m.session_ids.map(String).includes(String(S.currentSessionId)))clearCurrentSessionView(); return;
     case 'session.operation.failed': return;
-    case 'config.snapshot': persistProviderConfigCache(m); return;
+    case 'config.snapshot': persistProviderConfigCache(m); renderActiveConfig(m); return;
     case 'input.accepted': {const id=m.client_message_id||''; if(id){S.pendingById[id]={state:'accepted',serverPhase:'queued'}} return;}
     case 'runtime.health': setRuntimeState(schema(m,'status')); return;
     case 'provider.health': setProviderState(schema(m,'status')); return;
@@ -75,10 +78,10 @@ function assertItem(item){
   assert(!['tool','unknown',''].includes(String(item.label).trim()), 'non-informative label')
   assert(!['tool','unknown',''].includes(String(item.title).trim()), 'non-informative title')
 }
-onWs({type:'config.snapshot',default_profile:'p1',profiles:[{profile_name:'p1',provider:'mimo',model:'mimo',active:true}],active_thinking_effort:'high'})
+onWs({type:'config.snapshot',default_profile:'minimax',profiles:[{profile_name:'minimax',provider:'minimax',protocol:'anthropic-wire',model:'MiniMax-M3',active:true}],active_thinking_effort:null})
 onWs({type:'input.accepted',client_message_id:'m1'})
 onWs({type:'runtime.health',status:'available'})
-onWs({type:'provider.health',status:'available',provider:'mimo'})
+onWs({type:'provider.health',status:'available',provider:'minimax',model:'MiniMax-M3'})
 onWs({type:'turn.started',client_message_id:'m1',session_id:'s1',turn_id:'t1'})
 onWs({type:'turn.progress',client_message_id:'m1',phase:'tool_wait'})
 onWs({type:'turn.item.started',client_message_id:'m1',session_id:'s1',turn_id:'t1',item_id:'i1',item_kind:'provider',label:'provider.call',title:'Provider Call',purpose:'dispatch compiled prompt',status:'running',started_at:'now'})
@@ -125,6 +128,9 @@ assert(visible.length===1&&visible[0].label==='shell.exec','provider call must b
 visible.forEach(assertItem)
 assert(visible.some(i=>i.status==='failed' && i.error_summary==='command not found'),'failed item error missing')
 assert(S.cache.includes('default_profile'),'config snapshot not persisted')
+assert(S.cache.includes('minimax')&&S.cache.includes('MiniMax-M3'),'config snapshot must preserve minimax provider/model')
+assert(activeProvider==='minimax','active provider render must use runtime config snapshot')
+assert(activeModel==='MiniMax-M3','active model render must use runtime config snapshot')
 assert(S.runtimeHealth==='ok','runtime health not separated')
 assert(S.providerHealth==='available','provider health not separated')
 let cards=renderAgentCards()

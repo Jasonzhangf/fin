@@ -66,9 +66,9 @@ data class ProviderProfile(
     val profile_name: String,
     val provider: String,
     val protocol: String,
-    val base_url: String,
+    val base_url: String = "",
     val model: String,
-    val credential_source: String,
+    val credential_source: String = "",
     val active: Boolean,
 )
 
@@ -77,5 +77,5 @@ data class ProviderConfigCache(
     val cache_kind: String = "runtime_config_snapshot",
     val default_profile: String,
     val profiles: List<ProviderProfile>,
-    val active_thinking_effort: String,
+    val active_thinking_effort: String? = null,
 )
