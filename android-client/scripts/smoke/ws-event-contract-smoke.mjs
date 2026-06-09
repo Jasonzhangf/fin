@@ -69,9 +69,8 @@ function bubbleRow(kind,body,extraClass){return `<div class='msg-row ${kind}'><d
 function renderUserBubble(text){return bubbleRow('user',`<div class='message-text user'>${text||''}</div>`,'bubble-user')}
 function renderAssistantBubble(text){return bubbleRow('assistant',`<div class='message-text'>${text||''}</div>`,'bubble-assistant')}
 function renderStatusBubble(text){return bubbleRow('status',`<div class='status'>${text}</div>`,'bubble-status')}
-function renderDebugBubble(data){return bubbleRow('debug',`<div class='dbg-raw'>${JSON.stringify(data||{})}</div>`,'bubble-debug')}
-function renderTurnThread(t,debugMode=false){const timeline=renderToolTimelineFromItems(t.items||[],false);const debugRaw=debugMode?renderDebugBubble({control:t.control||'',tool:t.tool||'',closure:t.closure||'',items:t.items||[]}):'';return `<div class='chat-group' data-turn-id='${t.turn_id||t.client_message_id||''}' data-render-style='chat-thread'>${renderUserBubble(t.u)}${renderAssistantBubble(t.a)}${timeline}${debugRaw}</div>`}
-function renderLiveThread(p,items,debugMode=false){const phaseMap={sending:'发送中',accepted:'已送达服务器',waiting:'等待推理结果',inference_waiting:'推理中',provider_wait:'等待模型响应',tool_wait:'工具执行中',queued:'排队中',running:'处理中'};const timeline=renderToolTimelineFromItems(items,true);const debugRaw=debugMode?renderDebugBubble({pending:p,items}):'';return `<div class='chat-group pending' data-client-message-id='${p.id||''}' data-render-style='chat-thread'>${renderUserBubble(p.text||'')}${renderStatusBubble((phaseMap[p.serverPhase]||phaseMap[p.state]||'处理中')+' …')}${timeline}${debugRaw}</div>`}
+function renderTurnThread(t){const timeline=renderToolTimelineFromItems(t.items||[],false);return `<div class='chat-group' data-turn-id='${t.turn_id||t.client_message_id||''}' data-render-style='chat-thread'>${renderUserBubble(t.u)}${renderAssistantBubble(t.a)}${timeline}</div>`}
+function renderLiveThread(p,items){const phaseMap={sending:'发送中',accepted:'已送达服务器',waiting:'等待推理结果',inference_waiting:'推理中',provider_wait:'等待模型响应',tool_wait:'工具执行中',queued:'排队中',running:'处理中'};const timeline=renderToolTimelineFromItems(items,true);return `<div class='chat-group pending' data-client-message-id='${p.id||''}' data-render-style='chat-thread'>${renderUserBubble(p.text||'')}${renderStatusBubble((phaseMap[p.serverPhase]||phaseMap[p.state]||'处理中')+' …')}${timeline}</div>`}
 function assert(cond,msg){if(!cond) throw new Error(msg)}
 function assertItem(item){
   for(const f of ['item_id','label','title','purpose','status']) assert(item[f] && !String(item[f]).startsWith('schema_error:'), `bad ${f}: ${JSON.stringify(item)}`)
@@ -97,12 +96,12 @@ S.pendingById['m2']={id:'m2',text:'next',state:'accepted',serverPhase:'queued',t
 onWs({type:'turn.item.started',client_message_id:'m2',session_id:'s1',turn_id:'t2',item_id:'i9',item_kind:'exec',label:'shell.exec',title:'Execute shell',purpose:'new task',status:'running',started_at:'now'})
 assert(JSON.stringify(S.turns[0])===frozenTurnJson,'historical finalized turn must stay immutable when new live item arrives')
 onWs({type:'activity.cards.snapshot',snapshot:{source_cards:[{source_id:'local.project-fin',source_kind:'project_agent',title:'builder',agent_name:'builder',state:'running',recent_actions:[{tool_call_id:'tool-1',tool_name:'project.tool',category:'tools',summary:'named agent consumed delegated turn',status:'completed'}]}]}})
-const renderedTurnHtml=renderTurnThread(S.turns[0],true)
+const renderedTurnHtml=renderTurnThread(S.turns[0])
 assert(renderedTurnHtml.includes("data-render-style='chat-thread'"),'final turn must render as chat thread')
 assert(renderedTurnHtml.includes('bubble-user'),'final turn must include user bubble')
 assert(renderedTurnHtml.includes('bubble-assistant'),'final turn must include assistant bubble')
 assert(!renderedTurnHtml.includes('你：'),'final turn must not use legacy Q&A label chrome')
-const renderedLiveHtml=renderLiveThread({id:'m-live',text:'live ask',state:'waiting',serverPhase:'tool_wait'},[{item_id:'tl-1',label:'shell.exec',title:'Execute shell',purpose:'run',status:'running'}],true)
+const renderedLiveHtml=renderLiveThread({id:'m-live',text:'live ask',state:'waiting',serverPhase:'tool_wait'},[{item_id:'tl-1',label:'shell.exec',title:'Execute shell',purpose:'run',status:'running'}])
 assert(renderedLiveHtml.includes('bubble-status'),'live thread must render status bubble')
 assert(renderedLiveHtml.includes('工具执行（实时）'),'live thread must keep live timeline heading')
 onWs({type:'session.list',sessions:[{session_id:'s1',title:'任务一'},{session_id:'s2',title:'任务二',archived:true}]})

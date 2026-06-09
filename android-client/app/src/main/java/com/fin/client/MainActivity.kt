@@ -272,9 +272,9 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun applyNativeChromeMode(mode: String) {
-        val sessionsOpen = mode == "sessions"
-        nativeInputBar?.visibility = if (sessionsOpen) View.GONE else View.VISIBLE
-        if (sessionsOpen) {
+        val chromePanelOpen = mode == "sessions" || mode == "settings"
+        nativeInputBar?.visibility = if (chromePanelOpen) View.GONE else View.VISIBLE
+        if (chromePanelOpen) {
             nativeInput.clearFocus()
             val imm = getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager
             imm.hideSoftInputFromWindow(nativeInput.windowToken, 0)

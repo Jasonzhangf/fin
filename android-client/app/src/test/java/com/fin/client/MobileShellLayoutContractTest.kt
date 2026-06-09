@@ -59,8 +59,32 @@ class MobileShellLayoutContractTest {
         assertTrue(shell.contains("return u.origin+'/updates/latest.json'"))
         assertTrue(shell.contains("CONFIG.set('update_manifest_url',canonicalUpdateManifestUrl(host,port))"))
         assertTrue(shell.contains("syncDaemonInputsFromConfig();"))
+        assertTrue(shell.contains("syncUpdateManifestFromConfig();"))
         assertFalse(shell.contains("+'/upgrade/manifest.js'"))
         assertFalse(shell.contains("+'/upgrade/manifest.json'"))
+    }
+
+    @Test
+    fun updateUiRunsSingleSemanticFlowWithoutRawBridgeJson() {
+        assertTrue(shell.contains("""id="btnRunUpdate""""))
+        assertTrue(shell.contains("""onclick="runUpdateFlow()""""))
+        assertTrue(shell.contains("async function runUpdateFlow()"))
+        assertTrue(shell.contains("function parseBridgeResult(raw)"))
+        assertTrue(shell.contains("function updateStatus(text,detail,error)"))
+        assertTrue(shell.contains("function updateErrorMessage(code)"))
+        assertTrue(shell.contains("需要允许安装未知应用"))
+        assertTrue(shell.contains("升级包校验失败"))
+        assertTrue(shell.contains("已打开系统安装器"))
+        assertFalse(shell.contains("""id="updateManifestInput""""))
+        assertFalse(shell.contains("""id="btnCheckUpdate""""))
+        assertFalse(shell.contains("""id="btnDownloadUpdate""""))
+        assertFalse(shell.contains("""id="btnInstallUpdate""""))
+        assertFalse(shell.contains("function checkUpdate()"))
+        assertFalse(shell.contains("function downloadUpdate()"))
+        assertFalse(shell.contains("function installUpdate()"))
+        assertFalse(shell.contains("textContent=String(r||'ok')"))
+        assertFalse(shell.contains("""id="debugToggle""""))
+        assertFalse(shell.contains("function toggleDebugMode()"))
     }
 
     @Test
@@ -91,13 +115,29 @@ class MobileShellLayoutContractTest {
     }
 
     @Test
-    fun nativeReconnectIgnoresReplacedSocketCallbacks() {
+    fun nativeChromeModeHidesInputForSettingsAndSessionsPanels() {
+        assertTrue(activity.contains("""val chromePanelOpen = mode == "sessions" || mode == "settings""""))
+        assertTrue(activity.contains("nativeInputBar?.visibility = if (chromePanelOpen) View.GONE else View.VISIBLE"))
+        assertTrue(shell.contains("body.sessions-open .bar,body.settings-open .bar{display:none}"))
+        assertTrue(shell.contains("body.sessions-open .content,body.settings-open .content{padding-bottom:0}"))
+        assertTrue(shell.contains("function openSettings(){document.body.classList.add('settings-open');applyNativeChromeMode('settings');"))
+        assertTrue(shell.contains("if(id==='settingsPanel'){document.body.classList.remove('settings-open');applyNativeChromeMode('chat')}"))
+    }
+
+    @Test
+    fun nativeReconnectForwardsStaleTurnResultsOnly() {
         assertTrue(bridge.contains("private var nativeWsGeneration: Long = 0"))
         assertTrue(bridge.contains("nativeWsGeneration += 1"))
         assertTrue(bridge.contains("val generation = nativeWsGeneration"))
         assertTrue(bridge.contains("private fun isCurrent(): Boolean = generation == nativeWsGeneration"))
         assertTrue(bridge.contains("native_ws.stale_closed code=${'$'}code reason=${'$'}reason generation=${'$'}generation"))
         assertTrue(bridge.contains("native_ws.stale_failure generation=${'$'}generation detail=${'$'}detail"))
+        assertTrue(bridge.contains("private fun isTurnResultFrame(text: String): Boolean"))
+        assertTrue(bridge.contains("type == \"input.accepted\""))
+        assertTrue(bridge.contains("type == \"turn.completed\""))
+        assertTrue(bridge.contains("type == \"turn.rendered\""))
+        assertTrue(bridge.contains("native_ws.forward_stale_turn generation=${'$'}generation"))
+        assertTrue(bridge.contains("if (isTurnResultFrame(text)) {\n                            appendConnectionEvent(\"native_ws.forward_stale_turn"))
         assertTrue(bridge.contains("if (!isCurrent()) {\n                        appendConnectionEvent(\"native_ws.stale_closed"))
         assertTrue(bridge.contains("if (!isCurrent()) {\n                        appendConnectionEvent(\"native_ws.stale_failure"))
         assertFalse(bridge.contains("reason == \"replace_connection\""))

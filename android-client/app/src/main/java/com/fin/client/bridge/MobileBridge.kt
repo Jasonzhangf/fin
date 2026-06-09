@@ -118,6 +118,10 @@ class MobileBridge(
                 override fun onMessage(webSocket: WebSocket, text: String) {
                     if (!isCurrent()) {
                         appendConnectionEvent("native_ws.stale_message generation=$generation")
+                        if (isTurnResultFrame(text)) {
+                            appendConnectionEvent("native_ws.forward_stale_turn generation=$generation")
+                            emitNativeWsMessage(text)
+                        }
                         return
                     }
                     emitNativeWsMessage(text)
@@ -360,6 +364,22 @@ class MobileBridge(
             }
         }
         return digest.digest().joinToString("") { "%02x".format(it) }
+    }
+
+    private fun isTurnResultFrame(text: String): Boolean {
+        return runCatching {
+            val type = JSONObject(text).optString("type", "")
+            type == "input.accepted" ||
+                type == "turn.started" ||
+                type == "turn.progress" ||
+                type == "turn.item.started" ||
+                type == "turn.item.delta" ||
+                type == "turn.item.completed" ||
+                type == "turn.item.failed" ||
+                type == "turn.completed" ||
+                type == "turn.trace_event" ||
+                type == "turn.rendered"
+        }.getOrDefault(false)
     }
 
     @JavascriptInterface
