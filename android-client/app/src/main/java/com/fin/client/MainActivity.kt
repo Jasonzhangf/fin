@@ -59,7 +59,6 @@ class MainActivity : ComponentActivity() {
             cacheMode = WebSettings.LOAD_DEFAULT
             mixedContentMode = WebSettings.MIXED_CONTENT_COMPATIBILITY_MODE
         }
-        webView.webViewClient = WebViewClient()
         webView.webChromeClient = object : WebChromeClient() {
             override fun onConsoleMessage(consoleMessage: ConsoleMessage): Boolean {
                 Log.i(tag, "wv-console ${consoleMessage.messageLevel()}: ${consoleMessage.message()} @${consoleMessage.sourceId()}:${consoleMessage.lineNumber()}")
@@ -77,11 +76,6 @@ class MainActivity : ComponentActivity() {
         nativeInputBar = buildNativeInputBar(bridge)
         root.addView(nativeInputBar, FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.WRAP_CONTENT, Gravity.BOTTOM))
         installNativeInputInsetSync(root, bridge)
-        setContentView(root)
-        // MVP: 直接复用现有 WebUI（本地/远程地址可在 assets 引导页里切换）
-        webView.loadUrl("file:///android_asset/mobile-shell.html")
-
-        // Restore state after page load
         webView.webViewClient = object : WebViewClient() {
             override fun onPageFinished(view: WebView?, url: String?) {
                 super.onPageFinished(view, url)
@@ -92,6 +86,7 @@ class MainActivity : ComponentActivity() {
                     null
                 )
                 intent?.getStringExtra("finAutoSend")?.takeIf { it.isNotBlank() }?.let { payload ->
+                    intent?.removeExtra("finAutoSend")
                     val quoted = JSONObject.quote(payload)
                     webView.evaluateJavascript(
                         "setTimeout(function(){ if(typeof deviceE2eSend === 'function') deviceE2eSend($quoted); }, 2500);",
@@ -101,6 +96,9 @@ class MainActivity : ComponentActivity() {
                 }
             }
         }
+        setContentView(root)
+        // MVP: 直接复用现有 WebUI（本地/远程地址可在 assets 引导页里切换）
+        webView.loadUrl("file:///android_asset/mobile-shell.html")
     }
 
 
@@ -323,7 +321,7 @@ class MainActivity : ComponentActivity() {
         super.onResume()
         // Restore WebView state after coming back
         webView.evaluateJavascript(
-            "if(typeof CONFIG !== 'undefined') CONFIG.load();",
+            "if(typeof foregroundResume === 'function') foregroundResume(); else if(typeof CONFIG !== 'undefined') CONFIG.load();",
             null
         )
     }

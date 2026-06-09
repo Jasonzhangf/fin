@@ -26,7 +26,12 @@ function renderActiveConfig(m){const profiles=Array.isArray(m&&m.profiles)?m.pro
 function itemFromRecord(rec){return {item_id:schema(rec,'tool_call_id'),label:schema(rec,'tool_name'),title:schema(rec,'title'),purpose:schema(rec,'purpose'),status:schema(rec,'status'),duration_ms:rec?.duration_ms??0,output_summary:rec?.output_summary||'',error_summary:rec?.error_summary||'',item_kind:rec?.tool_kind||'schema_error:item_kind',target_kind:rec?.target_kind||''}}
 function normalizeToolRecord(rec){return itemFromRecord(rec||{})}
 function normalizeErrorRecord(e){const item=itemFromRecord(e||{});item.status='failed';item.error_summary=schema(e||{},'error_summary');return item}
-function toTurn(t){return {turn_id:t.turn_id||'',client_message_id:t.client_message_id||'',u:t.user_input||'',a:t.assistant_response||'',control:t.control_feedback_summary||'',tool:t.tool_execution_summary||'',closure:t.closure_stop_source||'',items:(t.tool_execution_records||[]).map(normalizeToolRecord).concat((t.error_records||[]).map(normalizeErrorRecord))}}
+function turnErrorText(t){const records=Array.isArray(t&&t.error_records)?t.error_records:[];const first=records.find(e=>String(e&&e.error_summary||'').trim()||String(e&&e.message||'').trim());if(first)return String(first.error_summary||first.message||'').trim();if(String(t&&t.status||'')==='failed')return String(t&&t.error_summary||t&&t.error||'请求失败').trim();return ''}
+function firstText(){for(const v of arguments){const s=String(v||'').trim();if(s)return s;}return ''}
+function toTurn(t){return {turn_id:t.turn_id||'',client_message_id:t.client_message_id||'',u:firstText(t.user_input,t.input),a:firstText(t.assistant_response,t.assistant_visible_output,t.answer),error:turnErrorText(t),control:t.control_feedback_summary||'',tool:t.tool_execution_summary||'',closure:t.closure_stop_source||'',items:(t.tool_execution_records||[]).map(normalizeToolRecord).concat((t.error_records||[]).map(normalizeErrorRecord))}}
+function semanticItemKey(r){return String(r&&r.label||'')+'|'+String(r&&r.target_kind||'')+'|'+String(r&&r.item_kind||'')}
+function mergeRenderedItems(finalItems,liveItems){const finalKeys=new Set((finalItems||[]).map(semanticItemKey));return (finalItems||[]).concat((liveItems||[]).filter(i=>!(String(i&&i.status||'')==='running'&&finalKeys.has(semanticItemKey(i)))))}
+function progressItemFromPhase(m){const phase=String(m&&m.phase||'inference_waiting');if(phase==='tool_wait')return {item_id:'progress-tool-dispatch',label:'tool.dispatch',title:'Tool Dispatch',purpose:'执行模型请求的工具',status:'running',item_kind:'tool_dispatch',target_kind:'runtime_tool',output_summary:'工具执行中'};if(phase==='provider_wait'||phase==='inference_waiting'||phase==='running')return {item_id:'progress-provider-call',label:'provider.call',title:'Provider Call',purpose:'发送请求并等待模型响应',status:'running',item_kind:'provider',target_kind:'provider',output_summary:'等待模型响应'};return null}
 function bridge(){return {nativeWsSend:(payload)=>{nativeSent.push(JSON.parse(payload));return 'ok'}}}
 function sendWs(payload){const text=typeof payload==='string'?payload:JSON.stringify(payload);const b=bridge();if(b&&b.nativeWsSend)return b.nativeWsSend(text)==='ok';return false}
 function normalizeSemanticAction(a){return {item_id:a.tool_call_id||a.item_id||a.summary||'agent-action',label:a.tool_name||a.verb||'agent.action',title:a.object_label||a.object_kind||a.summary||'agent action',purpose:a.summary||'',status:a.status||'completed',output_summary:a.detail||a.summary||'',error_summary:a.failure_detail||'',item_kind:a.category||'agent_activity',target_kind:a.object_kind||''}}
@@ -39,6 +44,7 @@ function agentCardActions(c){const recent=Array.isArray(c.recent_actions)?c.rece
 function toggleAgentCard(agentId){if(!agentId)return;S.expandedAgentCards[agentId]=!S.expandedAgentCards[agentId]}
 function renderPinnedAgentCards(){return projectAgentCards().map(c=>{const id=String(c.source_id||shortAgentName(c));const expanded=!!S.expandedAgentCards[id];return {id,name:shortAgentName(c),kind:agentStatusKind(c),expanded,summary:String(c.current_activity||c.summary||''),waiting:String(c.waiting_detail||''),failure:String(c.failure_detail||''),actions:agentCardActions(c)}})}
 function upsertItem(id,m){if(!id)return;const by=S.itemByClientId[id]||(S.itemByClientId[id]={});const itemId=schema(m,'item_id');const prev=by[itemId]||{};const item=Object.assign({},prev,m,{item_id:itemId,label:schema(m,'label'),title:schema(m,'title'),purpose:schema(m,'purpose'),status:schema(m,'status')});by[itemId]=item;logKv('ui_item_upsert',{client:id,item:itemId,status:item.status,label:item.label})}
+function upsertProgressItem(id,m){const item=progressItemFromPhase(m);if(item)upsertItem(id,item)}
 function consumeItems(id){const by=S.itemByClientId[id]||{};delete S.itemByClientId[id];return Object.values(by)}
 function bindSession(id){S.currentSessionId=id; sendWs({type:'session.bind',session_id:id})}
 function createNewSession(){S.pendingNewSession=true;const ok=sendWs({type:'session.command',command:'/new'});if(!ok)S.pendingNewSession=false;return ok}
@@ -64,27 +70,25 @@ function onWs(m){
     case 'activity.cards.snapshot': {S.activityCards=m.snapshot||m.cards||m; return;}
     case 'protocol.error': return;
     case 'turn.started': {const id=m.client_message_id||''; if(id){S.turnStateByClientId[id]=m;updatePending(id,'waiting','running')} setRuntimeState('running'); return;}
-    case 'turn.progress': {const id=m.client_message_id||''; updatePending(id,'waiting',m.phase||'inference_waiting'); return;}
+    case 'turn.progress': {const id=m.client_message_id||''; updatePending(id,'waiting',m.phase||'inference_waiting'); if(id)upsertProgressItem(id,m); return;}
     case 'turn.item.started':
     case 'turn.item.delta':
     case 'turn.item.completed':
     case 'turn.item.failed': {const id=m.client_message_id||''; upsertItem(id,m); return;}
     case 'turn.completed': {setRuntimeState(m.status==='failed'?'failed':'ok'); logKv('ui_turn_completed',{client:m.client_message_id||'',status:String(m.status||'')}); return;}
     case 'turn.trace_event': {const id=m.client_message_id||''; if(id){(S.traceByClientId[id]??=[]).push(m)} return;}
-    case 'turn.rendered': {const id=m.client_message_id||''; clearPending(id,'turn.rendered'); const t=toTurn(m); if(id){t.items=t.items.concat(consumeItems(id)); delete S.turnStateByClientId[id];} if(id&&S.traceByClientId[id]){t.control=(t.control||'')+';trace_events='+String(S.traceByClientId[id].length); delete S.traceByClientId[id];} S.turns.push(t); return;}
+    case 'turn.rendered': {const id=m.client_message_id||''; clearPending(id,'turn.rendered'); const t=toTurn(m); if(id){t.items=mergeRenderedItems(t.items||[],consumeItems(id)); delete S.turnStateByClientId[id];} if(id&&S.traceByClientId[id]){t.control=(t.control||'')+';trace_events='+String(S.traceByClientId[id].length); delete S.traceByClientId[id];} S.turns.push(t); return;}
     default: return;
   }
 }
-function itemLabelOf(r){return String((r&&r.label)||(r&&r.tool_name)||'').trim()}
-function itemKindOf(r){return String((r&&r.item_kind)||(r&&r.tool_kind)||'').trim()}
-function isInternalItem(r){const label=itemLabelOf(r);const kind=itemKindOf(r);if(label==='provider.call'||label==='reasoning.stop'||label==='session.list')return true;if(kind==='framework_tool')return true;if(String(r&&r.target_kind||'')==='provider')return true;if(String(r&&r.target_kind||'')==='reasoning_closure')return true;return false}
-function visibleTimelineItems(items){const by={};for(const r of (items||[])){const key=String(r&&r.item_id||r&&r.tool_call_id||JSON.stringify(r));by[key]=Object.assign({},by[key]||{},r)}return Object.values(by).filter(r=>{const st=String(r&&r.status||'');const err=String(r&&r.error_summary||'').trim();if(err||st==='failed')return true;return !isInternalItem(r)})}
+function visibleTimelineItems(items){const by={};for(const r of (items||[])){const key=String(r&&r.item_id||r&&r.tool_call_id||JSON.stringify(r));by[key]=Object.assign({},by[key]||{},r)}return Object.values(by)}
 function renderToolTimelineFromItems(items,live){const rows=[];for(const r of visibleTimelineItems(items)){const st=schema(r,'status');const err=String(r.error_summary||'').trim();const sem={title:schema(r,'title'),label:schema(r,'label'),detail:String(r.output_summary||'').trim()||schema(r,'purpose'),status:schema(r,'status')};const dur=(r.duration_ms!=null&&st!=='running')?` · ${r.duration_ms}ms`:'';const liveMark=(live&&st==='running')?' …':'';rows.push(`<div class='tl-item'><b>${sem.title}</b> ${sem.label} ${sem.status}${dur}${liveMark}${err?` ${err}`:''}<span>${sem.detail}</span></div>`)}if(rows.length===0)return '';return `<div class='timeline'><div class='tl-head'>${live?'工具执行（实时）':'工具执行'}</div>${rows.join('')}</div>`}
 function bubbleRow(kind,body,extraClass){return `<div class='msg-row ${kind}'><div class='bubble ${extraClass||''}'>${body}</div></div>`}
 function renderUserBubble(text){return bubbleRow('user',`<div class='message-text user'>${text||''}</div>`,'bubble-user')}
 function renderAssistantBubble(text){return bubbleRow('assistant',`<div class='message-text'>${text||''}</div>`,'bubble-assistant')}
 function renderStatusBubble(text){return bubbleRow('status',`<div class='status'>${text}</div>`,'bubble-status')}
-function renderTurnThread(t){const timeline=renderToolTimelineFromItems(t.items||[],false);return `<div class='chat-group' data-turn-id='${t.turn_id||t.client_message_id||''}' data-render-style='chat-thread'>${renderUserBubble(t.u)}${renderAssistantBubble(t.a)}${timeline}</div>`}
+function renderErrorBubble(text){return bubbleRow('error',`<div class='message-text error'>${text||'请求失败'}</div>`,'bubble-error')}
+function renderTurnThread(t){const timeline=renderToolTimelineFromItems(t.items||[],false);const answer=String(t&&t.a||'').trim();const err=String(t&&t.error||'').trim();const assistant=answer?renderAssistantBubble(answer):(err?renderErrorBubble(err):renderStatusBubble('未返回内容'));return `<div class='chat-group' data-turn-id='${t.turn_id||t.client_message_id||''}' data-render-style='chat-thread'>${renderUserBubble(t.u)}${assistant}${timeline}</div>`}
 function renderLiveThread(p,items){items=items||[];const visibleLive=visibleTimelineItems(items);logOnce('live:'+p.id+':'+String(p.serverPhase||p.state||'')+':'+String(visibleLive.length),'ui_live_render',{client:p.id,phase:String(p.serverPhase||p.state||''),items:visibleLive.length});visibleLive.forEach(item=>logOnce('live-item:'+p.id+':'+String(item.item_id||'')+':'+String(item.status||''),'ui_item_render',{client:p.id,item:String(item.item_id||''),status:String(item.status||''),label:String(item.label||'')}));const phaseMap={sending:'发送中',accepted:'已送达服务器',waiting:'等待推理结果',inference_waiting:'推理中',provider_wait:'等待模型响应',tool_wait:'工具执行中',queued:'排队中',running:'处理中'};const timeline=renderToolTimelineFromItems(items,true);return `<div class='chat-group pending' data-client-message-id='${p.id||''}' data-render-style='chat-thread'>${renderUserBubble(p.text||'')}${renderStatusBubble((phaseMap[p.serverPhase]||phaseMap[p.state]||'处理中')+' …')}${timeline}</div>`}
 function renderConversationThread(force){const pending=Object.values(S.pendingById).sort((a,b)=>(a.ts||0)-(b.ts||0));pending.forEach(p=>renderLiveThread(p,Object.values(S.itemByClientId[p.id]||{})));logKv('ui_turn_rendered',{turns:S.turns.length,pending:pending.length,mode:force?'force':'append'})}
 function assert(cond,msg){if(!cond) throw new Error(msg)}
@@ -133,6 +137,9 @@ assertLogOrder([
   'ui_pending_update client=m1 phase=running',
   'ws_recv type=turn.progress client=m1 phase=tool_wait',
   'ui_pending_update client=m1 phase=tool_wait',
+  'ws_recv type=turn.item.started client=m1 phase=running item=i1 status=running',
+  'ui_item_upsert client=m1 item=i1 status=running label=provider.call',
+  'ui_item_render client=m1 item=i1 status=running label=provider.call',
   'ws_recv type=turn.item.started client=m1 phase=running item=i2 status=running',
   'ui_item_upsert client=m1 item=i2 status=running label=shell.exec',
   'ui_item_render client=m1 item=i2 status=running label=shell.exec',
@@ -154,6 +161,13 @@ assert(renderedTurnHtml.includes("data-render-style='chat-thread'"),'final turn 
 assert(renderedTurnHtml.includes('bubble-user'),'final turn must include user bubble')
 assert(renderedTurnHtml.includes('bubble-assistant'),'final turn must include assistant bubble')
 assert(!renderedTurnHtml.includes('你：'),'final turn must not use legacy Q&A label chrome')
+const restoredHistoryHtml=renderTurnThread(toTurn({turn_id:'thist',user_input:'PING-HISTORY',assistant_visible_output:'PONG-HISTORY'}))
+assert(restoredHistoryHtml.includes('bubble-assistant'),'history turn must render assistant bubble')
+assert(restoredHistoryHtml.includes('PONG-HISTORY'),'history turn must consume assistant_visible_output')
+assert(!restoredHistoryHtml.includes('未返回内容'),'history turn must not degrade to empty content')
+const renderedErrorHtml=renderTurnThread(toTurn({turn_id:'terr',client_message_id:'merr',user_input:'bad',assistant_response:'',error_records:[{tool_call_id:'err1',tool_name:'provider.call',title:'Provider Call',purpose:'send request',status:'failed',error_summary:'provider timeout'}]}))
+assert(renderedErrorHtml.includes('bubble-error'),'failed turn must render visible error bubble')
+assert(renderedErrorHtml.includes('provider timeout'),'failed turn must include error text')
 const renderedLiveHtml=renderLiveThread({id:'m-live',text:'live ask',state:'waiting',serverPhase:'tool_wait'},[{item_id:'tl-1',label:'shell.exec',title:'Execute shell',purpose:'run',status:'running'}])
 assert(renderedLiveHtml.includes('bubble-status'),'live thread must render status bubble')
 assert(renderedLiveHtml.includes('工具执行（实时）'),'live thread must keep live timeline heading')
@@ -175,8 +189,10 @@ archiveSelectedSessions()
 toggleSessionSelection('s2')
 deleteSelectedSessions()
 assert(S.turns.length===0,'deleted session view must stay cleared')
-const visible=visibleTimelineItems([{item_id:'p',label:'provider.call',title:'Provider Call',purpose:'dispatch',status:'completed',item_kind:'provider',target_kind:'provider',output_summary:'cache_hit_rate=unknown'},{item_id:'x',label:'shell.exec',title:'Execute shell',purpose:'run',status:'failed',error_summary:'command not found'}])
-assert(visible.length===1&&visible[0].label==='shell.exec','provider call must be hidden from visible timeline')
+const visible=visibleTimelineItems([{item_id:'p',label:'provider.call',title:'Provider Call',purpose:'dispatch',status:'completed',item_kind:'provider',target_kind:'provider',output_summary:'cache_hit_rate=unknown'},{item_id:'r',label:'reasoning.stop',title:'Reasoning Stop',purpose:'closure completed',status:'completed',item_kind:'reasoning',target_kind:'reasoning_closure',output_summary:'stop'},{item_id:'x',label:'shell.exec',title:'Execute shell',purpose:'run',status:'failed',error_summary:'command not found'}])
+assert(visible.length===3,'all received turn items must stay visible in timeline')
+assert(visible.some(i=>i.label==='provider.call'),'provider call item must render in visible timeline')
+assert(visible.some(i=>i.label==='reasoning.stop'),'reasoning stop item must render in visible timeline')
 visible.forEach(assertItem)
 assert(visible.some(i=>i.status==='failed' && i.error_summary==='command not found'),'failed item error missing')
 assert(S.cache.includes('default_profile'),'config snapshot not persisted')

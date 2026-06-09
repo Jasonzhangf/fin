@@ -12,7 +12,7 @@ class MobileShellLayoutContractTest {
 
     @Test
     fun webConversationStartsAtTopAndKeepsBottomInsetForNativeComposer() {
-        assertTrue(shell.contains(".content{flex:1;padding:78px 0 var(--native-input-inset,96px);display:flex;align-items:flex-start;justify-content:flex-start"))
+        assertTrue(shell.contains(".content{flex:1;min-height:0;padding:78px 0 var(--native-input-inset,96px);display:flex;align-items:flex-start;justify-content:flex-start"))
         assertTrue(shell.contains("body.native-input .content{padding-bottom:var(--native-input-inset,150px)}"))
         assertTrue(shell.contains("function setNativeInputInset(px)"))
     }
@@ -36,8 +36,9 @@ class MobileShellLayoutContractTest {
 
     @Test
     fun inputFocusMustNotHideHistoryAndPageMustRemainVerticallyScrollable() {
+        assertTrue(shell.contains(".app{width:100%;max-width:520px;margin:0 auto;height:100vh;min-height:100vh;display:flex;flex-direction:column;position:relative;overflow:hidden}"))
+        assertTrue(shell.contains(".content{flex:1;min-height:0;padding:78px 0 var(--native-input-inset,96px);display:flex;align-items:flex-start;justify-content:flex-start;flex-direction:column;text-align:left"))
         assertTrue(shell.contains(".thread-history,.thread-live{display:flex;flex-direction:column;gap:10px;width:100%;max-width:100%;flex-shrink:0}"))
-        assertTrue(shell.contains(".content{flex:1;padding:78px 0 var(--native-input-inset,96px);display:flex;align-items:flex-start;justify-content:flex-start;flex-direction:column;text-align:left"))
         assertTrue(shell.contains("overflow-y:auto;overflow-x:hidden"))
         assertTrue(shell.contains("function scrollToBottom(force){const content=document.getElementById('content');if(!content)return;const doPin=!!force||(!inputFocused()&&!S.userScrolledUp&&!S.userTouchScrolling);"))
         assertTrue(shell.contains("function setupScrollTracking(){const content=document.getElementById('content');if(!content)return;"))
@@ -48,6 +49,23 @@ class MobileShellLayoutContractTest {
         assertFalse(shell.contains("function scrollToBottom(){if(inputFocused())return;"))
         assertFalse(shell.contains("if(!inputFocused())scrollToBottom(false)"))
         assertFalse(shell.contains("window.scrollTo(0,document.body.scrollHeight)"))
+    }
+
+    @Test
+    fun turnErrorsAndLocalSendFailuresRenderInConversation() {
+        assertTrue(shell.contains("function turnErrorText(t)"))
+        assertTrue(shell.contains("function renderErrorBubble(text)"))
+        assertTrue(shell.contains(".bubble-error{background:rgba(180,35,24,.12);border-color:var(--danger);color:var(--text);border-bottom-left-radius:8px}"))
+        assertTrue(shell.contains(".message-text.error{color:var(--danger);font-weight:700}"))
+        assertTrue(shell.contains("const assistant=answer?renderAssistantBubble(answer):(err?renderErrorBubble(err):renderStatusBubble('未返回内容'))"))
+        assertTrue(shell.contains("function pushLocalErrorTurn(id,payload,error)"))
+        assertTrue(shell.contains("const showLocalError=!opts.silentLocalError"))
+        assertTrue(shell.contains("if(showLocalError)pushLocalErrorTurn('',payload,'未连接到 Daemon')"))
+        assertTrue(shell.contains("if(showLocalError)pushLocalErrorTurn('',payload,'暂无可用会话')"))
+        assertTrue(shell.contains("if(showLocalError)pushLocalErrorTurn(id,payload,'发送失败：连接不可用')"))
+        assertTrue(shell.contains("dispatchUserPayload(payload,{silentLocalError:true})"))
+        assertFalse(shell.contains("if(S.conn!=='healthy'){toast('未连接');return false;}"))
+        assertFalse(shell.contains("if(!S.currentSessionId){toast('暂无可用会话');return false;}"))
     }
 
     @Test
@@ -144,6 +162,21 @@ class MobileShellLayoutContractTest {
     }
 
     @Test
+    fun foregroundResumeMustReconnectAndRehydrateSessionTruth() {
+        assertTrue(shell.contains("function foregroundResume(){log('app.foreground_resume');try{CONFIG.load()}catch(_){}loadProfiles();renderTurns(true);connectWs('foreground')}"))
+        assertTrue(activity.contains("if(typeof foregroundResume === 'function') foregroundResume(); else if(typeof CONFIG !== 'undefined') CONFIG.load();"))
+        assertTrue(activity.indexOf("webView.webViewClient = object : WebViewClient()") < activity.indexOf("webView.loadUrl(\"file:///android_asset/mobile-shell.html\")"))
+        assertFalse(activity.contains("webView.webViewClient = WebViewClient()"))
+    }
+
+    @Test
+    fun finAutoSendIntentIsConsumedOnce() {
+        assertTrue(activity.contains("intent?.getStringExtra(\"finAutoSend\")?.takeIf { it.isNotBlank() }?.let { payload ->"))
+        assertTrue(activity.contains("intent?.removeExtra(\"finAutoSend\")"))
+        assertTrue(activity.indexOf("intent?.removeExtra(\"finAutoSend\")") < activity.indexOf("device_e2e_intent_autosend len=${'$'}{payload.length}"))
+    }
+
+    @Test
     fun mobileShellLogsTurnReceiveAndRenderProgressSemantically() {
         assertTrue(shell.contains("function logWsReceive(m)"))
         assertTrue(shell.contains("function updatePending(id,state,phase)"))
@@ -160,8 +193,20 @@ class MobileShellLayoutContractTest {
         assertTrue(shell.contains("'ui_turn_completed'"))
         assertTrue(shell.contains("'ui_turn_rendered'"))
         assertTrue(shell.contains("const visibleLive=visibleTimelineItems(live)"))
+        assertTrue(shell.contains("function progressItemFromPhase(m)"))
+        assertTrue(shell.contains("label:'provider.call',title:'Provider Call'"))
+        assertTrue(shell.contains("label:'tool.dispatch',title:'Tool Dispatch'"))
+        assertTrue(shell.contains("function firstText(){for(const v of arguments)"))
+        assertTrue(shell.contains("a:firstText(t.assistant_response,t.assistant_visible_output,t.answer)"))
+        assertTrue(shell.contains("if(id)upsertProgressItem(id,m); renderTurns(false); return;"))
+        assertTrue(shell.contains("function mergeRenderedItems(finalItems,liveItems)"))
+        assertFalse(shell.contains("function isInternalItem"))
+        assertFalse(shell.contains("label==='provider.call'"))
+        assertFalse(shell.contains("label==='reasoning.stop'"))
+        assertFalse(shell.contains("target_kind||'')==='provider'"))
+        assertFalse(shell.contains("target_kind||'')==='reasoning_closure'"))
         assertTrue(shell.contains("clearPending(id,'turn.rendered')"))
-        assertTrue(shell.contains("clearPending(id,'send_failed');renderTurns(false)"))
+        assertTrue(shell.contains("clearPending(id,'send_failed');if(showLocalError)pushLocalErrorTurn(id,payload,'发送失败：连接不可用')"))
         assertFalse(shell.contains("log(JSON.stringify(m))"))
         assertFalse(shell.contains("appendConnectionEvent(JSON.stringify"))
     }
