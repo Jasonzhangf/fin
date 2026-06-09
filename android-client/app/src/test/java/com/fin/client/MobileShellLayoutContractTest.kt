@@ -8,6 +8,7 @@ import java.io.File
 class MobileShellLayoutContractTest {
     private val shell = File("src/main/assets/mobile-shell.html").readText()
     private val activity = File("src/main/java/com/fin/client/MainActivity.kt").readText()
+    private val bridge = File("src/main/java/com/fin/client/bridge/MobileBridge.kt").readText()
 
     @Test
     fun webConversationStartsAtTopAndKeepsBottomInsetForNativeComposer() {
@@ -47,5 +48,58 @@ class MobileShellLayoutContractTest {
         assertFalse(shell.contains("function scrollToBottom(){if(inputFocused())return;"))
         assertFalse(shell.contains("if(!inputFocused())scrollToBottom(false)"))
         assertFalse(shell.contains("window.scrollTo(0,document.body.scrollHeight)"))
+    }
+
+    @Test
+    fun updateSettingsUseCanonicalDaemonUpdatesManifestPath() {
+        assertTrue(shell.contains("function canonicalUpdateManifestUrl(host,port)"))
+        assertTrue(shell.contains("return 'http://'+h+':'+p+'/updates/latest.json'"))
+        assertTrue(shell.contains("function normalizeUpdateManifestUrl(raw)"))
+        assertTrue(shell.contains("u.pathname==='/upgrade/manifest.js'||u.pathname==='/upgrade/manifest.json'"))
+        assertTrue(shell.contains("return u.origin+'/updates/latest.json'"))
+        assertTrue(shell.contains("CONFIG.set('update_manifest_url',canonicalUpdateManifestUrl(host,port))"))
+        assertTrue(shell.contains("syncDaemonInputsFromConfig();"))
+        assertFalse(shell.contains("+'/upgrade/manifest.js'"))
+        assertFalse(shell.contains("+'/upgrade/manifest.json'"))
+    }
+
+    @Test
+    fun updateBridgeDoesNotCreateFakeInternalManifest() {
+        assertTrue(bridge.contains("manifest_file_not_found"))
+        assertFalse(bridge.contains("""put("versionName", "internal")"""))
+        assertFalse(bridge.contains("""put("apkUrl", "fin-latest-debug.apk")"""))
+    }
+
+    @Test
+    fun updateBridgeFailsExplicitlyWhenApkMissingAndVerifiesManifestIntegrity() {
+        assertTrue(bridge.contains("apk_file_not_found"))
+        assertFalse(bridge.contains("context.packageCodePath"))
+        assertFalse(bridge.contains("package_code_path"))
+        assertTrue(bridge.contains("expectedSize = obj.optLong(\"size\", -1L)"))
+        assertTrue(bridge.contains("expectedSha256 = obj.optString(\"sha256\", \"\").trim().lowercase()"))
+        assertTrue(bridge.contains("apk_size_mismatch"))
+        assertTrue(bridge.contains("apk_sha256_mismatch"))
+        assertTrue(bridge.contains("MessageDigest.getInstance(\"SHA-256\")"))
+    }
+
+    @Test
+    fun installUpdateRequiresUnknownAppSourcePermissionExplicitly() {
+        assertTrue(bridge.contains("canRequestPackageInstalls()"))
+        assertTrue(bridge.contains("Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES"))
+        assertTrue(bridge.contains("install_permission_required"))
+        assertTrue(bridge.contains("settings_launched"))
+    }
+
+    @Test
+    fun nativeReconnectIgnoresReplacedSocketCallbacks() {
+        assertTrue(bridge.contains("private var nativeWsGeneration: Long = 0"))
+        assertTrue(bridge.contains("nativeWsGeneration += 1"))
+        assertTrue(bridge.contains("val generation = nativeWsGeneration"))
+        assertTrue(bridge.contains("private fun isCurrent(): Boolean = generation == nativeWsGeneration"))
+        assertTrue(bridge.contains("native_ws.stale_closed code=${'$'}code reason=${'$'}reason generation=${'$'}generation"))
+        assertTrue(bridge.contains("native_ws.stale_failure generation=${'$'}generation detail=${'$'}detail"))
+        assertTrue(bridge.contains("if (!isCurrent()) {\n                        appendConnectionEvent(\"native_ws.stale_closed"))
+        assertTrue(bridge.contains("if (!isCurrent()) {\n                        appendConnectionEvent(\"native_ws.stale_failure"))
+        assertFalse(bridge.contains("reason == \"replace_connection\""))
     }
 }

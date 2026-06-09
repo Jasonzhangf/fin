@@ -4778,3 +4778,9 @@ Tool records in first turn: 16
 - Android upgrade 404 root cause: installed app/localStorage requested `/upgrade/manifest.json`, while daemon only served `/updates/latest.json`; build script also copied APK only and skipped `latest.json`.
 - Fix: daemon now aliases `/upgrade/manifest.json` to same `latest.json`; `build-all.sh` uses `android-client/scripts/build-and-publish.sh` and syncs runtime `~/.fin/update-dist` safely when it is not already symlinked to repo update-dist.
 - Evidence: `cargo test -p fin-debug-server response_for_up -- --nocapture` passed 2 tests; daemon current `0.1.0217`, pid 80335; `/updates/latest.json`, `/upgrade/manifest.json`, `/updates/<apkUrl>`, `/updates/fin-latest-debug.apk` all return 200.
+
+## 2026-06-09 Android settings reconnect red test
+- Symptom: Settings page alternated `healthy` and `reconnecting`; mobile logs showed `native_ws.closed code=1000 reason=replace_connection` followed by reconnect.
+- Root cause: `MobileBridge.nativeWsConnect()` intentionally closed the previous socket when a new connection was requested, but the replaced socket's `onClosed/onFailure` callbacks still emitted JS state `closed/endpoint_unreachable`, so the UI scheduled reconnect even though the new socket was already healthy.
+- Fix: add `nativeWsGeneration` generation gate in `MobileBridge`; stale socket `open/message/failure/closed` callbacks now only record `native_ws.stale_*` and do not emit JS connection state.
+- Verification: Android unit tests passed with JBR `./gradlew :app:testDebugUnitTest --no-daemon`; `layout-focus-contract-smoke.mjs` and `ws-event-contract-smoke.mjs` passed; `ws://100.66.1.82:4040/ws` returned `101 + handshake.ok`; new APK `0.1.0.20260609075540` published to `~/.fin/update-dist` and served by 4040 with matching sha256.

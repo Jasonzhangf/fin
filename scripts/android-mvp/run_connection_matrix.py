@@ -32,10 +32,10 @@ async def case(name, endpoint, token='ok', project='fin', exp=0):
     (ROOT/f'{name}.log').write_text('\n'.join(out)+'\n')
 
 async def main():
-  await case('connection-happy','ws://127.0.0.1:4040')
-  await case('connection-auth-failed','ws://127.0.0.1:4040',token='bad')
-  await case('connection-protocol-mismatch','ws://127.0.0.1:4040',project='bad-protocol')
-  await case('connection-stale-token','ws://127.0.0.1:4040',exp=1)
-  await case('connection-unreachable','ws://127.0.0.1:4999')
+  await case('connection-happy','ws://127.0.0.1:4040/ws')
+  await case('connection-auth-failed','ws://127.0.0.1:4040/ws',token='bad')
+  await case('connection-protocol-mismatch','ws://127.0.0.1:4040/ws',project='bad-protocol')
+  await case('connection-stale-token','ws://127.0.0.1:4040/ws',exp=1)
+  await case('connection-unreachable','ws://127.0.0.1:4999/ws')
 
 if __name__=='__main__': asyncio.run(main())

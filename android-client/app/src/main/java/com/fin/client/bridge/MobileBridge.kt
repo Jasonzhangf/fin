@@ -3,6 +3,8 @@ package com.fin.client.bridge
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
+import android.os.Build
+import android.provider.Settings
 import android.webkit.JavascriptInterface
 import android.webkit.WebView
 import androidx.core.content.FileProvider
@@ -22,6 +24,7 @@ import java.net.InetSocketAddress
 import java.net.Proxy
 import java.net.Socket
 import java.net.URI
+import java.security.MessageDigest
 import java.time.Instant
 import android.util.Base64
 import java.util.concurrent.CountDownLatch
@@ -37,6 +40,7 @@ class MobileBridge(
     private val tag = "FinMobileBridge"
     private var webView: WebView? = null
     private var nativeWebSocket: WebSocket? = null
+    private var nativeWsGeneration: Long = 0
     private val httpClient = OkHttpClient.Builder()
         .proxy(Proxy.NO_PROXY)
         .connectTimeout(20, TimeUnit.SECONDS)
@@ -87,10 +91,19 @@ class MobileBridge(
     @JavascriptInterface
     fun nativeWsConnect(endpoint: String, token: String, project: String): String {
         return runCatching {
+            nativeWsGeneration += 1
+            val generation = nativeWsGeneration
             nativeWebSocket?.close(1000, "replace_connection")
             val request = Request.Builder().url(endpoint).build()
             nativeWebSocket = httpClient.newWebSocket(request, object : WebSocketListener() {
+                private fun isCurrent(): Boolean = generation == nativeWsGeneration
+
                 override fun onOpen(webSocket: WebSocket, response: okhttp3.Response) {
+                    if (!isCurrent()) {
+                        appendConnectionEvent("native_ws.stale_open generation=$generation")
+                        webSocket.close(1000, "stale_connection")
+                        return
+                    }
                     appendConnectionEvent("native_ws.open endpoint=$endpoint")
                     val handshake = JSONObject().apply {
                         put("type", "mobile.handshake")
@@ -103,16 +116,28 @@ class MobileBridge(
                 }
 
                 override fun onMessage(webSocket: WebSocket, text: String) {
+                    if (!isCurrent()) {
+                        appendConnectionEvent("native_ws.stale_message generation=$generation")
+                        return
+                    }
                     emitNativeWsMessage(text)
                 }
 
                 override fun onFailure(webSocket: WebSocket, t: Throwable, response: okhttp3.Response?) {
                     val detail = t.message ?: "unknown_failure"
+                    if (!isCurrent()) {
+                        appendConnectionEvent("native_ws.stale_failure generation=$generation detail=$detail")
+                        return
+                    }
                     appendConnectionEvent("native_ws.failure endpoint=$endpoint detail=$detail")
                     emitNativeWsState("endpoint_unreachable:$detail")
                 }
 
                 override fun onClosed(webSocket: WebSocket, code: Int, reason: String) {
+                    if (!isCurrent()) {
+                        appendConnectionEvent("native_ws.stale_closed code=$code reason=$reason generation=$generation")
+                        return
+                    }
                     appendConnectionEvent("native_ws.closed code=$code reason=$reason")
                     emitNativeWsState("closed")
                 }
@@ -132,6 +157,7 @@ class MobileBridge(
 
     @JavascriptInterface
     fun nativeWsClose(): String {
+        nativeWsGeneration += 1
         nativeWebSocket?.close(1000, "client_close")
         nativeWebSocket = null
         return "ok"
@@ -169,18 +195,7 @@ class MobileBridge(
         return runCatching {
             if (manifestUrl == "internal://latest") {
                 val src = File(context.filesDir, "app_update_dist/latest.json")
-                if (!src.exists()) {
-                    val fallback = JSONObject().apply {
-                        put("versionName", "internal")
-                        put("versionCode", 1)
-                        put("apkUrl", "fin-latest-debug.apk")
-                        put("channel", "internal")
-                    }.toString()
-                    src.parentFile?.let { parent ->
-                        if (!parent.exists()) parent.mkdirs()
-                    }
-                    src.writeText(fallback)
-                }
+                if (!src.exists()) return """{"ok":false,"error":"manifest_file_not_found"}"""
                 val body = src.readText()
                 if (body.isBlank()) return """{"ok":false,"error":"empty_manifest"}"""
                 return """{"ok":true,"saved":"${src.absolutePath}"}"""
@@ -225,14 +240,16 @@ class MobileBridge(
             val obj = JSONObject(latest.readText())
             val apkUrlRaw = obj.optString("apkUrl", "")
             if (apkUrlRaw.isBlank()) return """{"ok":false,"error":"apk_url_missing"}"""
+            val expectedSize = obj.optLong("size", -1L)
+            val expectedSha256 = obj.optString("sha256", "").trim().lowercase()
             val resolved = if (apkUrlRaw.startsWith("http://") || apkUrlRaw.startsWith("https://") || apkUrlRaw.startsWith("file://")) {
                 apkUrlRaw
             } else {
                 if (baseUrl == "internal://files/") {
                     "internal://files/$apkUrlRaw"
                 } else {
-                val base = if (baseUrl.endsWith("/")) baseUrl else "$baseUrl/"
-                "$base$apkUrlRaw"
+                    val base = if (baseUrl.endsWith("/")) baseUrl else "$baseUrl/"
+                    "$base$apkUrlRaw"
                 }
             }
             Log.i(tag, "downloadUpdateApk resolved=$resolved")
@@ -244,17 +261,12 @@ class MobileBridge(
                 val srcInInternal = File(dir, fileName)
                 if (srcInInternal.exists()) {
                     srcInInternal.copyTo(apk, overwrite = true)
-                    return """{"ok":true,"apk":"${apk.absolutePath}","size":${apk.length()},"source":"internal_file"}"""
+                    return validateDownloadedApk(apk, expectedSize, expectedSha256, "internal_file")
                 }
                 val srcTmp = File("/data/local/tmp/$fileName")
                 if (srcTmp.exists()) {
                     srcTmp.copyTo(apk, overwrite = true)
-                    return """{"ok":true,"apk":"${apk.absolutePath}","size":${apk.length()},"source":"tmp_file"}"""
-                }
-                val installedApk = File(context.packageCodePath)
-                if (installedApk.exists()) {
-                    installedApk.copyTo(apk, overwrite = true)
-                    return """{"ok":true,"apk":"${apk.absolutePath}","size":${apk.length()},"source":"package_code_path"}"""
+                    return validateDownloadedApk(apk, expectedSize, expectedSha256, "tmp_file")
                 }
                 return """{"ok":false,"error":"apk_file_not_found"}"""
             }
@@ -265,7 +277,7 @@ class MobileBridge(
                 if (!dir.exists()) dir.mkdirs()
                 val apk = File(dir, "fin-latest-debug.apk")
                 src.copyTo(apk, overwrite = true)
-                return """{"ok":true,"apk":"${apk.absolutePath}","size":${apk.length()}}"""
+                return validateDownloadedApk(apk, expectedSize, expectedSha256, "file")
             }
             val req = Request.Builder().url(resolved).build()
             httpClient.newCall(req).execute().use { resp ->
@@ -279,7 +291,7 @@ class MobileBridge(
                 val apk = File(dir, "fin-latest-debug.apk")
                 FileOutputStream(apk).use { it.write(bytes) }
                 Log.i(tag, "downloadUpdateApk ok apk=${apk.absolutePath} size=${apk.length()}")
-                """{"ok":true,"apk":"${apk.absolutePath}","size":${apk.length()}}"""
+                validateDownloadedApk(apk, expectedSize, expectedSha256, "http")
             }
         }.getOrElse {
             Log.e(tag, "downloadUpdateApk failed", it)
@@ -293,6 +305,16 @@ class MobileBridge(
         return runCatching {
             val apk = File(context.filesDir, "app_update_dist/fin-latest-debug.apk")
             if (!apk.exists()) return """{"ok":false,"error":"apk_missing"}"""
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && !context.packageManager.canRequestPackageInstalls()) {
+                val settingsIntent = Intent(
+                    Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES,
+                    Uri.parse("package:${context.packageName}")
+                ).apply {
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                }
+                context.startActivity(settingsIntent)
+                return """{"ok":false,"error":"install_permission_required","settings_launched":true}"""
+            }
             val uri: Uri = FileProvider.getUriForFile(
                 context,
                 "${context.packageName}.fileprovider",
@@ -310,6 +332,34 @@ class MobileBridge(
             Log.e(tag, "installDownloadedApk failed", it)
             """{"ok":false,"error":"${it.message?.replace("\"","'") ?: "unknown"}"}"""
         }
+    }
+
+    private fun validateDownloadedApk(apk: File, expectedSize: Long, expectedSha256: String, source: String): String {
+        if (!apk.exists()) return """{"ok":false,"error":"apk_file_not_found"}"""
+        val actualSize = apk.length()
+        if (expectedSize >= 0L && actualSize != expectedSize) {
+            return """{"ok":false,"error":"apk_size_mismatch","expected":$expectedSize,"actual":$actualSize}"""
+        }
+        if (expectedSha256.isNotBlank()) {
+            val actualSha256 = sha256Hex(apk)
+            if (actualSha256 != expectedSha256) {
+                return """{"ok":false,"error":"apk_sha256_mismatch","expected":"$expectedSha256","actual":"$actualSha256"}"""
+            }
+        }
+        return """{"ok":true,"apk":"${apk.absolutePath}","size":$actualSize,"source":"$source"}"""
+    }
+
+    private fun sha256Hex(file: File): String {
+        val digest = MessageDigest.getInstance("SHA-256")
+        file.inputStream().use { input ->
+            val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
+            while (true) {
+                val read = input.read(buffer)
+                if (read <= 0) break
+                digest.update(buffer, 0, read)
+            }
+        }
+        return digest.digest().joinToString("") { "%02x".format(it) }
     }
 
     @JavascriptInterface

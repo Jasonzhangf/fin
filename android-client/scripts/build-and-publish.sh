@@ -6,11 +6,16 @@ BUILD_TS=$(date +%Y%m%d%H%M%S)
 VERSION_NAME="0.1.0.${BUILD_TS}"
 VERSION_CODE=$(date +%s)
 APK_OUT="app/build/outputs/apk/debug/app-debug.apk"
+DIST_DIR="${FIN_UPDATE_DIST:-${HOME}/.fin/update-dist}"
 
 if [ -x ./gradlew ]; then
-  ./gradlew :app:assembleDebug
+  ./gradlew :app:assembleDebug \
+    -PfinVersionName="${VERSION_NAME}" \
+    -PfinVersionCode="${VERSION_CODE}"
 elif command -v gradle >/dev/null 2>&1; then
-  gradle :app:assembleDebug
+  gradle :app:assembleDebug \
+    -PfinVersionName="${VERSION_NAME}" \
+    -PfinVersionCode="${VERSION_CODE}"
 else
   echo "gradle/gradlew not found" >&2
   exit 2
@@ -22,14 +27,14 @@ if [ ! -f "$APK_OUT" ]; then
 fi
 
 APK_NAME="fin-${VERSION_NAME}.apk"
-mkdir -p update-dist
-cp "$APK_OUT" "update-dist/$APK_NAME"
-cp "$APK_OUT" "update-dist/fin-latest-debug.apk"
+mkdir -p "$DIST_DIR"
+cp "$APK_OUT" "$DIST_DIR/$APK_NAME"
+cp "$APK_OUT" "$DIST_DIR/fin-latest-debug.apk"
 
-SHA=$(shasum -a 256 "update-dist/$APK_NAME" | awk '{print $1}')
-SIZE=$(wc -c < "update-dist/$APK_NAME" | tr -d ' ')
+SHA=$(shasum -a 256 "$DIST_DIR/$APK_NAME" | awk '{print $1}')
+SIZE=$(wc -c < "$DIST_DIR/$APK_NAME" | tr -d ' ')
 
-cat > update-dist/latest.json <<JSON
+cat > "$DIST_DIR/latest.json" <<JSON
 {
   "versionName": "${VERSION_NAME}",
   "versionCode": ${VERSION_CODE},
@@ -44,7 +49,7 @@ cat > update-dist/latest.json <<JSON
 }
 JSON
 
-echo "published: update-dist/$APK_NAME"
-echo "manifest: update-dist/latest.json"
+echo "published: $DIST_DIR/$APK_NAME"
+echo "manifest: $DIST_DIR/latest.json"
 
 echo "update distribution is served by daemon business plane (/updates/* on daemon HTTP port)"

@@ -50,6 +50,7 @@ description: Runtime/event debugging workflow for fin. Use for multi-agent, cros
 - 先检查 snapshot 写入是否 bounded（latest overwrite + recent window），避免 debug 本身制造资源问题
 - debug 服务默认以前台命令运行；定位问题时不要通过后台悬挂进程维持状态
 - live `4040` 若行为与源码不一致，先判 stale binary / stale process；重编译后精确重启当前 PID，再继续怀疑 HTTP/provider 路径
+- Android 设置页若出现 `healthy/reconnecting` 交替，先查 `runtime/logs/mobile/connection-events.logl` 是否有 `native_ws.closed reason=replace_connection`；这通常是 App 重复建连后旧 socket callback 误上报 `closed`，应在移动端 bridge 用 generation gate 忽略 stale callbacks，而不是改服务端 `/ws`。
 - provider 请求失败时，先看结构化 reqwest 诊断字段（stage/attempt/endpoint/timeout/connect/request/body/decode/source-chain），不要只凭一句 `request failed` 下结论
 - live provider run 若被外层短 wall-clock timeout 截断，先判定为 harness timeout 设计错误；不要把“wrapper 杀进程”误诊成 provider/tool/runtime 失败
 - 若 live provider E2E 中模型确实调了工具、tool records 也完整，但综合内容仍泛化，优先查 `sessions/.../provider/recent_provider_requests.json` 的 rendered input：先确认 follow-up round 是否真正看到了 executed tool 的 stdout/receipt/artifact refs，而不是只看到了粗粒度 `Recent tool activity`

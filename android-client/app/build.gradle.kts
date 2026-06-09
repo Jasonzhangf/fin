@@ -9,12 +9,18 @@ android {
   namespace = "com.fin.client"
   compileSdk = 34
 
+  val finVersionCode = providers.gradleProperty("finVersionCode")
+    .map(String::toInt)
+    .getOrElse(1)
+  val finVersionName = providers.gradleProperty("finVersionName")
+    .getOrElse("0.1.0")
+
   defaultConfig {
     applicationId = "com.fin.client"
     minSdk = 26
     targetSdk = 34
-    versionCode = 1
-    versionName = "0.1.0"
+    versionCode = finVersionCode
+    versionName = finVersionName
     testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
   }
 

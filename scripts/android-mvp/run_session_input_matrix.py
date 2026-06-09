@@ -7,12 +7,12 @@ def w(name, lines): (ROOT/f'{name}.log').write_text('\n'.join(lines)+'\n')
 async def run():
   # session recovery simulation (same session rebound)
   lines=[]
-  async with websockets.connect('ws://127.0.0.1:4040') as ws:
+  async with websockets.connect('ws://127.0.0.1:4040/ws') as ws:
     await ws.send(json.dumps({'type':'mobile.handshake','token':'ok','project':'fin'})); await ws.recv()
     await ws.send(json.dumps({'type':'mobile.subscribe','topics':['session']})); msg=json.loads(await ws.recv())
     sid=msg['sessions'][0]['session_id']; lines.append(f'session_list_sid={sid}')
     await ws.send(json.dumps({'type':'session.bind','session_id':sid})); ack=json.loads(await ws.recv()); lines.append(f'bind_ack={ack.get("session_id")}')
-  async with websockets.connect('ws://127.0.0.1:4040') as ws:
+  async with websockets.connect('ws://127.0.0.1:4040/ws') as ws:
     await ws.send(json.dumps({'type':'mobile.handshake','token':'ok','project':'fin'})); await ws.recv()
     await ws.send(json.dumps({'type':'mobile.subscribe','topics':['session']})); msg=json.loads(await ws.recv())
     sid2=msg['sessions'][0]['session_id']; lines.append(f'reconnect_sid={sid2}')
@@ -22,7 +22,7 @@ async def run():
   # input dedupe + turn render
   lines=[]
   dedup=set()
-  async with websockets.connect('ws://127.0.0.1:4040') as ws:
+  async with websockets.connect('ws://127.0.0.1:4040/ws') as ws:
     await ws.send(json.dumps({'type':'mobile.handshake','token':'ok','project':'fin'})); await ws.recv()
     await ws.send(json.dumps({'type':'mobile.subscribe','topics':['session']}))
     await ws.recv(); await ws.recv(); await ws.recv(); await ws.recv()
