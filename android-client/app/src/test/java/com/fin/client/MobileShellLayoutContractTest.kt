@@ -142,4 +142,27 @@ class MobileShellLayoutContractTest {
         assertTrue(bridge.contains("if (!isCurrent()) {\n                        appendConnectionEvent(\"native_ws.stale_failure"))
         assertFalse(bridge.contains("reason == \"replace_connection\""))
     }
+
+    @Test
+    fun mobileShellLogsTurnReceiveAndRenderProgressSemantically() {
+        assertTrue(shell.contains("function logWsReceive(m)"))
+        assertTrue(shell.contains("function updatePending(id,state,phase)"))
+        assertTrue(shell.contains("function clearPending(id,reason)"))
+        assertTrue(shell.contains("function logOnce(key,prefix,kv)"))
+        assertTrue(shell.contains("logWsReceive(m);"))
+        assertTrue(shell.contains("'ws_recv'"))
+        assertTrue(shell.contains("'ui_pending_add'"))
+        assertTrue(shell.contains("'ui_pending_update'"))
+        assertTrue(shell.contains("'ui_pending_clear'"))
+        assertTrue(shell.contains("'ui_live_render'"))
+        assertTrue(shell.contains("'ui_item_upsert'"))
+        assertTrue(shell.contains("'ui_item_render'"))
+        assertTrue(shell.contains("'ui_turn_completed'"))
+        assertTrue(shell.contains("'ui_turn_rendered'"))
+        assertTrue(shell.contains("const visibleLive=visibleTimelineItems(live)"))
+        assertTrue(shell.contains("clearPending(id,'turn.rendered')"))
+        assertTrue(shell.contains("clearPending(id,'send_failed');renderTurns(false)"))
+        assertFalse(shell.contains("log(JSON.stringify(m))"))
+        assertFalse(shell.contains("appendConnectionEvent(JSON.stringify"))
+    }
 }
