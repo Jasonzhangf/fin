@@ -9,6 +9,9 @@ use std::{fs, io::Write, net::TcpStream, path::Path, sync::mpsc, thread, time::D
 #[path = "websocket_frame.rs"]
 mod frame;
 use frame::{read_frame, write_close_frame, write_text_frame};
+#[path = "websocket_mobile_items.rs"]
+mod mobile_items;
+use mobile_items::{mobile_tool_item_frame, mobile_tool_records};
 
 const WS_GUID: &str = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11";
 
@@ -237,6 +240,7 @@ fn handle_user_input_streaming(
                 },
             );
             let _ = tx.send(render_user_input_result(
+                &runtime_home,
                 &client_message_id,
                 &payload,
                 result,
@@ -262,6 +266,7 @@ fn handle_user_input_streaming(
                 }
                 Err(mpsc::RecvTimeoutError::Disconnected) => {
                     let frames = render_user_input_result(
+                        &runtime_home,
                         &parsed.client_message_id,
                         &parsed.payload,
                         Err("chat handler disconnected".into()),
@@ -307,6 +312,7 @@ fn handle_user_input_blocking(
         .to_string(),
     ];
     frames.extend(render_user_input_result(
+        runtime_home,
         client_message_id,
         &payload,
         result,
@@ -326,6 +332,7 @@ fn user_input_payload(message: &Value) -> String {
 }
 
 fn render_user_input_result(
+    runtime_home: &Path,
     client_message_id: &str,
     payload: &str,
     result: Result<crate::ChatSendResponse, String>,
@@ -337,8 +344,14 @@ fn render_user_input_result(
     } else {
         "failed"
     };
-    let rendered = match result {
-        Ok(response) => json!({
+    let (item_frames, rendered) = match result {
+        Ok(response) => {
+            let tool_records = mobile_tool_records(runtime_home).unwrap_or_default();
+            let item_frames = tool_records
+                .iter()
+                .map(|record| mobile_tool_item_frame(client_message_id, &turn_id, record))
+                .collect::<Vec<_>>();
+            let rendered = json!({
             "type":"turn.rendered",
             "client_message_id":client_message_id,
             "turn_id": turn_id,
@@ -347,10 +360,14 @@ fn render_user_input_result(
             "control_feedback_summary": response.response_kind,
             "tool_execution_summary": "",
             "closure_stop_source": "websocket",
-            "tool_execution_records": [],
+            "tool_execution_records": tool_records,
             "error_records": []
-        }),
-        Err(error) => json!({
+            })
+            .to_string();
+            (item_frames, rendered)
+        }
+        Err(error) => {
+            let rendered = json!({
             "type":"turn.rendered",
             "client_message_id":client_message_id,
             "turn_id": turn_id,
@@ -369,11 +386,14 @@ fn render_user_input_result(
                 "status": "failed",
                 "error_summary": error
             }]
-        }),
-    }
-    .to_string();
+            })
+            .to_string();
+            (Vec::new(), rendered)
+        }
+    };
     if include_completed {
-        vec![
+        let mut frames = item_frames;
+        frames.extend([
             json!({
                 "type": "turn.completed",
                 "client_message_id": client_message_id,
@@ -382,9 +402,12 @@ fn render_user_input_result(
             })
             .to_string(),
             rendered,
-        ]
+        ]);
+        frames
     } else {
-        vec![rendered]
+        let mut frames = item_frames;
+        frames.push(rendered);
+        frames
     }
 }
 
@@ -442,6 +465,9 @@ fn read_session_history(runtime_home: &Path) -> Result<Vec<Value>, DebugDataErro
     serde_json::from_str(&body).map_err(DebugDataError::Serialize)
 }
 
+#[cfg(test)]
+#[path = "websocket_mobile_items_tests.rs"]
+mod mobile_items_tests;
 #[cfg(test)]
 #[path = "websocket_unit_tests.rs"]
 mod tests;

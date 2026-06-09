@@ -29,6 +29,8 @@ mod tests_activity_cards;
 mod tests_updates;
 #[cfg(test)]
 mod tests_websocket;
+#[cfg(test)]
+mod tests_websocket_mobile_route;
 
 pub use chat_api::{ChatSendRequest, ChatSendResponse, DebugBinding};
 
