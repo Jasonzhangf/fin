@@ -18,6 +18,10 @@ impl SessionExecutionPaths {
         self.session_dir.join("control/execution_state.json")
     }
 
+    pub(crate) fn execution_lease_path(&self) -> PathBuf {
+        self.session_dir.join("control/execution_lease.json")
+    }
+
     pub(crate) fn pause_checkpoint_path(&self) -> PathBuf {
         self.session_dir.join("control/pause_checkpoint.json")
     }

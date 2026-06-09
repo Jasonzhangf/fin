@@ -12,6 +12,7 @@ use std::{
 pub(crate) struct HttpRequest {
     pub(crate) method: String,
     pub(crate) path: String,
+    pub(crate) headers: Vec<(String, String)>,
     pub(crate) body: Vec<u8>,
 }
 
@@ -19,7 +20,17 @@ pub(crate) struct HttpRequest {
 pub(crate) struct HttpResponse {
     pub(crate) status_code: u16,
     pub(crate) content_type: &'static str,
+    pub(crate) content_length: usize,
     pub(crate) body: Vec<u8>,
+}
+
+pub(crate) fn head_response(response: &HttpResponse) -> HttpResponse {
+    HttpResponse {
+        status_code: response.status_code,
+        content_type: response.content_type,
+        content_length: response.content_length,
+        body: Vec::new(),
+    }
 }
 
 pub(crate) fn read_http_request(stream: &mut TcpStream) -> Result<HttpRequest, DebugDataError> {
@@ -92,11 +103,24 @@ pub(crate) fn read_http_request(stream: &mut TcpStream) -> Result<HttpRequest, D
             .collect()
     };
 
+    let method = parts.next().unwrap_or("GET").to_string();
+    let path = parts.next().unwrap_or("/").to_string();
+    let headers = parse_headers(head);
+
     Ok(HttpRequest {
-        method: parts.next().unwrap_or("GET").to_string(),
-        path: parts.next().unwrap_or("/").to_string(),
+        method,
+        path,
+        headers,
         body: body_bytes,
     })
+}
+
+pub(crate) fn header_value<'a>(request: &'a HttpRequest, name: &str) -> Option<&'a str> {
+    request
+        .headers
+        .iter()
+        .find(|(header, _)| header.eq_ignore_ascii_case(name))
+        .map(|(_, value)| value.as_str())
 }
 
 fn find_header_end(buffer: &[u8]) -> Option<usize> {
@@ -113,6 +137,16 @@ fn parse_content_length(head: &str) -> usize {
                 .flatten()
         })
         .unwrap_or(0)
+}
+
+fn parse_headers(head: &str) -> Vec<(String, String)> {
+    head.lines()
+        .skip(1)
+        .filter_map(|line| {
+            let (name, value) = line.split_once(':')?;
+            Some((name.trim().to_string(), value.trim().to_string()))
+        })
+        .collect()
 }
 
 fn has_expect_continue(head: &str) -> bool {
@@ -148,10 +182,7 @@ pub(crate) fn write_http_response(
     };
     let header = format!(
         "HTTP/1.1 {} {}\r\nContent-Type: {}\r\nContent-Length: {}\r\nCache-Control: no-store\r\nConnection: close\r\n\r\n",
-        response.status_code,
-        status_text,
-        response.content_type,
-        response.body.len()
+        response.status_code, status_text, response.content_type, response.content_length
     );
     stream
         .write_all(header.as_bytes())
@@ -165,9 +196,11 @@ pub(crate) fn write_http_response(
 
 pub(crate) fn json_response(status_code: u16, value: &impl Serialize) -> HttpResponse {
     let body = serde_json::to_vec_pretty(value).unwrap_or_else(|_| b"{}".to_vec());
+    let content_length = body.len();
     HttpResponse {
         status_code,
         content_type: "application/json; charset=utf-8",
+        content_length,
         body,
     }
 }
@@ -176,6 +209,7 @@ pub(crate) fn html_response(body: &str) -> HttpResponse {
     HttpResponse {
         status_code: 200,
         content_type: "text/html; charset=utf-8",
+        content_length: body.len(),
         body: body.as_bytes().to_vec(),
     }
 }
@@ -184,6 +218,7 @@ pub(crate) fn javascript_response(body: &str) -> HttpResponse {
     HttpResponse {
         status_code: 200,
         content_type: "application/javascript; charset=utf-8",
+        content_length: body.len(),
         body: body.as_bytes().to_vec(),
     }
 }
@@ -192,17 +227,22 @@ pub(crate) fn css_response(body: &str) -> HttpResponse {
     HttpResponse {
         status_code: 200,
         content_type: "text/css; charset=utf-8",
+        content_length: body.len(),
         body: body.as_bytes().to_vec(),
     }
 }
 
 pub(crate) fn file_response(path: &Path, content_type: &'static str) -> HttpResponse {
     match fs::read(path) {
-        Ok(body) => HttpResponse {
-            status_code: 200,
-            content_type,
-            body,
-        },
+        Ok(body) => {
+            let content_length = body.len();
+            HttpResponse {
+                status_code: 200,
+                content_type,
+                content_length,
+                body,
+            }
+        }
         Err(err) if err.kind() == std::io::ErrorKind::NotFound => not_found_response(
             path.file_name()
                 .and_then(|name| name.to_str())
@@ -213,32 +253,41 @@ pub(crate) fn file_response(path: &Path, content_type: &'static str) -> HttpResp
 }
 
 pub(crate) fn bad_request_response(message: &str) -> HttpResponse {
+    let body = format!("bad request: {message}\n").into_bytes();
+    let content_length = body.len();
     HttpResponse {
         status_code: 400,
         content_type: "text/plain; charset=utf-8",
-        body: format!("bad request: {message}\n").into_bytes(),
+        content_length,
+        body,
     }
 }
 
 pub(crate) fn not_found_response(path: &str) -> HttpResponse {
+    let body = format!("not found: {path}\n").into_bytes();
+    let content_length = body.len();
     HttpResponse {
         status_code: 404,
         content_type: "text/plain; charset=utf-8",
-        body: format!("not found: {path}\n").into_bytes(),
+        content_length,
+        body,
     }
 }
 
 pub(crate) fn internal_error_response(message: &str) -> HttpResponse {
+    let body = format!("internal error: {message}\n").into_bytes();
+    let content_length = body.len();
     HttpResponse {
         status_code: 500,
         content_type: "text/plain; charset=utf-8",
-        body: format!("internal error: {message}\n").into_bytes(),
+        content_length,
+        body,
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{find_header_end, has_expect_continue, parse_content_length};
+    use super::{find_header_end, has_expect_continue, parse_content_length, parse_headers};
 
     #[test]
     fn parse_content_length_reads_case_insensitive_header() {
@@ -257,5 +306,13 @@ mod tests {
     fn find_header_end_locates_separator() {
         let raw = b"POST / HTTP/1.1\r\nHost: localhost\r\n\r\nbody";
         assert_eq!(find_header_end(raw), Some(32));
+    }
+
+    #[test]
+    fn parse_headers_preserves_upgrade_headers() {
+        let head = "GET /ws HTTP/1.1\r\nUpgrade: websocket\r\nSec-WebSocket-Key: abc\r\n\r\n";
+        let headers = parse_headers(head);
+        assert!(headers.contains(&("Upgrade".into(), "websocket".into())));
+        assert!(headers.contains(&("Sec-WebSocket-Key".into(), "abc".into())));
     }
 }

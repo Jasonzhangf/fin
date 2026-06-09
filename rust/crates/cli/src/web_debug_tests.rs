@@ -270,6 +270,78 @@ fn slash_new_creates_and_binds_new_session() {
 }
 
 #[test]
+fn orphaned_running_state_without_active_lease_recovers_before_user_input() {
+    let home = temp_runtime_home();
+    ensure_runtime_home_layout(&home).expect("runtime home should init");
+    let system = map_system_config(&sample_user_toml()).expect("system config");
+    let handler =
+        CliDebugActionHandler::new(sample_user_toml(), system).expect("handler should build");
+    let session_dir = home.join("sessions/2026/04/session-orphaned-running");
+    fs::create_dir_all(session_dir.join("conversation")).expect("conversation dir");
+    fs::create_dir_all(session_dir.join("control")).expect("control dir");
+    fs::create_dir_all(session_dir.join("queue")).expect("queue dir");
+    write_file(&session_dir.join("conversation/messages.json"), b"[]").expect("messages");
+    write_file(&session_dir.join("queue/pending_inputs.json"), b"[]").expect("pending");
+    write_file(
+        &session_dir.join("control/execution_state.json"),
+        br#"{
+  "state_id":"exec-state-op-orphaned",
+  "session_id":"session-orphaned-running",
+  "task_id":"task-orphaned-running",
+  "status":"running",
+  "active_turn_id":"turn-op-orphaned",
+  "active_step_id":"step-op-orphaned-01-context_build",
+  "resume_from_step_id":null,
+  "pending_input_count":0,
+  "accepts_user_input":false,
+  "reason":"active closure running",
+  "updated_at":"2026-04-18T08:10:02+08:00"
+}"#,
+    )
+    .expect("state");
+    write_file(
+        &home.join("runtime/current/last_run.json"),
+        br#"{
+  "session_id":"session-orphaned-running",
+  "task_id":"task-orphaned-running",
+  "session_messages_path":"sessions/2026/04/session-orphaned-running/conversation/messages.json"
+}"#,
+    )
+    .expect("last_run");
+
+    let response = handler
+        .send_message_internal_with_provider(
+            &home,
+            ChatSendRequest {
+                message: "run after orphaned state".into(),
+                input_kind: None,
+                attachments: Vec::new(),
+            },
+            &static_provider(&handler.system),
+        )
+        .expect("orphaned running should not queue forever");
+
+    assert_eq!(response.response_kind, "assistant_message");
+    assert!(response.answer.contains("run after orphaned state"));
+    let pending =
+        fs::read_to_string(session_dir.join("queue/pending_inputs.json")).expect("pending after");
+    assert_eq!(pending.trim(), "[]");
+    let state_path = response
+        .binding
+        .session_messages_path
+        .as_deref()
+        .and_then(|relative| relative.strip_suffix("conversation/messages.json"))
+        .map(|prefix| {
+            home.join(prefix.trim_end_matches('/'))
+                .join("control/execution_state.json")
+        })
+        .unwrap_or_else(|| home.join("runtime/current/current_execution_state.json"));
+    let state_after = fs::read_to_string(state_path).expect("state after");
+    assert!(!state_after.contains("\"status\": \"running\""));
+    assert!(!state_after.contains("active closure running"));
+}
+
+#[test]
 fn paused_session_runs_parallel_user_message_and_restores_paused_state() {
     let home = temp_runtime_home();
     ensure_runtime_home_layout(&home).expect("runtime home should init");

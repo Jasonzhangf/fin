@@ -7,6 +7,7 @@ fn response_for_session_events_defaults_to_live_stream_only() {
         &HttpRequest {
             method: "GET".into(),
             path: API_SESSION_EVENTS_PATH.into(),
+            headers: Vec::new(),
             body: Vec::new(),
         },
         &runtime_home,
@@ -26,6 +27,7 @@ fn response_for_session_event_archive_index_includes_segment_lists() {
         &HttpRequest {
             method: "GET".into(),
             path: API_SESSION_EVENT_ARCHIVE_INDEX_PATH.into(),
+            headers: Vec::new(),
             body: Vec::new(),
         },
         &runtime_home,
@@ -49,6 +51,7 @@ fn response_for_session_event_segment_reads_local_archive() {
             path: format!(
                 "{API_SESSION_EVENTS_SEGMENT_PATH}?tier=local&segment=segment-000001.jsonl"
             ),
+            headers: Vec::new(),
             body: Vec::new(),
         },
         &runtime_home,
@@ -69,6 +72,7 @@ fn response_for_session_event_segment_reads_cold_archive() {
             path: format!(
                 "{API_SESSION_EVENTS_SEGMENT_PATH}?tier=cold&segment=segment-000002.jsonl"
             ),
+            headers: Vec::new(),
             body: Vec::new(),
         },
         &runtime_home,
@@ -114,6 +118,7 @@ pub(super) fn assert_runtime_artifact_response(
         &HttpRequest {
             method: "GET".into(),
             path: api_path.into(),
+            headers: Vec::new(),
             body: Vec::new(),
         },
         &runtime_home,

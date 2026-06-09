@@ -7,8 +7,12 @@ use fin_runtime::{
     ClosureRun, clear_waiting_state_if_due, dequeue_pending_input, failed_state, new_pending_input,
     paused_state, resumed_state, running_state, state_after_run, state_with_pending_count,
 };
+use serde::Deserialize;
 use serde_json::json;
-use std::path::Path;
+use std::{
+    path::Path,
+    process::{Command as ProcessCommand, Stdio},
+};
 
 #[path = "execution_state_support.rs"]
 mod support;
@@ -19,6 +23,13 @@ use support::{
 
 const PENDING_INPUT_LIMIT: usize = 64;
 
+#[derive(Debug, Clone, Deserialize)]
+struct ActiveExecutionLease {
+    pid: u32,
+    #[serde(default)]
+    status: String,
+}
+
 pub(crate) fn load_execution_state(
     runtime_home: &Path,
     binding: &DebugBinding,
@@ -26,7 +37,49 @@ pub(crate) fn load_execution_state(
     let Some(paths) = resolve_paths(runtime_home, binding)? else {
         return Ok(None);
     };
+    let state = read_json_if_exists::<ExecutionStateRecord>(&paths.execution_state_path())?;
+    let Some(state) = state else {
+        return Ok(None);
+    };
+    if state.status != "running" {
+        return Ok(Some(state));
+    }
+    if execution_has_active_lease(runtime_home, &paths)? {
+        return Ok(Some(state));
+    }
+    let now = crate::time::local_timestamp_now();
+    let reason = "orphaned running state recovered: active execution lease missing or dead";
+    let operation_id = state
+        .active_turn_id
+        .as_deref()
+        .and_then(|turn| turn.strip_prefix("turn-"))
+        .unwrap_or("orphaned-running");
+    mark_failed(runtime_home, binding, operation_id, &now, reason)?;
     read_json_if_exists(&paths.execution_state_path())
+}
+
+fn execution_has_active_lease(
+    runtime_home: &Path,
+    paths: &support::SessionExecutionPaths,
+) -> Result<bool, CliError> {
+    let session_lease = read_json_if_exists::<ActiveExecutionLease>(&paths.execution_lease_path())?;
+    let runtime_lease = read_json_if_exists::<ActiveExecutionLease>(
+        &runtime_home.join("runtime/current/current_execution_lease.json"),
+    )?;
+    Ok([session_lease, runtime_lease]
+        .into_iter()
+        .flatten()
+        .any(|lease| lease.status == "active" && process_alive(lease.pid)))
+}
+
+fn process_alive(pid: u32) -> bool {
+    ProcessCommand::new("kill")
+        .args(["-0", &pid.to_string()])
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status()
+        .map(|status| status.success())
+        .unwrap_or(false)
 }
 
 pub(crate) fn load_pending_inputs(

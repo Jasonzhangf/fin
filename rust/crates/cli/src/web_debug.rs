@@ -27,6 +27,7 @@ use fin_config::SystemConfig;
 use fin_contracts::InputAttachmentSummary;
 use fin_debug_server::{ChatSendRequest, ChatSendResponse, DebugActionHandler, DebugBinding};
 use fin_provider::{InferenceProvider, ProviderFacade};
+use serde_json::{Value, json};
 use std::path::Path;
 
 #[path = "web_debug_turns.rs"]
@@ -257,6 +258,38 @@ impl DebugActionHandler for CliDebugActionHandler {
     ) -> Result<ChatSendResponse, String> {
         self.send_message_internal(runtime_home, request)
             .map_err(|err| err.to_string())
+    }
+
+    fn read_config_snapshot(&self, _runtime_home: &Path) -> Result<Value, String> {
+        let default_profile = self.system.default_provider.clone();
+        let profiles: Vec<Value> = self
+            .system
+            .providers
+            .values()
+            .map(|provider| {
+                json!({
+                    "profile_name": provider.name,
+                    "provider": provider.name,
+                    "protocol": provider_protocol_label(provider.protocol),
+                    "model": provider.model,
+                    "active": provider.name == default_profile
+                })
+            })
+            .collect();
+        Ok(json!({
+            "type": "config.snapshot",
+            "status": "ok",
+            "default_profile": default_profile,
+            "profiles": profiles,
+            "active_thinking_effort": null
+        }))
+    }
+}
+
+fn provider_protocol_label(protocol: fin_config::ProviderProtocol) -> &'static str {
+    match protocol {
+        fin_config::ProviderProtocol::OpenAiCompatible => "open-ai-compatible",
+        fin_config::ProviderProtocol::AnthropicWire => "anthropic-wire",
     }
 }
 

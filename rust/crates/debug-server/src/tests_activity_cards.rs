@@ -37,6 +37,7 @@ fn activity_cards_route_returns_snapshot_json() {
         &HttpRequest {
             method: "GET".into(),
             path: API_ACTIVITY_CARDS_PATH.into(),
+            headers: Vec::new(),
             body: Vec::new(),
         },
         &runtime_home,

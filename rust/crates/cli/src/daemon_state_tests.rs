@@ -47,6 +47,25 @@ fn write_file(path: &Path, bytes: &[u8]) {
     fs::write(path, bytes).expect("write");
 }
 
+fn write_active_lease(home: &Path, session_dir: &Path) {
+    let pid = std::process::id();
+    let lease = format!(
+        r#"{{
+  "pid": {pid},
+  "status": "active",
+  "updated_at": "2026-04-20T12:00:00+08:00"
+}}"#
+    );
+    write_file(
+        &session_dir.join("control/execution_lease.json"),
+        lease.as_bytes(),
+    );
+    write_file(
+        &home.join("runtime/current/current_execution_lease.json"),
+        lease.as_bytes(),
+    );
+}
+
 fn system() -> SystemConfig {
     let mut system = ConfigMapper::map_user_to_system(&UserConfig {
         default_provider: "openai".into(),
@@ -287,6 +306,7 @@ fn refresh_attached_daemon_state_materializes_runtime_pickup_summary() {
   "updated_at":"2026-04-20T12:00:00+08:00"
 }"#,
     );
+    write_active_lease(&home, &project_session_dir);
     write_file(
         &project_session_dir.join("tasks/registry/task-fin-1.json"),
         br#"{

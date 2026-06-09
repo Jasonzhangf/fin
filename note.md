@@ -5208,3 +5208,257 @@ per 原则 "新规则若无法被 gate 验证，默认不算硬边界"）这是�
 - Commit: 889ca78 docs(inventory): activity_cards migrated to domain dir, update inventory map (Layer 3)
 - Push failed: same LibreSSL SSL_connect: SSL_ERROR_SYSCALL in connection to github.com:443
 - This is the 3rd consecutive push failure on same TLS error
+
+## 2026-06-07 daemon/APK install-state check
+
+- User asked whether new global daemon was installed/restarted and whether new APK can upgrade in-app.
+- Evidence:
+  - Global symlink: `~/.fin/bin/fin -> ~/.fin/install/current/bin/fin`; current version dir is `~/.fin/install/versions/0.1.0219`.
+  - Current install manifest: `build_version=0.1.0219`, `git_sha=a026b51`, `created_at=1780324161`.
+  - Repo HEAD now is `5b0d764` (2026-06-07 closeout docs), so global install is not HEAD.
+  - Running daemon: PID `51726`, command `/Users/fanzhang/.fin/bin/fin daemon-run /Users/fanzhang/.fin/config/user.toml`, started `2026-06-01 22:29:41`.
+  - `curl http://127.0.0.1:4040/updates/latest.json` returns manifest for `0.1.0.20260601221608`; GET APK by manifest and by `fin-latest-debug.apk` returns 9,975,109 bytes with sha256 `c56f9d2de413c68d2c2fe2a98783f111f66c114b9906963759ec3fbc468b705b`, matching manifest.
+  - `aapt dump badging ~/.fin/update-dist/fin-latest-debug.apk` shows package `com.fin.client`, APK internal `versionCode=1`, `versionName=0.1.0`.
+  - `apksigner verify --print-certs` shows debug cert SHA-256 `ecd63a2c2070970735cc079b0bb090427ca0b59200da0ebc07c80b50a1dfffda`.
+  - No adb device connected during check.
+- Conclusion:
+  - Current daemon is globally installed and running, but it is the 2026-06-01 `0.1.0219`/`a026b51` build, not current HEAD/new 2026-06-07 code.
+  - APK download/update serving path is reachable and hash-correct, but in-app upgrade cannot be declared safe because manifest versionCode `1780323368` disagrees with APK internal versionCode `1`; Android install upgrade also requires installed app package/signing cert to match, which could not be verified without a connected device.
+
+## 2026-06-08 build/install/APK publish attempt
+
+- User requested build/install, daemon restart, APK into upgrade directory.
+- Rust/source changes in this turn:
+  - `install-dev` staged smoke now prepares isolated `~/.fin/harness/runs/test-install-<build>/` layout.
+  - `install-dev` now generates `user.test.toml` via `scripts/generate-test-user-toml.py` before staged-binary smoke, then mirrors smoke summary back to main `~/.fin/harness/reports/<build>/summary.json` for receipt-index.
+  - Formalize/closed-loop tests from prior work remain in tree and are included in full `fin-cli` test pass.
+- Rust verification:
+  - `cargo fmt --all --manifest-path rust/Cargo.toml -- --check`: passed.
+  - `cargo test -p fin-cli --manifest-path rust/Cargo.toml`: 152 passed.
+  - `cargo build -p fin-cli --release --manifest-path rust/Cargo.toml`: passed.
+- Global install status:
+  - `install-dev` was not promoted/restarted because live provider path is blocked.
+  - `~/.fin/config/user.toml` still points at `https://api.example.invalid/v1`, confirmed DNS failure.
+  - `user.live-glm51.toml` probe reached provider but returned HTTP 402 insufficient funds.
+  - `user.live-deepseek.toml`, OpenRouter, and OpenAI direct probes timed out during TLS/connect; local proxy `127.0.0.1:7890` was not listening.
+  - Current global install remains `~/.fin/install/versions/0.1.0219`, manifest `git_sha=a026b51`; daemon remains PID `51726` started `2026-06-01 22:29:41` and was not restarted.
+- APK publish:
+  - Built Android client from temp worktree `/tmp/fin-android-build-a026b51` at commit `a026b51`.
+  - Temporary build fix injected Gradle properties into APK internal versionCode/versionName and published to `~/.fin/update-dist`.
+  - Published APK: `~/.fin/update-dist/fin-0.1.0.20260608003000.apk` and `fin-latest-debug.apk`.
+  - Manifest: `~/.fin/update-dist/latest.json`, `versionCode=1780849800`, `versionName=0.1.0.20260608003000`, sha256 `806018b26db5f758e392b39500a2eefeb9b18a7e35ef8bb9fe641740f5e031e8`, size `9926497`.
+  - `aapt dump badging` confirms APK internal package `com.fin.client`, versionCode `1780849800`, versionName `0.1.0.20260608003000`.
+  - `apksigner verify --print-certs` confirms debug cert SHA-256 `ecd63a2c2070970735cc079b0bb090427ca0b59200da0ebc07c80b50a1dfffda`, same as previous upgrade-dir APKs.
+  - `curl http://127.0.0.1:4040/updates/latest.json` served the new manifest from the still-running old daemon.
+- Upgrade conclusion:
+  - Direct app upgrade is now safe from previous upgrade-dir debug APKs because package/signature match and new internal versionCode is greater than prior internal `1`.
+  - Cannot verify a real device install without connected adb device.
+
+### 2026-06-08 canonical install-dev retry evidence
+
+- Ran `rust/target/release/fin-cli install-dev ~/.fin/config/user.toml`; it failed at staged installed smoke, so no promote/restart occurred.
+- New candidate build: `0.1.10002`; staged binary created under `~/.fin/install/staged/0.1.10002/bin/fin`.
+- Install log: `~/.fin/logs/install/0.1.10002.log`; source validation/cargo tests completed and script generated `~/.fin/harness/runs/test-install-0-1-10002/user.test.toml`.
+- Regression log: `~/.fin/logs/regression/0.1.10002.log`; `config-check#1` passed, `runtime-demo#1..#3` failed with `missing provider credential env 'ALI_CODINGPLAN_KEY'`.
+- Current install remained `~/.fin/install/versions/0.1.0219`; daemon PID `51726` was not restarted.
+
+### 2026-06-08 Android upgrade path fix and app review
+
+- Root cause from screenshot: installed app requested legacy `http://100.66.1.82:4040/upgrade/manifest.js`; live daemon only served canonical `/updates/latest.json`, so legacy path returned `http_404`.
+- Rust debug-server fix:
+  - Added canonical update constants and update file routing in `rust/crates/debug-server/src/routes.rs`.
+  - New source behavior serves `runtime_home/update-dist/latest.json` from `/updates/latest.json`, `/upgrade/manifest.json`, and `/upgrade/manifest.js`; APKs under `/updates/*.apk` are served with Android APK MIME and HEAD support.
+  - Added `rust/crates/debug-server/src/tests_updates.rs`; `cargo fmt --all --manifest-path rust/Cargo.toml -- --check` passed; `cargo test -p fin-debug-server --manifest-path rust/Cargo.toml -- --nocapture` passed, 35 tests.
+- Android app fixes in temp worktree `/tmp/fin-android-build-a026b51/android-client`:
+  - Settings now canonicalize daemon upgrade manifest to `/updates/latest.json`, normalize stale `/upgrade/manifest.js` and `/upgrade/manifest.json`, and sync daemon host/port inputs from saved config.
+  - Bridge no longer fabricates fake `internal://latest` manifest.
+  - Bridge no longer copies the currently installed APK as a fake downloaded upgrade if the expected APK is missing.
+  - Bridge validates downloaded APK `size` and `sha256` from manifest before reporting success.
+  - Bridge detects Android 8+ unknown-app-source permission and opens system settings, returning `install_permission_required` instead of pretending install launched.
+  - FileProvider and `REQUEST_INSTALL_PACKAGES` are present; provider/model/effort settings are read-only display.
+- Android verification:
+  - `JAVA_HOME=/opt/homebrew/opt/openjdk@17 PATH="/opt/homebrew/opt/openjdk@17/bin:$PATH" ./gradlew testDebugUnitTest --rerun-tasks` passed.
+  - `./scripts/build-and-publish.sh` published latest APK to `~/.fin/update-dist`.
+  - Final manifest: `versionName=0.1.0.20260608092240`, `versionCode=1780881760`, `apkUrl=fin-0.1.0.20260608092240.apk`, `sha256=524fc6e29a0ac09163154010179a9efda5a6bff777f744d7919a0a6ffe81a30e`, `size=9943137`.
+  - Manifest size/sha match APK; `fin-latest-debug.apk` is byte-equal to named APK.
+  - `aapt dump badging` confirms package `com.fin.client`, versionCode `1780881760`, versionName `0.1.0.20260608092240`.
+  - `apksigner verify --print-certs` confirms debug cert SHA-256 `ecd63a2c2070970735cc079b0bb090427ca0b59200da0ebc07c80b50a1dfffda`.
+  - `curl` download from `http://127.0.0.1:4040/updates/fin-0.1.0.20260608092240.apk` and `http://100.66.1.82:4040/updates/fin-0.1.0.20260608092240.apk` matched local APK size/sha.
+- Global install/restart status:
+  - `install-dev` failed before promote due provider credential failure; latest attempts `0.1.10004` and `0.1.10005` reached installed smoke and `runtime-demo#1..#3` returned HTTP 401 `invalid_api_key` / `invalid access token or token expired` from `https://coding.dashscope.aliyuncs.com/apps/anthropic/v1/messages`.
+  - Independent `scripts/probe-anthropic-provider.py` against generated test config also returned HTTP 401 with the same provider error.
+  - Therefore current global install remains `~/.fin/install/versions/0.1.0219` (`git_sha=a026b51`) and daemon PID `51726` remains the 2026-06-01 process; it was not restarted.
+  - Live `GET /updates/latest.json` on `127.0.0.1:4040` and `100.66.1.82:4040` serves the final new manifest, because old daemon already serves canonical update dist.
+  - Live `GET /upgrade/manifest.js` still returns 404 until the Rust debug-server patch is promoted and daemon is restarted after fixing provider credentials.
+  - `adb devices` showed no connected device, so real Android installer UI/app-to-app upgrade was not device-verified.
+
+### 2026-06-08 continue execution evidence
+
+- Temporary harness for the patched `fin_debug_server::serve_debug_mvp` was verified on `127.0.0.1:4055`:
+  - `GET /upgrade/manifest.js`: 200, returned final manifest `versionName=0.1.0.20260608092240`.
+  - `GET /upgrade/manifest.json`: 200, returned the same final manifest.
+  - `GET /updates/latest.json`: 200, returned the same final manifest.
+  - After sending Ctrl-C to the harness session, `curl http://127.0.0.1:4055/updates/latest.json` failed to connect, confirming the temporary server was no longer serving.
+- Live global daemon remained old:
+  - PID `51726`, command `/Users/fanzhang/.fin/bin/fin daemon-run /Users/fanzhang/.fin/config/user.toml`, started `2026-06-01 22:29:41`.
+  - `~/.fin/install/current -> ~/.fin/install/versions/0.1.0219`.
+  - Live `GET http://127.0.0.1:4040/updates/latest.json` returned final manifest `0.1.0.20260608092240`.
+  - Live `GET http://127.0.0.1:4040/upgrade/manifest.js` still returned 404, proving the patched debug-server has not been globally promoted/restarted.
+- Provider gate remains the install blocker:
+  - Current shell has `ANTHROPIC_API_KEY` and `ANTHROPIC_AUTH_TOKEN`, but no `ALI_CODINGPLAN_KEY`.
+  - Generated install smoke config requires `api_key_env = "ALI_CODINGPLAN_KEY"` against `https://coding.dashscope.aliyuncs.com/apps/anthropic` model `qwen3.6-plus`.
+  - Mapping `ANTHROPIC_AUTH_TOKEN` or `ANTHROPIC_API_KEY` to the Coding Plan Anthropic endpoint with `x-api-key`, `Authorization: Bearer`, or both still returned HTTP 401 `invalid_api_key`.
+  - Tested `coding.dashscope.aliyuncs.com`, `coding-intl.dashscope.aliyuncs.com`, `dashscope.aliyuncs.com`, and `dashscope-intl.aliyuncs.com` Anthropic-compatible endpoints; none succeeded with existing env keys.
+  - Therefore a standard `install-dev`/promote/restart remains blocked until a valid Coding Plan/DashScope credential is available; no manual symlink promotion was performed.
+
+### 2026-06-08 MiniMax provider correction and strict tool_result fix
+
+- Jason corrected provider truth: Ali Coding Plan is canceled; install/provider smoke must use current multi-provider registry, with MiniMax as the active provider.
+- MiniMax config truth:
+  - default generated test provider config is now `~/.rcc/provider/minimax/config.v2.toml`.
+  - provider `minimax`, protocol `anthropic-wire`, model `MiniMax-M3`.
+  - `scripts/probe-anthropic-provider.py --user-toml /tmp/fin-minimax-user.toml --report /tmp/fin-minimax-probe.json` returned HTTP 200 / `OK`.
+- Standard `install-dev` then reached MiniMax installed smoke but failed with HTTP 400: `invalid params, tool result's tool id(tool-provider-call-op-test-install-0-1-10006) not found (2013)`.
+- Root cause:
+  - provider-native Anthropic tool use ids such as `toolu_native_session_list` must be echoed exactly as `tool_result.tool_use_id`.
+  - Runtime dispatcher had to preserve `ModelToolCall.tool_call_id` when creating `ToolExecutionRecord`.
+  - Provider request builder also had to avoid sending framework-only `provider.call` records as provider `tool_results`; those records remain internal session truth and are only rendered in prompt history, not sent as Anthropic `tool_result` blocks.
+- Fix:
+  - `rust/crates/runtime/src/tools/dispatch.rs` now uses native `call.tool_call_id` when present.
+  - `rust/crates/runtime/src/closure_runtime_rounds_tools.rs` now builds provider `tool_results` only from matching agent/model tool records for the current `prior_tool_calls`.
+  - Added mounted regression `runtime_followup_round_preserves_native_provider_tool_use_ids` in `rust/crates/runtime/src/round_loop_runtime_tests.rs`.
+- Verification:
+  - Red test first failed with `tool-provider-call-op-native-tool-use-id` vs expected `toolu_native_session_list`, proving the MiniMax failure shape.
+  - After fix: `cargo test -p fin-runtime --manifest-path rust/Cargo.toml runtime_followup_round_preserves_native_provider_tool_use_ids -- --nocapture` passed.
+  - `cargo fmt --all --manifest-path rust/Cargo.toml -- --check` passed.
+  - `python3 scripts/check-code-line-limit.py` passed.
+  - `cargo test -p fin-runtime --manifest-path rust/Cargo.toml -- --nocapture` passed: 148 tests.
+
+### 2026-06-08 scheduler test isolation before MiniMax install retry
+
+- `install-dev` candidate `0.1.10007` failed in source validation because `fin-cli` full tests saw scheduler JSON parse/state leakage, while targeted tests passed.
+- Root cause scope: test isolation, not provider/runtime tool_result semantics. `scheduler_driver_tests::temp_runtime_home()` used fixed session ids under a path that only included pid+nanos, which was not robust enough under concurrent full test execution.
+- Fix: scheduler tests now generate temp runtime homes with pid + Rust thread id + nanos + atomic sequence and reuse helper setup for session dirs/submitted task registry to keep file length below the 500-line gate.
+- Verification:
+  - `cargo fmt --all --manifest-path rust/Cargo.toml -- --check` passed.
+  - `python3 scripts/check-code-line-limit.py` passed; `scheduler_driver_tests.rs` is 494 lines.
+  - `cargo test -p fin-cli --manifest-path rust/Cargo.toml scheduler_driver_tests -- --nocapture` passed: 4 tests.
+  - `cargo test -p fin-cli --manifest-path rust/Cargo.toml -- --nocapture` passed: 152 tests.
+
+### 2026-06-08 install flow stale release binary root cause
+
+- Standard `rust/target/release/fin-cli install-dev ~/.fin/config/user.toml` candidate `0.1.10008` passed source validation but failed MiniMax installed smoke with the old `tool_result` id mismatch.
+- Evidence: install log staged source `/Volumes/extension/code/fin/rust/target/release/fin-cli`; `ls -l` showed both staged `bin/fin` and `rust/target/release/fin-cli` timestamped `2026-06-08 09:06`, before the MiniMax native `tool_use.id` runtime fix.
+- Root cause: `build_dev` ran source validation but then staged `env::current_exe()` / the pre-existing release executable without building a fresh release binary. Source tests verified current source, while installed smoke executed stale binary.
+- Fix: normal `build-dev` / `install-dev` now runs `cargo build -p fin-cli --release` after source validation and stages the freshly built `rust/target/release/fin-cli`. The test-only source executable override remains explicit.
+- Rule updated in `docs/architecture/15-install-build-regression-flow.md` and `skills/fin-build-versioning/SKILL.md`: unified build flow must stage the current flow's release artifact, never the old running binary.
+
+### 2026-06-08 context peer-state test isolation
+
+- `install-dev` candidate `0.1.10009` failed at source validation `cargo test` before staging.
+- Failed test: `context::view_tests_peer_state::context_view_builder_loads_ensured_local_worker_peers_from_runtime_state`, asserting `active_peer_ids.len()` was `1` instead of `2`.
+- Root cause: `view_tests_peer_state.rs` and `view_tests_rich_blocks.rs` were included twice (`context/mod.rs` direct module plus `view_tests.rs` path module), while peer-state test used fixed `/tmp/fin-context-peer-state-test`; full-test concurrency could see duplicate/dirty runtime state.
+- Fix: removed duplicate direct module declarations from `context/mod.rs`; peer-state test now uses unique temp runtime home with pid + thread id + nanos + atomic sequence.
+- Verification:
+  - `cargo fmt --all --manifest-path rust/Cargo.toml -- --check` passed.
+  - `python3 scripts/check-code-line-limit.py` passed.
+  - `cargo test -p fin-runtime --manifest-path rust/Cargo.toml context_view_builder_loads_ensured_local_worker_peers_from_runtime_state -- --nocapture` passed.
+  - `cargo test -p fin-runtime --manifest-path rust/Cargo.toml -- --nocapture` passed: 146 tests.
+
+### 2026-06-08 daemon session discovery fix
+
+- Live daemon restart after install 0.1.10010 failed because `headless_daemon_support::session_dirs()` scanned every child of `~/.fin/sessions` as `year/month/session`; valid `sessions/meta/session-cli-session.json` archive index was treated as a session directory and caused `Not a directory (os error 20)`.
+- Fix: daemon session discovery now only scans numeric `YYYY/MM` directory buckets and only returns real session directories; `sessions/meta/*.json` is ignored as metadata.
+- Regression added: `headless_daemon_ignores_session_meta_index_files`; targeted `cargo test -p fin-cli ... headless_daemon_ignores_session_meta_index_files` passed.
+
+### 2026-06-08 MiniMax Anthropic-wire duplicate/local tool id follow-up
+
+- Install candidate `0.1.10011` promoted after bounded retry, but regression log exposed repeated MiniMax HTTP 400 protocol errors:
+  - `tool result's tool id(call_function_lxq91ajomkrq_1) not found (2013)` on runtime-demo#1.
+  - `duplicate tool_call id: tool-call-exec_command (2013)` on debug-projection#1.
+- Root cause scope: Anthropic-wire local text `<fin_tool_calls>` id generation. Parser left text tool calls without ids, and later conversion generated `tool-call-{tool_name}`, so multiple calls to the same tool in one assistant message could produce duplicate provider `tool_use.id`. Provider-native ids are already preserved separately.
+- Fix in progress: parser now assigns stable per-call ids `tool-call-<index>-<sanitized-tool-name>` for text tool calls; provider wire regression locks unique assistant tool_use ids and matching user tool_result ids.
+- Targeted verification passed: `cargo test -p fin-runtime ... model_output_parser_assigns_unique_ids_to_text_tool_calls`; `cargo test -p fin-provider ... anthropic_messages_keep_unique_tool_use_ids_and_matching_results`.
+- Resume check: full `fin-runtime` currently has one expectation-only failure in `model_output_runtime_tests.rs`, because the old assertion still expects round-prefixed ids like `-r01-00` / `-r02-00`; the new parser contract is per-provider-output stable local ids `tool-call-00-<sanitized-tool-name>`.
+- Config check: install smoke already generated MiniMax config, but live `~/.fin/config/user.toml` still points at an invalid single `openai` provider; before global daemon restart the live user config must be regenerated from RCC provider truth with MiniMax active.
+- Live provider registry was regenerated from RCC configs: `~/.fin/config/user.toml` now has `default_provider=minimax` and providers `minimax,mimo,deepseek,openrouter`; `~/.fin/bin/fin config-check ~/.fin/config/user.toml` reported `providers=4`, and real MiniMax probe returned HTTP 200 / `OK`.
+- First `install-dev` after live config regeneration failed before build with `invalid config: provider_path target 'openai' is not present in providers`; root cause is stale `~/.fin/config/system.toml` policy provider paths being retained while `load_effective_system_config` replaces providers from user config. Startup overrides should remain system-owned, but provider_path must be reconciled to valid user-owned provider targets.
+- `install-dev` was retried after config loader source fix but still failed with stale `provider_path target 'openai'`, proving `rust/target/release/fin-cli` itself had not been rebuilt yet; standard install must be invoked from a freshly rebuilt release binary after source-only CLI fixes.
+- Live 4040 validation after daemon restart failed because no HTTP server was listening. Starting `~/.fin/bin/fin web-debug ~/.fin/config/user.toml 4040` exited immediately after printing `web debug serving` with `channel connectivity error: missing qqbot credentials for built-in peer start`; upgrade HTTP serving must not be coupled to optional QQBot credential availability.
+
+### 2026-06-08 web-debug QQBot bridge optional-start fix
+
+- Live 4040 upgrade validation is blocked because `web-debug` calls `BuiltinQqbotBridge::start(...)?` directly; missing QQBot credentials becomes `channel connectivity error` and aborts HTTP serving.
+- Owning fix: make `web_debug_entry.rs` use the same `maybe_start_builtin_qqbot_bridge` path as headless daemon, preserving `channel.peer.bridge_start_skipped` event for missing credentials while allowing HTTP/debug/upgrade service to serve.
+
+- Verification after web-debug optional bridge fix:
+  - `cargo test -p fin-cli --manifest-path rust/Cargo.toml web_debug_entry::tests::web_debug_skips_optional_qqbot_bridge_when_credentials_are_missing -- --nocapture` passed.
+  - `cargo fmt --all --manifest-path rust/Cargo.toml -- --check` passed after formatting.
+  - `python3 scripts/check-code-line-limit.py` passed.
+  - `cargo test -p fin-cli --manifest-path rust/Cargo.toml -- --nocapture` passed: 155 tests.
+
+- Install/promote evidence:
+  - `cargo build -p fin-cli --release --manifest-path rust/Cargo.toml` passed.
+  - `rust/target/release/fin-cli install-dev ~/.fin/config/user.toml` promoted `0.1.10013`.
+  - `~/.fin/install/current -> ~/.fin/install/versions/0.1.10013`; `~/.fin/bin/fin -> ~/.fin/install/current/bin/fin`.
+  - sha256 for release/staged/global binary: `5abff53e510b2ed67d08cb68278b7ae08b148b1938ecfdf2cb239e84ae2dc4ca`.
+  - Regression `0.1.10013.log`: `config-check` default_provider=minimax providers=4; `runtime-demo` provider=minimax model=MiniMax-M3 passed; `debug-projection` completed with warnings=[].
+  - `receipt-index.json`: install_smoke status passed.
+- Daemon restart evidence:
+  - old daemon PID 16975 stopped via `~/.fin/bin/fin stop ~/.fin/config/user.toml` and exited.
+  - `~/.fin/bin/fin start ~/.fin/config/user.toml` started daemon; pidfile now points to 78500 and runtime log shows heartbeat pid=78500.
+
+- Live 4040 check after 0.1.10013:
+  - `GET /upgrade/manifest.js`, `/upgrade/manifest.json`, `/updates/latest.json` returned 200 with final Android manifest.
+  - `GET /updates/fin-0.1.0.20260608092240.apk` downloaded 9,943,137 bytes and sha256 `524fc6e29a0ac09163154010179a9efda5a6bff777f744d7919a0a6ffe81a30e`.
+  - `HEAD /updates/fin-0.1.0.20260608092240.apk` returned Content-Type APK but Content-Length 0; root cause is `head_response` clearing body while `write_http_response` derives length from body.len(). Fix in progress: explicit `HttpResponse.content_length`, HEAD preserves source length.
+
+- Install candidate `0.1.10014` after HEAD content-length fix entered installed `runtime-demo` smoke and waited in provider HTTP send.
+  - Process evidence: staged runtime-demo PID 53545 under install PID 87790.
+  - `sample 53545` stack showed `fin_provider::ProviderFacade::execute_prepared -> reqwest::blocking::RequestBuilder::send -> Client::execute`, waiting in semaphore/kevent; not local file loop.
+  - Independent `scripts/probe-anthropic-provider.py --user-toml ~/.fin/config/user.toml --expected-model MiniMax-M3` returned HTTP 200 / OK during the wait, so credentials/provider registry are valid.
+  - Current promoted version remains `0.1.10013` until `install-dev` completes; do not promote `0.1.10014` manually.
+
+- External upgrade path check after 0.1.10014:
+  - Local `127.0.0.1:4040` fully passed, including legacy manifest and APK HEAD/GET.
+  - `100.66.1.82:4040` failed to connect because `web-debug` binds only `127.0.0.1:{port}` in `cli.rs`.
+  - Fix in progress: default WebDebug bind address changed to `0.0.0.0:{port}` with crate test `web_debug_bind_addr_listens_on_all_interfaces_for_device_upgrade`.
+
+### 2026-06-08 hidden input vs result-history boundary
+
+- `is_hidden_session_source` hides framework directive input from user-visible conversation; it must not be reused as the result-history suppress predicate.
+- Pure control-plane observation sources (`framework.resume_checkpoint*`, `project.resume_checkpoint*`, `framework.startup.*`, `daemon_headless*`) suppress normal session result history.
+- Managed execution sources (`project.resume`, `project.assignment`, `framework.owner_loop.*`, `framework.task_kickoff.*`, `framework.assignment_runtime`) keep assistant/tool/event/session truth while hiding directive text.
+- Regression evidence:
+  - `cargo test -p fin-runtime --manifest-path rust/Cargo.toml source_visibility -- --nocapture` passed.
+  - `cargo test -p fin-cli --manifest-path rust/Cargo.toml web_debug_tests_runtime_assignment_resume::assignment_runtime_resume_executes_worker_turn_and_submits_task -- --nocapture` passed.
+  - `cargo test -p fin-cli --manifest-path rust/Cargo.toml project_runtime_resume -- --nocapture` passed.
+  - `cargo test -p fin-cli --manifest-path rust/Cargo.toml -- --nocapture` passed: 157 tests.
+
+### 2026-06-08 final provider/install/upgrade runtime evidence
+
+- Provider truth: `~/.fin/config/user.toml` now reports `default_provider=minimax providers=4`; final MiniMax probe report `/tmp/fin-minimax-probe-final.json` returned HTTP 200, model `MiniMax-M3`, output `OK`.
+- Global install truth: `~/.fin/install/current -> ~/.fin/install/versions/0.1.10017`, `previous -> 0.1.10014`; release/global binary sha256 `d6f30492aba57fa2dfd3bc22f024e775d9fd67ecc20e80a1a353fac8aedd91f4`.
+- Daemon truth: headless daemon PID `97555`, parent PID `1`, started `2026-06-08 13:16:57`, command `/Users/fanzhang/.fin/bin/fin daemon-run /Users/fanzhang/.fin/config/user.toml`.
+- Web-debug truth: shell `nohup`/background `4040` process exited after parent shell ended, so durable external upgrade service is now LaunchAgent `com.fin.web-debug.4040`; current PID `17002`, parent PID `1`, command `/Users/fanzhang/.fin/bin/fin web-debug /Users/fanzhang/.fin/config/user.toml 4040`, pid file `~/.fin/runtime/pids/web-debug-4040.pid`, log `~/.fin/runtime/diagnostics/web-debug-4040.log`.
+- Upgrade endpoint truth after LaunchAgent restart: local and external `GET /updates/latest.json`, legacy `GET /upgrade/manifest.js`, and `HEAD/GET /updates/fin-0.1.0.20260608092240.apk` passed; local/external downloaded APK sha256 both matched `524fc6e29a0ac09163154010179a9efda5a6bff777f744d7919a0a6ffe81a30e`, size `9943137`, and legacy/canonical manifests matched.
+- Android review truth: temp source `/tmp/fin-android-build-a026b51/android-client` normalizes stale manifest paths, validates APK size/sha256, uses FileProvider + `REQUEST_INSTALL_PACKAGES`, and returns `install_permission_required` for Android 8+ unknown-source permission. `adb devices` showed no connected device, so real installer UI remains unverified.
+
+### 2026-06-08 Android `/ws` connection failure closeout
+
+- User screenshot proved Android main connection failed with `Expected HTTP 101 response but was '404 Not Found'` on `ws://100.66.1.82:4040/ws`; previous validation only covered HTTP upgrade endpoints and missed the App's WebSocket control path.
+- Owning fix: `fin-debug-server` now parses HTTP headers, routes `GET /ws` to a real WebSocket upgrade handler, computes RFC `Sec-WebSocket-Accept`, and handles Android messages `mobile.handshake`, `mobile.subscribe`, `session.bind`, and `session.user_input`. Multi-event responses are sent as separate text frames because Android parses one JSON object per `onmessage`.
+- Evidence gates: `cargo fmt --all --manifest-path rust/Cargo.toml -- --check`, `python3 scripts/check-code-line-limit.py`, and `cargo test -p fin-debug-server --manifest-path rust/Cargo.toml -- --nocapture` passed with 41 tests.
+- Global install promoted `0.1.10019`; `current -> ~/.fin/install/versions/0.1.10019`, `previous -> 0.1.10018`, global binary sha256 `1286ff65b4d8d6581c9cac4bbd9941493f90607c95ec6ca17aadb6109536d032`.
+- Scoped restart evidence: `com.fin.web-debug.4040` PID `3754`, pid file `~/.fin/runtime/pids/web-debug-4040.pid=3754`; headless daemon PID `4600`, pid file `~/.fin/runtime/pids/headless-daemon.pid=4600`; both parent PID `1` and command `/Users/fanzhang/.fin/bin/fin ... ~/.fin/config/user.toml`.
+- Live WS evidence: both `127.0.0.1:4040/ws` and `100.66.1.82:4040/ws` returned `HTTP/1.1 101 Switching Protocols` and then `{"type":"handshake.ok"}` to a masked `mobile.handshake` frame.
+- Upgrade endpoint regression after the same restart still passed: local/external `/updates/latest.json`, `/upgrade/manifest.js`, APK HEAD, and APK GET all returned expected data; downloaded APK size `9943137` and sha256 `524fc6e29a0ac09163154010179a9efda5a6bff777f744d7919a0a6ffe81a30e` matched manifest.
+- Remaining gap: `adb devices` returned no connected device, so real physical Android installer/UI flow is still not device-verified.
+
+
+[2026-06-09] Android settings connection red test: user reports settings page alternates healthy/reconnect. Initial evidence: LaunchAgent com.fin.web-debug.4040 running PID 3754 from ~/.fin/bin/fin current=0.1.10019; local ws://127.0.0.1:4040/ws returns HTTP 101 and mobile.handshake -> handshake.ok; /updates/latest.json returns 200. Mobile log shows healthy then state=closed/reconnecting reason native-close replace_connection around settings/check_update/download, and native_ws.failure Software caused connection abort before reconnect/healthy. Candidate root is Android/client repeated connection lifecycle or download/settings action replacing socket, not server /ws availability.
+
+[2026-06-09] Android settings reconnection follow-up: after APK install, device 100.127.23.27:1234 logs show new app connects to ws://100.66.1.82:4040/ws, receives handshake.ok/runtime.health/provider.health, then about 0.5s later native_ws.failure unknown_failure and reconnect loop. Network is valid: device pings 100.66.1.82 and curls http://100.66.1.82:4040/updates/latest.json with HTTP 200. Root cause traced to fin-debug-server HTTP parser setting TcpStream read_timeout=500ms; /ws route reuses same stream and websocket read_frame treats idle timeout as IO error. Owning fix: clear read timeout at WebSocket upgrade boundary and lock with idle-after-handshake subscribe regression.
+
+## 2026-06-09 Android send/schema debug
+- User reported configured provider is minimax but UI showed Mimo and send stuck. Verified server-side gaps: WS session.user_input returned no frames until handler completed; provider.health lacked provider/model; Android native chip hardcoded Mimo; orphaned running state without active lease could queue forever. Current fix direction: authoritative config.snapshot from CLI SystemConfig, provider.health derived from snapshot, streaming WS accepted/started/progress before handler completion, execution_state running validated against explicit active lease.

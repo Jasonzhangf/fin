@@ -58,6 +58,17 @@ impl DebugActionHandler for TestHandler {
     }
 }
 
+fn unique_runtime_home(prefix: &str) -> std::path::PathBuf {
+    std::env::temp_dir().join(format!(
+        "{}-{}",
+        prefix,
+        SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("time should work")
+            .as_nanos()
+    ))
+}
+
 #[test]
 fn projector_tracks_latest_progress_note_digest_and_provider_activity() {
     let refs = EntityRefs {
@@ -326,6 +337,7 @@ fn response_for_binding_uses_handler() {
         &HttpRequest {
             method: "GET".into(),
             path: API_BINDING_PATH.into(),
+            headers: Vec::new(),
             body: Vec::new(),
         },
         runtime_home,
@@ -345,6 +357,7 @@ fn response_for_chat_send_uses_handler() {
         &HttpRequest {
             method: "POST".into(),
             path: API_CHAT_SEND_PATH.into(),
+            headers: Vec::new(),
             body: br#"{"message":"hello"}"#.to_vec(),
         },
         runtime_home,
@@ -364,6 +377,7 @@ fn response_for_chat_send_status_probe_round_trips_kind_and_freshness() {
         &HttpRequest {
             method: "POST".into(),
             path: API_CHAT_SEND_PATH.into(),
+            headers: Vec::new(),
             body: br#"{"message":"/status current","input_kind":"status_probe"}"#.to_vec(),
         },
         runtime_home,
@@ -425,13 +439,7 @@ fn response_for_current_execution_state_reads_runtime_artifact_via_last_run() {
 
 #[test]
 fn response_for_qqbot_state_reads_peer_state_file() {
-    let runtime_home = std::env::temp_dir().join(format!(
-        "fin-debug-qqbot-{}",
-        SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .expect("time should work")
-            .as_nanos()
-    ));
+    let runtime_home = unique_runtime_home("fin-debug-qqbot");
     let peer_dir = runtime_home.join("runtime/peers/qqbot");
     fs::create_dir_all(&peer_dir).expect("peer dir");
     fs::write(

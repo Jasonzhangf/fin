@@ -8,39 +8,42 @@ pub(crate) fn parse_anthropic_response(
     let parsed: Value = serde_json::from_str(body).map_err(|err| ProviderError::ParseResponse {
         message: err.to_string(),
     })?;
-    let output_text = parsed
+    let content = parsed
         .get("content")
         .and_then(Value::as_array)
-        .map(|items| {
-            items
-                .iter()
-                .filter_map(|item| {
-                    item.get("type")
-                        .and_then(Value::as_str)
-                        .filter(|kind| *kind == "text")
-                        .and_then(|_| item.get("text"))
-                        .and_then(Value::as_str)
-                })
-                .collect::<String>()
+        .ok_or_else(|| ProviderError::ParseResponse {
+            message: format!(
+                "anthropic response content must be an array; provider={} model={} status={} response_id={}",
+                request.provider_name,
+                request.model,
+                status,
+                parsed
+                    .get("id")
+                    .and_then(Value::as_str)
+                    .unwrap_or("missing")
+            ),
+        })?;
+    let output_text = content
+        .iter()
+        .filter_map(|item| {
+            item.get("type")
+                .and_then(Value::as_str)
+                .filter(|kind| *kind == "text")
+                .and_then(|_| item.get("text"))
+                .and_then(Value::as_str)
         })
-        .unwrap_or_default();
-    let tool_calls = parsed
-        .get("content")
-        .and_then(Value::as_array)
-        .map(|items| {
-            items
-                .iter()
-                .filter(|item| item.get("type").and_then(Value::as_str) == Some("tool_use"))
-                .filter_map(|item| {
-                    Some(ProviderToolCall {
-                        tool_call_id: item.get("id")?.as_str()?.to_string(),
-                        name: item.get("name")?.as_str()?.to_string(),
-                        arguments: item.get("input").cloned().unwrap_or(Value::Null),
-                    })
-                })
-                .collect::<Vec<_>>()
+        .collect::<String>();
+    let tool_calls = content
+        .iter()
+        .filter(|item| item.get("type").and_then(Value::as_str) == Some("tool_use"))
+        .filter_map(|item| {
+            Some(ProviderToolCall {
+                tool_call_id: item.get("id")?.as_str()?.to_string(),
+                name: item.get("name")?.as_str()?.to_string(),
+                arguments: item.get("input").cloned().unwrap_or(Value::Null),
+            })
         })
-        .unwrap_or_default();
+        .collect::<Vec<_>>();
 
     Ok(ProviderResponse {
         provider_name: request.provider_name.clone(),

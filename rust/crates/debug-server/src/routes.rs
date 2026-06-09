@@ -7,13 +7,48 @@ use crate::{
     API_QQBOT_STATE_PATH, API_RECENT_CLOSURES_PATH, API_RECENT_CONTEXTS_PATH,
     API_RECENT_DIGESTS_PATH, API_RECENT_REASONING_VIEWS_PATH, API_RECENT_TOOL_RECORDS_PATH,
     API_RECENT_TURNS_PATH, API_SESSION_EVENT_ARCHIVE_INDEX_PATH, API_SESSION_EVENTS_PATH,
-    API_SESSION_EVENTS_SEGMENT_PATH, API_SESSION_MESSAGES_PATH, API_SNAPSHOT_PATH, API_WATCH_PATH,
-    ChatSendRequest, DebugActionHandler, DebugDataError, HttpRequest, HttpResponse,
-    INDEX_HTML_PATH, STYLES_CSS_PATH, bad_request_response, css_response, file_response,
-    html_response, internal_error_response, javascript_response, json_response, not_found_response,
-    session_view, web_app, web_assets, web_styles, write_http_response,
+    API_SESSION_EVENTS_SEGMENT_PATH, API_SESSION_MESSAGES_PATH, API_SNAPSHOT_PATH, API_UPDATE_DIR,
+    API_UPDATE_LATEST_PATH, API_UPGRADE_MANIFEST_JS_PATH, API_UPGRADE_MANIFEST_JSON_PATH,
+    API_WATCH_PATH, API_WS_PATH, ChatSendRequest, DebugActionHandler, DebugDataError, HttpRequest,
+    HttpResponse, INDEX_HTML_PATH, STYLES_CSS_PATH, bad_request_response, css_response,
+    file_response, head_response, html_response, internal_error_response, javascript_response,
+    json_response, not_found_response, session_view, web_app, web_assets, web_styles,
+    write_http_response,
 };
 use std::{net::TcpStream, path::Path};
+
+fn update_dist_dir(runtime_home: &Path) -> std::path::PathBuf {
+    runtime_home.join(API_UPDATE_DIR)
+}
+
+fn is_update_manifest_path(route_path: &str) -> bool {
+    matches!(
+        route_path,
+        API_UPDATE_LATEST_PATH | API_UPGRADE_MANIFEST_JSON_PATH | API_UPGRADE_MANIFEST_JS_PATH
+    )
+}
+
+fn update_file_response(runtime_home: &Path, route_path: &str) -> HttpResponse {
+    let updates_dir = update_dist_dir(runtime_home);
+    if is_update_manifest_path(route_path) {
+        return file_response(
+            &updates_dir.join("latest.json"),
+            "application/json; charset=utf-8",
+        );
+    }
+    if let Some(name) = route_path.strip_prefix("/updates/") {
+        if name.is_empty() || name.contains("..") || name.contains('/') || name.contains('\\') {
+            return not_found_response(route_path);
+        }
+        let content_type = if name.ends_with(".apk") {
+            "application/vnd.android.package-archive"
+        } else {
+            "application/octet-stream"
+        };
+        return file_response(&updates_dir.join(name), content_type);
+    }
+    not_found_response(route_path)
+}
 
 pub(crate) fn handle_connection(
     stream: &mut TcpStream,
@@ -23,6 +58,9 @@ pub(crate) fn handle_connection(
     let request = crate::read_http_request(stream)?;
     if request.method == "GET" && request.path == API_WATCH_PATH {
         return crate::event_stream::stream_runtime_updates(stream, runtime_home);
+    }
+    if request.method == "GET" && session_view::request_path(&request.path) == API_WS_PATH {
+        return crate::websocket::handle_ws_connection(stream, &request, runtime_home, handler);
     }
     let response = response_for_request(&request, runtime_home, handler);
     write_http_response(stream, &response)
@@ -34,12 +72,21 @@ pub(crate) fn response_for_request(
     handler: &(impl DebugActionHandler + Sync),
 ) -> HttpResponse {
     let route_path = session_view::request_path(&request.path);
+    if request.method == "HEAD"
+        && (is_update_manifest_path(route_path) || route_path.starts_with("/updates/"))
+    {
+        let response = update_file_response(runtime_home, route_path);
+        return head_response(&response);
+    }
     match (request.method.as_str(), route_path) {
         ("GET", INDEX_HTML_PATH) => html_response(web_assets::INDEX_HTML),
         ("GET", path) if web_app::javascript_for_path(path).is_some() => {
             javascript_response(web_app::javascript_for_path(route_path).unwrap_or(""))
         }
         ("GET", STYLES_CSS_PATH) => css_response(web_styles::STYLES_CSS),
+        ("GET", path) if is_update_manifest_path(path) || path.starts_with("/updates/") => {
+            update_file_response(runtime_home, route_path)
+        }
         ("GET", API_BINDING_PATH) => match handler.read_binding(runtime_home) {
             Ok(binding) => json_response(200, &binding),
             Err(message) => internal_error_response(&message),
@@ -252,6 +299,7 @@ pub(crate) fn response_for_path(path: &str, runtime_home: &Path) -> HttpResponse
         &HttpRequest {
             method: "GET".into(),
             path: path.into(),
+            headers: Vec::new(),
             body: Vec::new(),
         },
         runtime_home,

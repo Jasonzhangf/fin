@@ -241,4 +241,8 @@ pub struct ProviderFacade {
 }
 
 #[cfg(test)]
+mod provider_wire_tests;
+#[cfg(test)]
 mod tests;
+#[cfg(test)]
+mod tests_protocol_governance;

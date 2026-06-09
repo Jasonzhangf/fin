@@ -3,7 +3,7 @@ use fin_contracts::{
     ProjectionView, ProviderEventPayload,
 };
 use serde::{Deserialize, Serialize};
-use serde_json::Value;
+use serde_json::{Value, json};
 use std::{
     fs,
     io::Write,
@@ -21,16 +21,21 @@ mod session_view;
 mod web_app;
 mod web_assets;
 mod web_styles;
+mod websocket;
 
 #[cfg(test)]
 mod tests_activity_cards;
+#[cfg(test)]
+mod tests_updates;
+#[cfg(test)]
+mod tests_websocket;
 
 pub use chat_api::{ChatSendRequest, ChatSendResponse, DebugBinding};
 
 pub(crate) use http::{
-    HttpRequest, HttpResponse, bad_request_response, css_response, file_response, html_response,
-    internal_error_response, javascript_response, json_response, not_found_response,
-    read_http_request, write_http_response,
+    HttpRequest, HttpResponse, bad_request_response, css_response, file_response, head_response,
+    header_value, html_response, internal_error_response, javascript_response, json_response,
+    not_found_response, read_http_request, write_http_response,
 };
 
 pub(crate) const INDEX_HTML_PATH: &str = "/";
@@ -65,6 +70,11 @@ pub(crate) const API_QQBOT_EVENTS_PATH: &str = "/api/qqbot_events.jsonl";
 pub(crate) const API_QQBOT_CONVERSATIONS_PATH: &str = "/api/qqbot_conversations.json";
 pub(crate) const API_CHAT_SEND_PATH: &str = "/api/chat/send";
 pub(crate) const API_WATCH_PATH: &str = "/api/watch";
+pub(crate) const API_WS_PATH: &str = "/ws";
+pub(crate) const API_UPDATE_LATEST_PATH: &str = "/updates/latest.json";
+pub(crate) const API_UPGRADE_MANIFEST_JSON_PATH: &str = "/upgrade/manifest.json";
+pub(crate) const API_UPGRADE_MANIFEST_JS_PATH: &str = "/upgrade/manifest.js";
+pub(crate) const API_UPDATE_DIR: &str = "update-dist";
 
 #[derive(Debug, Error)]
 pub enum DebugDataError {
@@ -80,6 +90,9 @@ pub enum DebugDataError {
 
 pub trait DebugActionHandler {
     fn read_binding(&self, runtime_home: &Path) -> Result<DebugBinding, String>;
+    fn read_config_snapshot(&self, _runtime_home: &Path) -> Result<Value, String> {
+        Err("config snapshot handler not configured".into())
+    }
     fn send_chat_message(
         &self,
         runtime_home: &Path,
@@ -116,6 +129,16 @@ impl DebugActionHandler for NoopDebugActionHandler {
         _request: ChatSendRequest,
     ) -> Result<ChatSendResponse, String> {
         Err("chat send handler not configured".into())
+    }
+
+    fn read_config_snapshot(&self, _runtime_home: &Path) -> Result<Value, String> {
+        Ok(json!({
+            "type": "config.snapshot",
+            "status": "unavailable",
+            "reason": "config snapshot handler not configured",
+            "default_profile": "",
+            "profiles": []
+        }))
     }
 }
 
@@ -297,6 +320,7 @@ pub fn serve_debug_mvp_with_handler(
         path: bind_addr.to_string(),
         source,
     })?;
+    persist_web_debug_pid(runtime_home, &listener)?;
 
     thread::scope(|scope| {
         for stream in listener.incoming() {
@@ -313,6 +337,30 @@ pub fn serve_debug_mvp_with_handler(
         Ok(())
     })
 }
+
+fn persist_web_debug_pid(
+    runtime_home: &Path,
+    listener: &TcpListener,
+) -> Result<(), DebugDataError> {
+    let port = listener
+        .local_addr()
+        .map_err(|source| DebugDataError::Io {
+            path: "web-debug-local-addr".into(),
+            source,
+        })?
+        .port();
+    let pid_dir = runtime_home.join("runtime/pids");
+    fs::create_dir_all(&pid_dir).map_err(|source| DebugDataError::Io {
+        path: pid_dir.display().to_string(),
+        source,
+    })?;
+    let pid_path = pid_dir.join(format!("web-debug-{port}.pid"));
+    fs::write(&pid_path, std::process::id().to_string()).map_err(|source| DebugDataError::Io {
+        path: pid_path.display().to_string(),
+        source,
+    })
+}
+
 #[cfg(test)]
 pub(crate) use routes::response_for_path;
 #[cfg(test)]

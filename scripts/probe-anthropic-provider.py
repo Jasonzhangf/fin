@@ -27,8 +27,14 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--expected-model",
-        default="qwen3.6-plus",
-        help="Expected default model",
+        default=None,
+        help="Expected default model; omitted means accept the model from user.toml",
+    )
+    parser.add_argument(
+        "--max-tokens",
+        type=int,
+        default=256,
+        help="Max tokens for the probe response",
     )
     return parser.parse_args()
 
@@ -53,10 +59,10 @@ def resolve_api_key(provider: dict) -> tuple[str, str]:
     raise SystemExit("provider config requires api_key or api_key_env")
 
 
-def build_payload(model: str) -> bytes:
+def build_payload(model: str, max_tokens: int) -> bytes:
     payload = {
         "model": model,
-        "max_tokens": 16,
+        "max_tokens": max_tokens,
         "messages": [
             {
                 "role": "user",
@@ -86,11 +92,11 @@ def main() -> int:
 
     if protocol != "anthropic-wire":
         raise SystemExit(f"default provider protocol must be anthropic-wire, got {protocol}")
-    if model != args.expected_model:
+    if args.expected_model is not None and model != args.expected_model:
         raise SystemExit(f"default provider model must be {args.expected_model}, got {model}")
 
     endpoint = f"{base_url}/v1/messages"
-    payload = build_payload(model)
+    payload = build_payload(model, args.max_tokens)
     headers = dict(custom_headers)
     headers["content-type"] = "application/json"
     headers["accept"] = "application/json"
@@ -106,6 +112,7 @@ def main() -> int:
         "model": model,
         "endpoint": endpoint,
         "anthropic_version": ANTHROPIC_VERSION,
+        "max_tokens": args.max_tokens,
         "api_key_source": key_source,
         "user_agent": user_agent,
         "custom_header_names": sorted(custom_headers.keys()),
@@ -115,9 +122,25 @@ def main() -> int:
         with urllib.request.urlopen(request, timeout=60) as response:
             body = response.read()
             parsed = json.loads(body)
+            content = parsed.get("content")
+            if not isinstance(content, list):
+                report.update(
+                    {
+                        "status": response.status,
+                        "request_id": response.headers.get("request-id"),
+                        "response_id": parsed.get("id"),
+                        "stop_reason": parsed.get("stop_reason"),
+                        "ok": False,
+                        "error_kind": "schema_error",
+                        "error": f"anthropic response content must be an array, got {type(content).__name__}",
+                    }
+                )
+                report_path.write_text(json.dumps(report, ensure_ascii=False, indent=2))
+                print(json.dumps(report, ensure_ascii=False, indent=2), file=sys.stderr)
+                return 1
             text_parts = [
                 item.get("text", "")
-                for item in parsed.get("content", [])
+                for item in content
                 if isinstance(item, dict) and item.get("type") == "text"
             ]
             text = "".join(text_parts).strip()

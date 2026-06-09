@@ -26,3 +26,5 @@ thiserror = "2"
 toml = "0.8"
 reqwest = { version = "0.12", default-features = false, features = ["blocking", "json", "rustls-tls"] }
 chrono = { version = "0.4", default-features = true, features = ["clock"] }
+base64 = "0.22"
+sha1 = "0.10"

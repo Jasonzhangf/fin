@@ -43,6 +43,25 @@ fn write_file(path: &Path, bytes: &[u8]) {
     fs::write(path, bytes).expect("write");
 }
 
+fn write_active_lease(home: &Path, session_dir: &Path) {
+    let pid = std::process::id();
+    let lease = format!(
+        r#"{{
+  "pid": {pid},
+  "status": "active",
+  "updated_at": "2026-04-19T23:31:00+08:00"
+}}"#
+    );
+    write_file(
+        &session_dir.join("control/execution_lease.json"),
+        lease.as_bytes(),
+    );
+    write_file(
+        &home.join("runtime/current/current_execution_lease.json"),
+        lease.as_bytes(),
+    );
+}
+
 #[test]
 fn run_supervisor_cycle_persists_cycle_and_events() {
     let home = temp_runtime_home();
@@ -156,6 +175,7 @@ fn run_supervisor_cycle_derives_wait_running_next_check() {
   "updated_at":"2026-04-19T23:31:00+08:00"
 }"#,
     );
+    write_active_lease(&home, &session_dir);
     write_file(&session_dir.join("queue/pending_inputs.json"), b"[]");
     write_file(
         &session_dir.join("tasks/routing/latest_action.json"),
